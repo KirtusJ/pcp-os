@@ -159,36 +159,48 @@ pub enum Kind {
     Plugin,
 }
 
-/// One file an entry names.
+/// One file an entry names. It is made only by reading an entry and cannot be changed afterwards.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct File {
+    path: String,
+    sha256: String,
+    size: u64,
+}
+
+impl File {
     /// Its path under the place of installation.
-    pub path: String,
+    pub fn path(&self) -> &str {
+        &self.path
+    }
     /// The SHA-256 of its bytes, 64 lower-case hexadecimal digits.
-    pub sha256: String,
+    pub fn sha256(&self) -> &str {
+        &self.sha256
+    }
     /// Its length in bytes.
-    pub size: u64,
+    pub fn size(&self) -> u64 {
+        self.size
+    }
 }
 
 /// One version of one package, as an index states it.
+///
+/// An entry is made only by [`Entry::parse`], which checks all of it, and it cannot be changed afterwards:
+/// its fields are read through the methods below. So what [`verify`] accepts is always what the digest names.
+///
+/// Two things are kept apart. The *artifact* is what is installed: owner, name, version, kind, commit, files
+/// and capabilities. Its digest is the pin, and it never changes. The *status* is whether the index has
+/// withdrawn the entry from new installations; it can change later and is no part of the pin, so an
+/// installation that pinned an entry before it was withdrawn still finds it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
-    /// Who publishes it.
-    pub owner: String,
-    /// Its name under that owner.
-    pub name: String,
-    /// Its version.
-    pub version: Version,
-    /// What kind of thing it is.
-    pub kind: Kind,
-    /// The commit its files are taken from: 40 lower-case hexadecimal digits.
-    pub commit: String,
-    /// Every file it installs, in order of path.
-    pub files: Vec<File>,
-    /// What it asks to be allowed to do. A request, not a grant.
-    pub capabilities: Vec<String>,
-    /// Withdrawn from new installations. One that already names it by digest still verifies.
-    pub withdrawn: bool,
+    owner: String,
+    name: String,
+    version: Version,
+    kind: Kind,
+    commit: String,
+    files: Vec<File>,
+    capabilities: Vec<String>,
+    withdrawn: bool,
     digest: String,
 }
 
@@ -283,13 +295,51 @@ impl Entry {
             }
         }
         files.sort_by(|a, b| a.path.cmp(&b.path));
-        Ok(Entry { owner: owner.to_string(), name: name.to_string(), version, kind, commit: commit.to_string(), files, capabilities, withdrawn, digest: sha256_hex(&v.canonical_json()) })
+        // The pin is the digest of the artifact: the entry in canonical form without its status.
+        let mut artifact = map.clone();
+        artifact.remove("withdrawn");
+        let digest = sha256_hex(&Value::Map(artifact).canonical_json());
+        Ok(Entry { owner: owner.to_string(), name: name.to_string(), version, kind, commit: commit.to_string(), files, capabilities, withdrawn, digest })
     }
 
-    /// The SHA-256 of the entry in canonical form. This is what an installation pins: it fixes every file's
-    /// digest, the commit, the kind and the capabilities at once.
+    /// The SHA-256 of the artifact in canonical form: every field but the status. This is what an
+    /// installation pins. It fixes every file's digest, the commit, the kind and the capabilities at once,
+    /// and it is the same before and after the index withdraws the entry.
     pub fn digest(&self) -> &str {
         &self.digest
+    }
+
+    /// Who publishes it.
+    pub fn owner(&self) -> &str {
+        &self.owner
+    }
+    /// Its name under that owner.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    /// Its version.
+    pub fn version(&self) -> Version {
+        self.version
+    }
+    /// What kind of thing it is.
+    pub fn kind(&self) -> Kind {
+        self.kind
+    }
+    /// The commit its files are taken from: 40 lower-case hexadecimal digits.
+    pub fn commit(&self) -> &str {
+        &self.commit
+    }
+    /// Every file it installs, in order of path.
+    pub fn files(&self) -> &[File] {
+        &self.files
+    }
+    /// What it asks to be allowed to do. A request, not a grant.
+    pub fn capabilities(&self) -> &[String] {
+        &self.capabilities
+    }
+    /// Whether the index has withdrawn it from new installations.
+    pub fn withdrawn(&self) -> bool {
+        self.withdrawn
     }
 
     /// `owner/name` and the version, as a person writes it.
@@ -342,7 +392,7 @@ pub enum Want<'a> {
     Newest,
     /// This version, if it is not withdrawn.
     Exact(Version),
-    /// The entry with this digest, withdrawn or not: what an existing installation names.
+    /// The artifact with this digest, withdrawn or not: what an existing installation names.
     Pinned(&'a str),
 }
 
@@ -362,23 +412,28 @@ pub fn resolve<'a>(sources: &'a [Source], owner: &str, name: &str, want: Want) -
     let Some(holder) = order.iter().find(|s| s.entries.iter().any(|e| e.owner == owner && e.name == name)) else {
         return Err(format!("no source holds {owner}/{name} ({} asked)", order.len()));
     };
-    let held: Vec<&Entry> = holder.entries.iter().filter(|e| e.owner == owner && e.name == name).collect();
-    for (i, e) in held.iter().enumerate() {
-        if let Some(other) = held[..i].iter().find(|o| o.version == e.version) {
-            let same = if other.digest == e.digest { "the same entry twice" } else { "two different entries" };
-            return Err(format!("source {:?} holds {} as {same}; a published version is one entry and does not change", holder.label, e.id()));
+    // One artifact for each version. The same artifact may be stated more than once, as it is when an index
+    // keeps the record of a withdrawal beside the first record: then it is withdrawn if any record says so,
+    // since a withdrawal is not taken back by an older record. Two different artifacts under one version
+    // are refused: a published version does not change.
+    let mut held: Vec<(&Entry, bool)> = Vec::new();
+    for e in holder.entries.iter().filter(|e| e.owner == owner && e.name == name) {
+        match held.iter_mut().find(|(o, _)| o.version == e.version) {
+            Some((o, _)) if o.digest != e.digest => return Err(format!("source {:?} holds {} as two different artifacts; a published version does not change", holder.label, e.id())),
+            Some((_, withdrawn)) => *withdrawn |= e.withdrawn,
+            None => held.push((e, e.withdrawn)),
         }
     }
     let found = match want {
-        Want::Newest => held.iter().filter(|e| !e.withdrawn).max_by_key(|e| e.version).copied().ok_or(format!("every version of {owner}/{name} in source {:?} is withdrawn", holder.label))?,
+        Want::Newest => held.iter().filter(|(_, w)| !w).max_by_key(|(e, _)| e.version).map(|(e, _)| *e).ok_or(format!("every version of {owner}/{name} in source {:?} is withdrawn", holder.label))?,
         Want::Exact(v) => {
-            let e = held.iter().find(|e| e.version == v).copied().ok_or(format!("source {:?} holds {owner}/{name} and not version {}", holder.label, v.text()))?;
-            if e.withdrawn {
+            let (e, withdrawn) = held.iter().find(|(e, _)| e.version == v).copied().ok_or(format!("source {:?} holds {owner}/{name} and not version {}", holder.label, v.text()))?;
+            if withdrawn {
                 return Err(format!("{} is withdrawn from new installations; an installation that names it by digest still verifies", e.id()));
             }
             e
         }
-        Want::Pinned(d) => held.iter().find(|e| e.digest == d).copied().ok_or(format!("source {:?} is the one that holds {owner}/{name}, and it has no entry with digest {d}", holder.label))?,
+        Want::Pinned(d) => held.iter().find(|(e, _)| e.digest == d).map(|(e, _)| *e).ok_or(format!("source {:?} is the one that holds {owner}/{name}, and it has no entry with digest {d}", holder.label))?,
     };
     Ok((holder.label.as_str(), found))
 }
@@ -455,9 +510,9 @@ mod tests {
         let files: [(&str, &[u8]); 2] = [("Specification.md", b"# A module\n"), ("data/table.csv", b"a,b\r\n1,2\r\n")];
         let json = entry_json("optics", "1.2.3", "module", "", &files, false);
         let e = Entry::parse(json.as_bytes()).unwrap();
-        assert_eq!((e.owner.as_str(), e.name.as_str(), e.version, e.kind, e.withdrawn), ("kirtusj", "optics", Version(1, 2, 3), Kind::Module, false));
+        assert_eq!((e.owner(), e.name(), e.version(), e.kind(), e.withdrawn()), ("kirtusj", "optics", Version(1, 2, 3), Kind::Module, false));
         assert_eq!(e.id(), "kirtusj/optics 1.2.3");
-        assert_eq!(e.files.len(), 2);
+        assert_eq!((e.files().len(), e.files()[0].path(), e.files()[0].size(), e.commit()), (2, "Specification.md", 11, COMMIT));
         assert_eq!(e.digest().len(), 64);
         // The digest is of the canonical form: the same entry written with other spacing has the same digest.
         let spaced = json.replace(",\"", ", \"").replace("{\"", "{ \"");
@@ -493,7 +548,7 @@ mod tests {
         refused("{".to_string(), "not a record value");
         // An application may ask; what it asks is recorded, in the order given.
         let app = Entry::parse(entry_json("grim", "0.1.0", "application", r#""input.value","output.value""#, &files, false).as_bytes()).unwrap();
-        assert_eq!((app.kind, app.capabilities.len()), (Kind::Application, 2));
+        assert_eq!((app.kind(), app.capabilities().len()), (Kind::Application, 2));
     }
 
     #[test]
@@ -530,14 +585,14 @@ mod tests {
         let both = [public.clone(), private.clone()];
         // The newest that is not withdrawn, from the first source that holds the name; the later source's 9.9.9 is not seen.
         let (from, e) = resolve(&both, "kirtusj", "optics", Want::Newest).unwrap();
-        assert_eq!((from, e.version), ("private", Version(1, 0, 5)));
+        assert_eq!((from, e.version()), ("private", Version(1, 0, 5)));
         // A name the first source does not hold is taken from the next.
         assert_eq!(resolve(&both, "kirtusj", "acoustics", Want::Newest).unwrap().0, "public");
-        assert_eq!(resolve(&both, "kirtusj", "optics", Want::Exact(Version(1, 0, 0))).unwrap().1.version, Version(1, 0, 0));
+        assert_eq!(resolve(&both, "kirtusj", "optics", Want::Exact(Version(1, 0, 0))).unwrap().1.version(), Version(1, 0, 0));
         // Withdrawn: not for a new installation, still found by the digest an installation names.
         let pin = private.entries[1].digest().to_string();
         assert!(resolve(&both, "kirtusj", "optics", Want::Exact(Version(1, 1, 0))).unwrap_err().contains("withdrawn"));
-        assert_eq!(resolve(&both, "kirtusj", "optics", Want::Pinned(&pin)).unwrap().1.version, Version(1, 1, 0));
+        assert_eq!(resolve(&both, "kirtusj", "optics", Want::Pinned(&pin)).unwrap().1.version(), Version(1, 1, 0));
         // A digest that only the later source has is not taken for a name the first source holds.
         let below = public.entries[0].digest().to_string();
         assert!(resolve(&both, "kirtusj", "optics", Want::Pinned(&below)).unwrap_err().contains("is the one that holds"));
@@ -549,13 +604,51 @@ mod tests {
         assert!(resolve(&tie, "kirtusj", "optics", Want::Newest).unwrap_err().contains("same rank"));
         // One version stated twice, the same or changed: refused.
         let changed = [Source { label: "bad".to_string(), rank: 1, entries: vec![entry("optics", "1.0.0", &f, false), entry("optics", "1.0.0", &g, false)] }];
-        assert!(resolve(&changed, "kirtusj", "optics", Want::Newest).unwrap_err().contains("two different entries"));
-        let twice = [Source { label: "bad".to_string(), rank: 1, entries: vec![entry("optics", "1.0.0", &f, false), entry("optics", "1.0.0", &f, false)] }];
-        assert!(resolve(&twice, "kirtusj", "optics", Want::Newest).unwrap_err().contains("the same entry twice"));
+        assert!(resolve(&changed, "kirtusj", "optics", Want::Newest).unwrap_err().contains("two different artifacts"));
+        // The same artifact stated twice is one artifact.
+        let twice = [Source { label: "ok".to_string(), rank: 1, entries: vec![entry("optics", "1.0.0", &f, false), entry("optics", "1.0.0", &f, false)] }];
+        assert_eq!(resolve(&twice, "kirtusj", "optics", Want::Newest).unwrap().1.version(), Version(1, 0, 0));
         // Every version withdrawn: nothing new to install.
         let gone = [Source { label: "old".to_string(), rank: 1, entries: vec![entry("optics", "1.0.0", &f, true)] }];
         assert!(resolve(&gone, "kirtusj", "optics", Want::Newest).unwrap_err().contains("every version"));
         assert!(resolve(&[], "kirtusj", "optics", Want::Newest).unwrap_err().contains("no source holds"));
+    }
+
+    #[test]
+    fn a_pin_names_the_artifact_and_survives_its_withdrawal() {
+        // Director G's second finding. An installation pins an entry; later the index withdraws it.
+        let f: [(&str, &[u8]); 1] = [("Specification.md", b"one")];
+        let before = entry("optics", "1.0.0", &f, false);
+        let after = entry("optics", "1.0.0", &f, true);
+        let pin = before.digest().to_string();
+        assert_eq!(after.digest(), pin, "the status is no part of the pin");
+        assert!(!before.withdrawn() && after.withdrawn());
+        // The index now holds only the withdrawn record: the old pin still resolves, a new choice is refused.
+        let only = [Source { label: "s".to_string(), rank: 1, entries: vec![after.clone()] }];
+        assert!(resolve(&only, "kirtusj", "optics", Want::Pinned(&pin)).unwrap().1.withdrawn());
+        assert!(resolve(&only, "kirtusj", "optics", Want::Newest).unwrap_err().contains("every version"));
+        assert!(resolve(&only, "kirtusj", "optics", Want::Exact(Version(1, 0, 0))).unwrap_err().contains("withdrawn"));
+        // The index keeps both records, in either order: the same answers, and no complaint of a duplicate.
+        for entries in [vec![before.clone(), after.clone()], vec![after.clone(), before.clone()]] {
+            let both = [Source { label: "s".to_string(), rank: 1, entries }];
+            assert_eq!(resolve(&both, "kirtusj", "optics", Want::Pinned(&pin)).unwrap().1.digest(), pin);
+            assert!(resolve(&both, "kirtusj", "optics", Want::Newest).unwrap_err().contains("every version"));
+            assert!(resolve(&both, "kirtusj", "optics", Want::Exact(Version(1, 0, 0))).unwrap_err().contains("withdrawn"));
+        }
+        // Changed bytes under the same version are another artifact: another pin, and refused beside the first.
+        let changed = entry("optics", "1.0.0", &[("Specification.md", b"two")], true);
+        assert_ne!(changed.digest(), pin);
+        let mixed = [Source { label: "s".to_string(), rank: 1, entries: vec![before.clone(), changed.clone()] }];
+        assert!(resolve(&mixed, "kirtusj", "optics", Want::Pinned(&pin)).unwrap_err().contains("two different artifacts"));
+        assert!(verify(&before, &[("Specification.md", b"two")]).is_err());
+        // Every other field is part of the pin.
+        let base = entry_json("optics", "1.0.0", "application", r#""input.value""#, &f, false);
+        let d = |json: String| Entry::parse(json.as_bytes()).unwrap().digest().to_string();
+        let pin = d(base.clone());
+        for other in [base.replace("1.0.0", "1.0.1"), base.replace(r#""name":"optics""#, r#""name":"optica""#), base.replace(r#""owner":"kirtusj""#, r#""owner":"other""#), base.replace(COMMIT, &COMMIT.replace('0', "1")), base.replace("input.value", "output.value"), base.replace(r#""kind":"application""#, r#""kind":"plugin""#).replace(r#""input.value""#, "")] {
+            assert_ne!(d(other.clone()), pin, "{other}");
+        }
+        assert_eq!(d(base.replace(r#""withdrawn":false"#, r#""withdrawn":true"#)), pin);
     }
 
     #[test]
