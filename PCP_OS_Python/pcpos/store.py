@@ -3,7 +3,7 @@
 Nothing here interprets an event. The register is the record; everything else is derived from it.
 """
 from __future__ import annotations
-import json, os, re, time, uuid
+import json, os, re, stat, tempfile, time, uuid
 from pathlib import Path
 from . import WORKSPACE_PROFILE, RECORD_PROFILE, VERSION
 from .base import (PcposError, INTEGRITY, USAGE, ENVIRONMENT, ZERO, HEX64, canon, strict_loads, no_floats,
@@ -92,13 +92,45 @@ class Workspace:
     def object_path(self, digest):
         return self.objects / digest[:2] / digest
 
+    def _safe_object_path(self, digest):
+        """Reject already linked object-store components before a write/read.
+
+        This is a preflight path check for a locally controlled workspace, not
+        protection from a concurrent process replacing directories afterward.
+        """
+        p = self.object_path(digest)
+        if self.objects.is_symlink() or not self.objects.is_dir():
+            raise PcposError(INTEGRITY, "object-store directory is absent or linked")
+        if p.parent.is_symlink() or (p.parent.exists() and not p.parent.is_dir()):
+            raise PcposError(INTEGRITY, "object-store shard is not a plain directory")
+        if p.is_symlink():
+            raise PcposError(INTEGRITY, "object-store entry is a symbolic link")
+        return p
+
+    def _existing_object(self, p, digest, expected_size):
+        """An existing object is a success only when it has the exact bytes."""
+        if not p.exists():
+            return False
+        try:
+            st = p.lstat()
+            if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
+                raise PcposError(INTEGRITY, "stored object is not a single-link regular file")
+            actual_hash, actual_size = sha_file(p)
+        except OSError as error:
+            raise PcposError(INTEGRITY, "cannot inspect existing object: %s" % error) from error
+        if actual_hash != digest or actual_size != expected_size:
+            raise PcposError(INTEGRITY, "existing object at %s is corrupt (digest/size mismatch)" % digest[:12])
+        return True
+
     def has(self, digest):
         return self.object_path(digest).is_file()
 
     def put_bytes(self, data: bytes) -> str:
         digest = sha_bytes(data)
-        p = self.object_path(digest)
-        if not p.is_file():
+        p = self._safe_object_path(digest)
+        if not self._existing_object(p, digest, len(data)):
+            p.parent.mkdir(parents=True, exist_ok=True)
+            self._safe_object_path(digest)
             atomic_write(p, data)
         return digest
 
@@ -106,10 +138,13 @@ class Workspace:
         """Copy a file into the store while hashing it; returns (digest, size)."""
         import hashlib
         self.local.mkdir(exist_ok=True)
-        tmp = self.local / ("in.%d.%s" % (os.getpid(), uuid.uuid4().hex[:8]))
+        if self.local.is_symlink() or not self.local.is_dir():
+            raise PcposError(INTEGRITY, "workspace temporary directory is linked or missing")
         h, n = hashlib.sha256(), 0
+        fd, name = tempfile.mkstemp(prefix="in-", dir=self.local)
+        tmp = Path(name)
         try:
-            with open(src, "rb") as f, open(tmp, "wb") as g:
+            with os.fdopen(fd, "wb") as g, open(src, "rb") as f:
                 while True:
                     b = f.read(1 << 20)
                     if not b:
@@ -117,22 +152,17 @@ class Workspace:
                     h.update(b); g.write(b); n += len(b)
                 g.flush(); os.fsync(g.fileno())
             digest = h.hexdigest()
-            p = self.object_path(digest)
-            if p.is_file():
-                os.unlink(tmp)
-            else:
+            p = self._safe_object_path(digest)
+            if not self._existing_object(p, digest, n):
                 p.parent.mkdir(parents=True, exist_ok=True)
+                self._safe_object_path(digest)
                 os.replace(tmp, p)
-        except BaseException:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-            raise
+        finally:
+            tmp.unlink(missing_ok=True)
         return digest, n
 
     def get(self, digest) -> bytes:
-        p = self.object_path(digest)
+        p = self._safe_object_path(digest)
         if not p.is_file():
             raise PcposError(INTEGRITY, "object %s is not in this workspace's store" % digest[:12],
                              "it was recorded by reference only, or the store is incomplete; supply the bytes again with: pcpos add <file>")
