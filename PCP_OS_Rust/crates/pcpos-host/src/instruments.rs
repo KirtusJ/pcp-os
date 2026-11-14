@@ -8,6 +8,8 @@
 use pcpos_core::sha256_hex;
 use pcpos_core::value::Value;
 
+mod protected_bins;
+
 /// What an instrument found: whether the property it computes holds, and the account of it in words.
 pub struct Outcome {
     pub holds: bool,
@@ -15,8 +17,10 @@ pub struct Outcome {
 }
 
 /// The instruments this program offers, with the module each belongs to and what it computes.
-pub const LIST: [(&str, &str); 8] = [
+pub const LIST: [(&str, &str); 10] = [
     ("mathematics.exact", "the value of an expression in whole numbers and fractions, exactly; input: expression"),
+    ("mathematics.protected_bins", "compare signed integer columns at a common scale: both squared totals must equal 2^scale_exponent (0..127); corresponding bins must have equal squared norms and odd gcds. Input: scale_exponent, source, target (ordered lists of bins of signed 64-bit integers; at most 64 bins and 4096 entries per column; squared totals must fit u128)"),
+    ("mathematics.statement", "whether a Lean theorem's statement is the one that was pinned, and whether it is trivially true; it holds only against a pin, and without one it returns the digest to pin and does not hold; input: source (Lean text), theorem (name), pinned (SHA-256 of the statement)"),
     ("statistics.grim", "whether a reported mean of whole-number observations can arise from the stated count; input: mean (text, as reported), n"),
     ("statistics.percent", "whether a reported percentage can arise from a whole count out of the stated total; input: percent (text, as reported), total"),
     ("engineering.units", "whether a quantity in one unit equals a quantity in another, exactly; input: from, to (each a number and a unit, such as \"25 psi\")"),
@@ -32,10 +36,26 @@ pub fn run(name: &str, input: &Value, events: &[Value]) -> Result<Outcome, Strin
     let whole = |k: &str| input.get(k).and_then(Value::as_int).filter(|n| *n > 0).ok_or(format!("this instrument needs {k}, a whole number above zero"));
     match name {
         "mathematics.exact" => exact(text("expression")?),
+        "mathematics.protected_bins" => protected_bins::compare(input),
+        "mathematics.statement" => {
+            let pinned = match input.get("pinned") {
+                None | Some(Value::Null) => None,
+                Some(Value::Str(p)) if p.trim().len() == 64 && p.trim().chars().all(|ch| ch.is_ascii_hexdigit()) => Some(p.as_str()),
+                Some(_) => return Err("pinned was supplied and is not a string of 64 hexadecimal digits; a pin that cannot be read is not the same as no pin, and nothing was compared".to_string()),
+            };
+            statement(text("source")?, text("theorem")?, pinned)
+        }
         "statistics.grim" => granularity(text("mean")?, whole("n")?, 1, "mean"),
         "statistics.percent" => granularity(text("percent")?, whole("total")?, 100, "percentage"),
         "engineering.units" => units(text("from")?, text("to")?),
-        "cryptography.digest" => digest(text("text")?, input.get("claimed").and_then(Value::as_str)),
+        "cryptography.digest" => {
+            let claimed = match input.get("claimed") {
+                None => None,
+                Some(Value::Str(s)) => Some(s.as_str()),
+                Some(_) => return Err("claimed must be text when supplied; no digest comparison was made".to_string()),
+            };
+            digest(text("text")?, claimed)
+        }
         "science.order" => order(text("earlier")?, text("later")?, events),
         "quality.coverage" => coverage(text("review")?, events),
         "core.calibration" => calibration(input.get("record").ok_or("this instrument needs record, the Calibration Record")?),
@@ -54,12 +74,12 @@ pub struct Q {
 
 const BEYOND: &str = "a value passed beyond what this instrument holds exactly (127 bits); nothing was computed";
 
-fn gcd(a: i128, b: i128) -> i128 {
+fn gcd(a: i128, b: i128) -> u128 {
     let (mut a, mut b) = (a.unsigned_abs(), b.unsigned_abs());
     while b != 0 {
         (a, b) = (b, a % b);
     }
-    a as i128
+    a
 }
 
 impl Q {
@@ -67,7 +87,12 @@ impl Q {
         if d == 0 {
             return Err("division by zero".to_string());
         }
-        let g = gcd(n, d).max(1);
+        let g = gcd(n, d);
+        // A nonzero gcd larger than MAX is |MIN|; the only possibilities here
+        // are 0/MIN and MIN/MIN. Reduce before converting back to signed.
+        let Ok(g) = i128::try_from(g) else {
+            return Ok(Q::int(if n == 0 { 0 } else { 1 }));
+        };
         let (n, d) = (n / g, d / g);
         if d < 0 { Ok(Q { n: n.checked_neg().ok_or(BEYOND)?, d: d.checked_neg().ok_or(BEYOND)? }) } else { Ok(Q { n, d }) }
     }
@@ -82,7 +107,8 @@ impl Q {
     }
     fn mul(self, o: Q) -> Result<Q, String> {
         // Reduce across first, so that a product that fits is not refused for an intermediate that does not.
-        let (g1, g2) = (gcd(self.n, o.d).max(1), gcd(o.n, self.d).max(1));
+        // Each gcd divides a strictly positive, representable denominator.
+        let (g1, g2) = (gcd(self.n, o.d) as i128, gcd(o.n, self.d) as i128);
         Q::new((self.n / g1).checked_mul(o.n / g2).ok_or(BEYOND)?, (self.d / g2).checked_mul(o.d / g1).ok_or(BEYOND)?)
     }
     fn div(self, o: Q) -> Result<Q, String> {
@@ -104,9 +130,23 @@ impl Q {
         }
         let (mut out, mut rem, mut places) = (String::new(), self.n.unsigned_abs() % self.d as u128, 0);
         while rem != 0 && places < 40 {
-            rem *= 10;
-            out.push(char::from(b'0' + (rem / self.d as u128) as u8));
-            rem %= self.d as u128;
+            let d = self.d as u128;
+            let (digit, next) = if let Some(scaled) = rem.checked_mul(10) {
+                ((scaled / d) as u8, scaled % d)
+            } else {
+                // Each sum is below 2*d, which fits u128 even when 10*rem does not.
+                let (mut digit, mut residue) = (0, 0);
+                for _ in 0..10 {
+                    residue += rem;
+                    if residue >= d {
+                        residue -= d;
+                        digit += 1;
+                    }
+                }
+                (digit, residue)
+            };
+            out.push(char::from(b'0' + digit));
+            rem = next;
             places += 1;
         }
         let sign = if self.n < 0 { "-" } else { "" };
@@ -195,6 +235,7 @@ impl Parser<'_> {
                 self.at += 3;
                 let m = self.unary()?;
                 match (v.whole(), m.whole()) {
+                    (Some(_), Some(-1)) => v = Q::int(0),
                     (Some(a), Some(b)) if b != 0 => v = Q::int(a.rem_euclid(b)),
                     _ => return Err("mod is defined here for whole numbers, the second not zero".to_string()),
                 }
@@ -211,11 +252,12 @@ impl Parser<'_> {
         let base = self.postfix()?;
         if self.eat("^") {
             let e = self.unary()?.whole().ok_or("a power is defined here for a whole-number exponent")?;
-            if e.abs() > 4096 {
+            let magnitude = e.unsigned_abs();
+            if magnitude > 4096 {
                 return Err(BEYOND.to_string());
             }
             let mut v = Q::int(1);
-            for _ in 0..e.abs() {
+            for _ in 0..magnitude {
                 v = v.mul(base)?;
                 self.step()?;
             }
@@ -300,8 +342,7 @@ impl Parser<'_> {
                             self.bound.pop();
                             end = self.at;
                         }
-                        let mut k = lo;
-                        while k <= hi {
+                        for k in lo..=hi {
                             self.at = body;
                             self.bound.push((var.clone(), Q::int(k)));
                             let term = self.sum()?;
@@ -309,7 +350,6 @@ impl Parser<'_> {
                             end = self.at;
                             acc = if name == "sum" { acc.add(term)? } else { acc.mul(term)? };
                             self.step()?;
-                            k += 1;
                         }
                         self.at = end;
                         if !self.eat(")") {
@@ -322,7 +362,14 @@ impl Parser<'_> {
                         match (a[0].whole(), a[1].whole()) {
                             (Some(x), Some(y)) => {
                                 let g = gcd(x, y);
-                                Q::int(if name == "gcd" { g } else if g == 0 { 0 } else { (x / g).checked_mul(y).ok_or(BEYOND)?.abs() })
+                                let magnitude = if name == "gcd" {
+                                    g
+                                } else if x == 0 || y == 0 {
+                                    0
+                                } else {
+                                    (x.unsigned_abs() / g).checked_mul(y.unsigned_abs()).ok_or(BEYOND)?
+                                };
+                                Q::int(i128::try_from(magnitude).map_err(|_| BEYOND)?)
                             }
                             _ => return Err(format!("{name} is defined here for whole numbers")),
                         }
@@ -380,6 +427,385 @@ fn exact(expression: &str) -> Result<Outcome, String> {
         return Err(format!("the expression does not end where it should: ...{}", p.rest()));
     }
     Ok(out)
+}
+
+// ---- mathematics.statement -------------------------------------------------------------------------------------
+
+/// Lean text, character by character: 0 for code, 1 for a comment, 2 for the inside of a string or character literal.
+fn lean_marks(c: &[char]) -> Result<Vec<u8>, String> {
+    let mut k = vec![0u8; c.len()];
+    let mut i = 0;
+    while i < c.len() {
+        if c[i] == '-' && c.get(i + 1) == Some(&'-') {
+            while i < c.len() && c[i] != '\n' {
+                k[i] = 1;
+                i += 1;
+            }
+        } else if c[i] == '/' && c.get(i + 1) == Some(&'-') {
+            // Block comments nest.
+            let (start, mut depth) = (i, 0u32);
+            loop {
+                if i >= c.len() {
+                    return Err(format!("a block comment opened at character {start} of the source is not closed; nothing was read"));
+                }
+                let two = c.get(i + 1).copied();
+                k[i] = 1;
+                if c[i] == '/' && two == Some('-') {
+                    depth += 1;
+                } else if c[i] == '-' && two == Some('/') {
+                    depth -= 1;
+                } else {
+                    i += 1;
+                    continue;
+                }
+                k[i + 1] = 1;
+                i += 2;
+                if depth == 0 {
+                    break;
+                }
+            }
+        } else if c[i] == '"' {
+            let start = i;
+            k[i] = 2;
+            i += 1;
+            loop {
+                if i >= c.len() {
+                    return Err(format!("a string opened at character {start} of the source is not closed; nothing was read"));
+                }
+                k[i] = 2;
+                if c[i] == '\\' && i + 1 < c.len() {
+                    k[i + 1] = 2;
+                    i += 2;
+                } else {
+                    i += 1;
+                    if c[i - 1] == '"' {
+                        break;
+                    }
+                }
+            }
+        } else if c[i] == '\'' && !(i > 0 && lean_wordy(c[i - 1])) {
+            // A character literal ('a', '"', '\n'); a prime that ends a name is not one.
+            let close = if c.get(i + 1) == Some(&'\\') { (i + 3..c.len().min(i + 12)).find(|j| c[*j] == '\'') } else if c.get(i + 2) == Some(&'\'') { Some(i + 2) } else { None };
+            match close {
+                Some(j) => {
+                    k[i..=j].fill(2);
+                    i = j + 1;
+                }
+                None => i += 1,
+            }
+        } else {
+            i += 1;
+        }
+    }
+    Ok(k)
+}
+
+fn lean_wordy(ch: char) -> bool {
+    ch.is_alphanumeric() || ch == '_' || ch == '\''
+}
+
+/// The word of code that starts at `i`, if one starts there.
+fn lean_word(c: &[char], k: &[u8], i: usize) -> Option<String> {
+    if k[i] != 0 || !lean_wordy(c[i]) || (i > 0 && k[i - 1] == 0 && (lean_wordy(c[i - 1]) || c[i - 1] == '.')) {
+        return None;
+    }
+    Some(c[i..].iter().zip(&k[i..]).take_while(|(ch, m)| **m == 0 && lean_wordy(**ch)).map(|(ch, _)| *ch).collect())
+}
+
+/// The name that follows a keyword: from the first character of code after `from` to white space, a bracket or a colon.
+fn lean_name(c: &[char], k: &[u8], from: usize) -> (usize, usize) {
+    let mut a = from;
+    while a < c.len() && (k[a] == 1 || (k[a] == 0 && c[a].is_whitespace())) {
+        a += 1;
+    }
+    let mut b = a;
+    while b < c.len() && k[b] == 0 && !c[b].is_whitespace() && !"({[:⦃⟨".contains(c[b]) {
+        b += 1;
+    }
+    if b > a && c[b - 1] == '.' && c.get(b) == Some(&'{') {
+        b -= 1; // universe parameters, name.{u}, belong to the statement
+    }
+    (a, b)
+}
+
+/// Comments removed, every run of white space outside a string made one space, the ends trimmed. Each
+/// character keeps whether it stood inside a string.
+fn lean_norm(c: &[char], k: &[u8], a: usize, b: usize) -> Vec<(char, bool)> {
+    let (mut out, mut gap) = (Vec::new(), false);
+    for i in a..b {
+        if k[i] == 1 || (k[i] == 0 && c[i].is_whitespace()) {
+            gap = true;
+            continue;
+        }
+        if gap && !out.is_empty() {
+            out.push((' ', false));
+        }
+        gap = false;
+        out.push((c[i], k[i] == 2));
+    }
+    out
+}
+
+const LEAN_OPEN: &str = "([{⟨⦃";
+const LEAN_CLOSE: &str = ")]}⟩⦄";
+
+fn lean_text(s: &[(char, bool)]) -> String {
+    s.iter().map(|x| x.0).collect()
+}
+
+/// For each character: is it code at bracket depth zero, and not itself a bracket?
+fn lean_top(s: &[(char, bool)]) -> Vec<bool> {
+    let mut depth = 0usize;
+    s.iter().map(|&(ch, quoted)| {
+        if quoted {
+            false
+        } else if LEAN_OPEN.contains(ch) {
+            depth += 1;
+            false
+        } else if LEAN_CLOSE.contains(ch) {
+            depth = depth.saturating_sub(1);
+            false
+        } else {
+            depth == 0
+        }
+    }).collect()
+}
+
+/// Without the spaces at its ends and without round brackets that enclose the whole of it.
+fn lean_bare(mut s: &[(char, bool)]) -> &[(char, bool)] {
+    loop {
+        while s.first() == Some(&(' ', false)) {
+            s = &s[1..];
+        }
+        while s.last() == Some(&(' ', false)) {
+            s = &s[..s.len() - 1];
+        }
+        if s.len() < 2 || s[0] != ('(', false) || s[s.len() - 1] != (')', false) {
+            return s;
+        }
+        // The first bracket must be the one the last closes.
+        let mut depth = 0usize;
+        for (i, &(ch, quoted)) in s.iter().enumerate() {
+            if quoted {
+                continue;
+            }
+            if LEAN_OPEN.contains(ch) {
+                depth += 1;
+            } else if LEAN_CLOSE.contains(ch) {
+                depth = depth.saturating_sub(1);
+                if depth == 0 && i + 1 != s.len() {
+                    return s;
+                }
+            }
+        }
+        s = &s[1..s.len() - 1];
+    }
+}
+
+/// The places at depth zero where `s` divides at a colon (0), at a comma or an arrow (1), or at an arrow only (2): each as (start, width).
+fn lean_cuts(s: &[(char, bool)], what: u8) -> Vec<(usize, usize)> {
+    let top = lean_top(s);
+    let at = |i: usize| s.get(i).filter(|x| !x.1).map(|x| x.0);
+    let mut out = Vec::new();
+    for i in (0..s.len()).filter(|i| top[*i]) {
+        let before = if i > 0 { at(i - 1) } else { None };
+        match s[i].0 {
+            ':' if what == 0 && before != Some(':') && !matches!(at(i + 1), Some(':') | Some('=')) => out.push((i, 1)),
+            ',' if what == 1 => out.push((i, 1)),
+            '→' if what >= 1 => out.push((i, 1)),
+            '-' if what >= 1 && at(i + 1) == Some('>') && before != Some('<') => out.push((i, 2)),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Is this proposition true by its form alone: True, or X = X, X ↔ X, X ≤ X with both sides the same text?
+fn lean_trivial(s: &[(char, bool)]) -> Option<String> {
+    let s = lean_bare(s);
+    if lean_text(s) == "True" {
+        return Some("it is True".to_string());
+    }
+    let top = lean_top(s);
+    let at = |i: usize| s.get(i).filter(|x| !x.1).map(|x| x.0);
+    for i in (0..s.len()).filter(|i| top[*i]) {
+        // An equation or an inequality binds tighter than the connectives; a side that has one at depth zero is not a side.
+        let (width, looser) = match s[i].0 {
+            '↔' => (1, ","),
+            '<' if at(i + 1) == Some('-') && at(i + 2) == Some('>') => (3, ","),
+            '≤' => (1, ",∧∨→↔¬∀∃"),
+            '<' if at(i + 1) == Some('=') => (2, ",∧∨→↔¬∀∃"),
+            '=' if !(i > 0 && at(i - 1).map(|p| "<>!:=".contains(p)).unwrap_or(false)) && !matches!(at(i + 1), Some('>') | Some('=')) => (1, ",∧∨→↔¬∀∃"),
+            _ => continue,
+        };
+        let (left, right) = (lean_bare(&s[..i]), lean_bare(&s[i + width..]));
+        let plain = |side: &[(char, bool)]| !lean_top(side).iter().zip(side).any(|(t, x)| *t && looser.contains(x.0)) && lean_cuts(side, 2).is_empty() && !lean_text(side).contains("/\\") && !lean_text(side).contains("\\/");
+        if !left.is_empty() && lean_text(left) == lean_text(right) && plain(left) && plain(right) {
+            return Some(format!("it is {} {} {}, the two sides the same text", lean_text(left), lean_text(&s[i..i + width]), lean_text(right)));
+        }
+    }
+    None
+}
+
+/// Words at the start of a line that begin something other than the proof of the declaration before them.
+const LEAN_BEGINS: [&str; 24] = ["theorem", "lemma", "def", "example", "instance", "structure", "inductive", "class", "abbrev", "axiom", "opaque", "namespace", "section", "end", "mutual", "macro", "syntax", "notation", "elab", "private", "protected", "noncomputable", "universe", "variable"];
+
+fn statement(source: &str, name: &str, pinned: Option<&str>) -> Result<Outcome, String> {
+    if source.len() > 4_000_000 {
+        return Err("the source is longer than four million bytes; nothing was read".to_string());
+    }
+    let name = name.trim();
+    if name.is_empty() || name.chars().any(char::is_whitespace) {
+        return Err("theorem is one name, such as energy_conserved or Chain.energy_conserved".to_string());
+    }
+    let c: Vec<char> = source.chars().collect();
+    let k = lean_marks(&c)?;
+    // One pass: every theorem and lemma with its full name, and every place where a declaration begins.
+    let mut spaces: Vec<Option<String>> = Vec::new();
+    let mut declared: Vec<(String, usize)> = Vec::new();
+    let mut begins: Vec<usize> = Vec::new();
+    let (mut i, mut fresh) = (0, true);
+    while i < c.len() {
+        let first = fresh;
+        fresh = c[i] == '\n' || (fresh && (c[i] == ' ' || c[i] == '\t'));
+        if k[i] != 0 {
+            i += 1;
+            continue;
+        }
+        if first && (c[i] == '#' || (c[i] == '@' && c.get(i + 1) == Some(&'['))) {
+            begins.push(i);
+        }
+        let Some(word) = lean_word(&c, &k, i) else {
+            i += 1;
+            continue;
+        };
+        let after = i + word.chars().count();
+        match word.as_str() {
+            "theorem" | "lemma" => {
+                begins.push(i);
+                let (a, b) = lean_name(&c, &k, after);
+                if b > a {
+                    let own: String = c[a..b].iter().collect();
+                    declared.push((spaces.iter().flatten().map(|s| s.as_str()).chain([own.as_str()]).collect::<Vec<_>>().join("."), b));
+                }
+            }
+            "namespace" if first => {
+                begins.push(i);
+                let (a, b) = lean_name(&c, &k, after);
+                spaces.push(Some(c[a..b].iter().collect()));
+            }
+            "section" if first => {
+                begins.push(i);
+                spaces.push(None);
+            }
+            "end" if first => {
+                begins.push(i);
+                spaces.pop();
+            }
+            w if first && LEAN_BEGINS.contains(&w) => begins.push(i),
+            _ => {}
+        }
+        i = after;
+    }
+    // The name as given, or the name as given inside the namespaces it was declared in.
+    let mut found: Vec<&(String, usize)> = declared.iter().filter(|d| d.0 == name).collect();
+    if found.is_empty() {
+        found = declared.iter().filter(|d| d.0.ends_with(&format!(".{name}"))).collect();
+    }
+    let (full, from) = match found.as_slice() {
+        [one] => (one.0.as_str(), one.1),
+        [] => return Err(format!("no theorem or lemma named {name} is in the source ({} declared{}); nothing was compared", declared.len(), declared.iter().take(12).map(|d| format!(" {}", d.0)).collect::<String>())),
+        many => return Err(format!("{name} names {} declarations in the source ({}); nothing was compared", many.len(), many.iter().map(|d| d.0.as_str()).collect::<Vec<_>>().join(", "))),
+    };
+    let end = begins.iter().copied().find(|b| *b >= from).unwrap_or(c.len());
+    // The signature ends at the first := at bracket depth zero.
+    let (mut depth, mut bar, mut cut) = (0usize, false, None);
+    for j in from..end {
+        if k[j] != 0 {
+            continue;
+        }
+        if LEAN_OPEN.contains(c[j]) {
+            depth += 1;
+        } else if LEAN_CLOSE.contains(c[j]) {
+            depth = depth.checked_sub(1).ok_or(format!("a bracket closes that was not opened, in the statement of {full}; nothing was compared"))?;
+        } else if depth == 0 {
+            let next = c.get(j + 1).filter(|_| k.get(j + 1) == Some(&0)).copied();
+            if c[j] == ':' && next == Some('=') {
+                cut = Some(j);
+                break;
+            }
+            bar |= c[j] == '|';
+            if let Some(w) = lean_word(&c, &k, j).filter(|w| ["let", "have", "letI", "haveI", "let_fun"].contains(&w.as_str())) {
+                return Err(format!("the statement of {full} has a local binding ({w}) outside brackets, and its := would be taken for the end of the signature; this instrument does not read such a statement, and nothing was pinned or compared"));
+            }
+            if lean_word(&c, &k, j).as_deref() == Some("where") {
+                return Err(format!("{full} is given with where and no := ends its signature; this instrument reads a statement that ends at :="));
+            }
+            if bar && c[j] == '=' && next == Some('>') {
+                return Err(format!("{full} is given by pattern-matching alternatives (|) and no := ends its signature; this instrument reads a statement that ends at :="));
+            }
+        }
+    }
+    let cut = cut.ok_or(format!("no := at bracket depth zero ends the signature of {full} before the next declaration; nothing was compared"))?;
+    let stated = lean_norm(&c, &k, from, cut);
+    let colon = lean_cuts(&stated, 0).last().map(|x| x.0).ok_or(format!("the statement of {full} has no colon at bracket depth zero, and so no conclusion; nothing was compared"))?;
+    let conclusion = lean_bare(&stated[colon + 1..]);
+    let got = sha256_hex(lean_text(&stated).as_bytes());
+    let mut fired = 0;
+    let mut probe = |what: &str, found: Option<String>, clear: String| {
+        fired += found.is_some() as u32;
+        format!("\nprobe {what}: {}", found.map(|f| format!("FIRES: {f}")).unwrap_or(format!("clear: {clear}")))
+    };
+    // (a) sorry or admit, anywhere from the name to the next declaration, outside comments and strings.
+    let gap = (from..end).find_map(|j| lean_word(&c, &k, j).filter(|w| ["sorry", "admit", "sorryAx"].contains(&w.as_str()))).or_else(|| {
+        // The reserved axiom written with a qualifier (_root_.sorryAx): a word that follows a dot is not seen above.
+        let want: Vec<char> = "sorryAx".chars().collect();
+        (from..end.saturating_sub(want.len() - 1)).find(|&j| {
+            k[j] == 0 && j > 0 && c[j - 1] == '.' && k[j - 1] == 0
+                && c[j..j + want.len()] == want[..] && k[j..j + want.len()].iter().all(|m| *m == 0)
+                && !c.get(j + want.len()).is_some_and(|ch| lean_wordy(*ch) && k[j + want.len()] == 0)
+        }).map(|_| "sorryAx (qualified)".to_string())
+    });
+    let mut lines = probe("(a), a proof left open", gap.map(|w| format!("{w} stands in the statement or proof of {full}")), "no sorry and no admit between the name and the next declaration".to_string());
+    // (b) the conclusion, and what remains of it after its last comma or arrow at depth zero.
+    let last = if lean_top(conclusion).iter().zip(conclusion).any(|(t, x)| *t && x.0 == '↔') { None } else { lean_cuts(conclusion, 1).last().map(|x| &conclusion[x.0 + x.1..]) };
+    let trivial = lean_trivial(conclusion).or_else(|| last.and_then(lean_trivial).map(|t| format!("after its last comma or arrow {t}")));
+    lines += &probe("(b), a conclusion true by its form", trivial, format!("the conclusion is {}", lean_text(conclusion)));
+    // (c) a hypothesis that is False: a binder (h : False), or False before an arrow of the conclusion.
+    let mut absurd = None;
+    let (mut depth, mut open) = (0usize, 0);
+    for (j, x) in stated.iter().enumerate().filter(|(_, x)| !x.1) {
+        if LEAN_OPEN.contains(x.0) {
+            if depth == 0 {
+                open = j;
+            }
+            depth += 1;
+        } else if LEAN_CLOSE.contains(x.0) && depth > 0 {
+            depth -= 1;
+            let inner = &stated[open + 1..j];
+            if depth == 0 && absurd.is_none() && lean_cuts(inner, 0).last().map(|x| lean_text(lean_bare(&inner[x.0 + 1..])) == "False").unwrap_or(false) {
+                absurd = Some(format!("the binder {} assumes False", lean_text(&stated[open..=j])));
+            }
+        }
+    }
+    let arrows = lean_cuts(conclusion, 2);
+    let mut at = 0;
+    for (a, w) in &arrows {
+        if lean_text(lean_bare(&conclusion[at..*a])) == "False" && absurd.is_none() {
+            absurd = Some("False stands before an arrow of the conclusion".to_string());
+        }
+        at = a + w;
+    }
+    lines += &probe("(c), a hypothesis that is False", absurd, "no binder is False".to_string());
+    let (matches, pin) = match pinned {
+        Some(p) => {
+            let m = p.trim().eq_ignore_ascii_case(&got);
+            (m, format!("{}: the digest pinned is {}", if m { "THE PINNED STATEMENT" } else { "NOT THE PINNED STATEMENT" }, p.trim()))
+        }
+        // No pin: the statement was read and probed, and its identity was compared with nothing. That is not a check that passed.
+        None => (false, format!("NOT PINNED: no digest was given, so the statement was compared with nothing and this result does not hold; the digest to pin for this statement is {got}")),
+    };
+    Ok(Outcome { holds: matches && fired == 0, text: format!("{full}\nstatement: {}\nSHA-256 of the statement, comments removed and white space collapsed: {got}\n{pin}{lines}\nThis instrument read text. It did not run Lean: whether the proof is accepted, and whether the statement says what is meant, it does not know.", lean_text(&stated)) })
 }
 
 // ---- statistics.grim, statistics.percent -----------------------------------------------------------------------
@@ -732,6 +1158,191 @@ mod tests {
         }
     }
 
+    const LEAN: &str = "namespace Chain\n/-- Not this one: theorem foo : True := trivial /- nested -/ still a comment := -/\ntheorem foo_bar (n : Nat) : n + 0 = n := by simp\n\ntheorem foo (c₀ c₁ : ℝ) (h : 0 < c₀) (x : Nat := 3) : c₀ * c₁ ≤ c₁ * c₀ ∧ ∀ ε > 0, ∃ δ, δ < ε := by\n  constructor\n  · exact le_of_eq (mul_comm _ _)\n  · intro ε hε; exact ⟨ε / 2, by linarith⟩\nend Chain\n";
+    const STATED: &str = "(c₀ c₁ : ℝ) (h : 0 < c₀) (x : Nat := 3) : c₀ * c₁ ≤ c₁ * c₀ ∧ ∀ ε > 0, ∃ δ, δ < ε";
+
+    #[test]
+    fn a_lean_statement_review_findings_of_director_g() {
+        let run = |json: &str| run("mathematics.statement", &v(json), &[]);
+        // 1. A let outside brackets in the conclusion: refused, for both the honest and the weakened copy.
+        for src in ["theorem t (n : Nat) : let m := n + 1; n < m := Nat.lt_succ_self n", "theorem t (n : Nat) : let m := n + 1; m = m := rfl", "theorem t (n : Nat) : have h : n = n := rfl; n = n := rfl"] {
+            let e = run(&format!(r#"{{"source":"{src}","theorem":"t"}}"#)).err().expect("a local binding outside brackets is refused");
+            assert!(e.contains("local binding"), "{e}");
+        }
+        // A let inside brackets does not own the separator and is read.
+        let o = run(r#"{"source":"theorem t (n : Nat) : (let m := n + 1; n < m) := Nat.lt_succ_self n","theorem":"t"}"#).unwrap();
+        assert!(o.text.contains("statement: (n : Nat) : (let m := n + 1; n < m)\n") && o.text.matches("clear:").count() == 3, "{}", o.text);
+        // 2. The reserved axiom with a qualifier fires probe (a); a field that merely ends in other letters does not.
+        let o = run(r#"{"source":"theorem t (n : Nat) : n < n+1 := _root_.sorryAx _ false","theorem":"t"}"#).unwrap();
+        assert!(!o.holds && o.text.contains("probe (a), a proof left open: FIRES"), "{}", o.text);
+        let o = run(r#"{"source":"theorem t (n : Nat) : n < n+1 := x.sorryAxis n","theorem":"t"}"#).unwrap();
+        assert!(o.text.matches("clear:").count() == 3, "{}", o.text);
+        // 3. A pinned that is supplied and is not a string is an error; null and absence are no pin.
+        assert!(run(r#"{"source":"theorem t (n : Nat) : n < n+1 := Nat.lt_succ_self n","theorem":"t","pinned":1234}"#).is_err());
+        let o = run(r#"{"source":"theorem t (n : Nat) : n < n+1 := Nat.lt_succ_self n","theorem":"t","pinned":null}"#).unwrap();
+        assert!(!o.holds && o.text.contains("NOT PINNED"), "{}", o.text);
+    }
+
+    #[test]
+    fn a_lean_statement_holds_only_against_a_pin() {
+        // What each case measures is said beside it. Lean is never run here.
+        let src = "theorem t (a b : Nat) : a + b = b + a := by omega";
+        let call = |extra: &str| run("mathematics.statement", &v(&format!(r#"{{"source":"{src}","theorem":"t"{extra}}}"#)), &[]);
+        let pin = sha256_hex("(a b : Nat) : a + b = b + a".as_bytes());
+        // No pin: the statement is read and probed, nothing is compared, and the result does not hold. The digest to pin is returned.
+        let o = call("").unwrap();
+        assert!(!o.holds && o.text.contains("NOT PINNED") && o.text.contains(&pin) && o.text.matches("clear:").count() == 3, "{}", o.text);
+        // The matching pin: identity compared and equal, no probe fires. This and nothing else holds.
+        let o = call(&format!(r#","pinned":"{pin}""#)).unwrap();
+        assert!(o.holds && o.text.contains("\nTHE PINNED STATEMENT"), "{}", o.text);
+        // A well-formed pin of another statement: identity compared and different.
+        let other = sha256_hex(b"(a b : Nat) : a + b = a + b");
+        let o = call(&format!(r#","pinned":"{other}""#)).unwrap();
+        assert!(!o.holds && o.text.contains("NOT THE PINNED STATEMENT"), "{}", o.text);
+        // A pin that is not a digest is refused, whatever it is: too short, too long, not hexadecimal, not text.
+        let long = format!("{pin}0");
+        for bad in [r#""""#, r#""00""#, &format!(r#""{}""#, &pin[..63]), &format!(r#""{long}""#), &format!(r#""{}""#, pin.replace(|ch: char| ch.is_ascii_digit(), "g")), "1234", "true", "[]"] {
+            let e = call(&format!(r#","pinned":{bad}"#)).err().unwrap_or_else(|| panic!("{bad} must be refused"));
+            assert!(e.contains("64 hexadecimal digits") && e.contains("nothing was compared"), "{bad}: {e}");
+        }
+        // With the right pin, a probe that fires still makes it not hold: an open proof, and a conclusion true by its form.
+        let open = "theorem t (a b : Nat) : a + b = b + a := by sorry";
+        let o = run("mathematics.statement", &v(&format!(r#"{{"source":"{open}","theorem":"t","pinned":"{pin}"}}"#)), &[]).unwrap();
+        assert!(!o.holds && o.text.contains("THE PINNED STATEMENT") && o.text.contains("probe (a), a proof left open: FIRES"), "{}", o.text);
+        let trivial = "theorem t (a b : Nat) : a + b = a + b := rfl";
+        let o = run("mathematics.statement", &v(&format!(r#"{{"source":"{trivial}","theorem":"t","pinned":"{other}"}}"#)), &[]).unwrap();
+        assert!(!o.holds && o.text.contains("\nTHE PINNED STATEMENT") && o.text.contains("probe (b)") && o.text.contains("FIRES"), "{}", o.text);
+        // A statement that needs a real proof: with its pin it holds, and the text says Lean was not run.
+        let o = call(&format!(r#","pinned":"{}""#, pin.to_uppercase())).unwrap();
+        assert!(o.holds && o.text.contains("It did not run Lean"), "{}", o.text);
+    }
+
+    #[test]
+    fn a_lean_statement_is_the_pinned_one_or_it_is_not() {
+        let pin = sha256_hex(STATED.as_bytes());
+        // Not pinned: the statement and the digest to pin. A := in a default argument does not end it; the statement is not ASCII.
+        let o = statement(LEAN, "foo", None).unwrap();
+        assert!(!o.holds && o.text.starts_with("Chain.foo\n") && o.text.contains(&format!("statement: {STATED}\n")) && o.text.contains("NOT PINNED: no digest was given") && o.text.contains(&format!("the digest to pin for this statement is {pin}")), "{}", o.text);
+        assert_eq!(o.text.matches("clear:").count(), 3, "{}", o.text);
+        // Pinned and matching, the digest in either case, the name with or without its namespace.
+        let o = statement(LEAN, "Chain.foo", Some(&pin.to_uppercase())).unwrap();
+        assert!(o.holds && o.text.contains("\nTHE PINNED STATEMENT"), "{}", o.text);
+        // Other white space and inserted comments, nested ones among them: the same digest.
+        let spaced = LEAN.replace("(h : 0 < c₀) ", "\n    (h :   0 <\tc₀) -- positive := here\n  /- a /- nested -/ comment : True := -/ ");
+        assert!(spaced != LEAN);
+        let o = statement(&spaced, "foo", Some(&pin)).unwrap();
+        assert!(o.holds && o.text.contains(&pin), "{}", o.text);
+        // A changed hypothesis: another digest, and it does not hold against the old pin.
+        let o = statement(&LEAN.replace("0 < c₀", "0 ≤ c₀"), "foo", Some(&pin)).unwrap();
+        assert!(!o.holds && o.text.contains("NOT THE PINNED STATEMENT") && o.text.contains(&sha256_hex(STATED.replace("0 < c₀", "0 ≤ c₀").as_bytes())), "{}", o.text);
+        assert_eq!(o.text.matches("clear:").count(), 3, "only the pin fails: {}", o.text);
+        // A name that begins another name: each is found, and only itself.
+        let o = statement(LEAN, "foo_bar", None).unwrap();
+        assert!(!o.holds && o.text.contains("statement: (n : Nat) : n + 0 = n\n") && o.text.matches("clear:").count() == 3, "{}", o.text);
+        // White space inside a string is the statement's own, and a string may hold anything.
+        let (one, two) = ("theorem s (h : t = \"a :=  -- b\") : t ≠ \"\" := by simp [h]", "theorem s (h : t = \"a := -- b\") : t ≠ \"\" := by simp [h]");
+        let (a, b) = (statement(one, "s", None).unwrap(), statement(two, "s", None).unwrap());
+        assert!(!a.holds && !b.holds && a.text.contains("statement: (h : t = \"a :=  -- b\") : t ≠ \"\"\n") && a.text.lines().nth(2) != b.text.lines().nth(2), "{}", a.text);
+        // Through the list, as a caller reaches it.
+        let o = go("mathematics.statement", r#"{"source":"theorem t (a b : Nat) :\n  a + b = b + a := by\n  omega","theorem":"t"}"#);
+        assert!(!o.holds && o.text.contains("statement: (a b : Nat) : a + b = b + a\n") && o.text.contains("NOT PINNED"), "{}", o.text);
+        assert!(!go("mathematics.statement", &format!(r#"{{"source":"theorem t (a b : Nat) : a + b = b + a := by omega","theorem":"t","pinned":"{pin}"}}"#)).holds);
+    }
+
+    #[test]
+    fn a_lean_statement_true_by_its_form_or_left_open_is_said_to_be() {
+        let fires = |source: &str, probe: &str| {
+            let o = statement(source, "foo", None).unwrap();
+            assert!(!o.holds && o.text.contains(&format!("probe ({probe}")) && o.text.matches("FIRES").count() == 1 && o.text.lines().any(|l| l.starts_with(&format!("probe ({probe})")) && l.contains("FIRES")), "{source}: {}", o.text);
+        };
+        // The same name, the statement weakened until it says nothing.
+        fires("theorem foo (c0 : Nat) (h : 0 < c0) : c0 = c0 := rfl", "b");
+        fires("theorem foo (c0 : Nat) : ∀ x : Nat, 0 < x → (c0 + x = c0 + x) := fun _ _ => rfl", "b");
+        fires("theorem foo (p : Prop) : p ↔ p := Iff.rfl", "b");
+        fires("theorem foo (n : Nat) : n ≤ n := Nat.le_refl n", "b");
+        fires("theorem foo (n : Nat) (h : 0 < n) : True := trivial", "b");
+        // What only looks like it: the two sides are not the sides.
+        for honest in ["theorem foo (a b : Nat) : a = b ∧ b = a ∧ b := by omega", "theorem foo (a b : Nat) (h : a = b) : b = a := h.symm", "theorem foo (a : Nat) : a + 1 ≥ a := by omega"] {
+            let o = statement(honest, "foo", None).unwrap();
+            assert!(o.text.matches("clear:").count() == 3 && !o.text.contains("FIRES"), "{honest}: {}", o.text);
+        }
+        // A proof left open, and what is not one: the word in a comment, in a longer name, in the next declaration.
+        fires("theorem foo (a b : Nat) : a + b = b + a := by\n  sorry", "a");
+        fires("lemma foo (a b : Nat) : a + b = b + a := by\n  cases a\n  · admit\n  · omega", "a");
+        let o = statement("theorem foo (a b : Nat) : a + b = b + a := by\n  -- sorry, not yet /- sorry -/\n  exact sorry_free a b\n\ntheorem next : 1 = 2 := sorry", "foo", None).unwrap();
+        assert!(o.text.matches("clear:").count() == 3 && !o.text.contains("FIRES"), "{}", o.text);
+        // A hypothesis nothing satisfies.
+        fires("theorem foo (a b : Nat) (h : False) : a + b = 7 := h.elim", "c");
+        fires("theorem foo (a b : Nat) : False → a + b = 7 := False.elim", "c");
+    }
+
+    #[test]
+    fn a_lean_statement_that_cannot_be_read_is_refused() {
+        let refused = |source: &str, name: &str, why: &str| match statement(source, name, None) {
+            Err(e) => assert!(e.contains(why), "{name}: {e}"),
+            Ok(o) => panic!("{name} in {source:?} must be refused, not answered: {}", o.text),
+        };
+        refused(LEAN, "fo", "no theorem or lemma named fo ");
+        refused(LEAN, "Other.foo", "no theorem or lemma named Other.foo");
+        refused(LEAN, "", "one name");
+        refused("", "foo", "(0 declared)");
+        refused("theorem foo : 1 + 1 = 2 := rfl\nnamespace A\ntheorem foo : 2 + 2 = 4 := rfl\nend A\nnamespace B\ntheorem foo : 2 + 2 = 4 := rfl\nend B", "A.fo", "no theorem");
+        refused("namespace A\ntheorem foo : 2 + 2 = 4 := rfl\nend A\nnamespace B\ntheorem foo : 2 + 2 = 4 := rfl\nend B", "foo", "names 2 declarations in the source (A.foo, B.foo)");
+        refused("theorem foo : ∀ n : Nat, n + 0 = n\n  | 0 => rfl\n  | n + 1 => rfl", "foo", "pattern-matching");
+        refused("theorem foo : Inhabited Nat where\n  default := 0", "foo", "where");
+        refused("theorem foo (a : Nat) : a + 0 = a\n\ndef next := 3", "foo", "no := at bracket depth zero");
+        refused("theorem foo (a : Nat)) : a + 0 = a := rfl", "foo", "a bracket closes");
+        refused("theorem foo : 2 + 2 = 4 := rfl /- never closed /- inner -/", "foo", "block comment");
+        refused("theorem foo (h : s = \"open) : 2 + 2 = 4 := rfl", "foo", "string");
+        // Declared once at the root and once in a namespace: the name as given is the one at the root.
+        assert!(statement("theorem foo : 1 + 1 = 2 := rfl\nnamespace A\ntheorem foo : 2 + 2 = 4 := rfl\nend A", "foo", None).unwrap().text.contains("statement: : 1 + 1 = 2\n"));
+        assert!(run("mathematics.statement", &v(r#"{"source":"theorem foo : 2 + 2 = 4 := rfl"}"#), &[]).is_err(), "a name is needed");
+    }
+
+    #[test]
+    fn a_lean_statement_of_any_text_is_answered_or_refused_and_never_a_panic() {
+        // Fixed seed: 20000 texts made of the pieces the reader treats specially, each cut short at a random place.
+        let pieces = ["theorem foo", "lemma foo", " ", "\n", ":=", ":", "(", ")", "⟨", "⟩", "{", "}", "[", "]", "/-", "-/", "--", "\"", "\\", "'", "|", "=>", "where", "sorry", "False", "True", "=", "↔", "≤", "<->", "→", ",", "x", "namespace A", "end", "c₀", ".", "@[", "#"];
+        let (mut seed, mut answered, mut refused) = (20261114u64, 0, 0);
+        for _ in 0..20000 {
+            let mut text = String::from("theorem foo ");
+            for _ in 0..24 {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                text.push_str(pieces[(seed >> 33) as usize % pieces.len()]);
+            }
+            match statement(&text, "foo", Some("00")) {
+                Ok(o) => answered += (!o.holds) as u32,
+                Err(e) => refused += (!e.is_empty()) as u32,
+            }
+        }
+        assert_eq!(answered + refused, 20000, "every text is answered as not the pinned statement, or refused with a reason");
+        assert!(answered > 0 && refused > 0, "{answered} answered, {refused} refused");
+    }
+
+    #[test]
+    fn exact_signed_boundaries_answer_or_refuse_without_overflow() {
+        for expression in [
+            "gcd((-2)^127,0) < 0", "gcd(0,(-2)^127)", "lcm((-2)^127,1)",
+            "2^((-2)^127)",
+        ] {
+            assert_eq!(exact(expression).err().as_deref(), Some(BEYOND), "{expression}");
+        }
+        for expression in [
+            "gcd((-2)^127,2^126) = 2^126", "lcm((-2)^127,0) = 0",
+            "((-2)^127) mod (-1) = 0", "((-2)^127) mod 3 = 1",
+            "sum(k,(2^126-1)*2+1,(2^126-1)*2+1,1) = 1",
+        ] {
+            assert!(exact(expression).unwrap().holds, "{expression}");
+        }
+        assert_eq!(Q::new(i128::MIN, i128::MIN).unwrap(), Q::int(1));
+        assert_eq!(Q::new(0, i128::MIN).unwrap(), Q::int(0));
+        assert_eq!(Q::new(1, i128::MIN).unwrap_err(), BEYOND);
+        assert_eq!(exact("1-1/(2^126)").unwrap().text,
+                   "1-1/(2^126)\n= 85070591730234615865843651857942052863/85070591730234615865843651857942052864 (about 0.999999999999...)");
+        let terminating = Q::new(-(7 * 10i128.pow(37) + 1), 10i128.pow(38)).unwrap();
+        assert!(terminating.show().ends_with("(exactly -0.70000000000000000000000000000000000001)"));
+    }
+
     #[test]
     fn reported_statistics_are_tested_against_whole_counts() {
         assert!(go("statistics.grim", r#"{"mean":"3.48","n":25}"#).holds, "87 / 25 = 3.48");
@@ -830,7 +1441,7 @@ mod tests {
     #[test]
     fn an_instrument_that_does_not_exist_is_not_invented() {
         assert!(run("mathematics.prove", &v("{}"), &[]).is_err());
-        assert_eq!(LIST.len(), 8);
+        assert_eq!(LIST.len(), 10);
         for (name, _) in LIST {
             assert!(!matches!(run(name, &v("{}"), &[]), Err(e) if e.starts_with("there is no instrument")), "{name} is listed and must exist");
         }

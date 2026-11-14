@@ -14,6 +14,8 @@ mod dev;
 mod exec;
 mod font;
 mod mem;
+#[cfg(feature = "virtio-register-probe")]
+mod register_wire;
 mod session;
 mod sys;
 mod ui;
@@ -468,6 +470,178 @@ fn processes(rec: &mut Record, measured: &str, failed: &mut u32) {
     check("a task is not DONE on a claim: completion that names no result in the record is refused", unrecorded, failed);
 }
 
+/// A program of `boot.s` behind the smallest ELF header the loader accepts: position-independent, one segment
+/// that is readable and executable, the entry at the program's first byte.
+fn elf_of(name: &str) -> Option<alloc::vec::Vec<u8>> {
+    let code = arch::user_program(name)?;
+    let mut f = alloc::vec![0u8; 120];
+    f[..7].copy_from_slice(&[0x7f, b'E', b'L', b'F', 2, 1, 1]);
+    let total = (120 + code.len()) as u64;
+    for (at, value, width) in [(16usize, 3u64, 2usize), (18, 62, 2), (20, 1, 4), (24, 120, 8), (32, 64, 8), (52, 64, 2), (54, 56, 2), (56, 1, 2),
+                               (64, 1, 4), (68, 5, 4), (96, total, 8), (104, total, 8), (112, 4096, 8)] {
+        f[at..at + width].copy_from_slice(&value.to_le_bytes()[..width]);
+    }
+    f.extend_from_slice(code);
+    Some(f)
+}
+
+/// Scan codes: Ctrl, Alt and Delete pressed in that order and then released.
+const STOP_KEYS: [u8; 6] = [0x1D, 0x38, 0x53, 0xD3, 0xB8, 0x9D];
+
+/// Let whatever is left of a key script reach the controller and the keyboard's handler, then forget the keys and
+/// any stop they asked for. Called and left with interrupts off. False if the script did not finish.
+fn script_drain() -> bool {
+    arch::interrupts_on();
+    let mut done = false;
+    for _ in 0..200 {
+        if dev::keyboard_script_left() == 0 {
+            done = true;
+            break;
+        }
+        arch::wait_until(arch::ticks() + 1);
+    }
+    arch::wait_until(arch::ticks() + 2); // the last byte's interrupt
+    arch::interrupts_off();
+    dev::keys_forget();
+    let _ = dev::stop_requested();
+    done
+}
+
+/// The asynchronous side, observed: sleeping, waiting for a key, and the stop key arriving while a program runs,
+/// sleeps or waits. Keys arrive through the keyboard's interrupt (see `dev::keyboard_script`). Interrupts are off
+/// when this is called and when it returns. None of these runs is a task in the kernel's register.
+fn asynchronous(failed: &mut u32) {
+    use user::{End, Grants, Program, Start, World};
+    let world = || World { files: alloc::vec::Vec::new(), store: alloc::vec::Vec::new(), epoch_at_start: 0, unanswered: alloc::vec::Vec::new() };
+    let grants = Grants { console: true, keys: true, ..Grants::default() };
+    let loaded = |name: &str, label: &str, keys: &[u8], after: u64| -> (Result<user::Process, &'static str>, usize, usize, u64) {
+        let free0 = user::frames_free();
+        let result = match elf_of(name) {
+            Some(image) => {
+                let t0 = arch::ticks();
+                // `run_program` forgets a stop asked for earlier, so the script is set before it and begins `after` ticks from now.
+                dev::keyboard_script(t0 + after, keys);
+                let (r, _) = user::run_program(&Program { name: label, image: &image, args: &[label], grants, budget: u64::MAX }, world());
+                (r, arch::ticks() - t0)
+            }
+            None => (Err("no such test program"), 0),
+        };
+        let drained = script_drain();
+        (if drained { result.0 } else { Err("the key script did not finish") }, free0, user::frames_free(), result.1)
+    };
+
+    // Independent rollback controls: an admitted earlier group member never enters user mode.
+    for (label, group) in [("single-unknown", alloc::vec!["absent-test-member"]),
+                            ("valid-then-unknown", alloc::vec!["hog", "absent-test-member"]),
+                            ("capacity-plus-one", alloc::vec!["hog"; 17])] {
+        let specifications: alloc::vec::Vec<_> = group.iter().map(|&name| Start { name, console: true, budget: 2 }).collect();
+        let before = user::frames_free();
+        let rejected = user::run(&specifications).is_none();
+        let after = user::frames_free();
+        say!("  note refused group {}: refused {}, free frames {} before and {} after", label, rejected, before, after);
+        check("rejected batch returns the frames of every member", rejected && before == after, failed);
+    }
+
+    // 1. The stop key while a program runs. The program never yields and never ends; its budget is far away.
+    dev::keyboard_script(arch::ticks() + 5, &STOP_KEYS);
+    let t0 = arch::ticks();
+    let procs = user::run(&[Start { name: "hog", console: true, budget: 100_000 }]);
+    let took = arch::ticks() - t0;
+    let drained = script_drain();
+    let (end, settled) = procs.as_ref().and_then(|p| p.first()).map(|p| (p.end, p.settled)).unwrap_or((None, None));
+    say!("  note stop key while running: end {:?}, task {:?}, after {} timer periods", end, settled, took);
+    check("the stop key ends a program that never yields, long before its budget", drained && end == Some(End::Stopped) && took < 100, failed);
+    check("a program the person stopped is STOPPED in the kernel's task table, as it is in what the kernel observed of it", settled == Some(Task::Stopped), failed);
+
+    // 2. Sleep and wake. 50 ms is 50,000,000 ns; a tick is 999,847 ns; the deadline is the tick of the call plus
+    // ceil(50,000,000 / 999,847) = 51. The processor idles through exactly those 51 ticks if the program is woken at its tick.
+    let (r, free0, free1, took) = loaded("sleeper", "sleeper", &[], 0);
+    let (end, idle) = r.as_ref().map(|p| (p.end, p.idle)).unwrap_or((None, 0));
+    say!("  note sleep of 50 ms: {:?}, end {:?}, idle {} of {} timer periods", r.as_ref().err(), end, idle, took);
+    check("a program that sleeps 50 ms is woken at its millisecond: the processor idled 51 timer periods, no fewer and no more, and the sleep answered 0",
+          end == Some(End::Exited(0)) && idle == 51 && took >= 51 && free0 == free1, failed);
+
+    // 3. A key arrives while the program waits in a read of the keyboard: Shift (which it passes over), then the key it wants.
+    // Eight calls: open; then for each of Shift down, Shift up and the key, a read that waits and the same read made again.
+    // The eighth is exit: the key's release has not arrived by then.
+    let (r, free0, free1, took) = loaded("key_reader", "key_reader", &[0x2A, 0xAA, 0x1E, 0x9E], 20);
+    let (end, idle, calls) = r.as_ref().map(|p| (p.end, p.idle, p.calls)).unwrap_or((None, 0, 0));
+    say!("  note key while waiting: {:?}, end {:?}, idle {} of {} timer periods, {} calls", r.as_ref().err(), end, idle, took, calls);
+    check("a program waiting in a read of the keyboard is woken by each key's interrupt and reads the keys in order: it idled until the first and exited 0 on the third",
+          end == Some(End::Exited(0)) && idle >= 20 && calls == 8 && free0 == free1, failed);
+
+    // 4. The stop key while a program is asleep, with the longest sleep the kernel accepts (2^32 s and 999,999,999 ns).
+    let (r, free0, free1, took) = loaded("sleeper_long", "sleeper_long", &STOP_KEYS, 10);
+    let (end, idle) = r.as_ref().map(|p| (p.end, p.idle)).unwrap_or((None, 0));
+    say!("  note stop key while asleep: {:?}, end {:?}, idle {} of {} timer periods", r.as_ref().err(), end, idle, took);
+    check("the stop key ends a program that is asleep (for the longest sleep accepted: its deadline does not overflow) at once, and all its memory comes back",
+          end == Some(End::Stopped) && idle >= 10 && took < 100 && free0 == free1, failed);
+
+    // 5. The stop key while a program waits in a read of the keyboard. Ctrl and Alt wake it and it waits again; Delete ends it.
+    // Six calls: open, and three reads that wait, of which the first two are made again and answered with Ctrl and with Alt.
+    let (r, free0, free1, took) = loaded("key_reader", "key_reader", &STOP_KEYS, 10);
+    let (end, idle, calls) = r.as_ref().map(|p| (p.end, p.idle, p.calls)).unwrap_or((None, 0, 0));
+    say!("  note stop key while waiting for a key: {:?}, end {:?}, idle {} of {} timer periods, {} calls", r.as_ref().err(), end, idle, took, calls);
+    check("the stop key ends a program that waits in a read of the keyboard; it had read Ctrl and Alt and was never handed Delete; all its memory comes back",
+          end == Some(End::Stopped) && idle >= 10 && took < 100 && calls == 6 && free0 == free1, failed);
+
+    // 6. A stop asked for before a program exists is not a stop of it.
+    arch::interrupts_on();
+    dev::keyboard_script(arch::ticks(), &STOP_KEYS);
+    for _ in 0..200 {
+        if dev::keyboard_script_left() == 0 {
+            break;
+        }
+        arch::wait_until(arch::ticks() + 1);
+    }
+    arch::wait_until(arch::ticks() + 2);
+    arch::interrupts_off();
+    let (r, free0, free1, _) = loaded("sleeper", "sleeper", &[], 0);
+    let end = r.as_ref().map(|p| p.end).unwrap_or(None);
+    check("a stop key pressed before a program is started does not stop it", end == Some(End::Exited(0)) && free0 == free1, failed);
+
+    // 7. A name the task table refuses as a label (33 bytes; it takes 32). The program must be refused, with the
+    // admission error and no other, and no memory may be lost. The control before it is the same program under a
+    // name one byte shorter, which must run: it shows that the refusal is the name's and not the loader's.
+    let (r, free0, free1, _) = loaded("sleeper", "a-name-of-thirty-three-character", &[], 0);
+    let end = r.as_ref().map(|p| p.end).unwrap_or(None);
+    say!("  note a 32-byte name: {:?}; frames free {} before, {} after", r.as_ref().map(|p| p.end), free0, free1);
+    check("a program under a name of 32 bytes is admitted and runs to its end", end == Some(End::Exited(0)) && free0 == free1, failed);
+    let (r, free0, free1, _) = loaded("sleeper", "a-name-of-thirty-three-characters", &[], 0);
+    say!("  note a 33-byte name: {:?}; frames free {} before, {} after", r.as_ref().map(|p| p.end), free0, free1);
+    let refused = matches!(r, Err("the program could not be admitted as a task"));
+    check("a program under a name of 33 bytes is refused admission as a task", refused, failed);
+    check("a program that cannot be admitted as a task leaves no memory behind: as many frames are free after as before", free0 == free1, failed);
+}
+
+/// Opt-in allocation-boundary test. Reserving the pool touches every free frame.
+fn check_space_cutoffs(failed: &mut u32) {
+    // Leave each possible number of frames below one built-in address space's requirement.
+    // Restore the fixture before checking the total so any leak remains visible.
+    let before = user::frames_free();
+    let mut reserved = alloc::vec::Vec::with_capacity(before);
+    while let Some(frame) = mem::take() {
+        reserved.push(frame);
+    }
+    let mut restored = true;
+    for available in 0..=7 {
+        if available > 0 {
+            restored &= reserved.pop().map(mem::give) == Some(true);
+        }
+        let space = arch::Space::new(&[0xc3]);
+        restored &= space.is_some() == (available == 7);
+        if let Some(space) = space {
+            restored &= space.release() == 7;
+        }
+        restored &= user::frames_free() == available;
+    }
+    for frame in reserved {
+        restored &= mem::give(frame);
+    }
+    check("a built-in address space gives its frames back at every allocation cutoff and after a successful construction",
+          restored && user::frames_free() == before, failed);
+}
+
 /// The kernel proper, entered from `arch` in 64-bit mode with interrupts off.
 pub fn kernel_start(magic: u32, info: u32) -> ! {
     arch::serial_init();
@@ -594,6 +768,33 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
         check("with the display mapped, the kernel's memory map is as it was plus the display's memory, which is never executable",
               after.device_bytes == display.map(|d| d.mapped).unwrap_or(0) && after.pool_or_device_executable == 0 && after.writable_and_executable == 0 && after.outside == 0
                   && after.user_reachable == 0 && after.not_identity == 0 && after.image_pages == map.image_pages && after.module_pages == map.module_pages && after.pool_bytes == map.pool_bytes, &mut failed);
+    }
+    // The asynchronous side needs the keyboard's interrupt, so it is tested here, and only by a kernel that verified itself.
+    if failed == 0 && keyboard {
+        asynchronous(&mut failed);
+        if boot.command_line.split_whitespace().any(|word| word == "test=frame-cutoffs") {
+            check_space_cutoffs(&mut failed);
+        }
+    } else {
+        say!("the asynchronous self-tests were not run: {}", if keyboard { "the kernel did not verify itself" } else { "there is no keyboard controller" });
+    }
+    #[cfg(feature = "virtio-tx-probe")]
+    if failed == 0 && boot.command_line.split_whitespace().any(|word| word == "test=virtio-tx") {
+        let transmit = dev::virtio_tx::transmit(&bus);
+        say!("virtio TX fixture: {:?}", transmit);
+        check("the isolated virtio-net TX queue completed its single frame", transmit.is_ok(), &mut failed);
+    }
+    #[cfg(feature = "virtio-rx-probe")]
+    if failed == 0 && boot.command_line.split_whitespace().any(|word| word == "test=virtio-reply") {
+        let reply = dev::virtio_tx::reply(&bus, &boot.command_line);
+        say!("virtio reply fixture: {:?}", reply);
+        check("the isolated virtio-net RX queue received the exact reply", reply.is_ok(), &mut failed);
+    }
+    #[cfg(feature = "virtio-register-probe")]
+    if failed == 0 && boot.command_line.split_whitespace().any(|word| word == "test=virtio-register") {
+        let result = register_wire::fixture(&bus, &boot.command_line);
+        say!("virtio register fixture: {:?}", result);
+        check("the isolated peer supplied the verified register extension", result.is_ok(), &mut failed);
     }
     let start = session::Start { boot: &boot, display, keyboard, sound: sound || music, passed: PASSED.load(core::sync::atomic::Ordering::Relaxed), failed, tasks: 14, version: env!("CARGO_PKG_VERSION") };
     let _tasks = session::run(&mut rec, &start, &mut failed);

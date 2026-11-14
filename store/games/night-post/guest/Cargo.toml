@@ -1,0 +1,10 @@
+[package]
+name = "night-post-guest"
+version = "0.3.0"
+edition = "2021"
+
+[dependencies]
+night-post = { path = "../game" }
+
+[lib]
+crate-type = ["staticlib"]

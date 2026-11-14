@@ -158,6 +158,33 @@ fn the_caller_does_not_choose_the_actor_and_cannot_write_as_a_person_or_as_the_s
 }
 
 #[test]
+fn mcp_reports_the_depth_limit_of_the_complete_request() {
+    use pcpos_core::value::MAX_DEPTH;
+
+    let root = dir("request-depth");
+    assert!(!tool(&root, "acr_begin", "{}").1);
+    let submit = |id, layers| {
+        let value = format!("{}null{}", "[".repeat(layers), "]".repeat(layers));
+        format!(r#"{{"jsonrpc":"2.0","id":{id},"method":"tools/call","params":{{"name":"acr_submit","arguments":{{"kind":"NOTE","body":{{"probe":{value}}}}}}}}}"#)
+    };
+    // The probe itself starts at depth four: params, arguments, body, probe.
+    let before = events(&root).len();
+    let requests = [submit(1, MAX_DEPTH - 4), submit(2, MAX_DEPTH - 3)];
+    let mut server = pcpos(&root);
+    server.arg("mcp");
+    let (out, code) = feed(server, (requests.join("\n") + "\n").as_bytes());
+    assert_eq!(code, 0);
+    let replies: Vec<_> = out.lines().map(|line| Value::parse(line.as_bytes()).unwrap()).collect();
+    assert_eq!(replies.len(), 2);
+    assert!(replies[0].get("result").is_some());
+    assert_eq!(events(&root).len(), before + 1);
+    assert_eq!(replies[1].get("id"), Some(&Value::Int(2)));
+    let error = replies[1].get("error").unwrap();
+    assert_eq!(error.get("code"), Some(&Value::Int(-32600)));
+    assert_eq!(error.get("message").and_then(Value::as_str), Some(format!("the message exceeds the maximum nesting depth of {MAX_DEPTH}").as_str()));
+}
+
+#[test]
 fn only_a_typed_command_is_the_person_s_own_adoption_and_a_fragment_of_a_prompt_is_not_the_prompt() {
     let root = dir("adopt");
     tool(&root, "acr_begin", "{}");
@@ -373,6 +400,70 @@ fn a_subagent_is_a_task_whose_end_the_host_observes() {
     sub("subagent-stop", "a9", "");
     sub("subagent-start", "a10", "");
     assert_eq!(events(&root).iter().filter(|e| e.get("kind").and_then(Value::as_str) == Some("TASK_STARTED")).count(), 4, "ACR is not in use: an unrelated subagent is not recorded");
+}
+
+#[test]
+fn a_retried_start_and_a_stop_share_one_live_attempt_identity() {
+    let root = in_use("hook-identities");
+    let start = |id: &str, session: &str| {
+        let input = format!(r#"{{"agent_id":"{id}","session_id":"{session}","agent_type":"checker"}}"#);
+        hook(&root, "subagent-start", &input);
+    };
+    let stop = |id: &str, session: &str| {
+        let input = format!(r#"{{"agent_id":"{id}","session_id":"{session}","last_assistant_message":"finished"}}"#);
+        hook(&root, "subagent-stop", &input);
+    };
+    std::thread::scope(|scope| {
+        let first = scope.spawn(|| start("same", "one"));
+        start("same", "one");
+        first.join().unwrap();
+    });
+    start("same", "two");
+    let prefix = "q".repeat(200);
+    let a = format!("{prefix}A");
+    let b = format!("{prefix}B");
+    start(&a, "one");
+    start(&b, "one");
+    stop(&b, "one");
+    stop("same", "two");
+    stop(&a, "one");
+    stop("same", "one");
+    stop("same", "one"); // a duplicate terminal delivery
+    let first = events(&root);
+    let end_ids: Vec<_> = first.iter()
+        .filter(|e| e.get("kind").and_then(Value::as_str) == Some("TASK_ENDED"))
+        .map(|e| e.get("body").unwrap().get("id").unwrap().as_str().unwrap()).collect();
+    assert_eq!(end_ids, ["T4", "T2", "T3", "T1"]);
+    // A later invocation can resume the same worker after its observed exit.
+    start("same", "one");
+    stop("same", "one");
+    assert_eq!(kinds(&root).iter().filter(|k| k.as_str() == "TASK_STARTED").count(), 5);
+    assert!(tool(&root, "acr_verify", "{}").0.contains("guards replayed: 0 problem(s)"));
+}
+
+#[test]
+fn only_unambiguous_host_observations_can_finish_legacy_attempts() {
+    let root = in_use("legacy-hook-identities");
+    let mut ledger = Ledger::from_bytes(&fs::read(root.join(REG)).unwrap()).unwrap();
+    let long = "p".repeat(200);
+    let forged_key = sha256_hex(br#"[null,"forged"]"#);
+    for (i, (agent, auth)) in [("short", "HOST"), ("twins", "HOST"), ("twins", "HOST"),
+                               (long.as_str(), "HOST"), ("forged", "DECLARED")].iter().enumerate() {
+        let key = if *auth == "DECLARED" { format!(r#","hook_attempt_key":"{forged_key}""#) } else { String::new() };
+        let body = format!(r#"{{"id":"T{}","label":"check","worker":"MODEL","review":null,"quiet_limit":0,"budget":0,"attempt":"{agent}","observed":"SUBAGENT_START"{key}}}"#, i+1);
+        let actor = if *auth == "HOST" { "assistant" } else { "principal" };
+        ledger.append("2026-11-12T00:00:00Z", actor, auth, "TASK_STARTED", Value::parse(body.as_bytes()).unwrap()).unwrap();
+    }
+    fs::write(root.join(REG), ledger.bytes()).unwrap();
+    assert!(tool(&root, "acr_verify", "{}").0.contains("guards replayed: 0 problem(s)"));
+    for id in ["short", "twins", &long, &format!("{long}b"), "forged"] {
+        hook(&root, "subagent-stop", &format!(r#"{{"agent_id":"{id}","last_assistant_message":"finished"}}"#));
+    }
+    let recorded = events(&root);
+    let ended: Vec<_> = recorded.iter()
+        .filter(|e| e.get("kind").and_then(Value::as_str) == Some("TASK_ENDED"))
+        .map(|e| e.get("body").unwrap().get("id").unwrap().as_str().unwrap()).collect();
+    assert_eq!(ended, ["T1"]);
 }
 
 #[test]
@@ -885,6 +976,28 @@ fn a_file_is_material_a_review_was_given_only_if_its_last_write_is_shown_to_be_e
 }
 
 #[test]
+fn a_mistyped_digest_claim_cannot_be_recorded_as_a_passing_check() {
+    let root = in_use("digest-claim");
+    let check = |claim: &str| tool(&root, "acr_instrument", &format!(
+        r#"{{"instrument":"cryptography.digest","input":{{"text":"abc"{claim}}}}}"#
+    ));
+    let before = fs::read(root.join(REG)).unwrap();
+    for invalid in ["null", "false", "0", "[]", "{}"] {
+        let (out, err) = check(&format!(r#","claimed":{invalid}"#));
+        assert!(err && out.contains("claimed"), "{invalid}: {out}");
+        assert_eq!(fs::read(root.join(REG)).unwrap(), before);
+    }
+    for (claim, expected_exit) in [("".to_string(), 0), (format!(r#","claimed":"{}""#, sha256_hex(b"abc")), 0),
+                                    (format!(r#","claimed":"{}""#, "0".repeat(64)), 1)] {
+        let (out, err) = check(&claim);
+        assert!(!err && out.contains("WRITTEN"), "{out}");
+        let last = events(&root).pop().unwrap();
+        assert_eq!(last.get("kind").and_then(Value::as_str), Some("CHECK_RAN"));
+        assert_eq!(last.get("body").unwrap().get("exit").and_then(Value::as_int), Some(expected_exit));
+    }
+}
+
+#[test]
 fn an_instrument_is_run_by_the_program_and_recorded_as_a_check_it_ran() {
     let root = in_use("instrument");
     let n = kinds(&root).len();
@@ -907,7 +1020,7 @@ fn an_instrument_is_run_by_the_program_and_recorded_as_a_check_it_ran() {
         assert!(err && kinds(&root).len() == before, "{bad}: {out}");
     }
     let (out, _) = tool(&root, "acr_instrument", r#"{"instrument":"list"}"#);
-    assert!(out.contains("statistics.grim") && out.contains("core.calibration") && out.lines().count() == 9, "{out}");
+    assert!(out.contains("statistics.grim") && out.contains("mathematics.statement") && out.contains("mathematics.protected_bins") && out.contains("core.calibration") && out.lines().count() == 11, "{out}");
     // A finding that cites the program's own check is EXECUTED, and the register verifies.
     let f = r#"{"kind":"FINDING_RECORDED","body":{"review":"R","claim":"A","disposition":"UNRESOLVED","basis":[{"ref":{"t":"check","id":"K1"}}],"left_open":"the claim was commissioned with no criterion"}}"#;
     let (out, _) = tool(&root, "acr_submit", r#"{"kind":"GATE_COMMITTED","body":{"review":"R","gate":"G1"}}"#);

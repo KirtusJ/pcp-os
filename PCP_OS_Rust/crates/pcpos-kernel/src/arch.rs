@@ -482,6 +482,18 @@ pub fn frame_write(frame: usize, offset: usize, data: &[u8]) -> bool {
     true
 }
 
+/// Publish one aligned little-endian halfword in an exclusively reserved DMA frame.
+#[cfg(feature = "virtio-tx-probe")]
+pub fn frame_publish_u16(frame: usize, offset: usize, value: u16) -> bool {
+    if !in_pool(frame) || offset > 4094 || offset % 2 != 0 {
+        return false;
+    }
+    // Safety: the halfword is aligned, lies inside a mapped writable pool frame,
+    // and the transmitter retains the frame until the device confirms reset.
+    unsafe { core::ptr::write_volatile((frame + offset) as *mut u16, value.to_le()) };
+    true
+}
+
 /// The bytes of a file the loader placed in memory, if the kernel mapped it. They stay mapped, read-only, for the life of the kernel.
 pub fn module_bytes(m: &Module) -> Option<&'static [u8]> {
     if !m.usable {
@@ -1399,11 +1411,22 @@ impl Space {
             return None;
         }
         let mut s = Space::empty()?;
-        let (c, d, k) = (crate::mem::take()?, crate::mem::take()?, crate::mem::take()?);
-        frame_write(c, 0, code);
-        let ok = s.map(USER_BASE, c, false, true) && s.map(USER_DATA, d, true, false) && s.map(USER_STACK_TOP - 0x1000, k, true, false);
-        s.three = [c, d, k];
-        if ok { Some(s) } else { None }
+        // Map each frame as it is acquired. A successful mapping transfers ownership to `s`;
+        // the current, not-yet-mapped frame is the only one that release cannot reach.
+        for (i, addr) in [USER_BASE, USER_DATA, USER_STACK_TOP - 0x1000].into_iter().enumerate() {
+            let Some(frame) = crate::mem::take() else {
+                s.release();
+                return None;
+            };
+            if !s.map(addr, frame, i != 0, i == 0) {
+                crate::mem::give(frame);
+                s.release();
+                return None;
+            }
+            s.three[i] = frame;
+        }
+        frame_write(s.three[0], 0, code);
+        Some(s)
     }
 
     /// The physical pages a built-in program was given: code, data, stack.
@@ -1743,4 +1766,7 @@ user_programs! {
     bad_calls: user_bad_calls_start, user_bad_calls_end;
     mute: user_mute_start, user_mute_end;
     hog: user_hog_start, user_hog_end;
+    sleeper: user_sleeper_start, user_sleeper_end;
+    sleeper_long: user_sleeper_long_start, user_sleeper_long_end;
+    key_reader: user_key_reader_start, user_key_reader_end;
 }

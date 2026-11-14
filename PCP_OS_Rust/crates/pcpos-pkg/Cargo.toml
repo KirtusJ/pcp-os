@@ -1,0 +1,10 @@
+[package]
+name = "pcpos-pkg"
+description = "The core of the PCP OS package manager: names, index entries, verification of supplied bytes and the choice among sources. No operating system needed, no front end, no dependency beyond the integrity core."
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+pcpos-core = { path = "../pcpos-core" }

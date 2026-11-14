@@ -26,7 +26,7 @@
 use pcpos_core::acr::{self, Problem, Record, State, SubmitError};
 use pcpos_core::authority::{Edition, Method, ModelFindings, Standard};
 use pcpos_core::machine::{self, Delivery, Link, Review, System, Use};
-use pcpos_core::value::Value;
+use pcpos_core::value::{ParseError, Value, MAX_DEPTH};
 use pcpos_core::{ledger, sha256_hex};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -1435,8 +1435,8 @@ fn tools() -> Value {
              schema(vec![reg, ("path", "string", "A file, relative to the served directory"), ("text", "string", "Words given in the conversation, exactly as given, when there is no file"), ("origin", "string", "SUPPLIED or PRODUCED"), ("name", "string", "Optional. A label for the artifact"), ("record", "boolean", "Optional. false: compute and return the digest, write nothing")], vec![])),
         tool("acr_check", "Record a check on what the host itself saw. First run the command with the shell tool; then call this with exactly the same command text. The server finds the host's own observation of that command (its exit status and the digests of its output) and records the check as HOST_OBSERVED_TOOL. If the host saw no such command, nothing is recorded: a command you could not run is not a check, and the claim that needed it is UNRESOLVED (Core 5.1). Whether the command tests the claim's criterion remains your assessment.",
              schema(vec![reg, ("command", "string", "The command, exactly as it was given to the shell tool"), ("expect_exit", "integer", "Optional. The exit status that would mean the expectation was met; 0 if omitted"), ("name", "string", "Optional. A label for the check")], vec!["command"])),
-        tool("acr_instrument", "Have this program compute something itself, with no shell: an exact calculation, an arithmetic test of a reported statistic, an exact unit conversion, a digest, or a reading of the register. Each instrument belongs to a module of the method and computes exactly one property (the Instruments section of that module's Specification says which, and what the result does not establish). With a review open the result is recorded as a check this program ran, which a finding may cite; say why the property computed is the criterion in question, because the program cannot know that. Call it with instrument \"list\" to see what is offered.",
-             schema(vec![reg, ("instrument", "string", "mathematics.exact, statistics.grim, statistics.percent, engineering.units, cryptography.digest, science.order, quality.coverage, core.calibration, or list"), ("input", "object", "The instrument's input, for example {\"expression\": \"sum(k, 1, 100, k) = 5500\"}"), ("name", "string", "Optional. A label for the check"), ("record", "boolean", "Optional. false computes and writes nothing")], vec!["instrument"])),
+        tool("acr_instrument", "Call with instrument \"list\" to see the checks this host can run and the input each takes. Each instrument computes one property inside the program, with no shell. With an open review the result can be recorded as a check this program ran and cited by a finding. State why the computed property is the criterion in that review.",
+             schema(vec![reg, ("instrument", "string", "Use list for the available instrument names and their inputs, or choose a name from that list"), ("input", "object", "The instrument's input, for example {\"expression\": \"sum(k, 1, 100, k) = 5500\"}"), ("name", "string", "Optional. A label for the check"), ("record", "boolean", "Optional. false computes and writes nothing")], vec!["instrument"])),
         tool("acr_kernel", "The method's kernel text, whole: the operating floor and the findings table, copied without change from the Core Specification, with the SHA-256 of the file. Read it before the first step of a review, and again after your context is reset. This needs no file tool. It does not put ACR in use.", schema(vec![], vec![])),
         tool("acr_events", "The exact body of every event a review writes, in the order a review uses them; each was accepted by the guards when the package was built. Read it before your first acr_submit. This needs no file tool. It does not put ACR in use.", schema(vec![], vec![])),
         tool("acr_machine", "The whole table of one state machine (SYSTEM, USE, REVIEW, OBJECTION, OBLIGATION, TASK, DELIVERY, LINK): for each state and event, what follows or '-' if not accepted.",
@@ -1808,10 +1808,17 @@ fn serve(se: &Session) {
         }
         let reply = match Value::parse(&line) {
             // Not in the record's strict form: say so to whoever asked, if the message can be read at all.
-            Err(_) => Some(match lenient::parse(&line).and_then(|m| m.get("id").cloned()) {
-                Some(id) => error(id, -32600, "the message holds a fraction, an exponent or a repeated key; this server accepts whole numbers and distinct keys only"),
-                None => error(Value::Null, -32700, "the message is not JSON this server accepts"),
-            }),
+            Err(reason) => {
+                let id = lenient::parse(&line).and_then(|m| m.get("id").cloned());
+                Some(match (reason, id) {
+                    (ParseError::TooDeep(_), id) => {
+                        let code = if id.is_some() { -32600 } else { -32700 };
+                        error(id.unwrap_or(Value::Null), code, &format!("the message exceeds the maximum nesting depth of {MAX_DEPTH}"))
+                    }
+                    (_, Some(id)) => error(id, -32600, "the message holds a fraction, an exponent or a repeated key; this server accepts whole numbers and distinct keys only"),
+                    (_, None) => error(Value::Null, -32700, "the message is not JSON this server accepts"),
+                })
+            }
             Ok(Value::Map(_)) => None,
             Ok(_) => Some(error(Value::Null, -32600, "one message is one JSON object; batches are not accepted")),
         };
@@ -1902,6 +1909,21 @@ fn short_status(o: &Opened) -> String {
         let _ = write!(t, " {p}: {what} -> {response}.");
     }
     t
+}
+
+/// Bind the hook identity before clipping its presentation label. Canonical JSON
+/// keeps component boundaries and a missing session distinct.
+fn hook_attempt_key(input: &Value, agent: &str) -> String {
+    let session_id = input.get("session_id").and_then(Value::as_str).map(s).unwrap_or(Value::Null);
+    sha256_hex(&Value::List(vec![session_id, s(agent)]).canonical_json())
+}
+
+fn active_hook_identity(t: &acr::TaskState, key: &str, legacy_id: Option<&str>) -> bool {
+    match t.hook_attempt.as_ref() {
+        Some(acr::HookAttempt::Key(stored)) => stored == key,
+        Some(acr::HookAttempt::Legacy) => legacy_id.is_some() && t.attempt.as_deref() == legacy_id,
+        None => false,
+    }
 }
 
 /// Run one hook. Returns what to print on standard output (which the host adds to the model's context
@@ -2054,14 +2076,21 @@ fn hook(event: &str, input: &Value) -> Result<String, String> {
                 Some(tx) if tx.state().in_use() == Use::InUse && tx.problems.is_empty() => tx,
                 _ => return Ok(String::new()),
             };
-            if field("agent_id").is_empty() {
+            let agent = field("agent_id");
+            if agent.is_empty() {
                 return Ok(String::new()); // no attempt to match an end to: recording it would leave a task that can never be seen to end
+            }
+            let key = hook_attempt_key(input, agent);
+            let clipped = clip(agent, 200);
+            if tx.state().tasks.values().any(|t| t.outcome.is_none() &&
+                active_hook_identity(t, &key, Some(&clipped))) {
+                return Ok(String::new());
             }
             begin(&mut tx, &se, None, true)?;
             let active: Vec<String> = tx.state().reviews.values().filter(|r| r.lifecycle == Review::Active).map(|r| r.label.clone()).collect();
             let review = if active.len() == 1 { s(&active[0]) } else { Value::Null };
             let body = obj(vec![("label", s(&to_label(field("agent_type"), "subagent"))), ("worker", s("MODEL")), ("review", review), ("quiet_limit", Value::Int(0)), ("budget", Value::Int(0)),
-                                ("attempt", s(&clip(field("agent_id"), 200))), ("observed", s("SUBAGENT_START"))]);
+                                ("attempt", s(&clipped)), ("hook_attempt_key", s(&key)), ("observed", s("SUBAGENT_START"))]);
             if let Put::Refused(r) = tx.put(&se.actor, "HOST", "TASK_STARTED", body)? {
                 eprintln!("pcpos hook: the task was not recorded: {}", r.message);
             }
@@ -2074,13 +2103,23 @@ fn hook(event: &str, input: &Value) -> Result<String, String> {
                 Some(tx) if tx.problems.is_empty() => tx,
                 _ => return Ok(String::new()),
             };
-            let attempt = clip(field("agent_id"), 200);
-            let found = tx.state().tasks.iter().find(|(_, t)| t.outcome.is_none() && !attempt.is_empty() && t.attempt.as_deref() == Some(attempt.as_str()))
+            let agent = field("agent_id");
+            if agent.is_empty() { return Ok(String::new()); }
+            let key = hook_attempt_key(input, agent);
+            // Earlier versions may have clipped or trimmed this identifier.
+            // Do not assign an exit to a legacy row from a lossy match.
+            let legacy_id = (agent.chars().count() < 200 && clip(agent, 200) == agent).then_some(agent);
+            let mut candidates = tx.state().tasks.iter().filter(|(_, t)| t.outcome.is_none() &&
+                active_hook_identity(t, &key, legacy_id))
                 .map(|(id, t)| (id.clone(), t.stop_requested.is_some()));
-            let (id, stop_asked) = match found {
+            let (id, stop_asked) = match candidates.next() {
                 Some(x) => x,
                 None => return Ok(String::new()),
             };
+            if candidates.next().is_some() {
+                eprintln!("pcpos hook: several live tasks match this stop; no exit was assigned");
+                return Ok(String::new());
+            }
             let (bytes, source): (Option<Vec<u8>>, &str) = match input.get("last_assistant_message").and_then(Value::as_str) {
                 Some(m) if !m.is_empty() => (Some(m.as_bytes().to_vec()), "the final message"),
                 _ => match fs::read(field("agent_transcript_path")) {

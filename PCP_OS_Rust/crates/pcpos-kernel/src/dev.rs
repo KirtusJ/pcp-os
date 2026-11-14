@@ -1,25 +1,28 @@
 //! Devices: the bus that says which devices there are, a display, a keyboard, and sound. This is the second of the
-//! two files of the kernel in which `unsafe` is allowed, and it is used for one thing only: reading and
-//! writing device ports. Device memory is reached through `arch`, which checks every address against the
+//! two kernel units in which `unsafe` is allowed. This file reads and writes device ports. Its opt-in
+//! Ethernet probes poll device-owned completions in reserved physical frames. Display memory is reached through `arch`, which checks every address against the
 //! extent it mapped.
 //!
 //! What is here was written for the devices an emulator presents (QEMU's standard display adapter, which
 //! speaks the Bochs display interface; the PS/2 keyboard controller every PC emulator has; the Intel AC'97
 //! sound device), and for a display mode that a loader has already set. It has not been tried on hardware.
 //!
-//! The sound device is the one device here that reads memory by itself. It is told the addresses of
-//! frames this file took from the pool for that purpose and of no other memory, and it only reads them.
+//! The sound device reads frames reserved for it. The Ethernet fixture reserves its rings and packet
+//! frames until reset. The RX experiment also grants the device write access to one header and frame.
 #![allow(unsafe_code)]
 use crate::arch;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};
+
+#[cfg(feature = "virtio-tx-probe")]
+pub mod virtio_tx;
 
 fn in8(port: u16) -> u8 {
     // Safety: the callers name ports of devices this file drives; reading one has no effect on memory.
     unsafe { arch::port_in8(port) }
 }
 fn out8(port: u16, value: u8) {
-    // Safety: as above; no port written from this file starts a transfer into memory.
+    // Safety: device-specific callers own the selected I/O ports. DMA probes only publish reserved frames.
     unsafe { arch::port_out8(port, value) }
 }
 fn in16(port: u16) -> u16 {
@@ -386,6 +389,46 @@ pub fn interrupt(line: u8) {
     }
 }
 
+/// For the kernel's self-tests: scan codes to hand to the keyboard controller, one each timer tick from tick `at`.
+struct Script {
+    at: u64,
+    bytes: [u8; 8],
+    len: usize,
+    next: usize,
+}
+
+static SCRIPT: arch::Single<Script> = arch::Single::new(Script { at: 0, bytes: [0; 8], len: 0, next: 0 });
+
+/// For the kernel's self-tests, which have nobody at the keyboard: from timer tick `at`, hand the controller one
+/// of these scan codes (at most eight) each tick, with its command "put this byte in the output buffer as if the
+/// keyboard had sent it" (0xD2). The controller then interrupts on the keyboard's line, so each byte arrives the
+/// way a key does: asynchronously, through `interrupt` and `keyboard_byte`.
+pub fn keyboard_script(at: u64, bytes: &[u8]) {
+    arch::without_interrupts(|| SCRIPT.with(|s| {
+        let n = bytes.len().min(s.bytes.len());
+        s.bytes[..n].copy_from_slice(&bytes[..n]);
+        *s = Script { at, bytes: s.bytes, len: n, next: 0 };
+    }))
+}
+
+/// How many scan codes of the script have not been handed to the controller yet.
+pub fn keyboard_script_left() -> usize {
+    arch::without_interrupts(|| SCRIPT.with(|s| s.len - s.next))
+}
+
+/// Entered from `tick`, with interrupts off.
+fn script_tick(ticks: u64) {
+    SCRIPT.with(|s| {
+        // One byte a tick, and only when the controller holds nothing: neither a byte to be read nor one being taken.
+        if s.next < s.len && ticks >= s.at && in8(0x64) & 3 == 0 {
+            out8(0x64, 0xD2);
+            controller_wait_write();
+            out8(0x60, s.bytes[s.next]);
+            s.next += 1;
+        }
+    })
+}
+
 /// The oldest key event not yet taken, if any.
 pub fn key_take() -> Option<Key> {
     arch::without_interrupts(|| {
@@ -678,6 +721,7 @@ fn clock_ms(ticks: u64) -> u32 {
 
 /// Entered from `arch` on every timer tick, with interrupts off: write the registers whose time has come.
 pub fn tick(ticks: u64) {
+    script_tick(ticks);
     FM.with(|f| {
         if f.count == 0 {
             return;

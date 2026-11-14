@@ -303,6 +303,16 @@ pub struct TaskState {
     pub result: Option<String>,
     /// The supervisor's identifier for this attempt, where one was recorded.
     pub attempt: Option<String>,
+    /// Identity evidence supplied by the host's subagent-start hook.
+    pub hook_attempt: Option<HookAttempt>,
+}
+
+/// Older subagent hook observations stored only the clipped attempt label.
+pub enum HookAttempt {
+    /// Only a human-readable attempt label was retained.
+    Legacy,
+    /// Digest of the session and full supervisor agent identifier.
+    Key(String),
 }
 
 #[derive(Clone)]
@@ -1210,7 +1220,10 @@ fn g_session(state: &State, mut b: Map) -> R<Map> {
     if r.lifecycle.step(ReviewEvent::OpenSession).is_err() {
         return refuse(Some("Core 7.1"), format!("review {} has an open session", r.label));
     }
-    b.insert("session".to_string(), Value::Int(r.session + 1));
+    let Some(next) = r.session.checked_add(1) else {
+        return refuse(None, "the successor session number exceeds the record's signed 64-bit range".to_string());
+    };
+    b.insert("session".to_string(), Value::Int(next));
     let reason = text(get(&b, "reason"), "the reason for a successor session", 2000, true)?;
     b.insert("reason".to_string(), reason);
     Ok(b)
@@ -1722,9 +1735,16 @@ pub fn apply(state: &mut State, ev: &Value) -> R<()> {
         }
         "LINK_STATE" => state.link = Some(st("to").and_then(|x| Link::from_name(&x)).ok_or(()).or_else(|_| integrity(seq, kind))?),
         "TASK_STARTED" => {
+            let hook_attempt = if ev.get("auth").and_then(Value::as_str) == Some("HOST")
+                && get(b, "observed").as_str() == Some("SUBAGENT_START") {
+                Some(st("hook_attempt_key").map_or(HookAttempt::Legacy, HookAttempt::Key))
+            } else {
+                None
+            };
             state.tasks.insert(need("id")?, TaskState { label: need("label")?, worker: need("worker")?, review: st("review"), actor: actor.to_string(), outcome: None,
                                                         spent: 0, budget: get(b, "budget").as_int().unwrap_or(0), started: seq, stop_requested: None,
-                                                        result: None, attempt: st("attempt") });
+                                                        result: None, attempt: st("attempt"),
+                                                        hook_attempt });
             state.counters[T] += 1;
         }
         "TASK_ENDED" => {
@@ -1834,10 +1854,9 @@ impl Record {
     /// Adopt a register received from elsewhere: its chain is verified and every guard replayed. Problems
     /// found by the replay are returned beside the record; the caller decides what follows from them.
     pub fn open(raw: &[u8]) -> Result<(Self, Vec<Problem>), SubmitError> {
-        let (events, _) = crate::ledger::verify(raw).map_err(SubmitError::Ledger)?;
-        let (state, problems) = fold(&events, true).map_err(SubmitError::Refused)?;
-        let ledger = Ledger::from_bytes(raw).map_err(SubmitError::Ledger)?;
-        Ok((Record { ledger, state }, problems))
+        let checked = crate::ledger::VerifiedRegister::check(raw).map_err(SubmitError::Ledger)?;
+        let (state, problems) = fold(checked.events(), true).map_err(SubmitError::Refused)?;
+        Ok((Record { ledger: checked.into_ledger(), state }, problems))
     }
 
     /// Take in events that were appended to the same register elsewhere since this record last saw it:
