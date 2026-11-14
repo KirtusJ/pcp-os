@@ -43,6 +43,36 @@ pub enum R1Error {
     TrailingBytes(usize),
 }
 
+/// Stream an encoded unsigned scalar or a text string header to a byte sink.
+/// The kernel can emit v1 report fields without allocating a Vec.
+fn emit_scalar_head(major: u8, n: u64, mut emit: impl FnMut(&[u8])) {
+    let m = major << 5;
+    let bytes = n.to_be_bytes();
+    match n {
+        0..=23 => emit(&[m | n as u8]),
+        24..=255 => emit(&[m | 24, n as u8]),
+        256..=65_535 => { emit(&[m | 25]); emit(&bytes[6..]); }
+        65_536..=0xffff_ffff => { emit(&[m | 26]); emit(&bytes[4..]); }
+        _ => { emit(&[m | 27]); emit(&bytes); }
+    }
+}
+
+/// Emit one unsigned integer in shortest CBOR form.
+pub fn emit_uint(n: u64, emit: impl FnMut(&[u8])) {
+    emit_scalar_head(0, n, emit);
+}
+
+/// Emit an R1 string, including the 32-byte form of a canonical SHA-256 digest.
+pub fn emit_text(s: &str, mut emit: impl FnMut(&[u8])) {
+    if let Some(digest) = hex_digest(s) {
+        emit(&[0x58, 32]);
+        emit(&digest);
+    } else {
+        emit_scalar_head(3, s.len() as u64, &mut emit);
+        emit(s.as_bytes());
+    }
+}
+
 fn head(major: u8, n: u64, out: &mut Vec<u8>) {
     let m = major << 5;
     if n < 24 {
