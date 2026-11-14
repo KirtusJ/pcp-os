@@ -156,13 +156,13 @@ fn every_truncated_byte_prefix_refuses_final_health() {
             let prefix = &full[..cut];
             assert_eq!(
                 call(format, prefix),
-                (6, "{\\"boot\\":\\"unknown\\"}\\n".into()),
+                (6, concat!(r#"{"boot":"unknown"}"#, "\n").to_owned()),
                 "health accepted a {format} capture cut at byte {cut}",
             );
             let expected = if cut < admission.len() {
-                (6, "{\\"admit\\":null}\\n".to_owned())
+                (6, concat!(r#"{"admit":null}"#, "\n").to_owned())
             } else {
-                (0, "{\\"admit\\":true,\\"image\\":\\"unchecked\\"}\\n".to_owned())
+                (0, concat!(r#"{"admit":true,"image":"unchecked"}"#, "\n").to_owned())
             };
             assert_eq!(
                 summary("--admission", format, prefix),
