@@ -1851,11 +1851,19 @@ impl Record {
         Ok(problems)
     }
 
+    /// Return the guard-computed body if the complete next event fits this ledger.
+    /// Neither the ledger nor the review state advances on a preview.
+    pub fn preview(&self, ts: &str, actor: &str, auth: &str, kind: &str, body: &Value) -> Result<Value, SubmitError> {
+        let out = guard(&self.state, kind, body, actor).map_err(SubmitError::Refused)?;
+        self.ledger.encode_event(ts, actor, auth, kind, &out, |_| {}).map_err(SubmitError::Ledger)?;
+        Ok(out)
+    }
+
     /// Offer an event. On success the event is in the register and the state reflects it.
     pub fn submit(&mut self, ts: &str, actor: &str, auth: &str, kind: &str, body: Value) -> Result<&str, SubmitError> {
         let out = guard(&self.state, kind, &body, actor).map_err(SubmitError::Refused)?;
         let seq = self.ledger.len() as i64;
-        self.ledger.append(ts, actor, auth, kind, out.clone()).map_err(SubmitError::Ledger)?;
+        self.ledger.append_ref(ts, actor, auth, kind, &out).map_err(SubmitError::Ledger)?;
         let mut ev = Map::new();
         ev.insert("seq".to_string(), Value::Int(seq));
         ev.insert("kind".to_string(), s(kind));

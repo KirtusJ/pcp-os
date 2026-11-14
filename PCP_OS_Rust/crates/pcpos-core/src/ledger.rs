@@ -2,9 +2,8 @@
 //!
 //! The type has no operation that removes or changes an event. Checking a register received from
 //! elsewhere applies the same rules as writing one, so a record reads the same to every party.
-use crate::value::{ParseError, Value};
+use crate::value::{write_int, write_str, ParseError, Value};
 use crate::{sha256_hex, ZERO};
-use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
@@ -114,6 +113,22 @@ impl Ledger {
 
     /// Append one event. The sequence number and the link to the previous event are set here and nowhere else.
     pub fn append(&mut self, ts: &str, actor: &str, auth: &str, kind: &str, body: Value) -> Result<&str, LedgerError> {
+        self.append_ref(ts, actor, auth, kind, &body)
+    }
+
+    pub(crate) fn append_ref(&mut self, ts: &str, actor: &str, auth: &str, kind: &str, body: &Value) -> Result<&str, LedgerError> {
+        let mut line = Vec::new();
+        self.encode_event(ts, actor, auth, kind, body, |bytes| line.extend_from_slice(bytes))?;
+        self.head = Some(sha256_hex(&line));
+        self.bytes.extend_from_slice(&line);
+        self.bytes.push(b'\n');
+        self.count += 1;
+        Ok(self.head())
+    }
+
+    /// Emit at most one event's byte budget. A preview can discard the chunks to check the same limit.
+    pub(crate) fn encode_event(&self, ts: &str, actor: &str, auth: &str, kind: &str, body: &Value,
+                               mut emit: impl FnMut(&[u8])) -> Result<(), LedgerError> {
         if !is_ts(ts) {
             return Err(LedgerError::Refused("the time is not of the form YYYY-MM-DDTHH:MM:SSZ"));
         }
@@ -123,23 +138,33 @@ impl Ledger {
         if !matches!(body, Value::Map(_)) {
             return Err(LedgerError::Refused("the body of an event is an object"));
         }
-        let mut m = BTreeMap::new();
-        m.insert("seq".to_string(), Value::Int(self.count as i64));
-        m.insert("prev".to_string(), Value::Str(self.head().to_string()));
-        m.insert("ts".to_string(), Value::Str(ts.to_string()));
-        m.insert("actor".to_string(), Value::Str(actor.to_string()));
-        m.insert("auth".to_string(), Value::Str(auth.to_string()));
-        m.insert("kind".to_string(), Value::Str(kind.to_string()));
-        m.insert("body".to_string(), body);
-        let line = Value::Map(m).canonical_json();
-        if line.len() > MAX_EVENT_BYTES {
+        let mut size = 0usize;
+        let mut write = |bytes: &[u8]| {
+            size = size.saturating_add(bytes.len());
+            if size <= MAX_EVENT_BYTES {
+                emit(bytes);
+            }
+        };
+        // The seven keys are in canonical order. Every variable value uses the record encoder.
+        write(br#"{"actor":"#);
+        write_str(actor, &mut write);
+        write(br#","auth":"#);
+        write_str(auth, &mut write);
+        write(br#","body":"#);
+        body.write_json(&mut write);
+        write(br#","kind":"#);
+        write_str(kind, &mut write);
+        write(br#","prev":"#);
+        write_str(self.head(), &mut write);
+        write(br#","seq":"#);
+        write_int(self.count as i64, &mut write);
+        write(br#","ts":"#);
+        write_str(ts, &mut write);
+        write(b"}");
+        if size > MAX_EVENT_BYTES {
             return Err(LedgerError::Refused("the event exceeds the size limit"));
         }
-        self.head = Some(sha256_hex(&line));
-        self.bytes.extend_from_slice(&line);
-        self.bytes.push(b'\n');
-        self.count += 1;
-        Ok(self.head())
+        Ok(())
     }
 
     /// The digest of the last event, or zeros for an empty register.
@@ -172,5 +197,24 @@ impl Ledger {
     /// The register's bytes.
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::collections::BTreeMap;
+
+    #[test]
+    fn oversized_event_never_sends_more_than_its_budget_to_the_buffer() {
+        for text in ["x".repeat(MAX_EVENT_BYTES), "😀".repeat(MAX_EVENT_BYTES / 12 + 1)] {
+            let mut fields = BTreeMap::new();
+            fields.insert("text".to_string(), Value::Str(text));
+            let mut emitted = 0;
+            let result = Ledger::new().encode_event("2000-02-29T23:59:59Z", "assistant", "HOST",
+                "NOTE", &Value::Map(fields), |bytes| emitted += bytes.len());
+            assert_eq!(result, Err(LedgerError::Refused("the event exceeds the size limit")));
+            assert!(emitted > 0 && emitted <= MAX_EVENT_BYTES);
+        }
     }
 }

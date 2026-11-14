@@ -453,16 +453,23 @@ impl Tx {
         self.rec.ledger().head().to_string()
     }
 
-    /// Offer an event. A register that holds an event the guards would refuse is not continued as though
-    /// nothing were wrong: only a halt is added to it. A halt is never refused on that ground.
-    fn put(&mut self, actor: &str, auth: &str, kind: &str, body: Value) -> Result<Put, String> {
+    fn replay_refusal(&self, kind: &str) -> Option<acr::Refusal> {
         if !self.problems.is_empty() && kind != "HALTED" {
-            return Ok(Put::Refused(acr::Refusal {
+            return Some(acr::Refusal {
                 code: acr::INTEGRITY,
                 clause: None,
                 message: format!("this register holds {} event(s) the guards would refuse (first: event {}: {}). It accepts a halt and nothing else. Continue in a new register that admits this one as a submission by its head digest",
                                  self.problems.len(), self.problems[0].seq, self.problems[0].message),
-            }));
+            });
+        }
+        None
+    }
+
+    /// Offer an event. A register that holds an event the guards would refuse is not continued as though
+    /// nothing were wrong: only a halt is added to it. A halt is never refused on that ground.
+    fn put(&mut self, actor: &str, auth: &str, kind: &str, body: Value) -> Result<Put, String> {
+        if let Some(r) = self.replay_refusal(kind) {
+            return Ok(Put::Refused(r));
         }
         let prev = self.head();
         match self.rec.submit(&now_utc(), actor, auth, kind, body) {
@@ -1757,7 +1764,7 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
             }
             let mut tx = Tx::begin(&se.root, &reg, false)?.ok_or_else(none)?;
             session_may_write(&tx, se)?;
-            if name == "acr_submit" && kind == "ARTIFACT_ADDED" && body.get("origin").and_then(Value::as_str) == Some("SUPPLIED") && open_review_floor(&tx).is_some() {
+            if kind == "ARTIFACT_ADDED" && body.get("origin").and_then(Value::as_str) == Some("SUPPLIED") && open_review_floor(&tx).is_some() {
                 return Ok(format!("REFUSE (exit code {}) [Core 4.3]\nA review is open, and material recorded now as SUPPLIED on a digest alone is your report that it was supplied: the server did not read it. Use acr_artifact with its path or its text, so that the server reads it and says how it came by it; record a source you retrieved as RETRIEVED, with where and when; record your own working as PRODUCED.\nNothing was written.\n", acr::REFUSED));
             }
             if kind == "REVIEW_COMMISSIONED" {
@@ -1769,10 +1776,14 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
                 return Ok(format!("REFUSE (exit code {})\n{MAX_OPEN_REVIEWS} reviews are open. Close one first: a halt names every review it closes in one event, and must always fit.\nNothing was written.\n", acr::REFUSED));
             }
             if name == "acr_offer" {
-                return match acr::guard(tx.state(), kind, body, &se.actor) {
+                if let Some(r) = tx.replay_refusal(kind) {
+                    return Ok(refusal_text(&r));
+                }
+                return match tx.rec.preview(&now_utc(), &se.actor, "HOST", kind, body) {
                     Ok(out) if delta => offer_delta(requested, &out),
                     Ok(out) => Ok(format!("ACCEPT\nbody that would be written: {}\n", String::from_utf8_lossy(&out.canonical_json()))),
-                    Err(r) => Ok(format!("REFUSE (exit code {}){}\n{}\n", r.code, r.clause.map(|c| format!(" [{c}]")).unwrap_or_default(), r.message)),
+                    Err(SubmitError::Refused(r)) => Ok(format!("REFUSE (exit code {}){}\n{}\n", r.code, r.clause.map(|c| format!(" [{c}]")).unwrap_or_default(), r.message)),
+                    Err(SubmitError::Ledger(e)) => Err(format!("the register refused the event: {:?}", e)),
                 };
             }
             if let Some(want) = text_arg("expected_head")? {
