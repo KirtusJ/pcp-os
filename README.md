@@ -76,7 +76,7 @@ For build targets, tests, register verification and the kernel's QEMU requiremen
 
 ## Building releases and reproducing checks
 
-From the Rust workspace, run `cargo run --release --bin pcpos-vectors -- vectors` before `cargo test` to generate the 6.3 MB guard-case file. Three Python tests skip their vector comparisons when that file is absent. The [kernel guide](PCP_OS_Rust/crates/pcpos-kernel/README.md) covers QEMU and building the probe and Doom guests.
+From the Rust workspace, run `cargo run --release --bin pcpos-vectors -- vectors` before `cargo test` to generate the 6.3 MB guard-case file. The Python machine-table and register-replay comparisons use the shipped vectors. Generating the guard cases also enables the guard comparison. The [kernel guide](PCP_OS_Rust/crates/pcpos-kernel/README.md) covers QEMU and building the probe and Doom guests.
 
 The [release script](build/release.sh) builds and checks the editions and verifiers, including the host programs for `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`. It expects the edition's `ACR_1.0_Implementation.zip` extracted at `src/method`. The [method builders](build/method/) and [evidence file](build/evidence.json) supply release inputs. The [documentation builder](build/build_os_docs.py) produces reading copies and requirements data. The [reconciliation record](RECONCILIATION.md) identifies which source and packaged binary were compared.
 

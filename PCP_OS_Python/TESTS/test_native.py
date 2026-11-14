@@ -3,7 +3,7 @@
 The native implementation in Rust is the authority. It writes, under `vectors/` of the Rust workspace, a
 register, a file of (state, offered event) cases with its answer to each, and every state machine's table.
 These tests require this implementation to give the same answers. Set PCPOS_VECTORS to the directory, or
-keep the Rust workspace beside this folder. Without the files the tests are skipped.
+keep the Rust workspace beside this folder. Each comparison requires its own vector files.
 """
 import copy, json, os, unittest
 from pathlib import Path
@@ -11,9 +11,11 @@ from pcpos import model, machines
 from pcpos.base import PcposError, canon, sha_bytes, strict_loads
 
 HERE = Path(__file__).resolve().parent.parent
-# Beside this implementation: PCP_OS_Rust in the source archive, os-rust in the build tree; or where PCPOS_VECTORS says.
-VECTORS = Path(os.environ.get("PCPOS_VECTORS") or next((d / "vectors" for d in (HERE.parent / "PCP_OS_Rust", HERE.parent / "os-rust")
-                                                         if (d / "vectors" / "guard_cases.jsonl").is_file()), HERE.parent / "PCP_OS_Rust" / "vectors"))
+# Prefer the complete generated set if both workspace layouts are present.
+VECTOR_DIRS = (HERE.parent / "PCP_OS_Rust" / "vectors", HERE.parent / "os-rust" / "vectors")
+VECTORS = Path(os.environ.get("PCPOS_VECTORS") or next(
+    (d for filename in ("guard_cases.jsonl", "machines.tsv", "register_scenario.jsonl")
+     for d in VECTOR_DIRS if (d / filename).is_file()), VECTOR_DIRS[0]))
 LONG = "A" * 9000
 
 
@@ -27,11 +29,17 @@ def expand(v):
     return v
 
 
-@unittest.skipUnless((VECTORS / "guard_cases.jsonl").is_file(), "the native vectors are not at hand")
+def needs_vectors(*names):
+    missing = [name for name in names if not (VECTORS / name).is_file()]
+    return unittest.skipIf(missing, "missing native vectors: " + ", ".join(missing))
+
+
 class Native(unittest.TestCase):
+    @needs_vectors("machines.tsv")
     def test_machine_tables_equal_the_native_tables(self):
         self.assertEqual(machines.export(), (VECTORS / "machines.tsv").read_text())
 
+    @needs_vectors("register_scenario.jsonl", "register_scenario.expected.json")
     def test_the_native_register_replays_without_a_problem(self):
         lines = (VECTORS / "register_scenario.jsonl").read_bytes().split(b"\n")[:-1]
         events = [strict_loads(l) for l in lines]
@@ -41,6 +49,7 @@ class Native(unittest.TestCase):
         want = json.loads((VECTORS / "register_scenario.expected.json").read_text())
         self.assertEqual((len(events), sha_bytes(lines[-1])), (want["events"], want["head"]))
 
+    @needs_vectors("register_scenario.jsonl", "guard_cases.jsonl")
     def test_the_guards_answer_as_the_native_guards_do(self):
         events = [strict_loads(l) for l in (VECTORS / "register_scenario.jsonl").read_bytes().split(b"\n")[:-1]]
         states = [model.fold(events[:n]) for n in range(len(events) + 1)]
