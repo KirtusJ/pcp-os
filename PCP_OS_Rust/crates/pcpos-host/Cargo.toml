@@ -1,0 +1,22 @@
+[package]
+name = "pcpos-host"
+description = "PCP OS tools for other operating systems, built on the same integrity core as the kernel."
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "pcpos-verify"
+path = "src/main.rs"
+
+[[bin]]
+name = "pcpos"
+path = "src/pcpos.rs"
+
+[[bin]]
+name = "pcpos-vectors"
+path = "src/vectors.rs"
+
+[dependencies]
+pcpos-core = { path = "../pcpos-core" }

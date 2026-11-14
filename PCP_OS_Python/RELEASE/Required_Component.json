@@ -1,0 +1,12 @@
+{
+  "component": "ACR Implementation packet",
+  "method": "Adversarial Claim Review",
+  "version": "1.0",
+  "folder": "ACR_1.0_Implementation",
+  "archive": "ACR_1.0_Implementation.zip",
+  "archive_sha256": "c7310f55b34ec7705b48363b95fc0839e7df96dd044c41bfd9b3183edf21abe4",
+  "release_fingerprint": "7ff72eed9162e2c11fc62f6681c4afbc29524bfa96b87d45a455423d027d4707",
+  "core_descriptor_sha256": "9f5998dd75e921afe490687783787847916428f7ee7bcea410a88dad04646fb0",
+  "relationship": "REQUIRED_COMPONENT_EXACT_PIN",
+  "note": "PCP OS 1.0 is written against this exact release. Another release is a different method identity: it can be used only by an explicit, recorded choice, and findings made under it carry its identity."
+}

@@ -1,0 +1,28 @@
+[package]
+name = "pcpos-kernel"
+description = "The PCP OS kernel: a new kernel for x86_64, written in Rust. Early."
+version = "0.3.1"
+edition = "2021"
+authors = ["Kirtus Justus"]
+publish = false
+
+[workspace]                               # built on its own, for a bare-metal target
+
+[dependencies]
+pcpos-core = { path = "../pcpos-core" }
+
+[features]
+fault-demo = []            # after the self-tests, fault on purpose to show that an unexpected exception is reported and stops the kernel
+
+overflow-demo = []         # after the self-tests, exhaust the stack on purpose to show that it is reported
+
+[profile.dev]
+panic = "abort"
+opt-level = 1
+overflow-checks = true
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+overflow-checks = true
+debug = false
