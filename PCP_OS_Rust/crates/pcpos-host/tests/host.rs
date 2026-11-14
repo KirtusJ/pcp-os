@@ -926,3 +926,42 @@ fn an_instrument_is_run_by_the_program_and_recorded_as_a_check_it_ran() {
     let (out, _) = tool(&quiet, "acr_instrument", r#"{"instrument":"engineering.units","input":{"from":"1 in","to":"25.4 mm"}}"#);
     assert!(out.contains("EQUAL to the last digit given") && out.contains("No review is open") && kinds(&quiet).len() == k, "{out}");
 }
+
+#[test]
+fn offer_delta_round_trips_the_callers_body_without_writing() {
+    let root = dir("offer-delta");
+    assert!(!tool(&root, "acr_begin", "{}").1);
+    let register = fs::read(root.join(REG)).unwrap();
+    let digest = sha256_hex(b"");
+    let check = format!(r#"{{"argv":["echo","1"],"exit":0,"expect_exit":0,"timeout":false,"stdout":"{digest}","stderr":"{digest}","observed":"HOST_OBSERVED_TOOL"}}"#);
+    for (kind, input) in [
+        ("NOTE", r#"{"text":"保持 Δ","extra":{"n":null,"xs":[false,2]}}"#),
+        ("PARTICIPANT_ADDED", r#"{"label":"peer","kind":"AUTOMATED"}"#),
+        ("CHECK_RAN", check.as_str()),
+    ] {
+        let args = |extra: &str| format!(r#"{{"kind":"{kind}","body":{input}{extra}}}"#);
+        let full = tool(&root, "acr_offer", &args(""));
+        assert!(!full.1);
+        assert_eq!(full, tool(&root, "acr_offer", &args(r#","delta":false"#)));
+        let accepted = full.0.strip_prefix("ACCEPT\nbody that would be written: ").unwrap();
+        let (wire, error) = tool(&root, "acr_offer", &args(r#","delta":true"#));
+        assert!(!error);
+        let patch = Value::parse(wire.as_bytes()).unwrap();
+        assert_eq!(patch.get("accept"), Some(&Value::Bool(true)));
+        let Value::Map(mut rebuilt) = Value::parse(input.as_bytes()).unwrap() else { panic!() };
+        if let Some(Value::List(keys)) = patch.get("remove") {
+            for k in keys { rebuilt.remove(k.as_str().unwrap()); }
+        }
+        if let Some(Value::Map(fields)) = patch.get("set") { rebuilt.extend(fields.clone()); }
+        assert_eq!(Value::Map(rebuilt), Value::parse(accepted.as_bytes()).unwrap());
+        if kind == "NOTE" { assert_eq!(wire, r#"{"accept":true}"#); }
+        if kind == "CHECK_RAN" { assert!(wire.contains("REPORTED_BY_PARTICIPANT")); }
+    }
+    let invalid = r#"{"kind":"SYSTEM_STATE","body":{}}"#;
+    let refused = tool(&root, "acr_offer", invalid);
+    assert!(refused.0.starts_with("REFUSE"));
+    assert_eq!(refused, tool(&root, "acr_offer", r#"{"kind":"SYSTEM_STATE","body":{},"delta":true}"#));
+    assert!(tool(&root, "acr_offer", r#"{"kind":"NOTE","body":{},"delta":1}"#).1);
+    assert!(tool(&root, "acr_submit", r#"{"kind":"NOTE","body":{},"delta":true}"#).1);
+    assert_eq!(fs::read(root.join(REG)).unwrap(), register);
+}
