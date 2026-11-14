@@ -104,6 +104,15 @@ Both summary modes write one JSON line and send diagnostics to stderr. They acce
 
 Give admission its own stream or capture branch. The receiver may read ahead and exits after reporting admission. Preserve the full capture separately for later health checks and the image and register digests. These summaries describe the emitter's observations. Keep the COM2 capture bound to one guest boot and preserve the process/VM identity outside the stream. The three records contain no shared boot identifier or challenge; they cannot independently detect a capture assembled from portions of different boots. A healthy reply is not authenticated attestation of the running image, nor independent replay of its register. Those guarantees require separate evidence or a versioned binding mechanism ([tracking issue #64](https://github.com/KirtusJ/pcp-os/issues/64)). Pass `--host /path/to/pcpos` to `tests/boot_report.py` to exercise all three encodings during interactive sessions and after shutdown.
 
+To reproduce the capture-boundary limitation with two measured kernel images, run the following from this crate after building the kernel and release host. Choose a new output directory to retain the captures.
+
+```sh
+python3 tests/cross_boot_capture.py target/pcpos-kernel.elf32 \
+  --host ../../target/release/pcpos --out cross-boot-captures
+```
+
+The experiment boots one image that matches its loader pin and then fails, and another that finishes healthy with no pin. It passes the first image's boot record and the second image's session and stop records to the receiver, preserving the original bytes. The receiver gives the same matched, healthy verdict it gives a genuine positive control. The test exercises JSON, named CBOR and positional CBOR.
+
 ### Quiet boot console for a machine receiver
 
 With `console=quiet`, a kernel that successfully initializes its selected COM2 reporter omits routine boot diagnostics on COM1. For example, use `then=off report=cbor console=quiet` for an unattended boot. COM1 still carries the early kernel banner, individual failed checks, image mismatch details, SAFE diagnostics, fatal errors, session messages and application output. Adding `checks=brief` explicitly also prints the shutdown check totals. The checks, device setup and machine report run in each mode.
