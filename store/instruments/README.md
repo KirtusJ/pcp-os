@@ -10,6 +10,7 @@ These instruments ship inside the Rust host. To browse downloadable applications
 | `mathematics.protected_bins` | Compare squared norms and odd coordinate gcds for corresponding bins of two integer columns. [Worked example and limits](../../PCP_OS_Rust/README.md#checking-a-signed-column-in-protected-bins) | `scale_exponent`, `source`, `target` |
 | `mathematics.statement` | Compare a named Lean statement with a pinned digest and screen for trivial forms. Run Lean itself to check the proof. | `source`, `theorem`, optional `pinned` |
 | `science.order` | Check which of two artifacts first entered a particular register. | `earlier`, `later` (SHA-256 digests), plus the register |
+| `science.incident_bounds` | Check whether every completion of unread binary outcomes stays inside a closed hit-fraction range. | `incidents`, `hits`, `misses`, `unread`, `lower_numerator`, `upper_numerator`, `denominator` |
 | `statistics.grim` | Test whether a rounded mean is possible for the given count of integer observations. | `mean` (text preserving reported precision), `n` |
 | `statistics.percent` | Test whether a reported percentage is possible for an integer count out of a stated total. | `percent` (text preserving reported precision), `total` |
 | `engineering.units` | Convert compatible physical units and compare at the precision of the second quantity. | `from`, `to` (for example, `"1 m"` and `"100 cm"`) |
@@ -41,7 +42,7 @@ In an MCP session call `acr_instrument` with the arguments below to run the same
 
 ## Proposed research tools
 
-The incident-count bounds instrument and the shared Science and Mathematics SVG plotter are available on their review branches. Preview the proposed plotter's output in the finite-walk example. [Incident-count proposal](https://github.com/KirtusJ/pcp-os/pull/83) · [Plotter proposal](https://github.com/KirtusJ/pcp-os/pull/86) · [Finite-walk SVG preview](https://github.com/KirtusJ/pcp-os/blob/e8d62e4b00b7bcb404b67fbba9151c50814f1d70/PCP_OS_Rust/docs/plots/finite_walk.svg)
+The shared Science and Mathematics SVG plotter is available on its review branch. Preview its output in the finite-walk example. [Plotter proposal](https://github.com/KirtusJ/pcp-os/pull/86) · [Finite-walk SVG preview](https://github.com/KirtusJ/pcp-os/blob/e8d62e4b00b7bcb404b67fbba9151c50814f1d70/PCP_OS_Rust/docs/plots/finite_walk.svg)
 
 ## Maintaining this catalog
 
