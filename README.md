@@ -1,17 +1,37 @@
-# PCP 1.0 | Source
+# PCP OS
 
-The rights holder's own files. Not part of any edition.
+PCP OS runs Adversarial Claim Review (ACR) and keeps a verifiable register of what was examined, who examined it and what evidence they used. This repository contains the Rust host program `pcpos`, its integrity core, the experimental kernel and the source used to build PCP editions.
 
-**PCP OS is primarily Rust. Rust holds primacy for security reasons.** Before contributing, read the [permanent Rust policy](RUST_PRIMACY.md). It identifies the reference implementation, where host security fixes and instruments belong, and how the Python implementation is checked against the Rust vectors.
+**[Browse the Store apps](store/README.md)** for Science, Mathematics, Statistics, Engineering and review. The catalog includes the inputs for each instrument, a terminal example and the equivalent MCP call.
 
-| Folder | What it is |
+## Run the Rust host
+
+With a Rust toolchain installed, run these commands from this repository. They build the host for your machine and list the instruments in that build.
+
+```sh
+cd PCP_OS_Rust
+cargo run --locked --release --bin pcpos -- instrument list
+```
+
+For build targets, tests, register verification and the kernel's QEMU requirements, see the [Rust workspace README](PCP_OS_Rust/README.md). Rust is the reference implementation for host security and built-in instruments. [Rust primacy policy](RUST_PRIMACY.md)
+
+## Repository guide
+
+| Path | What you will find |
 | --- | --- |
-| `PCP_OS_Rust/` | The native core, the host program `pcpos`, the kernel, the published vectors. `cargo run --release --bin pcpos-vectors -- vectors` first (it writes the 6.3 MB case file, which is generated and not kept here), then `cargo test`; `crates/pcpos-kernel/run.sh` (it compiles the kernel in one fixed folder, so the image is the same file wherever this archive is unpacked); `crates/pcpos-kernel/programs/probe/build.sh` and `programs/doom/build.sh` for the programs the kernel's tests load. The programs supplied are built for the targets `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`, as `build/release.sh` does. Without that first step three of the Python tests are skipped, and say why |
-| `PCP_OS_Python/` | The second implementation, tested against the Rust vectors. Place `ACR_1.0_Implementation.zip` beside this folder and run `python3 -m unittest discover -s TESTS` in it |
-| `os-docs/` | The PCP OS Overview and Specification as written; `build/build_os_docs.py` makes the reading copies, the requirements data and the backgrounds |
-| `build/` | `release.sh` runs the whole build in order: tests, design tokens, plugins, the documented events through each packaged program, validation, the machine form, the three editions and their verifiers |
-| `audit/` | The harnesses of the eighth to thirteenth audits: `sim/sim.py` drives the packaged program through constructed scenarios, and both implementations read every register a scenario leaves; `live/matrix.py` runs the method's behavioural probes in each arm of delivery; `live17/run.sh` to `live20/run.sh` hold the live conversations on the plugins of those builds; `calibration/` holds the Calibration: `run.py` (five deliveries to two models, every conversation read twice), `hidden.sh` (runs a measured session where the probes and their criteria are not on the disk it sees) and `reexamine21.py` (the second look at build 21's conversations) |
+| [Store](store/README.md) | Available instruments, how to run them, and where to find packages, modules and plugins. |
+| [Rust workspace](PCP_OS_Rust/) | The host, integrity core, package-manager library, kernel and reference vectors. |
+| [Python implementation](PCP_OS_Python/) | The companion implementation tested against the Rust vectors. Place `ACR_1.0_Implementation.zip` beside the Python directory, then run `python3 -m unittest discover -s TESTS` inside it. |
+| [OS documentation](os-docs/) | The overview, specification and async execution notes. |
+| [Build](build/) | Release scripts, method build scripts and edition evidence. |
+| [Audit](audit/) | Simulation, live-session and calibration harnesses and their evidence. |
 
-The method packet is not here: it is `ACR_1.0_Implementation.zip` inside every edition, and the build reads it extracted at `src/method`. `build/method/` holds the scripts that make it, as they stand after the fifteenth round, with the edits of the twelfth to fifteenth rounds. `build/evidence.json` holds what each edition's evidence statement says of live sessions and Calibrations, so that this archive and a release's base editions rebuild the editions.
+## Building releases and reproducing checks
 
-Proprietary; all rights reserved. Copyright (c) 2026 Kirtus Justus.
+From the Rust workspace, run `cargo run --release --bin pcpos-vectors -- vectors` before `cargo test` to generate the 6.3 MB guard-case file. Three Python tests skip their vector comparisons when that file is absent. The [kernel guide](PCP_OS_Rust/crates/pcpos-kernel/README.md) covers QEMU and building the probe and Doom guests.
+
+The [release script](build/release.sh) builds and checks the editions and verifiers, including the host programs for `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`. It expects the edition's `ACR_1.0_Implementation.zip` extracted at `src/method`. The [method builders](build/method/) and [evidence file](build/evidence.json) supply release inputs. The [documentation builder](build/build_os_docs.py) produces reading copies and requirements data. The [reconciliation record](RECONCILIATION.md) identifies which source and packaged binary were compared.
+
+## Rights
+
+Source supplied by the rights holder, separate from the distributed editions. Proprietary. All rights reserved. Copyright © 2026 Kirtus Justus.
