@@ -16,6 +16,11 @@ EVENT_KEYS = {"seq", "prev", "ts", "actor", "auth", "kind", "body"}
 AUTH = ("DECLARED", "HOST")
 
 
+def check_register_line_size(line, number):
+    if len(line) > MAX_EVENT_BYTES:
+        raise PcposError(INTEGRITY, "register line %d is %d bytes; the limit is %d" % (number, len(line), MAX_EVENT_BYTES))
+
+
 def find_workspace(explicit=None, start=None):
     """Resolve the workspace: an explicit path, PCPOS_WS, the current directory or an ancestor, or ./pcp-os."""
     if explicit:
@@ -153,6 +158,7 @@ class Workspace:
                              "inspect it, then remove only the incomplete final line with: pcpos repair")
         events, prev = [], ZERO
         for n, line in enumerate(raw.split(b"\n")[:-1] if raw else []):
+            check_register_line_size(line, n + 1)
             try:
                 ev = strict_loads(line)
             except ValueError as e:
