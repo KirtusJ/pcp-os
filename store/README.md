@@ -1,4 +1,13 @@
-# PCP OS game store
+# PCP OS Store
+
+| What you want to do | Where to start |
+| --- | --- |
+| Run a Science, Mathematics, Statistics, Engineering or review instrument | [Host instrument catalog and CLI/MCP examples](instruments/README.md) |
+| Get a packaged application or verify its files | [Package index](#package-index) |
+| Choose a review module or read its specification | [Released method modules](../README.md#method-modules) |
+| Play a game | [Offline browser shelf](index.html) or [native PCP OS launcher](#play-both-on-pcp-os) |
+
+## PCP OS game store
 
 Download or clone the repository and open [the game shelf](index.html) in your browser. Each game also fits in a single HTML file. If you are browsing on GitHub, open the player link below, use **Download raw file**, then open that file locally. Both games run offline with WebAssembly enabled.
 
@@ -28,8 +37,17 @@ The Store uses the repository's `pcpos-pkg` application entry format. Files in a
 | `kirtusj/night-post` | [Package entry](index/kirtusj/ni/gh/night-post) |
 | `kirtusj/bellweather-harbor` | [Package entry](index/kirtusj/be/ll/bellweather-harbor) |
 
+For a separately downloaded player, open its package entry above and compare the SHA-256 for the matching `.html` path with the downloaded file. For example, run `Get-FileHash -Algorithm SHA256 ./Night_Post.html` in PowerShell or `sha256sum ./Night_Post.html` on Linux in the download directory.
+
 To check the catalog identities, file lengths and SHA-256 hashes against the checkout, run the verifier from the repository root.
 
 ```sh
 cargo run --locked --manifest-path PCP_OS_Rust/Cargo.toml -p pcpos-pkg --example verify-game-store
 ```
+
+The verifier checks the named applications against local files. The entries pin the upstream payload commit, file sizes and SHA-256 digests. To obtain an application, download its player or use the linked source checkout. The host currently offers no remote `pcpos install` command. [Package format and verification](../PCP_OS_Rust/crates/pcpos-pkg/src/lib.rs) · [Install and undo transaction model](../PCP_OS_Rust/crates/pcpos-pkg/src/txn.rs)
+
+## Modules and assistant plugins
+
+- Inspect method rules with `pcpos modules <method-directory>`. The host accepts local specifications with `pcpos module add`. The [front-page module table](../README.md#method-modules) links each specification at the release revision checked against this host.
+- The assistant's plugin manager installs its own integrations. [Claude plugin marketplace manifest](https://github.com/KirtusJ/pcp/blob/master/PCP_1.0_Plugins/.claude-plugin/marketplace.json)
