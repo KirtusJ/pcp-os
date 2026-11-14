@@ -1113,6 +1113,18 @@ fn modules_and_oddities(se: &Session) -> (Vec<Module>, Vec<String>) {
         odd.push("there is no MODULES folder".to_string());
     }
     for (base, is_added) in sources {
+        // A linked top-level MODULES or added-module directory must not
+        // redirect module discovery outside the supplied source tree.
+        if !fs::symlink_metadata(&base)
+            .map(|m| m.file_type().is_dir())
+            .unwrap_or(false)
+        {
+            odd.push(format!(
+                "{}: module directory is missing, linked or nonregular; not inspected",
+                if is_added { "added modules" } else { "MODULES" }
+            ));
+            continue;
+        }
         let mut dirs: Vec<PathBuf> = match fs::read_dir(&base) {
             Ok(d) => d.filter_map(|e| e.ok()).map(|e| e.path()).collect(),
             Err(_) => continue,
@@ -1121,10 +1133,25 @@ fn modules_and_oddities(se: &Session) -> (Vec<Module>, Vec<String>) {
         let packet: Vec<String> = out.iter().map(|m| m.key.clone()).chain(ambiguous.iter().cloned()).collect();
         for d in dirs {
             let folder = format!("{}{}", if is_added { "added/" } else { "" }, clip(&d.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(), 80));
-            if !d.is_dir() {
+            // Path::is_dir follows symlinks. An attacker-controlled module
+            // directory could otherwise redirect to a Specification outside
+            // the chosen method tree even though the final filename is safe.
+            if !fs::symlink_metadata(&d)
+                .map(|m| m.file_type().is_dir())
+                .unwrap_or(false)
+            {
+                odd.push(format!("{folder}: not an ordinary module directory; not used"));
                 continue;
             }
-            let file = d.join("SOURCE").join("Specification.md");
+            let source_dir = d.join("SOURCE");
+            if !fs::symlink_metadata(&source_dir)
+                .map(|m| m.file_type().is_dir())
+                .unwrap_or(false)
+            {
+                odd.push(format!("{folder}: no SOURCE/Specification.md that can be read; not a module"));
+                continue;
+            }
+            let file = source_dir.join("Specification.md");
             // Discovery and clause rendering share the bounded, nonblocking reader.
             // A path swapped to a FIFO between type inspection and open must not hang.
             let bytes = match read_method_regular_file(&file) {
