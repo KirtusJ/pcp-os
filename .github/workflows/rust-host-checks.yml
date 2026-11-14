@@ -1,0 +1,28 @@
+name: PCP OS Rust host checks
+
+on:
+  pull_request:
+    paths:
+      - "PCP_OS_Rust/**"
+      - ".github/workflows/rust-host-checks.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install source-release Rust toolchain
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal
+          rustup default 1.97.0
+          rustc --version
+      - name: Test host binary, including source regressions
+        run: cargo test --manifest-path PCP_OS_Rust/Cargo.toml --package pcpos-host --bin pcpos --locked
+      - name: Build host binary for Linux x86_64
+        run: cargo build --manifest-path PCP_OS_Rust/Cargo.toml --package pcpos-host --bin pcpos --locked
