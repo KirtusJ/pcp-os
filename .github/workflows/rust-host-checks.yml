@@ -55,7 +55,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: KirtusJ/pcp-os-claude
-          ref: cef49456bb2bea13a1682d90f12d8f29d12f89c5
+          ref: 14a298bdd0a565df9fde9d9b9f46e3ef01615e92
           path: clause-tests
           persist-credentials: false
       - name: Test coherent clause source under concurrent regular-file replacement
