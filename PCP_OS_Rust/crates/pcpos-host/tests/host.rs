@@ -772,7 +772,7 @@ fn simultaneous_module_adds_to_one_identifier_have_one_recorded_winner() {
     let sources: Vec<PathBuf> = (0..8).map(|i| {
         let folder = root.join(format!("incoming-{i}"));
         fs::create_dir_all(&folder).unwrap();
-        fs::write(folder.join("Specification.md"), format!("**Component:** \`local.race\`, Version 1.0\n\n## 1. Scope\n\nsynthetic source {i}\n")).unwrap();
+        fs::write(folder.join("Specification.md"), format!("**Component:** `local.race`, Version 1.0\n\n## 1. Scope\n\nsynthetic source {i}\n")).unwrap();
         folder
     }).collect();
     let jobs: Vec<_> = sources.iter().map(|src| {
