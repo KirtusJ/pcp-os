@@ -57,6 +57,36 @@ The command emits a JSON line for each complete, valid v1 message in order. Chec
 
 A complete successful run has a complete `stop` with `fail=0` and `replay=true`. A register can replay correctly after failed verification. Missing, truncated, out-of-order or unknown-version messages give an incomplete or unsupported result. An early halt, panic, or disconnected UART can leave the stream empty or partial. The first `report=` option selects the format; an unknown value disables the report. A missing reporting port is noted on the console. For unattended boots, add `checks=brief` to omit individual successful check descriptions on COM1. Every check still runs, individual failures print immediately, and the cumulative totals print at shutdown. This option also works without COM2. Detailed diagnostics and program output remain on COM1. Run `python3 tests/boot_report.py target/pcpos-kernel.elf32` with QEMU and Python's `cbor2` installed to exercise both forms.
 
+### Reading admission during a session
+
+A controller can read a dedicated copy of COM2 from the beginning of a boot. Attach to a binary-clean byte stream in the format selected by the loader. For example, with `report=cbor` and a named pipe connected to that stream, run:
+
+```sh
+pcpos boot-report --admission cbor < com2.fifo
+```
+
+The receiver returns as soon as the `boot` and `session` records validate, even while the writer stays open. A typical result is `{"admit":true,"image":"unchecked"}`. Admission describes whether verification allowed the kernel to start programs at session entry. A program can fail later. Image values describe the kernel's comparison with the loader's expected digest. An omitted expectation gives `unchecked`. A successful comparison gives `matched`.
+
+### Reading final health
+
+Capture one boot through shutdown, close the capture and run:
+
+```sh
+pcpos boot-report --health json < health.jsonl
+pcpos boot-report --health cbor < health.cbor
+```
+
+Both summary modes write one JSON line and send diagnostics to stderr. They accept up to 4,096 bytes through the requested observation. Each binary v1 record fits in a 128-byte input buffer. Final health requires all three records in order, both full digest fields, consistent counters and EOF. A live stream waiting for bytes can stay open indefinitely. Supervisors with a deadline should treat expiration before a verdict as unknown.
+
+| Exit | Admission | Final health |
+|---|---|---|
+| 0 | `{"admit":true,"image":"unchecked"}` | `{"boot":"ok","image":"unchecked"}` |
+| 1 | `"admit":false` with the image result, failure count and system state | `"boot":"failed"` with the image result, admission, failure count, replay and system state |
+| 6 | `{"admit":null}` when the two records are incomplete or invalid | `{"boot":"unknown"}` when the completed capture is incomplete or invalid |
+| 2 | Command usage or local I/O error | Command usage or local I/O error |
+
+Give admission its own stream or capture branch. The receiver may read ahead and exits after reporting admission. Preserve the full capture separately for later health checks and the image and register digests. These summaries describe the emitter's observations. Checking its origin or independently replaying its register requires separate evidence. Pass `--host /path/to/pcpos` to `tests/boot_report.py` to exercise both formats during interactive sessions and after shutdown.
+
 ## Rules of this crate
 
 `unsafe` in two files only: `arch.rs` (processor, memory, the copy between kernel and user memory) and `dev.rs` (device registers and device memory). Each use states why it is sound. The crate denies it everywhere and those two files alone lift the denial, so the loader, the system calls, the process table, the session and the drawing code are checked by the compiler in full. A program's memory is read and written only through two functions in `arch.rs` that check the range against the process's own map. Arithmetic overflow stops the kernel in release builds.
