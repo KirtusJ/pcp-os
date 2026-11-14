@@ -1143,7 +1143,7 @@ def _(ck):
     s.close()
 
 # ---------- F33: instruments, and the calibrate skill (build 21) -----------------------------------------------------------------
-# The method's modules name instruments a host can run itself (Core 14.1). The program runs eight and records each as a
+# The method's modules name instruments a host can run itself (Core 14.1). The program runs nine and records each as a
 # check it ran. An instrument computes one property of its input and nothing else.
 F33 = "F33 an instrument is computed by the program itself and recorded as a check it ran"
 INSTR = lambda name, inp, **kw: ("acr_instrument", dict({"instrument": name, "input": inp}, **kw))
