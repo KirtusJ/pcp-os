@@ -309,7 +309,9 @@ pub struct TaskState {
 
 /// Older subagent hook observations stored only the clipped attempt label.
 pub enum HookAttempt {
+    /// Only a human-readable attempt label was retained.
     Legacy,
+    /// Digest of the session and full supervisor agent identifier.
     Key(String),
 }
 
