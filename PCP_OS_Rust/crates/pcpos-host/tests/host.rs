@@ -984,3 +984,153 @@ fn positional_transport_restores_bytes_only_for_the_addressed_chain() {
     let empty = Command::new(bin).arg("--from-r1").arg(&path).arg(pcpos_core::ZERO).output().unwrap();
     assert!(empty.status.success() && empty.stdout.is_empty());
 }
+
+/// An incremental transfer sends exactly the corresponding suffix of a full positional file.
+#[test]
+fn positional_suffix_matches_full_transfer_at_every_published_scenario_boundary() {
+    let root = dir("r1-boundaries");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vectors/register_scenario.jsonl");
+    let source = fs::read(&fixture).unwrap();
+    let (events, target) = ledger::verify(&source).unwrap();
+    let wire = root.join("transfer.r1");
+    let base = root.join("base.jsonl");
+    let cli = || Command::new(env!("CARGO_BIN_EXE_pcpos-verify"));
+    assert!(cli().arg(&fixture).arg("--r1").arg(&wire).output().unwrap().status.success());
+    let full = fs::read(&wire).unwrap();
+    let lines: Vec<_> = source.split_inclusive(|&c| c == b'\n').collect();
+    let mut prefix = Ledger::new();
+    let mut suffix = full.as_slice();
+    for count in 0..=events.len() {
+        fs::write(&base, prefix.bytes()).unwrap();
+        let sent = cli().arg(&fixture).arg("--r1").arg(&wire).arg("--after").arg(prefix.head()).output().unwrap();
+        assert!(sent.status.success(), "split {count}: {}", String::from_utf8_lossy(&sent.stderr));
+        assert_eq!(fs::read(&wire).unwrap(), suffix, "suffix at split {count}");
+        let got = cli().arg("--from-r1").arg(&wire).arg(&target).arg("--base").arg(&base).output().unwrap();
+        assert!(got.status.success(), "split {count}: {}", String::from_utf8_lossy(&got.stderr));
+        assert_eq!(got.stdout, source, "restored bytes at split {count}");
+        assert_eq!(fs::read(&base).unwrap(), prefix.bytes(), "decoding wrote to its base");
+        if let Some(line) = lines.get(count) {
+            prefix.extend(line).unwrap();
+            suffix = pcpos_core::r1::decode_event(suffix).unwrap().1;
+        }
+    }
+    assert!(suffix.is_empty());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn positional_suffix_errors_preserve_destinations_and_emit_no_partial_restoration() {
+    let root = dir("r1-fork");
+    let mut register = Ledger::new();
+    let note = |ledger: &mut Ledger, actor| {
+        ledger.append("2026-11-12T00:00:00Z", actor, "DECLARED", "NOTE", Value::Map(Default::default())).unwrap();
+    };
+    note(&mut register, "first");
+    let base = root.join("base.jsonl");
+    fs::write(&base, register.bytes()).unwrap();
+    let anchor = register.head().to_owned();
+    note(&mut register, "second");
+    let source = root.join("source.jsonl");
+    fs::write(&source, register.bytes()).unwrap();
+    let wire = root.join("suffix.r1");
+    let cli = || Command::new(env!("CARGO_BIN_EXE_pcpos-verify"));
+    let send = |head: &str| cli().arg(&source).arg("--r1").arg(&wire).arg("--after").arg(head).output().unwrap();
+    let receive = |target: &str| cli().arg("--from-r1").arg(&wire).arg(target).arg("--base").arg(&base).output().unwrap();
+    assert!(send(&anchor).status.success());
+    let good_wire = fs::read(&wire).unwrap();
+    let good_base = fs::read(&base).unwrap();
+    let mut fork = Ledger::new();
+    note(&mut fork, "other-first");
+    for invalid in [fork.head(), "ff", &"F".repeat(64)] {
+        assert!(!send(invalid).status.success());
+        assert_eq!(fs::read(&wire).unwrap(), good_wire);
+    }
+    let check_receive_error = |target: &str| {
+        let got = receive(target);
+        assert!(!got.status.success() && got.stdout.is_empty(), "target {target}");
+    };
+    check_receive_error("short-digest");
+    check_receive_error(fork.head());
+    fs::write(&base, fork.bytes()).unwrap();
+    check_receive_error(register.head());
+    fs::write(&base, &good_base[..good_base.len() - 1]).unwrap();
+    check_receive_error(register.head());
+    fs::write(&base, &good_base).unwrap();
+    for invalid in [Vec::new(), [good_wire.as_slice(), &good_wire].concat(), good_wire[..good_wire.len()-1].to_vec()] {
+        fs::write(&wire, invalid).unwrap();
+        check_receive_error(register.head());
+        assert_eq!(fs::read(&base).unwrap(), good_base);
+    }
+    fs::write(&wire, &good_wire).unwrap();
+    fs::write(&source, &register.bytes()[..register.bytes().len() - 1]).unwrap();
+    assert!(!send(&anchor).status.success());
+    assert_eq!(fs::read(&wire).unwrap(), good_wire);
+    // Even when the caller knows the final head (empty suffix), the source prefix is rechecked.
+    let mut bad_prefix = register.bytes().to_vec();
+    let old_actor = b"\"first\"";
+    let at = bad_prefix.windows(old_actor.len()).position(|bytes| bytes == old_actor).unwrap();
+    bad_prefix[at + 1] = b'F';
+    fs::write(&source, bad_prefix).unwrap();
+    assert!(!send(register.head()).status.success());
+    assert_eq!(fs::read(&wire).unwrap(), good_wire);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn positional_suffix_only_requires_representable_timestamps_after_the_anchor() {
+    let root = dir("r1-calendar-anchor");
+    let mut ledger = Ledger::new();
+    // Such a timestamp passes the historical register grammar and has no positional UTC encoding.
+    ledger.append("2025-02-29T00:00:00Z", "one", "HOST", "NOTE", Value::Map(Default::default())).unwrap();
+    let anchor = ledger.head().to_owned();
+    let base = root.join("historical.jsonl");
+    fs::write(&base, ledger.bytes()).unwrap();
+    ledger.append("2025-03-01T00:00:00Z", "two", "HOST", "NOTE", Value::Map(Default::default())).unwrap();
+    let source = root.join("source.jsonl");
+    fs::write(&source, ledger.bytes()).unwrap();
+    let wire = root.join("suffix.r1");
+    let cli = || Command::new(env!("CARGO_BIN_EXE_pcpos-verify"));
+    let send = |head: &str| cli().arg(&source).arg("--r1").arg(&wire).arg("--after").arg(head).output().unwrap();
+    assert!(send(&anchor).status.success());
+    let got = cli().arg("--from-r1").arg(&wire).arg(ledger.head()).arg("--base").arg(&base).output().unwrap();
+    assert!(got.status.success());
+    assert_eq!(got.stdout, ledger.bytes());
+    let good_wire = fs::read(&wire).unwrap();
+    assert!(!send(pcpos_core::ZERO).status.success());
+    assert_eq!(fs::read(&wire).unwrap(), good_wire);
+    ledger.append("2025-04-31T00:00:00Z", "three", "HOST", "NOTE", Value::Map(Default::default())).unwrap();
+    fs::write(&source, ledger.bytes()).unwrap();
+    assert!(!send(&anchor).status.success());
+    assert_eq!(fs::read(&wire).unwrap(), good_wire);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn positional_exports_do_not_replace_their_canonical_source() {
+    let root = dir("r1-output-alias");
+    let source = root.join("source.jsonl");
+    let mut record = Ledger::new();
+    record.append("2026-11-12T00:00:00Z", "one", "HOST", "NOTE", Value::Map(Default::default())).unwrap();
+    fs::write(&source, record.bytes()).unwrap();
+    let check = |destination: &Path| {
+        for after in [None, Some(pcpos_core::ZERO)] {
+            let mut cmd = Command::new(env!("CARGO_BIN_EXE_pcpos-verify"));
+            cmd.arg(&source).arg("--r1").arg(destination);
+            if let Some(head) = after { cmd.arg("--after").arg(head); }
+            assert!(!cmd.output().unwrap().status.success());
+            assert_eq!(fs::read(&source).unwrap(), record.bytes());
+            assert_eq!(fs::read(destination).unwrap(), record.bytes());
+        }
+    };
+    check(&source);
+    #[cfg(unix)]
+    {
+        let hard = root.join("same-file");
+        let link = root.join("alias");
+        fs::hard_link(&source, &hard).unwrap();
+        std::os::unix::fs::symlink(&source, &link).unwrap();
+        check(&hard);
+        check(&link);
+    }
+    fs::remove_dir_all(root).unwrap();
+}

@@ -74,6 +74,27 @@ The receiver decodes the positional fields, checks each original JSON predecesso
 
 The 82-event scenario travels in 12,787 bytes and recovers all 28,651 JSONL bytes, including the final newline. A full lowercase-hex head adds 64 bytes if sent separately, before transport framing. With this transport the sender and receiver can pass compact bytes between programs without supplying the register to a model. This measures wire bytes only. A model-facing adapter still determines which fields become tokens.
 
+### Updating a receiver that already holds a snapshot
+
+The receiver gives the sender the full head of its existing canonical JSONL snapshot. The sender verifies the source and exports only the R1 events following that head. The receiver verifies its local snapshot, extends it with the received frames and checks the independently obtained final head before writing the complete JSONL to stdout. Use a fresh output path because shell redirection opens it before verification.
+
+```sh
+# Sender, using the checkpoint reported by the receiver
+pcpos-verify source.jsonl --r1 changes.r1 --after "$base_head"
+# Receiver, using its existing snapshot and the expected final head
+pcpos-verify --from-r1 changes.r1 "$expected_register_head" --base local.jsonl > next.jsonl
+```
+
+A head missing from the source cannot identify a suffix. A receiver at the final head needs zero event frames. A zero-event transfer still requires the receiver to verify its local snapshot and match the expected final head. The 64-zero genesis head requests the full stream. Only transmitted events need a timestamp representable in positional R1.
+
+| Events already held in the 82-event scenario | R1 event bytes sent | SHA-256 head bytes if both heads travel as lowercase hex |
+| ---: | ---: | ---: |
+| 41 | 6,036 | 128 |
+| 81 | 105 | 128 |
+| 82 | 0 | 128 |
+
+For comparison, sending the full stream and one final head costs 12,851 bytes before transport framing. These counts describe the transfer between programs. The sender still verifies the full source, and the receiver reads the local prefix and outputs the full reconstructed register. To see whether the ACR guards accept that history, use `pcpos verify next.jsonl` separately.
+
 ## 6. Open, in order of importance
 
 1. **Two forms, one record.** What is hashed has to be the compact form. What a person or a model reads should be a rendering generated from it, never a second source. The rendering for models is a separate design problem: its cost is counted in tokens, not bytes, and no tokenizer was measured here.
