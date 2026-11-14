@@ -1019,3 +1019,41 @@ fn module_remove_uses_exact_installed_identity_and_does_not_delete_unknown_folde
     assert_eq!(fs::read(root.join(REG)).unwrap(), before);
     assert_eq!(fs::read(orphan.join("private.txt")).unwrap(), b"synthetic sentinel");
 }
+
+#[test]
+fn module_remove_preserves_a_moved_module_and_the_directory_in_its_old_slot() {
+    let root = dir("remove-moved-module");
+    let method = small_method(&root);
+    let run = |args: &[&str]| {
+        let mut command = with_method(&root, &method);
+        command.args(args);
+        feed(command, b"")
+    };
+    assert_eq!(run(&["init", REG, "--principal", "p"]).1, 0);
+    let input = root.join("input");
+    fs::create_dir(&input).unwrap();
+    let foo = b"**Component:** `local.foo`, Version 1.0\n\nSynthetic foo.\n";
+    fs::write(input.join("Specification.md"), foo).unwrap();
+    assert_eq!(run(&["module", "add", REG, input.to_str().unwrap(), "--by", "p"]).1, 0);
+    let modules = root.join(".pcp/modules");
+    let old = modules.join("foo");
+    let moved = modules.join("moved");
+    fs::rename(&old, &moved).unwrap();
+    fs::create_dir(&old).unwrap();
+    let note = old.join("notes.txt");
+    fs::write(&note, b"unrelated").unwrap();
+    let before = fs::read(root.join(REG)).unwrap();
+    let assert_preserved = || {
+        assert_ne!(run(&["module", "remove", REG, "foo", "--by", "p"]).1, 0);
+        assert_eq!(fs::read(&note).unwrap(), b"unrelated");
+        assert_eq!(fs::read(moved.join("SOURCE/Specification.md")).unwrap(), foo);
+        assert_eq!(fs::read(root.join(REG)).unwrap(), before);
+    };
+    assert_preserved();
+
+    let other = b"**Component:** `local.other`, Version 1.0\n\nUnrelated module.\n";
+    fs::create_dir(old.join("SOURCE")).unwrap();
+    fs::write(old.join("SOURCE/Specification.md"), other).unwrap();
+    assert_preserved();
+    assert_eq!(fs::read(old.join("SOURCE/Specification.md")).unwrap(), other);
+}
