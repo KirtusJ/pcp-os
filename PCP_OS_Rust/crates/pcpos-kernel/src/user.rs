@@ -235,9 +235,20 @@ fn run_table(t: Table) -> Option<Table> {
 /// Interrupts must be off when this is called; it returns with them off.
 pub fn run(programs: &[Start]) -> Option<Vec<Process>> {
     let mut t = new_table(empty_world());
-    for p in programs.iter() {
+    let admitted = programs.iter().try_for_each(|p| {
         let space = Space::new(arch::user_program(p.name)?)?;
         t.admit(p.name, space, Frame::user(arch::USER_BASE, arch::USER_STACK_TOP), Grants { console: p.console, ..Grants::default() }, p.budget, None)?;
+        Some(())
+    });
+    if admitted.is_none() {
+        // The group has not entered user mode. Return every earlier admission's frames
+        // while still on the kernel tables; the local task and capability tables drop here.
+        for p in t.procs {
+            if let Some(space) = p.space {
+                space.release();
+            }
+        }
+        return None;
     }
     run_table(t).map(|t| t.procs)
 }

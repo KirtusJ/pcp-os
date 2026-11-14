@@ -25,6 +25,8 @@ It has been started only in an emulator (QEMU 8.2.2, without hardware virtualisa
 
 **Register.** The kernel's start, verification, every process as a task, and the stop are events in a register checked by the native ACR guards.
 
+The self-tests cover rollback of a refused group of built-in programs. For the slower frame-exhaustion test, boot with `test=frame-cutoffs` (for example, `PCPOS_APPEND="then=off test=frame-cutoffs" sh run.sh`). It reserves the frame pool, then leaves zero through seven frames available to a built-in program and checks the pool on every return.
+
 ## Rules of this crate
 
 `unsafe` in two files only: `arch.rs` (processor, memory, the copy between kernel and user memory) and `dev.rs` (device registers and device memory). Each use states why it is sound. The crate denies it everywhere and those two files alone lift the denial, so the loader, the system calls, the process table, the session and the drawing code are checked by the compiler in full. A program's memory is read and written only through two functions in `arch.rs` that check the range against the process's own map. Arithmetic overflow stops the kernel in release builds.
