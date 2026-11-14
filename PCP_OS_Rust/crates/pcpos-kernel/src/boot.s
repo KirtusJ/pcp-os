@@ -434,3 +434,64 @@ USER_END mute
 USER_PROGRAM hog                   # never yields and never ends
 1:  jmp 1b
 USER_END hog
+
+# The three programs below are for the self-tests of sleeping, waiting and the stop key. They make their calls
+# with the `syscall` instruction and Linux's numbers, as a loaded program does; the self-test puts each behind
+# an ELF header and hands it to the loader.
+USER_PROGRAM sleeper               # sleeps 50 ms and exits with what the sleep answered (0)
+    subq $16, %rsp
+    movq $0, (%rsp)
+    movq $50000000, 8(%rsp)
+    movq %rsp, %rdi
+    xorl %esi, %esi
+    movl $35, %eax                 # nanosleep
+    syscall
+    movl %eax, %edi
+    movl $60, %eax                 # exit
+    syscall
+9:  jmp 9b
+USER_END sleeper
+
+USER_PROGRAM sleeper_long          # asks for the longest sleep the kernel accepts; exits 7 if it is ever woken
+    subq $16, %rsp
+    movabsq $0x100000000, %rax
+    movq %rax, (%rsp)
+    movq $999999999, 8(%rsp)
+    movq %rsp, %rdi
+    xorl %esi, %esi
+    movl $35, %eax
+    syscall
+    movl $7, %edi
+    movl $60, %eax
+    syscall
+9:  jmp 9b
+USER_END sleeper_long
+
+USER_PROGRAM key_reader            # reads key events, waiting for each, until the press of key 0x1E; then exits 0
+    leaq 1f(%rip), %rdi
+    xorl %esi, %esi
+    movl $2, %eax                  # open, for reading
+    syscall
+    testq %rax, %rax
+    js 2f
+    movq %rax, %rbx
+    subq $16, %rsp
+3:  movq %rbx, %rdi
+    movq %rsp, %rsi
+    movl $2, %edx
+    xorl %eax, %eax                # read: one event of two bytes
+    syscall
+    cmpq $2, %rax
+    jne 2f
+    movzwl (%rsp), %eax
+    cmpl $0x001E, %eax             # the key's number, and no flag: a press
+    jne 3b
+    xorl %edi, %edi
+    movl $60, %eax
+    syscall
+2:  movl $1, %edi
+    movl $60, %eax
+    syscall
+9:  jmp 9b
+1:  .asciz "/dev/kbd"
+USER_END key_reader

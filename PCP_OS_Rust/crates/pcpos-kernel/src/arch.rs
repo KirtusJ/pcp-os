@@ -1743,4 +1743,7 @@ user_programs! {
     bad_calls: user_bad_calls_start, user_bad_calls_end;
     mute: user_mute_start, user_mute_end;
     hog: user_hog_start, user_hog_end;
+    sleeper: user_sleeper_start, user_sleeper_end;
+    sleeper_long: user_sleeper_long_start, user_sleeper_long_end;
+    key_reader: user_key_reader_start, user_key_reader_end;
 }
