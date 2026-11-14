@@ -2358,6 +2358,9 @@ fn module_command(args: &[String]) -> Result<i32, String> {
                 || modules_and_oddities(&se).1.iter().any(|o| o.contains(&format!(".{key} ")) || o.contains(&format!(".{key};"))) {
                 return Err(format!("{key} is already the name of a module here. Remove it first (pcpos module remove), or give the new one its own identifier"));
             }
+            // A new register must begin with its governing identity before
+            // MODULE_ADDED can be offered. Keep this inside the same lock.
+            begin(&mut tx, &se, None, false)?;
             let slot = home.join(&key);
             let dest = slot.join("SOURCE");
             if fs::symlink_metadata(&home).map(|m| m.file_type().is_symlink()).unwrap_or(false) {
