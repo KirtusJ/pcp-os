@@ -7,6 +7,7 @@ PCP OS runs Adversarial Claim Review (ACR) and keeps a verifiable register of wh
 | Run a calculation or check | [Built-in apps](#built-in-apps) | Discover the host’s executable instruments with `pcpos instrument list`. Agents can also call `acr_instrument` with `{"instrument":"list"}`. |
 | Choose the rules for a review | [Method modules](#method-modules) | Read the specification for Core and each selected specialist. `pcpos modules <method-directory>` lists the modules supplied to that host. |
 | Find a downloadable application | [Store package index](store/README.md#package-index) · [Games](#games) | Each published package entry identifies its version, payload files and hashes. The package catalog identifies each runtime. |
+| Open a web page from a terminal or agent | [Surfbird development preview](apps/surfbird/) | A hosted Rust reader with one live page and history shared by both controls. |
 
 ## Games
 
