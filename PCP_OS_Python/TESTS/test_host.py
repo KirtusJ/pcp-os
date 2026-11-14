@@ -234,7 +234,7 @@ class ToolServer(Case):
         self.assertEqual(r["error"]["code"], -32602)
 
     def test_invalid_requests_cannot_dispatch_a_tool(self):
-        params = {"name": "pcpos_gate", "arguments": {"review": "R", "gate": "G5", "note": "n"},
+        params = {"name": "pcpos_objection", "arguments": {"review": "R", "claim": "A", "text": "witness"},
                   "_meta": {server.META_VERSION: "2026-07-28"}}
         msg = {"jsonrpc": "2.0", "id": "caller", "method": "tools/call", "params": params}
         before = self.ws.register_path.read_bytes()
@@ -253,6 +253,8 @@ class ToolServer(Case):
         response = json.loads(out.getvalue())
         self.assertEqual((response["id"], response["error"]["code"]), (None, -32600))
         self.assertEqual(self.ws.register_path.read_bytes(), before)
+        self.assertFalse(self.srv.handle(msg)["result"]["isError"])
+        self.assertEqual(self.ws.events()[0][-1]["kind"], "OBJECTION_RAISED")
 
     def test_reading_and_recording_through_the_server(self):
         text, err = self.call("pcpos_clause", {"component": "core", "ref": "15.2"})
