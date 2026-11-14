@@ -1,0 +1,26 @@
+name: Python/native record-value grammar
+
+on:
+  pull_request:
+    paths:
+      - "PCP_OS_Python/pcpos/store.py"
+      - "PCP_OS_Python/TESTS/test_native_record_values.py"
+      - ".github/workflows/python-native-wire.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-value-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out proposed source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Show Python interpreter
+        run: python3 --version
+      - name: Run method-independent record value tests
+        env:
+          PYTHONPATH: PCP_OS_Python
+        run: python3 -m unittest discover -s PCP_OS_Python/TESTS -p test_native_record_values.py -v

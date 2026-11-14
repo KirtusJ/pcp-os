@@ -15,6 +15,38 @@ TS = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\Z")   
 EVENT_KEYS = {"seq", "prev", "ts", "actor", "auth", "kind", "body"}
 AUTH = ("DECLARED", "HOST")
 
+# Keep the stored register's JSON grammar in step with the Rust core's
+# Value and parser: no floats, signed i64 integers, Unicode scalar text,
+# and no more than 32 levels of nested values.
+MIN_I64, MAX_I64, MAX_WIRE_DEPTH = -(1 << 63), (1 << 63) - 1, 32
+
+
+def _native_wire_value(value, depth=0):
+    if depth > MAX_WIRE_DEPTH:
+        raise ValueError("record nesting exceeds the native 32-level limit")
+    if value is None or type(value) is bool:
+        return
+    if type(value) is int:
+        if not MIN_I64 <= value <= MAX_I64:
+            raise ValueError("record integer is outside the native signed 64-bit range")
+        return
+    if type(value) is str:
+        if any(0xD800 <= ord(ch) <= 0xDFFF for ch in value):
+            raise ValueError("record contains an unpaired Unicode surrogate")
+        return
+    if type(value) is list:
+        for item in value:
+            _native_wire_value(item, depth + 1)
+        return
+    if type(value) is dict:
+        for key, item in value.items():
+            if type(key) is not str:
+                raise ValueError("record object keys must be strings")
+            _native_wire_value(key, depth + 1)
+            _native_wire_value(item, depth + 1)
+        return
+    raise ValueError("record contains an unsupported value type (including floats)")
+
 
 def find_workspace(explicit=None, start=None):
     """Resolve the workspace: an explicit path, PCPOS_WS, the current directory or an ancestor, or ./pcp-os."""
@@ -155,13 +187,14 @@ class Workspace:
         for n, line in enumerate(raw.split(b"\n")[:-1] if raw else []):
             try:
                 ev = strict_loads(line)
+                _native_wire_value(ev)
             except ValueError as e:
                 raise PcposError(INTEGRITY, "register line %d is not valid JSON: %s" % (n + 1, e))
             if not isinstance(ev, dict) or set(ev) != EVENT_KEYS:
                 raise PcposError(INTEGRITY, "register line %d does not have exactly the fields %s" % (n + 1, sorted(EVENT_KEYS)))
             if canon(ev) != line:
                 raise PcposError(INTEGRITY, "register line %d is not in canonical form" % (n + 1))
-            if ev["seq"] != n or ev["prev"] != prev:
+            if type(ev["seq"]) is not int or ev["seq"] != n or ev["prev"] != prev:
                 raise PcposError(INTEGRITY, "register line %d breaks the chain (expected seq %d after %s)" % (n + 1, n, prev[:12]))
             if not (isinstance(ev["ts"], str) and TS.match(ev["ts"])) or ev["auth"] not in AUTH \
                     or not isinstance(ev["kind"], str) or not isinstance(ev["actor"], str) or not isinstance(ev["body"], dict):
@@ -183,6 +216,14 @@ class Workspace:
                     body = replaced
                     no_floats(body, "event body")
             ev = {"seq": len(events), "prev": head, "ts": now_utc(), "actor": actor, "auth": auth, "kind": kind, "body": body}
+            # A successful append must never create a register that the
+            # authoritative Rust reader would refuse on the next read.
+            if not (isinstance(actor, str) and isinstance(kind, str) and auth in AUTH and isinstance(body, dict)):
+                raise PcposError(USAGE, "event fields have the wrong types for a native register")
+            try:
+                _native_wire_value(ev)
+            except ValueError as e:
+                raise PcposError(USAGE, "event cannot be represented by the native register: %s" % e)
             line = canon(ev)
             if len(line) > MAX_EVENT_BYTES:
                 raise PcposError(USAGE, "the event is %d bytes; the limit is %d" % (len(line), MAX_EVENT_BYTES),

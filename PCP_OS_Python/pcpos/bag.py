@@ -9,7 +9,7 @@ from pathlib import Path
 from . import VERSION, BUNDLE_PROFILE, WORKSPACE_PROFILE
 from .base import PcposError, INTEGRITY, REFUSED, USAGE, ZERO, canon, strict_loads, sha_bytes, sha_file, name_issues, atomic_write
 from . import model
-from .store import EVENT_KEYS, TS, AUTH
+from .store import EVENT_KEYS, TS, AUTH, _native_wire_value
 
 MAX_TOTAL = 4 * 1024 * 1024 * 1024
 MAX_MEMBERS = 500000
@@ -24,9 +24,10 @@ def parse_register(raw: bytes):
     for n, line in enumerate(raw.split(b"\n")[:-1] if raw else []):
         try:
             ev = strict_loads(line)
+            _native_wire_value(ev)
         except ValueError as e:
             raise PcposError(INTEGRITY, "register line %d is not valid JSON: %s" % (n + 1, e))
-        if not isinstance(ev, dict) or set(ev) != EVENT_KEYS or canon(ev) != line or ev["seq"] != n or ev["prev"] != prev \
+        if not isinstance(ev, dict) or set(ev) != EVENT_KEYS or canon(ev) != line or type(ev["seq"]) is not int or ev["seq"] != n or ev["prev"] != prev \
                 or not (isinstance(ev["ts"], str) and TS.match(ev["ts"])) or ev["auth"] not in AUTH \
                 or not isinstance(ev["kind"], str) or not isinstance(ev["actor"], str) or not isinstance(ev["body"], dict):
             raise PcposError(INTEGRITY, "register line %d is malformed or breaks the chain" % (n + 1))
