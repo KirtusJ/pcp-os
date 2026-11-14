@@ -9,7 +9,7 @@ sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
 cargo run --locked --release --manifest-path store/native/Cargo.toml -- PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 sunspur
 ```
 
-Use `fluxrink` for the rink or `heliograph` for the rendering lab. Press Enter at the OS menu. Escape returns from each program and P at the OS menu powers down. The launcher loads the versioned Store ELF, measures the kernel's code and read-only pages, requests 32 MiB of VGA memory for Heliograph's resolution ladder and gives QEMU short module names.
+Use `gullpost` for the 2D courier or `gull64` for Lighthouse Island. Use `fluxrink` for the rink or `heliograph` for the rendering lab. Press Enter at the OS menu. Escape returns from each program and P at the OS menu powers down. The launcher loads the versioned Store ELF, measures the kernel's code and read-only pages, requests 32 MiB of VGA memory for Heliograph's resolution ladder and gives QEMU short module names.
 
 ## Linked Flux Rink
 

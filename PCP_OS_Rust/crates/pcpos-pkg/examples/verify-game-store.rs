@@ -10,22 +10,37 @@ use std::{
 
 const OWNER: &str = "kirtusj";
 const PACKAGES: &[(&str, &str, &[&str])] = &[
-    ("games", "night-post", &["Night_Post.html", "nightpost.elf"]),
+    (
+        "games",
+        "night-post",
+        &["dist/Night_Post.html", "dist/nightpost.elf"],
+    ),
     (
         "games",
         "bellweather-harbor",
-        &["Bellweather_Harbor.html", "bellweather.elf"],
+        &["dist/Bellweather_Harbor.html", "dist/bellweather.elf"],
     ),
-    ("games", "sunspur-rally", &["sunspur.elf"]),
-    ("games", "flux-rink", &["fluxrink.elf"]),
-    ("engines", "heliograph", &["heliograph.elf"]),
+    ("games", "gullpost-express", &["dist/gullpost.elf"]),
+    (
+        "games",
+        "gullpost-express-64",
+        &["dist/gull64.elf", "evidence/render-0.1.1/REPORT.md"],
+    ),
+    ("games", "sunspur-rally", &["dist/sunspur.elf"]),
+    ("games", "flux-rink", &["dist/fluxrink.elf"]),
+    ("engines", "heliograph", &["dist/heliograph.elf"]),
 ];
 
 fn read(path: &Path) -> Result<Vec<u8>, String> {
     fs::read(path).map_err(|error| format!("cannot read {}: {error}", path.display()))
 }
 
-fn check_package(root: &Path, category: &str, name: &str, required: &[&str]) -> Result<(), String> {
+fn check_package(
+    root: &Path,
+    category: &str,
+    name: &str,
+    required: &[&str],
+) -> Result<Entry, String> {
     let shard = index_path(OWNER, name)?;
     let listing = root.join("store/index").join(&shard);
     let entry = Entry::parse(&read(&listing)?)
@@ -46,7 +61,7 @@ fn check_package(root: &Path, category: &str, name: &str, required: &[&str]) -> 
         ));
     }
     for filename in required {
-        let path = format!("store/{category}/{name}/dist/{filename}");
+        let path = format!("store/{category}/{name}/{filename}");
         if !entry.files().iter().any(|file| file.path() == path) {
             return Err(format!("{} omits required artifact {path}", entry.id()));
         }
@@ -62,7 +77,7 @@ fn check_package(root: &Path, category: &str, name: &str, required: &[&str]) -> 
         .collect();
     verify(&entry, &supplied).map_err(|error| format!("{}: {error}", listing.display()))?;
     println!("Verified {} ({} files)", entry.id(), supplied.len());
-    Ok(())
+    Ok(entry)
 }
 
 fn run() -> Result<(), String> {
@@ -74,8 +89,13 @@ fn run() -> Result<(), String> {
     if args.next().is_some() {
         return Err("usage: verify-game-store [REPOSITORY_ROOT]".into());
     }
+    let mut installed = pcpos_pkg::txn::Installed::new();
     for &(category, name, required) in PACKAGES {
-        check_package(&root, category, name, required)?;
+        let entry = check_package(&root, category, name, required)?;
+        installed.commit(&installed.plan_install(name, &entry, Some(entry.digest()))?)?;
+        if installed.installed(OWNER, name) != Some(entry.digest()) {
+            return Err(format!("incorrect installed digest for {name}"));
+        }
     }
     Ok(())
 }

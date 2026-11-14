@@ -14,13 +14,13 @@ case "$kernel" in
     /*) ;;
     *) kernel="$PWD/$kernel" ;;
 esac
-digest=$(python3 "$kernel_dir/tools/measure.py" "$kernel")
+digest=$("${PYTHON:-python3}" "$kernel_dir/tools/measure.py" "$kernel")
 
 cd "$store"
 status=0
 qemu-system-x86_64 -cpu max -m 256M -vga std -nic none -no-reboot \
     -kernel "$kernel" -append "image=$digest" \
-    -initrd games/night-post/dist/nightpost.elf,games/bellweather-harbor/dist/bellweather.elf,games/gullpost-express/dist/gullpost.elf \
+    -initrd games/night-post/dist/nightpost.elf,games/bellweather-harbor/dist/bellweather.elf,games/gullpost-express/dist/gullpost.elf,games/gullpost-express-64/dist/gull64.elf,games/sunspur-rally/dist/sunspur.elf,games/flux-rink/dist/fluxrink.elf \
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 "$@" || status=$?
 # With isa-debug-exit, the kernel returns 33 after verifying its final register.
 [ "$status" = 33 ] || exit "$status"

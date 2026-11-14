@@ -22,21 +22,25 @@ The [Night Post flight manual](games/night-post/README.md) covers routes, airbra
 
 | Shelf | Title | Runtime and contents | Listing |
 | --- | --- | --- | --- |
+| Games · 2D courier platformer | [Gullpost Express](games/gullpost-express/) | Deliver a mailbag across three coastal routes and collect postage stamps. | [Package](index/kirtusj/gu/ll/gullpost-express) |
+| Games · 3D courier platformer | [Gullpost Express 64](games/gullpost-express-64/) | Explore Lighthouse Island and deliver the final letter. | [Package](index/kirtusj/gu/ll/gullpost-express-64) |
 | Games · racing | [Sunspur Rally](games/sunspur-rally/) | Single-player time trial, x86-64 PCP OS guest. | [Package](index/kirtusj/su/ns/sunspur-rally) |
 | Games · multiplayer sports | [Flux Rink](games/flux-rink/) | Two-player 3D prototype. Stock kernel for shared keyboard; optional cable kernel for linked guests. | [Package](index/kirtusj/fl/ux/flux-rink) |
 | Engines · 3D rendering | [Heliograph](engines/heliograph/) | Reusable Rust renderer and a native material and performance lab. | [Package](index/kirtusj/he/li/heliograph) |
 
 Use the [native Store launcher](native/README.md) for these entries. The engine's installable artifact is its lab ELF; the renderer crate lives alongside it in the pinned source tree.
 
-## Play both on PCP OS
+<a id="play-both-on-pcp-os"></a>
 
-From the repository root on a machine with QEMU and the [kernel build toolchain](../PCP_OS_Rust/crates/pcpos-kernel/README.md), run the launcher. It builds and measures the kernel and opens one menu with both games.
+## Play on PCP OS
+
+From the repository root on a machine with QEMU and the [kernel build toolchain](../PCP_OS_Rust/crates/pcpos-kernel/README.md), run the launcher. It builds and measures the kernel and opens one menu with all six games.
 
 ```sh
 sh store/play-native.sh
 ```
 
-Use Up or Down to highlight a game and Enter to launch. Escape returns to the launcher, where you can start the other game in the same session. Native saves last until the guest powers off. To use a previously built kernel, set `PCPOS_KERNEL_IMAGE` to its absolute path. On a QEMU build with SDL audio, append `-audiodev sdl,id=snd -device AC97,audiodev=snd` for sound.
+Use Up or Down to highlight a game and Enter to launch. Escape returns to the launcher, where you can select another game in the same session. Native saves last until the guest powers off. To use a previously built kernel, set `PCPOS_KERNEL_IMAGE` to its absolute path. On a QEMU build with SDL audio, append `-audiodev sdl,id=snd -device AC97,audiodev=snd` for sound.
 
 ## Package index
 
@@ -48,6 +52,8 @@ The Store uses the repository's `pcpos-pkg` application entry format. Files in a
 | --- | --- |
 | `kirtusj/night-post` | [Package entry](index/kirtusj/ni/gh/night-post) |
 | `kirtusj/bellweather-harbor` | [Package entry](index/kirtusj/be/ll/bellweather-harbor) |
+| `kirtusj/gullpost-express` | [Package entry](index/kirtusj/gu/ll/gullpost-express) |
+| `kirtusj/gullpost-express-64` | [Package entry](index/kirtusj/gu/ll/gullpost-express-64) |
 | `kirtusj/sunspur-rally` | [Native racing game](index/kirtusj/su/ns/sunspur-rally) |
 | `kirtusj/flux-rink` | [Native multiplayer game](index/kirtusj/fl/ux/flux-rink) |
 | `kirtusj/heliograph` | [Native engine lab](index/kirtusj/he/li/heliograph) |

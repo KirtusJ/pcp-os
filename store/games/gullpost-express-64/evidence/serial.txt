@@ -1,0 +1,161 @@
+PCP OS kernel 0.3.1 | x86_64 | new kernel, written in Rust | early
+memory reported by the loader: 639 KiB below 1 MiB, 260992 KiB above
+kernel image: code 0x101000..0x15d000, read-only data 0x15d000..0x17f000, end 0x1225000
+protections: paging true, supervisor write protection true, no-execute true, long mode true
+memory for programs: 59904 frames of 4 KiB, 0x1400000..0xfe00000
+file from the loader: gull64.elf (82568 bytes at 0x1226000)
+command line: pcpos-kernel.elf32 image=773ac9cba84ba404264177c2781d3f626eaa04df4061cddb823a49e92430a3a1
+further protections: supervisor execution prevention on, supervisor access prevention on, user-mode instruction prevention on
+running image (code and read-only data), SHA-256: 773ac9cba84ba404264177c2781d3f626eaa04df4061cddb823a49e92430a3a1 (measured; equal to the value the loader named)
+memory map replaced, read back from the page tables: 4383 pages of the kernel image, 21 pages of the loader's files, 239616 KiB of frame memory, 0 KiB of device memory; writable and executable at once: 0
+self-test:
+  pass the kernel opens its own register and records the native method by measurement
+  pass the running image measures as the value the loader named
+  pass a register written by the Python implementation verifies to the same head
+  pass the register of the research-baseline exercise verifies to the same head
+  pass one changed byte in an earlier event is refused
+  pass an incomplete final line is refused
+  pass the kernel appends events and its own register verifies
+  pass an event with a malformed time or an undefined authority is refused and nothing is written
+  pass a derived capability has the same rights or fewer, and revocation reaches everything derived
+  pass the draft compact record form round-trips every event
+  note the same 13 events: 6027 bytes as JSON, 2962 bytes in the draft compact form
+  pass every state machine is a complete, well-formed table, equal to the published tables
+  pass from every running state an integrity fault leads to SAFE, and SAFE is left only by stopping
+  pass a task becomes DONE only from EXITED by a verified result
+  pass the native ACR guards replay the scenario register (82 events, every kind) without a problem
+  pass no combination of roles hands a model or a program the means to start ACR use, administer or change the system
+  pass revoking a grant takes back what was handed on from it, in every holder
+  pass no memory is both writable and executable
+  pass code is executable and not writable
+  pass read-only data is neither writable nor executable
+  pass data is writable and not executable
+  pass address zero is not mapped, nor anything below the image
+  pass what is mapped is the kernel image, the loader's files read-only, and frame memory that is never executable; nothing else, each at its own address, none of it for user mode
+  pass every further protection the processor offers is on
+  pass a frame is handed out to one holder, comes back zeroed, cannot be given back twice, and memory outside the pool is not a frame
+  pass the kernel's heap gives each holder its own block and uses freed blocks again instead of new memory
+  pass a write to kernel code is refused by the processor
+  pass a write to read-only data is refused by the processor
+  pass executing an instruction that lies in writable data is refused by the processor
+  pass a read near address zero is refused by the processor
+  pass control: a write to ordinary data is allowed, so the probe can tell the difference
+  pass a write to the interrupt table is refused by the processor
+  pass a write to the segment table and task state segment is refused by the processor
+  pass a read of the page below each of the six stacks is refused by the processor
+  pass memory the kernel does not use is not mapped: the text display, the low mebibyte, what lies above the frame memory, and where devices are
+  pass frame memory is writable by the kernel and an instruction in it is refused by the processor
+  pass the timer interrupts and the tick count advances
+  pass a task not heard from within its quiet limit is LOST at the next sweep; one that reports is not; a claimed result that differs is FAILED
+  pass the system is OPERATIONAL after a verification that passed, and only then
+  pass an event the guards refuse leaves the register unchanged
+  note 13 processes ran for 29 timer periods; the timer took the processor back 29 times
+  pass a program runs in user mode in its own address space, writes through a system call and exits; the kernel kept what it wrote
+  pass a program that yields is resumed where it left off, three times
+  pass two programs that never yield are each preempted by the timer, at least three times, and each finishes
+  pass each of the two wrote its own number at the same address and found it unchanged: their memory is separate
+  pass a program's read of kernel memory is refused by the processor and ends that program only
+  pass a program's write to kernel memory is refused by the processor
+  pass an instruction reserved to the kernel is refused in user mode
+  pass a program reaches no device port
+  pass a program cannot execute its own writable data
+  pass a program that exhausts its stack meets the absent page below it and is ended
+  pass a system call that names kernel memory, unmapped memory or an impossible length is refused, and so is an undefined call
+  pass a program without a capability for the console cannot write to it
+  pass a program that never yields and never ends is stopped by the kernel when its budget is spent
+  pass in every address space a program reaches three pages, none both writable and executable, no kernel page, and the page below its stack is absent
+  pass no page of memory belongs to two processes
+  pass after all of it the kernel is in its own address space and its code and read-only data measure as before
+  pass every process is a task in the kernel's register: six DONE by the kernel's own reading of the output, six FAILED, one STOPPED
+  pass a task is not DONE on a claim: completion that names no result in the record is refused
+device on the bus: 00:00.0 maker 8086 device 1237 class 06.00 line 0
+device on the bus: 00:01.0 maker 8086 device 7000 class 06.01 line 0
+device on the bus: 00:01.1 maker 8086 device 7010 class 01.01 line 0
+device on the bus: 00:01.3 maker 8086 device 7113 class 06.80 line 9
+device on the bus: 00:02.0 maker 1234 device 1111 class 03.00 line 0
+device on the bus: 00:03.0 maker 8086 device 2415 class 04.01 line 11
+display: Bochs, 1024x768, 2 page(s), 16384 KiB of its memory mapped at 0xfd000000
+keyboard: a PS/2 controller answered
+sound: an AC'97 device, 48000 pairs of 16-bit samples a second
+music: no FM synthesiser
+  pass with the display mapped, the kernel's memory map is as it was plus the display's memory, which is never executable
+  note refused group single-unknown: refused true, free frames 59887 before and 59887 after
+  pass rejected batch returns the frames of every member
+  note refused group valid-then-unknown: refused true, free frames 59887 before and 59887 after
+  pass rejected batch returns the frames of every member
+  note refused group capacity-plus-one: refused true, free frames 59887 before and 59887 after
+  pass rejected batch returns the frames of every member
+  note stop key while running: end Some(Stopped), task Some(Stopped), after 7 timer periods
+  pass the stop key ends a program that never yields, long before its budget
+  pass a program the person stopped is STOPPED in the kernel's task table, as it is in what the kernel observed of it
+  note sleep of 50 ms: None, end Some(Exited(0)), idle 51 of 52 timer periods
+  pass a program that sleeps 50 ms is woken at its millisecond: the processor idled 51 timer periods, no fewer and no more, and the sleep answered 0
+  note key while waiting: None, end Some(Exited(0)), idle 20 of 22 timer periods, 8 calls
+  pass a program waiting in a read of the keyboard is woken by each key's interrupt and reads the keys in order: it idled until the first and exited 0 on the third
+  note stop key while asleep: None, end Some(Stopped), idle 11 of 12 timer periods
+  pass the stop key ends a program that is asleep (for the longest sleep accepted: its deadline does not overflow) at once, and all its memory comes back
+  note stop key while waiting for a key: None, end Some(Stopped), idle 11 of 12 timer periods, 6 calls
+  pass the stop key ends a program that waits in a read of the keyboard; it had read Ctrl and Alt and was never handed Delete; all its memory comes back
+  pass a stop key pressed before a program is started does not stop it
+  note a 32-byte name: Ok(Some(Exited(0))); frames free 59887 before, 59887 after
+  pass a program under a name of 32 bytes is admitted and runs to its end
+  note a 33-byte name: Err("the program could not be admitted as a task"); frames free 59887 before, 59887 after
+  pass a program under a name of 33 bytes is refused admission as a task
+  pass a program that cannot be admitted as a task leaves no memory behind: as many frames are free after as before
+starting gull64.elf (82568 bytes, SHA-256 0916ea3b5f5dff058907c8f2683d0d1132c81ce51cf4f1539c5286330158987e)
+G64: cover ready
+G64: free play
+G64: retry
+G64: jump
+G64: flap
+G64 PERF frames=120 span_us=2998541 render_sum_us=618908 render_p95_bucket_ms=5 render_max_us=10998 render_over_25ms=0 dropped_ticks=0
+G64: paused
+G64: free play
+G64: retry
+G64 PERF frames=15 span_us=374943 render_sum_us=89985 render_p95_bucket_ms=7 render_max_us=7999 render_over_25ms=0 dropped_ticks=0
+G64: exit to PCP OS
+gull64.elf ended DONE: exit 0 after 3 s; 1228 system calls; 151 frames shown (39.9 a second); the processor idled 78% of the time; 661 ms of sound played, the device ran out of sound 9 time(s); 0 music register writes so far, the latest 0 ms late; 852 pages at the end, 288 of them the display's, 0 both writable and executable; 572 frames given back, 59887 free before and 59887 after; the store holds 0 file(s), 0 bytes
+starting gull64.elf (82568 bytes, SHA-256 0916ea3b5f5dff058907c8f2683d0d1132c81ce51cf4f1539c5286330158987e)
+G64: cover ready
+G64: guided run
+G64: jump
+G64: flap
+G64: postmarks mask=1
+G64: shore checkpoint
+G64: jump
+G64: postmarks mask=3
+G64: jump
+G64: postmarks mask=7
+G64 PERF frames=312 span_us=7800807 render_sum_us=3450470 render_p95_bucket_ms=18 render_max_us=25996 render_over_25ms=1 dropped_ticks=0
+G64: letter delivered
+G64: cover ready
+G64: guided run
+G64: jump
+G64: flap
+G64: postmarks mask=1
+G64: shore checkpoint
+G64: jump
+G64: postmarks mask=3
+G64: jump
+G64: postmarks mask=7
+G64 PERF frames=312 span_us=7800806 render_sum_us=2341641 render_p95_bucket_ms=16 render_max_us=20997 render_over_25ms=0 dropped_ticks=0
+G64: letter delivered
+G64: cover ready
+G64: guided run
+G64: jump
+G64: flap
+G64: postmarks mask=1
+G64: shore checkpoint
+G64: jump
+G64: postmarks mask=3
+G64: jump
+G64: postmarks mask=7
+G64 PERF frames=312 span_us=7799807 render_sum_us=2438620 render_p95_bucket_ms=15 render_max_us=21997 render_over_25ms=0 dropped_ticks=0
+G64: letter delivered
+G64: cover ready
+G64: exit to PCP OS
+gull64.elf ended DONE: exit 0 after 24 s; 7827 system calls; 967 frames shown (39.9 a second); the processor idled 64% of the time; 74 ms of sound played, the device ran out of sound 0 time(s); 0 music register writes so far, the latest 0 ms late; 852 pages at the end, 288 of them the display's, 0 both writable and executable; 572 frames given back, 59887 free before and 59887 after; the store holds 0 file(s), 0 bytes
+  pass the kernel's register of its own start, verification and stop verifies and replays without a problem
+kernel register: 50 events, head 6c407d6cbcb77a2374f93e1daa581c5d68cffdb936b50d8764f8785ac01d1f19
+kernel heap: 114192 bytes in use, 2371584 bytes ever carved; frames: 59887 of 59904 free, 63136 handed out and 63119 given back since the start
+ALL SELF-TESTS PASS. Present: user mode and preemptive processes; programs loaded from the loader's files; a display, a keyboard, sound and music where the machine has ones this kernel drives. Not present: storage that outlasts power, a mouse, network, a second processor.

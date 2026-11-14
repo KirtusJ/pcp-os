@@ -76,7 +76,13 @@ struct Temp(PathBuf);
 impl Drop for Temp {
     fn drop(&mut self) {
         let _ = fs::remove_file(self.0.join("kernel.elf32"));
-        for file in ["fluxrink.elf", "sunspur.elf", "heliograph.elf"] {
+        for file in [
+            "fluxrink.elf",
+            "sunspur.elf",
+            "heliograph.elf",
+            "gullpost.elf",
+            "gull64.elf",
+        ] {
             let _ = fs::remove_file(self.0.join(file));
         }
         let _ = fs::remove_dir(&self.0);
@@ -86,10 +92,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = env::args().skip(1).collect();
     if args.len() < 2 || args.len() > 4 {
         return Err(
-            "Usage: pcp-native-store KERNEL {sunspur|heliograph|fluxrink} [host|peer PORT]".into(),
+            "Usage: pcp-native-store KERNEL {gullpost|gull64|sunspur|fluxrink|heliograph} [host|peer PORT]".into(),
         );
     }
     let (shelf, file) = match args[1].as_str() {
+        "gullpost" => ("games/gullpost-express", "gullpost.elf"),
+        "gull64" => ("games/gullpost-express-64", "gull64.elf"),
         "sunspur" => ("games/sunspur-rally", "sunspur.elf"),
         "fluxrink" => ("games/flux-rink", "fluxrink.elf"),
         "heliograph" => ("engines/heliograph", "heliograph.elf"),
