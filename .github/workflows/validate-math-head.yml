@@ -1,0 +1,46 @@
+name: Director G exact math and native host replay
+on:
+  push:
+    branches: [director-g/validate-math-6abd1e8]
+permissions:
+  contents: read
+jobs:
+  replay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Pin the source, method, and regression contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp .github/validation/host_replay.py "$RUNNER_TEMP/replay.py"
+          git fetch --depth=1 origin 6abd1e8247cfd5007c05f6a9176d5ae0d2288118 678ea17d67148f7c7f9122f928312a69a39e0de8
+          git checkout --detach 6abd1e8247cfd5007c05f6a9176d5ae0d2288118
+          git worktree add --detach "$RUNNER_TEMP/base" 678ea17d67148f7c7f9122f928312a69a39e0de8
+          git clone --filter=blob:none --no-checkout https://github.com/KirtusJ/pcp-os-claude.git "$RUNNER_TEMP/method-packet"
+          git -C "$RUNNER_TEMP/method-packet" checkout 038983daac099a71a60eda343320d8334d262081 -- method
+          echo "7ff72eed9162e2c11fc62f6681c4afbc29524bfa96b87d45a455423d027d4707  $RUNNER_TEMP/method-packet/method/MANIFEST.json" | sha256sum -c
+          for entry in '7c2c3711f4406b30b6c8374a3a04703ec2a13102 native_host_contract.py 69ba4c836f3f0e4e1adf22b02ba051961c11ab62' '1edccf6bbb5d304c9a7d7b6c61c88b82a19357a5 native_nonmodule_contract.py 59d1bac928adea56809921b23552e9d8a3557816'; do
+            read -r rev filename blob <<< "$entry"
+            curl -fsSL "https://raw.githubusercontent.com/KirtusJ/pcp/$rev/audit/build22-native-host/$filename" -o "$RUNNER_TEMP/$filename"
+            test "$(git hash-object "$RUNNER_TEMP/$filename")" = "$blob"
+          done
+          rustup toolchain install 1.97.0 --profile minimal
+          rustup default 1.97.0
+          rustc --version
+      - name: Run the exact PR head through the full Rust suite
+        working-directory: PCP_OS_Rust
+        run: |
+          cargo run --locked --bin pcpos-vectors -- vectors
+          cargo test --locked --workspace --all-targets
+      - name: Compare both native hosts under the same security fixtures
+        if: success() || failure()
+        run: |
+          set -eu
+          cargo build --release --locked --manifest-path PCP_OS_Rust/Cargo.toml -p pcpos-host --bin pcpos
+          cargo build --release --locked --manifest-path "$RUNNER_TEMP/base/PCP_OS_Rust/Cargo.toml" -p pcpos-host --bin pcpos
+          sha256sum PCP_OS_Rust/target/release/pcpos "$RUNNER_TEMP/base/PCP_OS_Rust/target/release/pcpos"
+          python3 "$RUNNER_TEMP/replay.py"
