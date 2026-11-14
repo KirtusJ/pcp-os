@@ -90,10 +90,30 @@ def install_from_zip(zip_path, dest_parent):
             man = strict_loads(raw)
         except (KeyError, ValueError) as e:
             raise PcposError(INTEGRITY, "the archive holds no %sMANIFEST.json: %s" % (prefix, e))
+        # Preflight every destination component before writing the first file.
+        # Valid ZIP member names do not establish safe destination paths: an
+        # existing MODULES symlink can redirect otherwise verified bytes.
+        planned = []
         for f in man["files"]:
             rel = f["path"]
             if name_issues(rel) or rel.startswith("/"):
                 raise PcposError(INTEGRITY, "the packet manifest names an unsafe path: %r" % rel)
+            planned.append(dest / rel)
+        planned.append(dest / "MANIFEST.json")
+        parent = Path(dest_parent)
+        for target in planned:
+            location = parent
+            chain = [parent]
+            for part in target.relative_to(parent).parts:
+                location = location / part
+                chain.append(location)
+            for ancestor in chain[:-1]:
+                if ancestor.is_symlink() or (ancestor.exists() and not ancestor.is_dir()):
+                    raise PcposError(INTEGRITY, "method install destination has a linked or non-directory component: %s" % ancestor)
+            if target.is_symlink() or (target.exists() and not target.is_file()):
+                raise PcposError(INTEGRITY, "method install destination has a linked or non-file target: %s" % target)
+        for f in man["files"]:
+            rel = f["path"]
             info = z.getinfo(prefix + rel)
             if info.file_size != f["bytes"] or info.file_size > MAX_MEMBER:
                 raise PcposError(INTEGRITY, "archive member %s has an unexpected size" % rel)
