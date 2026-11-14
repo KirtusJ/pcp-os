@@ -2,6 +2,7 @@
 //!
 //!     pcpos status <register>                 what is running, what needs a response, what a halt would stop
 //!     pcpos verify <register>                 check the chain and replay every guard
+//!     pcpos boot-report <file>                 translate one captured kernel CBOR boot report to JSON Lines
 //!     pcpos machine [name]                    print a state machine's whole table
 //!     pcpos method <directory>                check a method packet against the release this core implements
 //!     pcpos init <register> --principal L     begin a register (a person, at a terminal)
@@ -35,6 +36,8 @@ use std::io::{BufRead, IsTerminal, Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, Instant};
 use std::{env, process::exit};
+
+mod boot_report;
 
 // ---- reading what other programs send ---------------------------------------------------------------------
 
@@ -2433,10 +2436,17 @@ fn person(args: &[String]) -> Result<i32, String> {
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
     let usage = || -> ! {
-        eprintln!("usage: pcpos status|verify <register> | machine [name] | method <directory> | repair <register> | modules <method directory> | clause <method directory> <module> [section] | instrument list | instrument <name> <input as JSON> [register] | workspace <register> --by <label> [--method <directory>] [module ...] | module list <register> | module add <register> <folder or Specification.md> --by <label> [--method <directory>] | module remove <register> <name> --by <label> | init <register> --principal <label> [--name <name>] | adopt <register> --by <label> --basis <words> | halt <register> --by <label> [--words <words>] | standard <register> --by <label> [--second <label>] BASELINE|CRITICAL|key=value... | mcp | hook <event>");
+        eprintln!("usage: pcpos status|verify <register> | boot-report <file> | machine [name] | method <directory> | repair <register> | modules <method directory> | clause <method directory> <module> [section] | instrument list | instrument <name> <input as JSON> [register] | workspace <register> --by <label> [--method <directory>] [module ...] | module list <register> | module add <register> <folder or Specification.md> --by <label> [--method <directory>] | module remove <register> <name> --by <label> | init <register> --principal <label> [--name <name>] | adopt <register> --by <label> --basis <words> | halt <register> --by <label> [--words <words>] | standard <register> --by <label> [--second <label>] BASELINE|CRITICAL|key=value... | mcp | hook <event>");
         exit(2)
     };
     match args.first().map(String::as_str) {
+        Some("boot-report") if args.len() == 2 => {
+            let input = File::open(&args[1]).map_err(|e| format!("cannot open {}: {e}", args[1]));
+            if let Err(e) = input.and_then(|file| boot_report::translate(file, std::io::stdout().lock())) {
+                eprintln!("pcpos boot-report: {e}");
+                exit(6);
+            }
+        }
         Some("mcp") => match session(None) {
             Ok(se) => {
                 // standard error: standard output carries protocol messages only

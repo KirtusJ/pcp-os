@@ -70,6 +70,40 @@ fn hook(root: &Path, event: &str, input: &str) -> String {
     out
 }
 
+#[test]
+fn boot_report_translates_one_ordered_capture_and_retains_only_complete_frames() {
+    use pcpos_core::r1;
+    let root = dir("boot-report");
+    let capture = root.join("com2.cbor");
+    let image = sha256_hex(b"kernel image");
+    let head = sha256_hex(b"register");
+    let boot = format!(r#"{{"event":"boot","image":"{image}","match":false,"v":1}}"#);
+    let session = String::from(r#"{"admit":false,"event":"session","fail":1,"pass":58,"system":"SAFE","v":1}"#);
+    let stop = format!(r#"{{"event":"stop","events":18,"fail":1,"head":"{head}","pass":59,"replay":true,"v":1}}"#);
+    let encode = |text: &str| r1::encode(&Value::parse(text.as_bytes()).unwrap());
+    let (b, s, t) = (encode(&boot), encode(&session), encode(&stop));
+    let run = |parts: &[&[u8]], code: i32, expected_output: &[&str], diagnostic: &str| {
+        fs::write(&capture, parts.concat()).unwrap();
+        let reply = pcpos(&root).arg("boot-report").arg(&capture).output().unwrap();
+        assert_eq!(reply.status.code(), Some(code));
+        assert_eq!(String::from_utf8(reply.stdout).unwrap(), expected_output.iter().map(|s| format!("{s}\n")).collect::<String>());
+        assert!(String::from_utf8(reply.stderr).unwrap().contains(diagnostic));
+    };
+    run(&[&b, &s, &t], 0, &[&boot, &session, &stop], "");
+    run(&[], 6, &[], "incomplete");
+    run(&[&b], 6, &[&boot], "session");
+    run(&[&b, &s, &t[..t.len() - 1]], 6, &[&boot, &session], "incomplete");
+    run(&[&b, &t], 6, &[&boot], "expected the session");
+    run(&[&b, &s, &t, &b], 6, &[&boot, &session, &stop], "after the stop");
+    run(&[&[0xff]], 6, &[], "invalid");
+    run(&[&[0x79, 0x08, 0x00], &[b'x'; 1021]], 6, &[], "oversized");
+    run(&[&encode(&boot.replace("\"v\":1", "\"v\":2"))], 6, &[], "version");
+    run(&[&encode(&boot.replace(&image, "abc"))], 6, &[], "invalid fields");
+    run(&[&b, &encode(&session.replace("false", "0"))], 6, &[&boot], "invalid fields");
+    run(&[&b, &s, &encode(&stop.replace("\"events\":18", "\"events\":-1"))], 6, &[&boot, &session], "invalid fields");
+    assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+}
+
 fn events(root: &Path) -> Vec<Value> {
     ledger::verify(&fs::read(root.join(REG)).unwrap()).unwrap().0
 }

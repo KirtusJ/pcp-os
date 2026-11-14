@@ -41,6 +41,14 @@ qemu-system-x86_64 -cpu max -m 128M -kernel target/pcpos-kernel.elf32 \
 
 Each message carries integer `v=1` and a text `event`. For one boot, expect these three messages in order.
 
+For a binary link, capture COM2 with `report=cbor` and `-serial file:health.cbor` as the second serial argument. The host can then render the captured report for a model or a JSON consumer:
+
+```sh
+pcpos boot-report health.cbor > health.jsonl
+```
+
+The command emits a JSON line for each complete, valid v1 message in order. Check its exit status as well as the fields. A zero exit means the three-message report was structurally complete. Use `fail`, `replay`, `match` and `admit` to interpret what the kernel reported. A partial capture can yield valid earlier lines and a nonzero exit. The `head` is the digest the guest reported. Independently checking the register requires its bytes.
+
 | Event | Fields | Meaning |
 |---|---|---|
 | `boot` | `image`, `match` | Measured SHA-256 of kernel code and read-only data. Match is true or false when the loader supplied an expected digest and null when it supplied none. |

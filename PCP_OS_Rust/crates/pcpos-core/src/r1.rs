@@ -272,14 +272,20 @@ impl<'a> Dec<'a> {
     }
 }
 
+/// Decode the first complete R1 value and return the remaining bytes of the sequence.
+pub fn decode_prefix(input: &[u8]) -> Result<(Value, &[u8]), R1Error> {
+    let mut d = Dec { b: input, i: 0 };
+    let value = d.value(0)?;
+    Ok((value, &input[d.i..]))
+}
+
 /// Decode exactly one value from the whole input, refusing anything outside the profile.
 pub fn decode(input: &[u8]) -> Result<Value, R1Error> {
-    let mut d = Dec { b: input, i: 0 };
-    let v = d.value(0)?;
-    if d.i != input.len() {
-        return Err(R1Error::TrailingBytes(d.i));
+    let (value, rest) = decode_prefix(input)?;
+    if !rest.is_empty() {
+        return Err(R1Error::TrailingBytes(input.len() - rest.len()));
     }
-    Ok(v)
+    Ok(value)
 }
 
 /// Seconds since 1970-01-01T00:00:00Z for a time of the form YYYY-MM-DDTHH:MM:SSZ.
