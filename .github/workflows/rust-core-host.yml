@@ -1,0 +1,30 @@
+name: PCP OS Rust core and hosted-CLI checks
+
+on:
+  pull_request:
+    paths:
+      - "PCP_OS_Rust/**"
+      - ".github/workflows/rust-core-host.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  core-and-host:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: PCP_OS_Rust
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Use source-pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal
+          rustup default 1.97.0
+          rustc --version
+      - name: Regenerate published Rust vectors
+        run: cargo run --release --locked --bin pcpos-vectors -- vectors
+      - name: Test native core and hosted Rust program
+        run: cargo test --workspace --all-targets --locked
