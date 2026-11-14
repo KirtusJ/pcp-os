@@ -38,6 +38,33 @@ fn feed(mut c: Command, input: &[u8]) -> (String, i32) {
     (String::from_utf8_lossy(&out.stdout).to_string(), out.status.code().unwrap_or(-1))
 }
 
+#[test]
+fn calendar_collision_cannot_overwrite_a_positional_export() {
+    let root = dir("r1-calendar");
+    let reg = root.join("test.jsonl");
+    let out = root.join("test.r1");
+    let verify = || {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_pcpos-verify"));
+        cmd.arg(&reg);
+        cmd
+    };
+    for ts in ["2025-03-01T00:00:00Z", "2025-02-29T00:00:00Z"] {
+        let mut ledger = Ledger::new();
+        ledger.append(ts, "host", "HOST", "NOTE", Value::Map(Default::default())).unwrap();
+        fs::write(&reg, ledger.bytes()).unwrap();
+        assert!(verify().output().unwrap().status.success());
+        let before = fs::read(&out).ok();
+        let result = verify().arg("--r1").arg(&out).output().unwrap();
+        if let Some(valid_export) = before {
+            assert_eq!(result.status.code(), Some(2));
+            assert_eq!(fs::read(&out).unwrap(), valid_export);
+        } else {
+            assert!(result.status.success());
+            assert!(!fs::read(&out).unwrap().is_empty());
+        }
+    }
+}
+
 /// Call tools in one session. Returns each call's text and whether it was reported as an error.
 fn tools(root: &Path, calls: &[(&str, String)]) -> Vec<(String, bool)> {
     let mut input = String::from("{\"id\":0,\"jsonrpc\":\"2.0\",\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}\n");

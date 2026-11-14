@@ -285,12 +285,19 @@ pub fn decode(input: &[u8]) -> Result<Value, R1Error> {
 /// Seconds since 1970-01-01T00:00:00Z for a time of the form YYYY-MM-DDTHH:MM:SSZ.
 pub fn ts_to_seconds(ts: &str) -> Option<i64> {
     let b = ts.as_bytes();
-    if b.len() != 20 {
+    if !crate::ledger::is_ts(ts) {
         return None;
     }
     let num = |a: usize, z: usize| -> Option<i64> { core::str::from_utf8(&b[a..z]).ok()?.parse::<i64>().ok() };
     let (y, mo, d, h, mi, s) = (num(0, 4)?, num(5, 7)?, num(8, 10)?, num(11, 13)?, num(14, 16)?, num(17, 19)?);
-    if !(1..=12).contains(&mo) || !(1..=31).contains(&d) || h > 23 || mi > 59 || s > 59 {
+    let last_day = match mo {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) => 29,
+        2 => 28,
+        _ => return None,
+    };
+    if !(1..=last_day).contains(&d) || h > 23 || mi > 59 || s > 59 {
         return None;
     }
     let y2 = if mo <= 2 { y - 1 } else { y };

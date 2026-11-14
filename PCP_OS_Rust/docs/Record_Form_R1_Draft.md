@@ -49,7 +49,7 @@ Designing a wholly new encoding was considered and set aside: the gain over a re
 - Definite lengths only; integer heads in shortest form; no floating point; no tags; map keys in bytewise order of their encodings; text is UTF-8.
 - A digest is 32 bytes, never text. Text of 64 lower-case hexadecimal characters is not in the profile, so a digest has one form.
 - A field name in the table (`r1::KEYS`, 71 entries so far) is its number, never text. A name in the table sent as text is not in the profile.
-- An event is a positional array `[seq, prev, seconds, actor, authority, kind, body]`; the time is an integer of seconds.
+- An event is a positional array `[seq, prev, seconds, actor, authority, kind, body]`; the time is an integer of seconds. Positional export requires a real proleptic Gregorian date in the four-digit UTC spelling with seconds 00–59. The JSON register admits the fixed timestamp spelling even for some dates without a calendar interpretation. Such a register can be verified and encoded as an R1 map. A positional export reports the first unrepresentable event and leaves the destination untouched.
 
 `crates/pcpos-core/src/r1.rs` implements the encoder and a decoder that refuses anything outside the profile. Both are exercised in the test suite and inside the kernel at start.
 

@@ -30,7 +30,7 @@ pub enum LedgerError {
     Refused(&'static str),
 }
 
-fn is_ts(s: &str) -> bool {
+pub(crate) fn is_ts(s: &str) -> bool {
     let b = s.as_bytes();
     b.len() == 20
         && b.iter().enumerate().all(|(i, &c)| match i {

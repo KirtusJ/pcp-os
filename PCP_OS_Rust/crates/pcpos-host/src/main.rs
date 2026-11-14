@@ -28,20 +28,36 @@ fn main() {
         }
     };
     println!("register: {} events, chain intact, head {}", events.len(), head);
+    let export = args.len() == 3 && args[1] == "--r1";
     let mut packed = Vec::new();
+    let mut first_unrepresentable = None;
     let (mut generic, mut positional) = (0usize, 0usize);
-    for ev in &events {
+    for (index, ev) in events.iter().enumerate() {
         let g = r1::encode(ev);
         assert_eq!(&r1::decode(&g).expect("R1 decodes"), ev, "R1 must decode to the value encoded");
         generic += g.len();
-        let p = r1::encode_event(ev).expect("event form");
-        positional += p.len();
-        packed.extend_from_slice(&p);
+        if first_unrepresentable.is_none() {
+            match r1::encode_event(ev) {
+                Some(p) => {
+                    positional += p.len();
+                    if export { packed.extend_from_slice(&p); }
+                }
+                None => first_unrepresentable = Some(index),
+            }
+        }
     }
     let json = raw.len();
     let pct = |n: usize| if json == 0 { 0 } else { n * 100 / json };
+    if let Some(index) = first_unrepresentable {
+        println!("size: JSON form {json} bytes; draft R1, map form {generic} bytes; positional form unavailable at event {index}");
+        if export {
+            eprintln!("pcpos-verify: positional export requires a representable UTC calendar timestamp at every event");
+            exit(2);
+        }
+        return;
+    }
     println!("size: JSON form {} bytes; draft R1, map form {} bytes ({}%); draft R1, event form {} bytes ({}%)", json, generic, pct(generic), positional, pct(positional));
-    if args.len() == 3 && args[1] == "--r1" {
+    if export {
         fs::write(&args[2], &packed).expect("write");
         println!("wrote {} ({} bytes, sha256 {})", args[2], packed.len(), sha256_hex(&packed));
     }

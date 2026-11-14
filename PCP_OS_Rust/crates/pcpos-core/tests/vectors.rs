@@ -178,3 +178,17 @@ fn continuing_a_checked_record_gives_what_checking_the_whole_gives_at_every_spli
     let (mut part, _) = Record::open(&raw[..ends[10]]).unwrap();
     assert!(part.extend(&raw[ends[10]..ends[11] - 1]).is_err(), "an unfinished line is refused");
 }
+
+#[test]
+fn positional_seconds_preserve_calendar_identity() {
+    for ts in ["2025-02-29T00:00:00Z", "1900-02-29T00:00:00Z", "2024-04-31T00:00:00Z",
+               "2024-00-01T00:00:00Z", "2024-01-00T00:00:00Z", "2024-01-01T24:00:00Z",
+               "2024-01-01T00:00:60Z", "2024/01/01T00:00:00Z", "+024-01-01T00:00:00Z"] {
+        assert_eq!(r1::ts_to_seconds(ts), None, "{ts}");
+    }
+    for (last, next) in [("0000-02-29", "0000-03-01"), ("1900-02-28", "1900-03-01"),
+                         ("2000-02-29", "2000-03-01"), ("9999-04-30", "9999-05-01")] {
+        assert_eq!(r1::ts_to_seconds(&format!("{last}T23:59:59Z")).unwrap() + 1,
+                   r1::ts_to_seconds(&format!("{next}T00:00:00Z")).unwrap());
+    }
+}
