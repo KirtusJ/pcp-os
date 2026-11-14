@@ -12,6 +12,10 @@ bench = false
 
 [target.'cfg(target_os = "none")'.dependencies]
 pcp-game-guest = { path = "../../../store/native/guest" }
+smoltcp = { version = "0.14", optional = true, default-features = false, features = ["medium-ethernet", "proto-ipv4", "socket-tcp"] }
+
+[features]
+tcp-ip = ["dep:smoltcp"]
 
 [profile.release]
 panic = "abort"

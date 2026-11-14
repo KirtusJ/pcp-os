@@ -833,7 +833,10 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     let (pool_frames, pool_free, taken, given) = mem::census();
     say!("kernel heap: {} bytes in use, {} bytes ever carved; frames: {} of {} free, {} handed out and {} given back since the start", live, carved, pool_free, pool_frames, taken, given);
     if failed == 0 {
+        #[cfg(not(feature = "guest-ethernet"))]
         say!("ALL SELF-TESTS PASS. Present: user mode and preemptive processes; programs loaded from the loader's files; a display, a keyboard, sound and music where the machine has ones this kernel drives. Not present: storage that outlasts power, a mouse, network, a second processor.");
+        #[cfg(feature = "guest-ethernet")]
+        say!("ALL SELF-TESTS PASS. Guest Ethernet support is compiled in. Access requires a matching image grant and a supported NIC.");
     } else {
         say!("{} SELF-TEST(S) FAILED", failed);
     }

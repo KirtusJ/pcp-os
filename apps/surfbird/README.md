@@ -4,11 +4,13 @@
 
 Surfbird is a hosted Rust reader browser for people and machines. Open a page in the terminal and an attached program can read it, follow its links or take you back. Both controls use one page, link list and history in memory.
 
+Hosted development takes place in [KirtusJ/surfbird](https://github.com/KirtusJ/surfbird). This checkout carries its [pinned hosted release](https://github.com/KirtusJ/surfbird/tree/28b863bbc1822f424a173a51e618b0c7d898c3ab) so the OS integration can build and test alongside it. The kernel, guest source and QEMU replay are maintained here. To update the snapshot, import `src`, `tests`, `Cargo.toml`, `Cargo.lock` and `surfbird.svg` together from a reviewed upstream commit, run both suites, and update the pin. The integration README and `guest/` belong to PCP-OS.
+
 This preview reads HTTP(S) HTML and plain text through the host operating system. It extracts text and links from HTML5 markup. CSS layout, JavaScript, forms, graphical rendering, extensions and a native PCP kernel build are outside this version. Pages that depend on styling or scripting can show different or incomplete content. Fragment URLs are retained in history. The reader currently opens them at the top of the document.
 
 ## Run
 
-A separate [native guest experiment](guest/) renders a small document and follows numbered links from a local HTTP fixture over the kernel’s opt-in serial cable. The hosted reader below uses the operating system’s network stack.
+A separate [native guest experiment](guest/) renders a small document and follows numbered links from a local HTTP fixture. Its Ethernet build opens a guest TCP socket; its serial build uses a preconnected cable. The hosted reader below uses the operating system’s network stack.
 
 From this directory with Rust 1.91 or newer, run:
 

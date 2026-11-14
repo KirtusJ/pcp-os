@@ -1,38 +1,73 @@
 #![no_std]
 #![no_main]
 
-use pcp_game_guest::{call, exit, ink::Frame, log, open, sleep_us, time_us, Display};
+use pcp_game_guest::{exit, ink::Frame, log, sleep_us, time_us, Display};
+#[cfg(feature = "tcp-ip")]
+mod tcp;
 use surfbird_cable::{body_length, parse, Page, CAPACITY, START};
 
 const W: usize = 640;
 const H: usize = 360;
 static mut PIXELS: [u32; W * H] = [0; W * H];
 
-fn send(fd: usize, mut bytes: &[u8], deadline: u64) -> Result<(), &'static str> {
+trait Stream {
+    fn poll(&mut self) -> Result<(), &'static str> {
+        Ok(())
+    }
+    fn write(&mut self, data: &[u8]) -> Result<usize, &'static str>;
+    fn read(&mut self, data: &mut [u8]) -> Result<usize, &'static str>;
+}
+
+#[cfg(not(feature = "tcp-ip"))]
+impl Stream for usize {
+    fn write(&mut self, data: &[u8]) -> Result<usize, &'static str> {
+        let n = pcp_game_guest::call(1, *self, data.as_ptr() as usize, data.len(), 0, 0, 0);
+        if n == -11 {
+            Ok(0)
+        } else {
+            usize::try_from(n).map_err(|_| "write failed")
+        }
+    }
+    fn read(&mut self, data: &mut [u8]) -> Result<usize, &'static str> {
+        let n = pcp_game_guest::call(0, *self, data.as_mut_ptr() as usize, data.len(), 0, 0, 0);
+        if n == -11 {
+            Ok(0)
+        } else {
+            usize::try_from(n).map_err(|_| "read failed")
+        }
+    }
+}
+
+fn send(stream: &mut impl Stream, mut bytes: &[u8], deadline: u64) -> Result<(), &'static str> {
     while !bytes.is_empty() {
         if time_us() >= deadline {
             return Err("send timeout");
         }
-        let n = call(1, fd, bytes.as_ptr() as usize, bytes.len(), 0, 0, 0);
-        if n == -11 || n == 0 {
+        stream.poll()?;
+        let n = stream.write(bytes)?;
+        if n == 0 {
             sleep_us(1000);
             continue;
         }
-        if n < 0 || n as usize > bytes.len() {
+        if n > bytes.len() {
             return Err("write failed");
         }
-        bytes = &bytes[n as usize..];
+        bytes = &bytes[n..];
     }
     Ok(())
 }
-fn fetch(fd: usize, path: &str, wire: &mut [u8; CAPACITY]) -> Result<usize, &'static str> {
+fn fetch(
+    stream: &mut impl Stream,
+    path: &str,
+    wire: &mut [u8; CAPACITY],
+) -> Result<usize, &'static str> {
     let deadline = time_us() + 8_000_000;
     for bytes in [
         b"GET ".as_slice(),
         path.as_bytes(),
         b" HTTP/1.1\r\nHost: fixture.test\r\nAccept: text/html\r\n\r\n",
     ] {
-        send(fd, bytes, deadline)?;
+        send(stream, bytes, deadline)?;
     }
     let mut used = 0;
     let mut body = None;
@@ -44,15 +79,16 @@ fn fetch(fd: usize, path: &str, wire: &mut [u8; CAPACITY]) -> Result<usize, &'st
             return Err("response too large");
         }
         let room = &mut wire[used..];
-        let n = call(0, fd, room.as_mut_ptr() as usize, room.len(), 0, 0, 0);
-        if n == -11 || n == 0 {
+        stream.poll()?;
+        let n = stream.read(room)?;
+        if n == 0 {
             sleep_us(1000);
             continue;
         }
-        if n < 0 || n as usize > room.len() {
+        if n > room.len() {
             return Err("read failed");
         }
-        used += n as usize;
+        used += n;
         if body.is_none() {
             if let Some(at) = wire[..used].windows(4).position(|s| s == b"\r\n\r\n") {
                 let start = at + 4;
@@ -125,18 +161,26 @@ fn present(display: &mut Display, path: &str, page: &Page<'_>) {
     log(b"SURFBIRD ready\n");
 }
 
+#[cfg(not(feature = "tcp-ip"))]
 fn browse() -> Result<(), &'static str> {
-    let fd = open(b"/dev/game-link\0", 2 | 0x800);
+    let fd = pcp_game_guest::open(b"/dev/game-link\0", 2 | 0x800);
     if fd < 0 {
         return Err("cable grant unavailable");
     }
+    browse_pages(&mut (fd as usize))
+}
+
+#[cfg(feature = "tcp-ip")]
+use tcp::browse;
+
+fn browse_pages(stream: &mut impl Stream) -> Result<(), &'static str> {
     let mut display = Display::new(W, H);
     let mut bodies = [[0; CAPACITY]; 2];
     let mut lengths = [0; 2];
     let mut paths = [[0; 96]; 2];
     let mut path_len = [START.len(), 0];
     paths[0][..START.len()].copy_from_slice(START.as_bytes());
-    lengths[0] = fetch(fd as usize, START, &mut bodies[0])?;
+    lengths[0] = fetch(stream, START, &mut bodies[0])?;
     let mut slot = 0;
     let mut previous = false;
     loop {
@@ -145,6 +189,7 @@ fn browse() -> Result<(), &'static str> {
         present(&mut display, path, &page);
         // Keep the displayed document borrowed while waiting for the next selection.
         let index = loop {
+            stream.poll()?;
             display.poll();
             if display.pressed[1] {
                 return Ok(());
@@ -166,7 +211,7 @@ fn browse() -> Result<(), &'static str> {
             path_len[other] = target.len();
             paths[other][..target.len()].copy_from_slice(target);
             let target = core::str::from_utf8(&paths[other][..path_len[other]]).unwrap();
-            lengths[other] = fetch(fd as usize, target, &mut bodies[other])?;
+            lengths[other] = fetch(stream, target, &mut bodies[other])?;
             previous = true;
         } else {
             previous = false;

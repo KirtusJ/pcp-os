@@ -56,6 +56,12 @@ fn option<'a>(line: &'a str, key: &str) -> Option<&'a str> {
     line.split_whitespace().find_map(|w| w.strip_prefix(key).and_then(|r| r.strip_prefix('=')))
 }
 
+#[cfg(feature = "guest-ethernet")]
+fn ethernet_grant(cmd: &str, digest: &str) -> bool {
+    let mut pins = cmd.split_ascii_whitespace().filter_map(|word| word.strip_prefix("net_image="));
+    option(cmd, "grant") != Some("none") && pins.next() == Some(digest) && pins.next().is_none()
+}
+
 fn size_text(bytes: usize) -> String {
     if bytes >= 10 << 20 {
         format!("{} MiB", bytes >> 20)
@@ -203,6 +209,11 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
         }
         at(4, row + 1, if start.sound { "starting it lets it use: the display, the keyboard, sound, the loader's files, the store" } else { "starting it lets it use: the display, the keyboard, the loader's files, the store" }, SOFT, ground);
         row += 2;
+        #[cfg(feature = "guest-ethernet")]
+        if ethernet_grant(&start.boot.command_line, &p.digest) {
+            at(4, row, "Ethernet grant: this program can send and receive raw network frames.", SOFT, ground);
+            row += 1;
+        }
         #[cfg(feature = "game-link")]
         if option(&start.boot.command_line, "grant") != Some("none") && option(&start.boot.command_line, "link_image") == Some(p.digest.as_str()) {
             at(4, row, "Optional game cable: this image can read and write the second serial port.", SOFT, ground);
@@ -288,13 +299,22 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
     say!("starting {} ({} bytes, SHA-256 {}){}", entry.name, entry.image.len(), entry.digest, if entry.arguments.is_empty() { String::new() } else { format!(" with: {}", entry.arguments) });
     let none = option(start.boot.command_line.as_str(), "grant") == Some("none");
     let grants = if none { Grants { console: true, ..Grants::default() } } else { Grants { console: true, display: start.display.is_some(), keys: start.keyboard, files: true, store: true, sound: start.sound,
+        #[cfg(feature = "guest-ethernet")] ethernet: ethernet_grant(&start.boot.command_line, &entry.digest),
         #[cfg(feature = "game-link")] game_link: option(&start.boot.command_line, "link_image") == Some(entry.digest.as_str()) && arch::game_link_init(), } };
     if none {
         say!("{} is started with the console and no other grant (grant=none)", entry.name);
     }
     let (free0, shows0, t0) = (user::frames_free(), dev::display_shows(), arch::ticks());
     let (_, sound0, dry0) = dev::sound_state();
-    let (result, world) = user::run_program(&Program { name: &entry.name, image: entry.image, args: &args, grants, budget: u64::MAX }, world);
+    let run = || user::run_program(&Program { name: &entry.name, image: entry.image, args: &args, grants, budget: u64::MAX }, world);
+    #[cfg(feature = "guest-ethernet")]
+    let (result, world) = if grants.ethernet {
+        let (outcome, status) = dev::virtio_tx::guest::during(run);
+        if let Err(reason) = status { say!("guest Ethernet: {}", reason); *failed += 1; }
+        outcome
+    } else { run() };
+    #[cfg(not(feature = "guest-ethernet"))]
+    let (result, world) = run();
     let (ticks, shows) = (arch::ticks() - t0, dev::display_shows() - shows0);
     let (_, sound1, dry1) = dev::sound_state();
     let (sound_ms, dry) = ((sound1 - sound0) / (dev::SOUND_RATE as u64 * 4 / 1000), dry1 - dry0);

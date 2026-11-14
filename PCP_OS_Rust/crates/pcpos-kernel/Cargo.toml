@@ -12,6 +12,7 @@ publish = false
 pcpos-core = { path = "../pcpos-core" }
 
 [features]
+guest-ethernet = ["virtio-tx-probe"] # raw frames for one explicitly hash-granted ELF
 game-link = [] # opt-in COM2 cable for an explicitly hash-granted guest
 virtio-tx-probe = []      # one explicitly requested legacy PCI transmit in the isolated QEMU fixture
 virtio-rx-probe = ["virtio-tx-probe"] # one TX challenge and one RX completion on the same fixture
