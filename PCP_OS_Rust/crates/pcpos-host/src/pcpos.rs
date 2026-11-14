@@ -1130,7 +1130,7 @@ fn modules_and_oddities(se: &Session) -> (Vec<Module>, Vec<String>) {
             let bytes = match read_method_regular_file(&file) {
                 Ok(Some(b)) => b,
                 Ok(None) | Err(_) => {
-                    odd.push(format!("{folder}: no ordinary SOURCE/Specification.md that can be read; not a module"));
+                    odd.push(format!("{folder}: no SOURCE/Specification.md that can be read; not a module"));
                     continue;
                 }
             };
