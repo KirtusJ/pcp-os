@@ -952,8 +952,9 @@ fn a_manifested_method_does_not_select_unlisted_specialists() {
     let (text, code) = feed(list, b"");
     assert_eq!(code, 0, "{text}");
     assert!(text.contains("acr.core") && text.contains("acr.science"), "{text}");
-    assert!(!text.contains("acr.folklore") || text.contains("not listed in its manifest"),
+    assert!(!text.lines().any(|line| line.contains("acr.folklore") && line.contains("SPECIALIST")),
             "an unlisted acr.* module was presented as released: {text}");
+    assert!(text.contains("not a manifest-listed Specification"), "the excluded source should be explained: {text}");
 
     let mut init = with_method(&root, &m);
     init.args(["init", REG, "--principal", "principal"]);
