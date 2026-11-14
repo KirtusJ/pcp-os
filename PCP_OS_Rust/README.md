@@ -18,6 +18,18 @@ PCP OS is an operating system built around one idea: the record of what was exam
 
 `unsafe` appears in two files of the kernel: `crates/pcpos-kernel/src/arch.rs`, the processor and memory (57 blocks, 20 unsafe implementations or functions), and `crates/pcpos-kernel/src/dev.rs`, device registers and device memory (6 blocks). Each use states its reason. Every other file, among them the loader, the system calls, the process table and the session, refuses it at compile time.
 
+## Checking a signed column in protected bins
+
+`mathematics.protected_bins` is built into the Rust host. Both columns use integer numerators over the same square-root denominator. With `scale_exponent` equal to 4 the denominator is 4 and each column's integer squared norm must be 16. Bins correspond by index. They may have different numbers of coordinates, including zero. For each bin the instrument compares the squared norm and the odd part of the gcd of its entries. The zero bin has gcd zero.
+
+```sh
+pcpos instrument mathematics.protected_bins '{"scale_exponent":4,"source":[[3,1],[1,1,1,1,1,1]],"target":[[2,2,1,1],[1,1,1,1,1,1]]}'
+```
+
+The example reports squared norms 10 and 6 and odd gcd 1 in both bins. Protecting the amplitude 3 separately changes the test. Its squared norm agrees with that of `[2,2,1]`, but their odd gcds are 3 and 1. These arithmetic checks concern the supplied columns. Physical routing, persistent records and measured frequencies require separate evidence.
+
+The CLI exits with 0 for agreement, 1 for a computed mismatch and 2 for invalid or out-of-range input. From MCP, call `acr_instrument` with the same instrument name and input object. Its usual review and recording rules apply. Supply 1–64 bins and at most 4,096 signed 64-bit JSON integers per column. The exponent ranges from 0 through 127. Every bin sum and column sum must fit an unsigned 128-bit integer. The instrument refuses overflow. It ships with a host built from this source.
+
 ## What does not exist
 
 Storage that survives a stop, a file system on a disk, a network stack, a mouse, threads, signals, a second processor, messages between processes, a shell, a driver for any real device, a graphics processor driver, start from UEFI. The kernel's files are the ones the loader handed it plus what a program writes while it runs, kept in memory and gone at the stop. The system-call interface is the subset that the programs run so far needed: a program that needs more is told the call does not exist. Two programs have been run on it, Doom and a probe written for the tests. The authority model beyond device capabilities is still data structures with tests.
