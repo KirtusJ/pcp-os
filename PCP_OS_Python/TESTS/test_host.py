@@ -213,6 +213,31 @@ class ToolServer(Case):
                              "params": {"name": name, "arguments": args or {}, "_meta": {server.META_VERSION: "2026-07-28"}}})
         return r["result"]["content"][0]["text"], r["result"]["isError"]
 
+    def test_oversized_lines_never_dispatch_and_the_next_request_survives(self):
+        from unittest.mock import patch
+        meta = {"_meta": {server.META_VERSION: server.MODERN[0]}}
+        args = {"review": "R", "claim": "A", "text": "size boundary"}
+        call = json.dumps({"id": 7, "jsonrpc": "2.0", "method": "tools/call",
+                           "params": dict(meta, name="pcpos_objection", arguments=args)})
+        ping = json.dumps({"id": 9, "jsonrpc": "2.0", "method": "ping", "params": meta})
+        limit = len(call.encode()) + 10
+        frames = call.ljust(limit - 1) + "\n" + call.ljust(3 * limit) + "\n" + ping.ljust(limit)
+        # The in-process text adapter and the binary wire both count UTF-8 bytes.
+        wide = json.dumps({"id": 1, "jsonrpc": "2.0", "method": "ping", "params": meta, "x": "界" * 35}, ensure_ascii=False)
+        self.assertLess(len(wide), limit)
+        self.assertGreater(len(wide.encode("utf-8")), limit)
+        for stream in [io.BytesIO((wide + "\n" + frames).encode()), io.StringIO(wide + "\n" + frames)]:
+            before = self.ws.register_path.read_bytes()
+            out = io.StringIO()
+            with patch.object(server, "MAX_LINE_BYTES", limit, create=True):
+                server.main(self.ws, "Z", stream, out)
+            replies = [json.loads(line) for line in out.getvalue().splitlines()]
+            self.assertEqual([r["id"] for r in replies], [None, 7, None, 9])
+            self.assertEqual([r.get("error", {}).get("code") for r in replies], [-32600, None, -32600, None])
+            self.assertFalse(replies[1]["result"]["isError"])
+            delta = self.ws.register_path.read_bytes()[len(before):].splitlines()
+            self.assertEqual([json.loads(line)["kind"] for line in delta], ["OBJECTION_RAISED"])
+
     def test_both_protocol_eras_are_answered(self):
         meta = {"_meta": {server.META_VERSION: "2026-07-28"}}
         r = self.srv.handle({"jsonrpc": "2.0", "id": 1, "method": "server/discover", "params": meta})

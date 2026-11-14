@@ -11,6 +11,7 @@ from .base import PcposError, strict_loads
 from .ops import Ops
 from . import model, view, VERSION
 
+MAX_LINE_BYTES = 8 * 1024 * 1024  # Native stdio limit, including a line terminator when present.
 SERVER = {"name": "pcp-os", "version": VERSION}
 MODERN = ["2026-07-28"]
 LEGACY = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
@@ -166,34 +167,61 @@ def _scalar_strings(value):
     return True
 
 
+def _request_lines(stream):
+    """Yield one message or None for one oversized frame. Never collect its discarded suffix."""
+    readline = getattr(stream, "readline", None)
+    if readline is None:
+        # Embedders can also supply an iterable of already-framed messages.
+        lines = iter(stream)
+    while True:
+        line = readline(MAX_LINE_BYTES + 1) if readline is not None else next(lines, None)
+        if line is None or (readline is not None and not line):
+            return
+        if len(line) > MAX_LINE_BYTES:
+            if readline is not None:
+                newline = b"\n" if isinstance(line, bytes) else "\n"
+                while line and not line.endswith(newline):
+                    line = readline(64 * 1024)
+            yield None
+        elif isinstance(line, str) and not line.isascii() and len(line.encode("utf-8", "surrogatepass")) > MAX_LINE_BYTES:
+            yield None
+        else:
+            yield line
+
+
+def _line_reply(server, line):
+    try:
+        if isinstance(line, bytes):
+            line = line.decode("utf-8")
+        if not line.strip(" \t\r\n"):
+            return None
+        msg = strict_loads(line)
+        scalar = _scalar_strings(msg)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return Server.error(None, -32700, "Parse error")
+    except (RecursionError, ValueError):
+        return Server.error(None, -32600, "Invalid Request")
+    if not scalar:
+        mid = msg.get("id") if isinstance(msg, dict) else None
+        if type(mid) not in (str, int) or not _scalar_strings(mid):
+            mid = None
+        return Server.error(mid, -32600, "Invalid Unicode in request")
+    if isinstance(msg, list):
+        return Server.error(None, -32600, "Batches are not supported")
+    return server.handle(msg)
+
+
 def main(ws, actor=None, stdin=None, stdout=None):
     server = Server(Ops(ws, actor))
     if stdin is None:
         stdin = getattr(sys.stdin, "buffer", sys.stdin)
     wire_out = getattr(sys.stdout, "buffer", None) if stdout is None else None
     out = stdout if stdout is not None else sys.stdout
-    for line in stdin:
-        try:
-            if isinstance(line, bytes):
-                line = line.decode("utf-8")
-            if not line.strip(" \t\r\n"):
-                continue
-            msg = strict_loads(line)
-            scalar = _scalar_strings(msg)
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            reply = Server.error(None, -32700, "Parse error")
-        except (RecursionError, ValueError):
-            reply = Server.error(None, -32600, "Invalid Request")
+    for line in _request_lines(stdin):
+        if line is None:
+            reply = Server.error(None, -32600, "The message is longer than this server accepts")
         else:
-            if not scalar:
-                mid = msg.get("id") if isinstance(msg, dict) else None
-                if type(mid) not in (str, int) or not _scalar_strings(mid):
-                    mid = None
-                reply = Server.error(mid, -32600, "Invalid Unicode in request")
-            elif isinstance(msg, list):
-                reply = Server.error(None, -32600, "Batches are not supported")
-            else:
-                reply = server.handle(msg)
+            reply = _line_reply(server, line)
         if reply is not None:
             message = json.dumps(reply, ensure_ascii=True, separators=(",", ":")) + "\n"
             if wire_out is None:

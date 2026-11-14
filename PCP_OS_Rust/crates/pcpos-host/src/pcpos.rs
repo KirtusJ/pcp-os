@@ -1925,26 +1925,25 @@ fn serve(se: &Session) {
     loop {
         line.clear();
         // Bytes, not text: a line that is not UTF-8 is answered as an error and the server goes on.
-        match (&mut input).take(MAX_LINE as u64 + 1).read_until(b'\n', &mut line) {
+        match (&mut input).take(MAX_LINE as u64).read_until(b'\n', &mut line) {
             Ok(0) | Err(_) => break,
             Ok(_) => {}
         }
-        if line.len() > MAX_LINE {
-            // Too long to be a message of this server: drop the rest of the line and say so.
-            let mut rest = Vec::new();
-            while !line.ends_with(b"\n") {
-                rest.clear();
-                match (&mut input).take(MAX_LINE as u64).read_until(b'\n', &mut rest) {
-                    Ok(0) | Err(_) => break,
-                    Ok(_) => line = std::mem::take(&mut rest),
+        // At the exact limit an unterminated final message still fits. Any further byte makes it
+        // oversized. Drain through the delimiter without retaining another copy of the discarded data.
+        if line.len() == MAX_LINE && !line.ends_with(b"\n") {
+            match input.skip_until(b'\n') {
+                Ok(0) => {} // EOF at exactly MAX_LINE bytes
+                Ok(_) => {
+                    let mut bytes = rpc_error(Value::Null, -32600, "the message is longer than this server accepts").canonical_json();
+                    bytes.push(b'\n');
+                    if out.write_all(&bytes).and_then(|_| out.flush()).is_err() {
+                        break;
+                    }
+                    continue;
                 }
+                Err(_) => break,
             }
-            let mut bytes = rpc_error(Value::Null, -32600, "the message is longer than this server accepts").canonical_json();
-            bytes.push(b'\n');
-            if out.write_all(&bytes).and_then(|_| out.flush()).is_err() {
-                break;
-            }
-            continue;
         }
         if line.iter().all(|b| b.is_ascii_whitespace()) {
             continue;

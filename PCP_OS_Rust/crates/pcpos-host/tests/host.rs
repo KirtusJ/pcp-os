@@ -158,6 +158,35 @@ fn the_caller_does_not_choose_the_actor_and_cannot_write_as_a_person_or_as_the_s
 }
 
 #[test]
+fn oversized_mcp_lines_never_dispatch_and_the_next_request_survives() {
+    let root = dir("large-mcp-line");
+    let limit = 8 * 1024 * 1024;
+    let begin = br#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"acr_begin"}}"#;
+    let ping = br#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#;
+    let mut wire = ping.to_vec();
+    wire.resize(limit - 1, b' ');
+    wire.push(b'\n'); // the delimiter counts toward the limit
+    wire.extend_from_slice(begin);
+    wire.resize(limit * 4, b' ');
+    wire.push(b'\n');
+    wire.extend_from_slice(ping);
+    wire.resize(wire.len() + limit - ping.len(), b' '); // exact limit, followed by EOF
+    let mut host = pcpos(&root);
+    host.arg("mcp");
+    let (out, code) = feed(host, &wire);
+    assert_eq!(code, 0, "{out}");
+    let replies: Vec<_> = out.lines().map(|line| Value::parse(line.as_bytes()).unwrap()).collect();
+    assert_eq!(replies.len(), 3);
+    for i in [0, 2] {
+        assert_eq!(replies[i].get("id"), Some(&Value::Int(1)));
+        assert!(replies[i].get("result").is_some());
+    }
+    assert_eq!(replies[1].get("id"), Some(&Value::Null));
+    assert_eq!(replies[1].get("error").unwrap().get("code"), Some(&Value::Int(-32600)));
+    assert!(!root.join(REG).exists(), "oversized acr_begin created a register");
+}
+
+#[test]
 fn mcp_reports_the_depth_limit_of_the_complete_request() {
     use pcpos_core::value::MAX_DEPTH;
 
