@@ -590,7 +590,7 @@ fn asynchronous(failed: &mut u32) {
     // a 32-byte label must be admitted. Freeing frames alone cannot certify a
     // refusal: a mistakenly admitted program could exit and free them too.
     let (r, free0, free1, _) = loaded("sleeper", "a-name-of-thirty-three-characters", &[], 0);
-    let refused = matches!(r, Err("the program could not be admitted as a task"));
+    let refused = r.as_ref().err().copied() == Some("the program could not be admitted as a task");
     say!("  note a 33-byte name: {:?}; frames free {} before, {} after", r.as_ref().err(), free0, free1);
     let good_name = "x".repeat(32);
     let (normal, free2, free3, _) = loaded("sleeper", &good_name, &[], 0);
