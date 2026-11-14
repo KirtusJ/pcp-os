@@ -1010,3 +1010,180 @@ fn supplied_digest_previews_report_the_same_open_review_constraint_as_submission
     assert_eq!(tool(&root, "acr_offer", &args(r#","delta":true"#)), refusal);
     assert_eq!(fs::read(root.join(REG)).unwrap(), original);
 }
+
+/// Keep the host alive between a preview and its caller's decision.
+struct OfferConnection {
+    child: std::process::Child,
+    output: std::io::BufReader<std::process::ChildStdout>,
+    next_id: i64,
+}
+
+impl OfferConnection {
+    fn open(mut command: Command) -> Self {
+        let mut child = command.arg("mcp").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+        let output = std::io::BufReader::new(child.stdout.take().unwrap());
+        Self { child, output, next_id: 0 }
+    }
+
+    fn request(&mut self, name: &str, args: &str) -> (String, bool) {
+        use std::io::BufRead;
+        self.next_id += 1;
+        writeln!(self.child.stdin.as_mut().unwrap(),
+                 r#"{{"id":{},"jsonrpc":"2.0","method":"tools/call","params":{{"name":"{name}","arguments":{args}}}}}"#, self.next_id).unwrap();
+        let mut line = String::new();
+        self.output.read_line(&mut line).unwrap();
+        let reply = Value::parse(line.as_bytes()).unwrap();
+        assert_eq!(reply.get("id").and_then(Value::as_int), Some(self.next_id));
+        let result = reply.get("result").unwrap();
+        let Some(Value::List(content)) = result.get("content") else { panic!("{line}") };
+        (content[0].get("text").unwrap().as_str().unwrap().to_string(), result.get("isError") == Some(&Value::Bool(true)))
+    }
+
+    fn prepare(&mut self, kind: &str, body: &str, extra: &str) -> (String, Value) {
+        let args = format!(r#"{{"kind":"{kind}","body":{body},"prepare":true{extra}}}"#);
+        let (text, err) = self.request("acr_offer", &args);
+        assert!(!err, "{text}");
+        let delta = Value::parse(text.as_bytes()).unwrap();
+        assert_eq!(delta.get("accept"), Some(&Value::Bool(true)));
+        let reference = delta.get("ref").and_then(Value::as_str).unwrap();
+        (format!(r#"{{"ref":"{reference}"}}"#), delta)
+    }
+}
+
+impl Drop for OfferConnection {
+    fn drop(&mut self) {
+        drop(self.child.stdin.take());
+        let _ = self.child.wait();
+    }
+}
+
+#[test]
+fn commit_writes_the_guarded_preview_once_to_its_original_register() {
+    let root = dir("prepared-alternate");
+    assert!(!tool(&root, "acr_begin", r#"{"register":"other.jsonl"}"#).1);
+    let path = root.join("other.jsonl");
+    let initial = fs::read(&path).unwrap();
+    let mut pipe = OfferConnection::open(pcpos(&root));
+    let reg = r#","register":"other.jsonl""#;
+    let (old, _) = pipe.prepare("NOTE", r#"{"text":"first"}"#, reg);
+    let input = r#"{"kind":"AUTOMATED","label":"peer","name":" Δ "}"#;
+    let (id, patch) = pipe.prepare("PARTICIPANT_ADDED", input, reg);
+    assert_ne!(old, id);
+    assert!(pipe.request("acr_commit", &old).1);
+    assert!(tool(&root, "acr_commit", &id).1, "another process holds no prepared body");
+    for extra in [r#""actor":"host""#, r#""register":"other.jsonl""#, r#""body":{}"#, r#""expected_head":"0""#] {
+        assert!(pipe.request("acr_commit", &id.replace('}', &format!(",{extra}}}"))).1);
+    }
+    assert!(pipe.request("acr_offer", r#"{"kind":"SYSTEM_STATE","body":{},"prepare":true}"#).0.starts_with("REFUSE"));
+    assert_eq!(fs::read(&path).unwrap(), initial);
+    assert!(pipe.request("acr_commit", &id).0.starts_with("WRITTEN"));
+    let saved = fs::read(&path).unwrap();
+    assert!(pipe.request("acr_commit", &id).1);
+    assert_eq!(fs::read(&path).unwrap(), saved);
+    assert!(!root.join(REG).exists());
+    let (events, _) = ledger::verify(&saved).unwrap();
+    let body = events.last().unwrap().get("body").unwrap();
+    let Value::Map(mut expected) = Value::parse(input.as_bytes()).unwrap() else { panic!() };
+    let Some(Value::Map(set)) = patch.get("set") else { panic!("missing guard-derived fields") };
+    expected.extend(set.clone());
+    assert_eq!(body, &Value::Map(expected));
+    assert!(Record::open(&saved).unwrap().1.is_empty());
+}
+
+#[test]
+fn prepared_writes_refuse_a_changed_head_and_preserve_participant_provenance() {
+    let root = dir("prepared-stale");
+    assert!(!tool(&root, "acr_begin", "{}").1);
+    let mut pipe = OfferConnection::open(pcpos(&root));
+    let bytes = fs::read(root.join(REG)).unwrap();
+    let head = ledger::verify(&bytes).unwrap().1;
+    let (id, _) = pipe.prepare("NOTE", r#"{"text":"stale"}"#, &format!(r#","expected_head":"{head}""#));
+    let wrong = format!(r#"{{"kind":"NOTE","body":{{}},"prepare":true,"expected_head":"{}"}}"#, "0".repeat(64));
+    assert!(pipe.request("acr_offer", &wrong).0.starts_with("REFUSE"));
+    assert_eq!(fs::read(root.join(REG)).unwrap(), bytes);
+    assert!(tool(&root, "acr_submit", r#"{"kind":"NOTE","body":{"text":"intervening"}}"#).0.starts_with("WRITTEN"));
+    let after = fs::read(root.join(REG)).unwrap();
+    let refused = pipe.request("acr_commit", &id);
+    assert!(refused.0.starts_with("REFUSE") && refused.0.contains("head"), "{refused:?}");
+    assert!(pipe.request("acr_commit", &id).1);
+    assert_eq!(fs::read(root.join(REG)).unwrap(), after);
+
+    let digest = sha256_hex(b"");
+    let check = format!(r#"{{"argv":["who"],"exit":0,"expect_exit":0,"timeout":false,"stdout":"{digest}","stderr":"{digest}","observed":"HOST_OBSERVED_TOOL"}}"#);
+    let (id, delta) = pipe.prepare("CHECK_RAN", &check, "");
+    assert_eq!(delta.get("set").unwrap().get("observed").unwrap().as_str(), Some("REPORTED_BY_PARTICIPANT"));
+    assert!(pipe.request("acr_commit", &id).0.starts_with("WRITTEN"));
+    let es = events(&root);
+    assert_eq!(es.last().unwrap().get("body").unwrap().get("observed").unwrap().as_str(), Some("REPORTED_BY_PARTICIPANT"));
+    for (tool, args) in [
+        ("acr_offer", r#"{"kind":"NOTE","body":{},"prepare":1}"#),
+        ("acr_offer", r#"{"kind":"NOTE","body":{},"prepare":true,"delta":false}"#),
+        ("acr_submit", r#"{"kind":"NOTE","body":{},"prepare":true}"#),
+        ("acr_submit", r#"{"kind":"NOTE","body":{},"ref":"unknown"}"#),
+        ("acr_commit", r#"{"ref":null}"#),
+    ] {
+        assert!(pipe.request(tool, args).1);
+    }
+    assert_eq!(events(&root), es);
+}
+
+#[test]
+fn competing_commits_can_append_only_one_body_at_the_previewed_head() {
+    let root = dir("prepared-race");
+    assert!(!tool(&root, "acr_begin", "{}").1);
+    let before = events(&root).len();
+    let gate = std::sync::Arc::new(std::sync::Barrier::new(2));
+    let mut workers = Vec::new();
+    for msg in ["one", "two"] {
+        let root = root.clone();
+        let gate = gate.clone();
+        workers.push(std::thread::spawn(move || {
+            let mut pipe = OfferConnection::open(pcpos(&root));
+            let (id, _) = pipe.prepare("NOTE", &format!(r#"{{"text":"{msg}"}}"#), "");
+            gate.wait();
+            (msg, pipe.request("acr_commit", &id))
+        }));
+    }
+    let outcomes: Vec<_> = workers.into_iter().map(|t| t.join().unwrap()).collect();
+    let winners: Vec<_> = outcomes.iter().filter(|(_, r)| r.0.starts_with("WRITTEN")).collect();
+    assert_eq!(winners.len(), 1, "{outcomes:?}");
+    assert_eq!(outcomes.iter().filter(|(_, r)| r.0.starts_with("REFUSE") && r.0.contains("head")).count(), 1);
+    let es = events(&root);
+    assert_eq!(es.len(), before + 1);
+    assert_eq!(es.last().unwrap().get("body").unwrap().get("text").unwrap().as_str(), Some(winners[0].0));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_redirected_directory_cannot_receive_a_commit_even_with_a_byte_identical_register() {
+    use std::os::unix::fs::symlink;
+    let root = dir("prepared-redirect");
+    assert!(!tool(&root, "acr_begin", r#"{"register":"a/r.jsonl"}"#).1);
+    let initial = fs::read(root.join("a/r.jsonl")).unwrap();
+    let mut pipe = OfferConnection::open(pcpos(&root));
+    let (id, _) = pipe.prepare("NOTE", "{}", r#","register":"a/r.jsonl""#);
+    fs::create_dir(root.join("b")).unwrap();
+    fs::write(root.join("b/r.jsonl"), &initial).unwrap();
+    fs::rename(root.join("a"), root.join("original")).unwrap();
+    symlink(root.join("b"), root.join("a")).unwrap();
+    assert!(pipe.request("acr_commit", &id).1);
+    assert_eq!(fs::read(root.join("original/r.jsonl")).unwrap(), initial);
+    assert_eq!(fs::read(root.join("b/r.jsonl")).unwrap(), initial);
+}
+
+#[test]
+fn commit_rechecks_the_module_specification_when_only_external_bytes_change() {
+    let root = in_use("prepared-method");
+    let method = small_method(&root);
+    let spec = method.join("MODULES/03_Science/SOURCE/Specification.md");
+    let digest = sha256_hex(&fs::read(&spec).unwrap());
+    let mut pipe = OfferConnection::open(with_method(&root, &method));
+    let body = format!(r#"{{"label":"chapter","director":"principal","extent":"TOTAL","procedure":"FOCUSED","target":{{"t":"artifact","sha256":"{}"}},"claims":[{{"label":"A","text":"c","origin":"COMMISSIONER"}}],"modules":[{{"id":"acr.science","version":"1.0","sha256":"{digest}"}}]}}"#, sha256_hex(b"target"));
+    let (id, _) = pipe.prepare("REVIEW_COMMISSIONED", &body, "");
+    let initial = fs::read(root.join(REG)).unwrap();
+    fs::OpenOptions::new().append(true).open(spec).unwrap().write_all(b"additional text\n").unwrap();
+    let refused = pipe.request("acr_commit", &id);
+    assert!(refused.0.starts_with("REFUSE") && refused.0.contains("Core 14.1"), "{refused:?}");
+    assert_eq!(fs::read(root.join(REG)).unwrap(), initial);
+    assert!(pipe.request("acr_commit", &id).1);
+}

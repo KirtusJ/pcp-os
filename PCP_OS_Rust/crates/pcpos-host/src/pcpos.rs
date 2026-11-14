@@ -1268,11 +1268,14 @@ fn refusal_text(r: &acr::Refusal) -> String {
 }
 
 /// A successful preview relative to the exact body in this RPC request.
-fn offer_delta(request: &Value, accepted: &Value) -> Result<String, String> {
+fn offer_delta(request: &Value, accepted: &Value, reference: Option<&str>) -> Result<String, String> {
     let (Value::Map(before), Value::Map(after)) = (request, accepted) else {
         return Err("an accepted event body must be an object".to_string());
     };
     let mut patch = vec![("accept", Value::Bool(true))];
+    if let Some(reference) = reference {
+        patch.push(("ref", s(reference)));
+    }
     let set: BTreeMap<_, _> = after.iter().filter(|(k, v)| before.get(*k) != Some(*v))
         .map(|(k, v)| (k.clone(), v.clone())).collect();
     if !set.is_empty() {
@@ -1283,6 +1286,29 @@ fn offer_delta(request: &Value, accepted: &Value) -> Result<String, String> {
         patch.push(("remove", Value::List(removed)));
     }
     Ok(String::from_utf8(obj(patch).canonical_json()).expect("canonical JSON is UTF-8"))
+}
+
+/// The last explicitly prepared body on this connection. Preview already checked the canonical
+/// event size; keeping bytes also bounds storage for a body made up of many small JSON objects.
+struct PreparedOffer {
+    reference: String,
+    register: String,
+    kind: String,
+    head: String,
+    body: Box<[u8]>,
+}
+
+impl PreparedOffer {
+    fn new(se: &Session, tx: &Tx, kind: &str, accepted: &Value) -> Result<Self, String> {
+        let register = tx.h.path.strip_prefix(&se.root).ok().and_then(|p| p.to_str())
+            .ok_or("the resolved register path cannot be used in a prepared offer")?.to_string();
+        let head = tx.head();
+        let body = accepted.canonical_json().into_boxed_slice();
+        let path_digest = sha256_hex(tx.h.path.as_os_str().as_encoded_bytes());
+        let identity = Value::List(vec![s(&path_digest), s(&se.actor), s(&head), s(kind), s(&sha256_hex(&body))]);
+        let reference = sha256_hex(&identity.canonical_json());
+        Ok(Self { reference, register, kind: kind.to_string(), head, body })
+    }
 }
 
 fn receipt(seq: u64, head: &str, prev: &str, kind: &str, actor: &str, auth: &str) -> String {
@@ -1439,7 +1465,7 @@ fn tools() -> Value {
         obj(vec![("type", s("object")), ("properties", Value::Map(props.into_iter().map(|(k, t, d)| (k.to_string(), obj(vec![("type", s(t)), ("description", s(d))]))).collect())),
                  ("required", Value::List(required.into_iter().map(s).collect()))])
     };
-    let reg = ("register", "string", "Optional. Path of the register, relative to the served directory. Omit it to use the session's register.");
+    let reg = ("register", "string", "Register path under root (session default).");
     let tool = |name: &str, d: &str, sc: Value| obj(vec![("name", s(name)), ("description", s(d)), ("inputSchema", sc)]);
     Value::List(vec![
         tool("acr_status", "What the record says now: system, ACR use, standard, what needs a response, reviews, tasks, and what a halt would stop. Read this instead of recalling state.", schema(vec![reg], vec![])),
@@ -1450,7 +1476,9 @@ fn tools() -> Value {
         tool("acr_halt", "Stop ACR use now, on the person's instruction or for your own part. Closes open reviews as incomplete and asks their tasks to stop. Never refused for the state of the work.",
              schema(vec![reg, ("words", "string", "Optional. The instruction to stop, in its original words")], vec![])),
         tool("acr_offer", "Ask the guards what they would answer to an event, without writing it: ACCEPT with the exact body that would be written, or REFUSE with the clause.",
-             schema(vec![reg, ("kind", "string", "Event kind, e.g. FINDING_RECORDED"), ("body", "object", "The event body"), ("delta", "boolean", "On acceptance return JSON {accept:true,set?,remove?} relative to this request body. Replace whole top-level fields from set and delete keys in remove. Refusals keep their explanation.")], vec!["kind", "body"])),
+             schema(vec![reg, ("kind", "string", "Event kind, e.g. FINDING_RECORDED"), ("body", "object", "The event body"), ("delta", "boolean", "On acceptance: {accept:true,set?,remove?}. Replace or delete these top-level fields in your request body."), ("prepare", "boolean", "Return delta and ref for acr_commit. Keeps one offer per connection."), ("expected_head", "string", "Required head if supplied")], vec!["kind", "body"])),
+        tool("acr_commit", "Write at the previewed head. A matching attempt consumes the ref.",
+             schema(vec![("ref", "string", "Ref from acr_offer")], vec!["ref"])),
         tool("acr_submit", "Offer an event as this session's participant and, if the guards accept it, append it. The actor is fixed by the server; it is not an argument. With expected_head, the event is written only if the register's head is still that digest.",
              schema(vec![reg, ("kind", "string", "Event kind"), ("body", "object", "The event body"), ("expected_head", "string", "Optional. The full head digest the caller last saw")], vec!["kind", "body"])),
         tool("acr_modules", "The modules found in the method text at hand, each with its identifier, version and the digest of its Specification, and the modules this workspace's reviews use as the record has them. Use it to fill 'modules' when commissioning a review. It selects nothing.", schema(vec![reg], vec![])),
@@ -1469,7 +1497,7 @@ fn tools() -> Value {
     ])
 }
 
-fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
+fn call(se: &Session, name: &str, args: &Value, prepared: &mut Option<PreparedOffer>) -> Result<String, String> {
     let arg = |k: &str| args.get(k).and_then(Value::as_str).ok_or(format!("argument {k} is required and is text"));
     let text_arg = |k: &str| match args.get(k) {
         None | Some(Value::Null) => Ok(None),
@@ -1738,15 +1766,44 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
                 }
             }
         }
-        "acr_offer" | "acr_submit" => {
-            let kind = arg("kind")?;
-            let requested = args.get("body").ok_or("argument body is required")?;
+        "acr_offer" | "acr_submit" | "acr_commit" => {
+            if name != "acr_commit" && args.get("ref").is_some() {
+                return Err("a prepared ref is written with acr_commit".to_string());
+            }
+            let held = if name == "acr_commit" {
+                let reference = arg("ref")?;
+                if !matches!(args, Value::Map(m) if m.len() == 1) {
+                    return Err("acr_commit takes only ref".to_string());
+                }
+                if prepared.as_ref().map(|p| p.reference.as_str()) != Some(reference) {
+                    return Err("no matching prepared offer on this connection".to_string());
+                }
+                prepared.take()
+            } else {
+                None
+            };
+            let restored;
+            let (reg, kind, requested) = if let Some(p) = &held {
+                restored = Value::parse(&p.body).map_err(|_| "cannot decode the prepared offer")?;
+                (p.register.as_str(), p.kind.as_str(), &restored)
+            } else {
+                (reg.as_str(), arg("kind")?, args.get("body").ok_or("argument body is required")?)
+            };
+            let prepare = match (name, args.get("prepare")) {
+                (_, None) => false,
+                ("acr_offer", Some(Value::Bool(b))) => *b,
+                ("acr_offer", _) => return Err("argument prepare is boolean".to_string()),
+                _ => return Err("prepare is only for acr_offer".to_string()),
+            };
             let delta = match (name, args.get("delta")) {
                 (_, None) | ("acr_offer", Some(Value::Bool(false))) => false,
                 ("acr_offer", Some(Value::Bool(true))) => true,
                 ("acr_offer", _) => return Err("argument delta is boolean".to_string()),
                 _ => return Err("delta is only for acr_offer".to_string()),
             };
+            if prepare && args.get("delta") == Some(&Value::Bool(false)) {
+                return Err("prepare requires the delta reply".to_string());
+            }
             // A check offered here is the participant's own account of a command: the host did not see it run, and the record says so.
             // Only acr_check, which reads the host's own observation, records a check as observed.
             let reported;
@@ -1762,7 +1819,12 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
             if let Some(why) = not_from_a_session(kind, body) {
                 return Ok(format!("REFUSE (exit code {})\n{}\nNothing was written.\n", acr::REFUSED, why));
             }
-            let mut tx = Tx::begin(&se.root, &reg, false)?.ok_or_else(none)?;
+            let mut tx = Tx::begin(&se.root, reg, false)?.ok_or_else(|| {
+                if held.is_some() { format!("the prepared register at {reg} is absent") } else { none() }
+            })?;
+            if held.is_some() && tx.h.path != se.root.join(reg) {
+                return Err("the prepared register path changed".to_string());
+            }
             session_may_write(&tx, se)?;
             if kind == "ARTIFACT_ADDED" && body.get("origin").and_then(Value::as_str) == Some("SUPPLIED") && open_review_floor(&tx).is_some() {
                 return Ok(format!("REFUSE (exit code {}) [Core 4.3]\nA review is open, and material recorded now as SUPPLIED on a digest alone is your report that it was supplied: the server did not read it. Use acr_artifact with its path or its text, so that the server reads it and says how it came by it; record a source you retrieved as RETRIEVED, with where and when; record your own working as PRODUCED.\nNothing was written.\n", acr::REFUSED));
@@ -1775,22 +1837,28 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
             if kind == "REVIEW_COMMISSIONED" && tx.state().reviews.values().filter(|r| matches!(r.lifecycle, Review::Active | Review::Paused)).count() >= MAX_OPEN_REVIEWS {
                 return Ok(format!("REFUSE (exit code {})\n{MAX_OPEN_REVIEWS} reviews are open. Close one first: a halt names every review it closes in one event, and must always fit.\nNothing was written.\n", acr::REFUSED));
             }
+            if let Some(want) = held.as_ref().map(|p| p.head.as_str()).or(text_arg("expected_head")?) {
+                if want != tx.head() {
+                    return Ok(format!("REFUSE (exit code {})\nthe register's head is {}, not the expected {}: something was written since you last read it. Read acr_status, then decide again.\nNothing was written.\n",
+                                      acr::REFUSED, tx.head(), want));
+                }
+            }
             if name == "acr_offer" {
                 if let Some(r) = tx.replay_refusal(kind) {
                     return Ok(refusal_text(&r));
                 }
                 return match tx.rec.preview(&now_utc(), &se.actor, "HOST", kind, body) {
-                    Ok(out) if delta => offer_delta(requested, &out),
+                    Ok(out) if prepare => {
+                        let offer = PreparedOffer::new(se, &tx, kind, &out)?;
+                        let reply = offer_delta(requested, &out, Some(&offer.reference))?;
+                        *prepared = Some(offer);
+                        Ok(reply)
+                    }
+                    Ok(out) if delta => offer_delta(requested, &out, None),
                     Ok(out) => Ok(format!("ACCEPT\nbody that would be written: {}\n", String::from_utf8_lossy(&out.canonical_json()))),
                     Err(SubmitError::Refused(r)) => Ok(format!("REFUSE (exit code {}){}\n{}\n", r.code, r.clause.map(|c| format!(" [{c}]")).unwrap_or_default(), r.message)),
                     Err(SubmitError::Ledger(e)) => Err(format!("the register refused the event: {:?}", e)),
                 };
-            }
-            if let Some(want) = text_arg("expected_head")? {
-                if want != tx.head() {
-                    return Ok(format!("REFUSE (exit code {})\nthe register's head is {}, not the expected {}: something was written since you last read it. Read acr_status, then decide again.\nNothing was written.\n",
-                                      acr::REFUSED, tx.head(), want));
-                }
             }
             match tx.put(&se.actor, "HOST", kind, body.clone())? {
                 // A session that names itself by anything but its label is told its label: a model tends to give its own name.
@@ -1814,6 +1882,7 @@ fn serve(se: &Session) {
     let mut out = std::io::stdout();
     let empty = Value::Map(BTreeMap::new());
     let error = |id: Value, code: i64, m: &str| obj(vec![("jsonrpc", s("2.0")), ("id", id), ("error", obj(vec![("code", Value::Int(code)), ("message", s(m))]))]);
+    let mut prepared = None;
     let mut line: Vec<u8> = Vec::new();
     loop {
         line.clear();
@@ -1870,7 +1939,7 @@ fn serve(se: &Session) {
                     "tools/call" => {
                         let name = params.get("name").and_then(Value::as_str).unwrap_or("");
                         let args = params.get("arguments").unwrap_or(&empty);
-                        match call(se, name, args) {
+                        match call(se, name, args, &mut prepared) {
                             Err(e) if e.starts_with(NO_TOOL) => Some(Err((-32602, e))),
                             r => {
                                 let (text, is_error) = match r {

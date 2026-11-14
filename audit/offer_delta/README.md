@@ -34,3 +34,24 @@ Run `python measure_workflow.py BASELINE_PCPOS CANDIDATE_PCPOS` with the same to
 The mixed case saves 103,466 bytes by declining the two oversized proposals before the worker retransmits them. One contains English text and the other contains 33,000 UTF-8 bytes of Japanese text. Both still incur the initial preview cost. The forbidden system event is refused at preview in both versions.
 
 Wire counts include the newline on each JSON-RPC request and reply. The model projection counts the catalog once, then the tool name, compact arguments and decoded response text for each call. Token totals vary slightly with the digests in write receipts. The workload deliberately exercises refusals. It establishes neither a production refusal rate nor a provider's billed token count.
+
+## Writing a prepared offer
+
+A worker that needs a decision between preview and append can upload the body once. On the same native MCP connection:
+
+1. Call `acr_offer` with `kind`, `body` and `"prepare":true`. Supply `expected_head` when the decision depends on a previously read state. Acceptance returns the delta above plus a string `ref`. Reconstruct and inspect the accepted body.
+2. To write it, call `acr_commit` with just `{"ref":"<returned ref>"}`. The host locks the original register, checks the head again, reruns the submission checks and returns the usual receipt. Read the register before retrying if the receipt was lost.
+
+One successful prepare replaces the previous one on that connection. A refusal, an ordinary preview or an unknown reference leaves the slot alone. A matching commit attempt consumes it, including on a stale-head refusal. Disconnecting drops it. The stored canonical body fits within the 65,536-byte event limit, plus separate path, kind and digest metadata. The reference identifies the resolved path, fixed actor, head, kind and accepted body by SHA-256. Identical preparations can return the same reference. A recipient needs the matching preparation on its own connection to use it. Direct `acr_submit` remains the one-call write path when no preview decision is needed.
+
+Run `python measure_commit.py BASELINE CANDIDATE` with tiktoken 0.14.0. Use `53ca4e6` as the standalone baseline. The worker starts with the published FPHPM exercise register and a registered participant, discovers the tools, obtains a full head, checks it on submission or preparation, and reads status after each append. The harness checks the register against the intended writes. To test conditional status, build both binaries with the verified header updates from #66 and pass `--updates`.
+
+One run with #66 and master at `f9bd594` gave these results. The two preview workflows made the same number of calls. The mixed case writes a short note, a 2,560-byte English note text and a 3,072-byte Japanese note text, and refuses a system event.
+
+| Workload | Resend RPC bytes | Prepared RPC bytes | Resend → prepared cl100k | Resend → prepared o200k |
+|---|---:|---:|---:|---:|
+| Short note | 9,804 | 10,092 | 1,986 → 2,112 | 2,026 → 2,153 |
+| Long English note | 14,910 | 12,645 | 2,771 → 2,517 | 2,807 → 2,555 |
+| Mixed, 12 calls | 23,617 | 18,596 | 6,109 → 4,622 | 5,388 → 4,285 |
+
+The direct-submit control used 17,311 bytes for the mixed case in nine calls. The standalone mixed preview comparison with full status reads used 31,104 → 25,577 bytes in thirteen calls. In the combined build the serialized tool list grew from 6,948 to 7,124 bytes, within its 7 KiB budget. A small single offer can cost more with a reference. Wire counts include every request and reply newline. Token counts project names, compact arguments, decoded results and one tool list. Digest values vary between runs. Provider framing, billing and live model decisions are outside this measurement.

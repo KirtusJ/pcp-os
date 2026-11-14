@@ -56,7 +56,7 @@ for name in ("Personal", "Commercial", "Enterprise"):
         init = json.dumps({"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {"protocolVersion": "2025-11-25"}}) + "\n" + json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}) + "\n"
         m = run(launcher, "mcp", input=init, env=e, cwd=proj)
         tools = [t["name"] for t in json.loads(m.stdout.splitlines()[1])["result"]["tools"]]
-        assert m.returncode == 0 and len(tools) == 15 and json.loads(m.stdout.splitlines()[0])["result"]["serverInfo"]["version"].endswith(json.loads((os_plugin / ".claude-plugin/plugin.json").read_text())["version"]), m.stdout[:300]
+        assert m.returncode == 0 and len(tools) == 16 and "acr_commit" in tools and json.loads(m.stdout.splitlines()[0])["result"]["serverInfo"]["version"].endswith(json.loads((os_plugin / ".claude-plugin/plugin.json").read_text())["version"]), m.stdout[:300]
         quiet = run(launcher, "hook", "prompt", input=json.dumps({"hook_event_name": "UserPromptSubmit", "prompt": "what is the weather", "cwd": str(proj)}), env=e, cwd=proj)
         assert quiet.returncode == 0 and quiet.stdout == "" and not (proj / ".pcp").exists(), quiet
         program.chmod(0o644)
