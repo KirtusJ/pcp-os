@@ -54,12 +54,12 @@ pub struct Q {
 
 const BEYOND: &str = "a value passed beyond what this instrument holds exactly (127 bits); nothing was computed";
 
-fn gcd(a: i128, b: i128) -> i128 {
+fn gcd(a: i128, b: i128) -> u128 {
     let (mut a, mut b) = (a.unsigned_abs(), b.unsigned_abs());
     while b != 0 {
         (a, b) = (b, a % b);
     }
-    a as i128
+    a
 }
 
 impl Q {
@@ -67,7 +67,12 @@ impl Q {
         if d == 0 {
             return Err("division by zero".to_string());
         }
-        let g = gcd(n, d).max(1);
+        let g = gcd(n, d);
+        // A nonzero gcd larger than MAX is |MIN|; the only possibilities here
+        // are 0/MIN and MIN/MIN. Reduce before converting back to signed.
+        let Ok(g) = i128::try_from(g) else {
+            return Ok(Q::int(if n == 0 { 0 } else { 1 }));
+        };
         let (n, d) = (n / g, d / g);
         if d < 0 { Ok(Q { n: n.checked_neg().ok_or(BEYOND)?, d: d.checked_neg().ok_or(BEYOND)? }) } else { Ok(Q { n, d }) }
     }
@@ -82,7 +87,8 @@ impl Q {
     }
     fn mul(self, o: Q) -> Result<Q, String> {
         // Reduce across first, so that a product that fits is not refused for an intermediate that does not.
-        let (g1, g2) = (gcd(self.n, o.d).max(1), gcd(o.n, self.d).max(1));
+        // Each gcd divides a strictly positive, representable denominator.
+        let (g1, g2) = (gcd(self.n, o.d) as i128, gcd(o.n, self.d) as i128);
         Q::new((self.n / g1).checked_mul(o.n / g2).ok_or(BEYOND)?, (self.d / g2).checked_mul(o.d / g1).ok_or(BEYOND)?)
     }
     fn div(self, o: Q) -> Result<Q, String> {
@@ -104,9 +110,23 @@ impl Q {
         }
         let (mut out, mut rem, mut places) = (String::new(), self.n.unsigned_abs() % self.d as u128, 0);
         while rem != 0 && places < 40 {
-            rem *= 10;
-            out.push(char::from(b'0' + (rem / self.d as u128) as u8));
-            rem %= self.d as u128;
+            let d = self.d as u128;
+            let (digit, next) = if let Some(scaled) = rem.checked_mul(10) {
+                ((scaled / d) as u8, scaled % d)
+            } else {
+                // Each sum is below 2*d, which fits u128 even when 10*rem does not.
+                let (mut digit, mut residue) = (0, 0);
+                for _ in 0..10 {
+                    residue += rem;
+                    if residue >= d {
+                        residue -= d;
+                        digit += 1;
+                    }
+                }
+                (digit, residue)
+            };
+            out.push(char::from(b'0' + digit));
+            rem = next;
             places += 1;
         }
         let sign = if self.n < 0 { "-" } else { "" };
@@ -195,6 +215,7 @@ impl Parser<'_> {
                 self.at += 3;
                 let m = self.unary()?;
                 match (v.whole(), m.whole()) {
+                    (Some(_), Some(-1)) => v = Q::int(0),
                     (Some(a), Some(b)) if b != 0 => v = Q::int(a.rem_euclid(b)),
                     _ => return Err("mod is defined here for whole numbers, the second not zero".to_string()),
                 }
@@ -211,11 +232,12 @@ impl Parser<'_> {
         let base = self.postfix()?;
         if self.eat("^") {
             let e = self.unary()?.whole().ok_or("a power is defined here for a whole-number exponent")?;
-            if e.abs() > 4096 {
+            let magnitude = e.unsigned_abs();
+            if magnitude > 4096 {
                 return Err(BEYOND.to_string());
             }
             let mut v = Q::int(1);
-            for _ in 0..e.abs() {
+            for _ in 0..magnitude {
                 v = v.mul(base)?;
                 self.step()?;
             }
@@ -300,8 +322,7 @@ impl Parser<'_> {
                             self.bound.pop();
                             end = self.at;
                         }
-                        let mut k = lo;
-                        while k <= hi {
+                        for k in lo..=hi {
                             self.at = body;
                             self.bound.push((var.clone(), Q::int(k)));
                             let term = self.sum()?;
@@ -309,7 +330,6 @@ impl Parser<'_> {
                             end = self.at;
                             acc = if name == "sum" { acc.add(term)? } else { acc.mul(term)? };
                             self.step()?;
-                            k += 1;
                         }
                         self.at = end;
                         if !self.eat(")") {
@@ -322,7 +342,14 @@ impl Parser<'_> {
                         match (a[0].whole(), a[1].whole()) {
                             (Some(x), Some(y)) => {
                                 let g = gcd(x, y);
-                                Q::int(if name == "gcd" { g } else if g == 0 { 0 } else { (x / g).checked_mul(y).ok_or(BEYOND)?.abs() })
+                                let magnitude = if name == "gcd" {
+                                    g
+                                } else if x == 0 || y == 0 {
+                                    0
+                                } else {
+                                    (x.unsigned_abs() / g).checked_mul(y.unsigned_abs()).ok_or(BEYOND)?
+                                };
+                                Q::int(i128::try_from(magnitude).map_err(|_| BEYOND)?)
                             }
                             _ => return Err(format!("{name} is defined here for whole numbers")),
                         }
@@ -730,6 +757,30 @@ mod tests {
         for bad in ["1 / 0", "2 ^ 0.5", "x + 1", "sum(k, 1, 3000000, k)", "30!!", "2 +", "(1 + 2", "1 2", "sqrt(2)", "170! * 170!"] {
             assert!(run("mathematics.exact", &Value::parse(format!(r#"{{"expression":"{bad}"}}"#).as_bytes()).unwrap(), &[]).is_err(), "{bad} must be refused, not answered");
         }
+    }
+
+    #[test]
+    fn exact_signed_boundaries_answer_or_refuse_without_overflow() {
+        for expression in [
+            "gcd((-2)^127,0) < 0", "gcd(0,(-2)^127)", "lcm((-2)^127,1)",
+            "2^((-2)^127)",
+        ] {
+            assert_eq!(exact(expression).err().as_deref(), Some(BEYOND), "{expression}");
+        }
+        for expression in [
+            "gcd((-2)^127,2^126) = 2^126", "lcm((-2)^127,0) = 0",
+            "((-2)^127) mod (-1) = 0", "((-2)^127) mod 3 = 1",
+            "sum(k,(2^126-1)*2+1,(2^126-1)*2+1,1) = 1",
+        ] {
+            assert!(exact(expression).unwrap().holds, "{expression}");
+        }
+        assert_eq!(Q::new(i128::MIN, i128::MIN).unwrap(), Q::int(1));
+        assert_eq!(Q::new(0, i128::MIN).unwrap(), Q::int(0));
+        assert_eq!(Q::new(1, i128::MIN).unwrap_err(), BEYOND);
+        assert_eq!(exact("1-1/(2^126)").unwrap().text,
+                   "1-1/(2^126)\n= 85070591730234615865843651857942052863/85070591730234615865843651857942052864 (about 0.999999999999...)");
+        let terminating = Q::new(-(7 * 10i128.pow(37) + 1), 10i128.pow(38)).unwrap();
+        assert!(terminating.show().ends_with("(exactly -0.70000000000000000000000000000000000001)"));
     }
 
     #[test]
