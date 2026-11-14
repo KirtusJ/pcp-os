@@ -2,7 +2,11 @@
 
 PCP OS runs Adversarial Claim Review (ACR) and keeps a verifiable register of what was examined, who examined it and what evidence they used. This repository contains the Rust host program `pcpos`, its integrity core, the experimental kernel and the source used to build PCP editions.
 
-[Games](#games) · [Built-in apps](#built-in-apps) · [Method modules](#method-modules) · [Build the host](#run-the-rust-host) · [Store guide](store/README.md)
+| If your task is to… | Start here | How to use it |
+| --- | --- | --- |
+| Run a calculation or check | [Built-in apps](#built-in-apps) | Discover the host’s executable instruments with `pcpos instrument list`. Agents can also call `acr_instrument` with `{"instrument":"list"}`. |
+| Choose the rules for a review | [Method modules](#method-modules) | Read the specification for Core and each selected specialist. `pcpos modules <method-directory>` lists the modules supplied to that host. |
+| Find a downloadable application | [Store package index](store/README.md#package-index) · [Games](#games) | Each published package entry identifies its version, payload files and hashes. The current packages ship browser players and native guests. |
 
 ## Games
 
@@ -45,6 +49,8 @@ ACR 1.0 ships one Core specification and six specialist specifications. Core app
 | [Quality Assurance](https://github.com/KirtusJ/pcp-os-claude/blob/c0fbde739b4cc3bc409878d901de0974702c506e/method/MODULES/07_Quality_Assurance/SOURCE/Specification.md) | `acr.quality_assurance` | Acceptance criteria, test coverage and reproducibility. |
 
 With a method directory on disk, run `pcpos method <method-directory>` to check it against the host’s pinned release, then `pcpos modules <method-directory>` to list its components. Use `pcpos module list <register>` to inspect the workspace profile.
+
+For example, to set an existing workspace’s profile to Core and Science, the person directing the review runs `pcpos workspace <register> --by <label> --method <method-directory> science`. This records the selection. Use `pcpos module list <register>` to confirm it.
 
 ## Run the Rust host
 

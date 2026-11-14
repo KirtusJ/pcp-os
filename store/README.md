@@ -37,6 +37,8 @@ The Store uses the repository's `pcpos-pkg` application entry format. Files in a
 | `kirtusj/night-post` | [Package entry](index/kirtusj/ni/gh/night-post) |
 | `kirtusj/bellweather-harbor` | [Package entry](index/kirtusj/be/ll/bellweather-harbor) |
 
+For a separately downloaded player, open its package entry above and compare the SHA-256 for the matching `.html` path with the downloaded file. For example, run `Get-FileHash -Algorithm SHA256 ./Night_Post.html` in PowerShell or `sha256sum ./Night_Post.html` on Linux in the download directory.
+
 To check the catalog identities, file lengths and SHA-256 hashes against the checkout, run the verifier from the repository root.
 
 ```sh
@@ -47,5 +49,5 @@ The verifier checks the named applications against local files. The entries pin 
 
 ## Modules and assistant plugins
 
-- Method modules can be inspected with `pcpos modules <method-directory>`. The host accepts local specifications with `pcpos module add`. [Released method module catalog](https://github.com/KirtusJ/pcp-os-claude/blob/master/method/REFERENCE/Module_Catalog.csv)
+- Inspect method rules with `pcpos modules <method-directory>`. The host accepts local specifications with `pcpos module add`. The [front-page module table](../README.md#method-modules) links each specification at the release revision checked against this host.
 - The assistant's plugin manager installs its own integrations. [Claude plugin marketplace manifest](https://github.com/KirtusJ/pcp/blob/master/PCP_1.0_Plugins/.claude-plugin/marketplace.json)
