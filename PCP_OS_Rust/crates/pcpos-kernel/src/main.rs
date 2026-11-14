@@ -776,6 +776,12 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     } else {
         say!("the asynchronous self-tests were not run: {}", if keyboard { "the kernel did not verify itself" } else { "there is no keyboard controller" });
     }
+    #[cfg(feature = "virtio-tx-probe")]
+    if failed == 0 && boot.command_line.split_whitespace().any(|word| word == "test=virtio-tx") {
+        let transmit = dev::virtio_tx::transmit(&bus);
+        say!("virtio TX fixture: {:?}", transmit);
+        check("the isolated virtio-net TX queue completed its single frame", transmit.is_ok(), &mut failed);
+    }
     let start = session::Start { boot: &boot, display, keyboard, sound: sound || music, passed: PASSED.load(core::sync::atomic::Ordering::Relaxed), failed, tasks: 14, version: env!("CARGO_PKG_VERSION") };
     let _tasks = session::run(&mut rec, &start, &mut failed);
     system_event(&mut rec, "SHUTDOWN", "end of the session", &mut failed);
