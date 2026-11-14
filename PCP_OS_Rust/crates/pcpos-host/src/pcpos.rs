@@ -893,24 +893,145 @@ impl MethodCheck {
 /// delivery, model answers included. A plugin holds the method's text, each file the packet's own bytes.
 const NOT_IN_A_PLUGIN: [&str; 2] = ["INTEGRATION/", "TOOLS/"];
 
-/// Compare a method packet's files with its own manifest, and the manifest with the release this core implements.
+/// Check both release inventory and local additions. Expected directories are
+/// derived from the payload list, including optional plugin tools. Do not
+/// follow symlinks. This is a bounded diagnostic, not an atomic filesystem
+/// snapshot or independent publisher authentication.
+fn unlisted_method_entries(dir: &Path, expected: &BTreeSet<PathBuf>) -> Result<Vec<String>, String> {
+    const MAX_ENTRIES: usize = 16_384;
+    let mut expected_dirs = BTreeSet::new();
+    for file in expected {
+        let mut parent = file.parent();
+        while let Some(p) = parent {
+            if p.as_os_str().is_empty() { break; }
+            expected_dirs.insert(p.to_path_buf());
+            parent = p.parent();
+        }
+    }
+    let mut stack = vec![PathBuf::new()];
+    let mut seen = 0usize;
+    let mut extra = Vec::new();
+    while let Some(rel) = stack.pop() {
+        let entries = fs::read_dir(dir.join(&rel))
+            .map_err(|e| format!("method tree not readable: {e}"))?;
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("method tree entry not readable: {e}"))?;
+            seen += 1;
+            if seen > MAX_ENTRIES {
+                return Err("method tree too large to attest".into());
+            }
+            let path = rel.join(entry.file_name());
+            let kind = entry.file_type()
+                .map_err(|e| format!("method tree entry type not readable: {e}"))?;
+            if kind.is_dir() {
+                if !expected_dirs.contains(&path) {
+                    extra.push(format!("{}/", path.to_string_lossy()));
+                }
+                stack.push(path);
+            } else if !kind.is_file() || !expected.contains(&path) {
+                extra.push(path.to_string_lossy().into_owned());
+            }
+        }
+    }
+    extra.sort();
+    Ok(extra)
+}
+
+/// Read ordinary, bounded method files only. None means genuinely absent;
+/// an unreadable present file or nonregular path must never count as a valid
+/// omission of optional plugin code. On Linux, nonblocking no-follow opens
+/// guard against a file swapped to a FIFO or symlink before the actual open.
+fn read_method_regular_file(path: &Path) -> Result<Option<Vec<u8>>, String> {
+    const MAX_METHOD_FILE: u64 = 4 * 1024 * 1024;
+    let before = match fs::symlink_metadata(path) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("cannot inspect {}: {e}", path.display())),
+    };
+    if !before.file_type().is_file() {
+        return Err(format!("{} is not an ordinary method file", path.display()));
+    }
+    if before.len() > MAX_METHOD_FILE {
+        return Err(format!("{} exceeds the method file size limit", path.display()));
+    }
+    let mut opts = OpenOptions::new();
+    opts.read(true);
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.custom_flags(O_NOFOLLOW | O_NONBLOCK);
+    }
+    #[cfg(all(unix, not(target_os = "linux")))]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.custom_flags(O_NOFOLLOW);
+    }
+    let mut f = opts.open(path)
+        .map_err(|e| format!("cannot open {}: {e}", path.display()))?;
+    let opened = f.metadata()
+        .map_err(|e| format!("cannot inspect opened {}: {e}", path.display()))?;
+    if !opened.is_file() || opened.len() > MAX_METHOD_FILE {
+        return Err(format!("{} is not a bounded ordinary method file", path.display()));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if before.dev() != opened.dev() || before.ino() != opened.ino() {
+            return Err(format!("{} changed while opening", path.display()));
+        }
+    }
+    let mut raw = Vec::new();
+    f.take(MAX_METHOD_FILE + 1).read_to_end(&mut raw)
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    if raw.len() as u64 > MAX_METHOD_FILE {
+        return Err(format!("{} grew beyond the method file size limit", path.display()));
+    }
+    let after = fs::symlink_metadata(path)
+        .map_err(|e| format!("cannot recheck {}: {e}", path.display()))?;
+    if !after.file_type().is_file() {
+        return Err(format!("{} changed type during reading", path.display()));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if after.dev() != opened.dev() || after.ino() != opened.ino() {
+            return Err(format!("{} changed while reading", path.display()));
+        }
+    }
+    Ok(Some(raw))
+}
+
+/// Compare the method packet's files with its own manifest and the release
+/// fingerprint this core implements; track unlisted files separately.
 fn method_check(dir: &Path) -> Result<MethodCheck, String> {
-    let raw = fs::read(dir.join("MANIFEST.json")).map_err(|e| format!("cannot read the manifest in {}: {}", dir.display(), e))?;
+    let raw = read_method_regular_file(&dir.join("MANIFEST.json"))?
+        .ok_or_else(|| format!("method manifest absent in {}", dir.display()))?;
     let m = lenient::parse(&raw).ok_or("the manifest is not readable")?;
     let files = match m.get("files") {
         Some(Value::List(l)) => l,
         _ => return Err("the manifest lists no files".to_string()),
     };
-    let mut c = MethodCheck { fingerprint: sha256_hex(&raw), listed: files.len(), equal: 0, absent: 0, absent_text: 0, differing: Vec::new() };
+    let mut c = MethodCheck {
+        fingerprint: sha256_hex(&raw), listed: files.len(), equal: 0,
+        absent: 0, absent_text: 0, differing: Vec::new(), unexpected: Vec::new(),
+    };
+    let mut expected = BTreeSet::new();
+    expected.insert(PathBuf::from("MANIFEST.json"));
     for f in files {
-        let (path, want) = match (f.get("path").and_then(Value::as_str), f.get("sha256").and_then(Value::as_str)) {
-            (Some(p), Some(w)) if Path::new(p).components().all(|c| matches!(c, Component::Normal(_))) => (p, w),
+        let (path, want) = match (f.get("path").and_then(Value::as_str),
+                                  f.get("sha256").and_then(Value::as_str)) {
+            (Some(p), Some(w))
+                if Path::new(p).components().all(|c| matches!(c, Component::Normal(_))) => (p, w),
             _ => return Err("the manifest holds an entry this program does not accept".to_string()),
         };
-        match fs::read(dir.join(path)) {
-            Ok(b) if sha256_hex(&b) == want => c.equal += 1,
-            Ok(_) => c.differing.push(path.to_string()),
-            Err(_) => {
+        if !expected.insert(PathBuf::from(path)) {
+            return Err(format!("duplicate method manifest entry: {path}"));
+        }
+        match read_method_regular_file(&dir.join(path)) {
+            Ok(Some(b)) if sha256_hex(&b) == want => c.equal += 1,
+            Ok(Some(_)) => c.differing.push(path.to_string()),
+            Err(e) => c.differing.push(format!("{path} (unreadable/non-regular: {e})")),
+            Ok(None) => {
                 c.absent += 1;
                 if !NOT_IN_A_PLUGIN.iter().any(|d| path.starts_with(d)) {
                     c.absent_text += 1;
@@ -918,6 +1039,7 @@ fn method_check(dir: &Path) -> Result<MethodCheck, String> {
             }
         }
     }
+    c.unexpected = unlisted_method_entries(dir, &expected)?;
     Ok(c)
 }
 
