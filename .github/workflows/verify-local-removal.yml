@@ -1,0 +1,46 @@
+name: Compare three pinned native module removal implementations
+on:
+  push:
+    branches: [director-g/validate-32562dc-removal]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - role: master
+            sha: 8390e8fe94361fb7b901f197330e174ccac43f62
+          - role: pr11
+            sha: 32562dcc974c6eb9aa9ee0768609127a0d27534a
+          - role: corrected
+            sha: 87f8ed401cd6df415ee5c42c3c5198b198f9acaa
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Compile exact revision
+        env:
+          REVISION: ${{ matrix.sha }}
+        run: |
+          cp .github/validation/removal_identity.py "$RUNNER_TEMP/probe.py"
+          git fetch --depth=1 origin "$REVISION"
+          git checkout --detach "$REVISION"
+          test "$(git rev-parse HEAD)" = "$REVISION"
+          rustup toolchain install 1.97.0 --profile minimal
+          rustup default 1.97.0
+          rustc --version
+          cargo build --locked --release --manifest-path PCP_OS_Rust/Cargo.toml --bin pcpos
+      - name: Capture behavioral contrasts through the hosted CLI
+        env:
+          ROLE: ${{ matrix.role }}
+        run: python3 "$RUNNER_TEMP/probe.py"
+      - name: Run corrected Rust suite
+        if: matrix.role == 'corrected'
+        working-directory: PCP_OS_Rust
+        run: |
+          cargo run --locked --bin pcpos-vectors -- vectors
+          cargo test --workspace --all-targets --locked
