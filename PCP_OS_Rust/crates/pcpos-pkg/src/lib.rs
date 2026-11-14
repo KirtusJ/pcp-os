@@ -400,7 +400,8 @@ pub enum Want<'a> {
 ///
 /// The first source by rank that holds any version of the name is the only one consulted for it: a source
 /// further down cannot supply a newer version of a name that a source above already holds. Within that
-/// source a version appears once.
+/// source, each version names one artifact. If any record for that artifact is withdrawn, a pinned
+/// lookup returns a withdrawn entry independently of the order in which the source lists its records.
 pub fn resolve<'a>(sources: &'a [Source], owner: &str, name: &str, want: Want) -> Result<(&'a str, &'a Entry), String> {
     check_name(owner)?;
     check_name(name)?;
@@ -416,24 +417,26 @@ pub fn resolve<'a>(sources: &'a [Source], owner: &str, name: &str, want: Want) -
     // keeps the record of a withdrawal beside the first record: then it is withdrawn if any record says so,
     // since a withdrawal is not taken back by an older record. Two different artifacts under one version
     // are refused: a published version does not change.
-    let mut held: Vec<(&Entry, bool)> = Vec::new();
+    let mut held: BTreeMap<Version, &Entry> = BTreeMap::new();
     for e in holder.entries.iter().filter(|e| e.owner == owner && e.name == name) {
-        match held.iter_mut().find(|(o, _)| o.version == e.version) {
-            Some((o, _)) if o.digest != e.digest => return Err(format!("source {:?} holds {} as two different artifacts; a published version does not change", holder.label, e.id())),
-            Some((_, withdrawn)) => *withdrawn |= e.withdrawn,
-            None => held.push((e, e.withdrawn)),
+        let representative = held.entry(e.version).or_insert(e);
+        if representative.digest != e.digest {
+            return Err(format!("source {:?} holds {} as two different artifacts; a published version does not change", holder.label, e.id()));
+        }
+        if e.withdrawn {
+            *representative = e;
         }
     }
     let found = match want {
-        Want::Newest => held.iter().filter(|(_, w)| !w).max_by_key(|(e, _)| e.version).map(|(e, _)| *e).ok_or(format!("every version of {owner}/{name} in source {:?} is withdrawn", holder.label))?,
+        Want::Newest => held.values().rev().copied().find(|e| !e.withdrawn).ok_or_else(|| format!("every version of {owner}/{name} in source {:?} is withdrawn", holder.label))?,
         Want::Exact(v) => {
-            let (e, withdrawn) = held.iter().find(|(e, _)| e.version == v).copied().ok_or(format!("source {:?} holds {owner}/{name} and not version {}", holder.label, v.text()))?;
-            if withdrawn {
+            let e = held.get(&v).copied().ok_or_else(|| format!("source {:?} holds {owner}/{name} and not version {}", holder.label, v.text()))?;
+            if e.withdrawn {
                 return Err(format!("{} is withdrawn from new installations; an installation that names it by digest still verifies", e.id()));
             }
             e
         }
-        Want::Pinned(d) => held.iter().find(|(e, _)| e.digest == d).map(|(e, _)| *e).ok_or(format!("source {:?} is the one that holds {owner}/{name}, and it has no entry with digest {d}", holder.label))?,
+        Want::Pinned(d) => held.values().copied().find(|e| e.digest == d).ok_or_else(|| format!("source {:?} is the one that holds {owner}/{name}, and it has no entry with digest {d}", holder.label))?,
     };
     Ok((holder.label.as_str(), found))
 }
@@ -602,7 +605,7 @@ mod tests {
         // Two sources of one rank: refused, since the answer would depend on the order they were listed in.
         let tie = [private.clone(), Source { rank: 1, ..public.clone() }];
         assert!(resolve(&tie, "kirtusj", "optics", Want::Newest).unwrap_err().contains("same rank"));
-        // One version stated twice, the same or changed: refused.
+        // Two artifacts under one version are refused.
         let changed = [Source { label: "bad".to_string(), rank: 1, entries: vec![entry("optics", "1.0.0", &f, false), entry("optics", "1.0.0", &g, false)] }];
         assert!(resolve(&changed, "kirtusj", "optics", Want::Newest).unwrap_err().contains("two different artifacts"));
         // The same artifact stated twice is one artifact.
@@ -629,17 +632,24 @@ mod tests {
         assert!(resolve(&only, "kirtusj", "optics", Want::Newest).unwrap_err().contains("every version"));
         assert!(resolve(&only, "kirtusj", "optics", Want::Exact(Version(1, 0, 0))).unwrap_err().contains("withdrawn"));
         // The index keeps both records, in either order: the same answers, and no complaint of a duplicate.
-        for entries in [vec![before.clone(), after.clone()], vec![after.clone(), before.clone()]] {
+        for entries in [vec![before.clone(), after.clone()], vec![after.clone(), before.clone()],
+                        vec![before.clone(), after.clone(), before.clone()]] {
             let both = [Source { label: "s".to_string(), rank: 1, entries }];
-            assert_eq!(resolve(&both, "kirtusj", "optics", Want::Pinned(&pin)).unwrap().1.digest(), pin);
+            let (_, resolved) = resolve(&both, "kirtusj", "optics", Want::Pinned(&pin)).unwrap();
+            assert_eq!(resolved.digest(), pin);
+            assert!(resolved.withdrawn(), "the returned artifact must carry the source's effective withdrawal");
             assert!(resolve(&both, "kirtusj", "optics", Want::Newest).unwrap_err().contains("every version"));
             assert!(resolve(&both, "kirtusj", "optics", Want::Exact(Version(1, 0, 0))).unwrap_err().contains("withdrawn"));
         }
         // Changed bytes under the same version are another artifact: another pin, and refused beside the first.
         let changed = entry("optics", "1.0.0", &[("Specification.md", b"two")], true);
         assert_ne!(changed.digest(), pin);
-        let mixed = [Source { label: "s".to_string(), rank: 1, entries: vec![before.clone(), changed.clone()] }];
-        assert!(resolve(&mixed, "kirtusj", "optics", Want::Pinned(&pin)).unwrap_err().contains("two different artifacts"));
+        for entries in [vec![before.clone(), changed.clone()], vec![changed.clone(), before.clone()]] {
+            let mixed = [Source { label: "s".to_string(), rank: 1, entries }];
+            for want in [Want::Pinned(&pin), Want::Pinned(changed.digest()), Want::Newest, Want::Exact(Version(1, 0, 0))] {
+                assert!(resolve(&mixed, "kirtusj", "optics", want).unwrap_err().contains("two different artifacts"));
+            }
+        }
         assert!(verify(&before, &[("Specification.md", b"two")]).is_err());
         // Every other field is part of the pin.
         let base = entry_json("optics", "1.0.0", "application", r#""input.value""#, &f, false);
