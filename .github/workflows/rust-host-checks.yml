@@ -50,3 +50,21 @@ jobs:
           python3 "$GITHUB_WORKSPACE/regression-tests/tests/method_inventory_regression.py" \
             --binary "$GITHUB_WORKSPACE/PCP_OS_Rust/target/release/pcpos" \
             --method "$GITHUB_WORKSPACE/released-plugin/method"
+
+      - name: Check out independent clause and FIFO race regressions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: KirtusJ/pcp-os-claude
+          ref: 699476b88f70be67b0ae13006e1dedb2c98b638b
+          path: clause-tests
+          persist-credentials: false
+      - name: Test coherent clause source under concurrent regular-file replacement
+        run: |
+          python3 "$GITHUB_WORKSPACE/clause-tests/tests/clause_snapshot_regression.py" \
+            "$GITHUB_WORKSPACE/PCP_OS_Rust/target/release/pcpos" \
+            "$GITHUB_WORKSPACE/released-plugin/method"
+      - name: Test nonblocking clause access during concurrent FIFO replacement
+        run: |
+          python3 "$GITHUB_WORKSPACE/clause-tests/tests/clause_fifo_race_regression.py" \
+            --binary "$GITHUB_WORKSPACE/PCP_OS_Rust/target/release/pcpos" \
+            --method "$GITHUB_WORKSPACE/released-plugin/method"
