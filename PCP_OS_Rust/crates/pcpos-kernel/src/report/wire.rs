@@ -1,12 +1,13 @@
-//! Write COM2 observations directly as JSON Lines, v1 CBOR maps or v2 CBOR arrays.
+//! Write COM2 observations directly as JSON Lines or versioned CBOR records.
 use core::fmt::{self, Write};
-use pcpos_core::{boot_report::{BOOT, SESSION, STOP}, machine::System, r1};
+use pcpos_core::{boot_report::{BootId, BOOT, SESSION, STOP}, machine::System, r1};
 
 #[derive(Clone, Copy)]
 pub enum Format {
     Json,
     Cbor,
     Cbor2,
+    Cbor3(BootId),
 }
 
 pub enum Message<'a> {
@@ -104,28 +105,37 @@ impl Message<'_> {
                     }
                 }
             }
-            Format::Cbor2 => match self {
-                Self::Boot { image, matches_expected } => {
-                    emit(&BOOT.prefix());
-                    r1::emit_text(image, &mut emit);
-                    emit(&[matches_expected.map(boolean).unwrap_or(0xf6)]);
+            Format::Cbor2 | Format::Cbor3(_) => {
+                if let Format::Cbor3(id) = format {
+                    emit(&id.prefix());
                 }
-                Self::Session { passed, failed, system } => {
-                    emit(&SESSION.prefix());
-                    r1::emit_uint(u64::from(*passed), &mut emit);
-                    r1::emit_uint(u64::from(*failed), &mut emit);
-                    emit_system(*system, &mut emit);
-                    emit(&[boolean(*failed == 0)]);
-                }
-                Self::Stop { passed, failed, replay, events, head } => {
-                    emit(&STOP.prefix());
-                    r1::emit_uint(u64::from(*passed), &mut emit);
-                    r1::emit_uint(u64::from(*failed), &mut emit);
-                    emit(&[boolean(*replay)]);
-                    r1::emit_uint(*events, &mut emit);
-                    r1::emit_text(head, &mut emit);
-                }
-            },
+                self.write_positional(emit);
+            }
+        }
+    }
+
+    fn write_positional(&self, mut emit: impl FnMut(&[u8])) {
+        match self {
+            Self::Boot { image, matches_expected } => {
+                emit(&BOOT.prefix());
+                r1::emit_text(image, &mut emit);
+                emit(&[matches_expected.map(boolean).unwrap_or(0xf6)]);
+            }
+            Self::Session { passed, failed, system } => {
+                emit(&SESSION.prefix());
+                r1::emit_uint(u64::from(*passed), &mut emit);
+                r1::emit_uint(u64::from(*failed), &mut emit);
+                emit_system(*system, &mut emit);
+                emit(&[boolean(*failed == 0)]);
+            }
+            Self::Stop { passed, failed, replay, events, head } => {
+                emit(&STOP.prefix());
+                r1::emit_uint(u64::from(*passed), &mut emit);
+                r1::emit_uint(u64::from(*failed), &mut emit);
+                emit(&[boolean(*replay)]);
+                r1::emit_uint(*events, &mut emit);
+                r1::emit_text(head, &mut emit);
+            }
         }
     }
 }

@@ -666,7 +666,7 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     arch::interrupts_init();
     let mut boot = arch::boot_info(magic, info);
     let brief = boot.command_line.split_whitespace().find_map(|word| word.strip_prefix("checks=")) == Some("brief");
-    let report = report::Report::open(&boot.command_line);
+    let report = report::Report::open(&boot.command_line, boot.command_line_complete);
     let quiet = report.is_some()
         && boot.command_line.split_whitespace().find_map(|word| word.strip_prefix("console=")) == Some("quiet");
     QUIET_CONSOLE.store(quiet, core::sync::atomic::Ordering::Relaxed);

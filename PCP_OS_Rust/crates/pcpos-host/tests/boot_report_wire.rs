@@ -2,7 +2,7 @@
 #[path = "../../pcpos-kernel/src/report/wire.rs"]
 mod wire;
 
-use pcpos_core::{boot_report::expand_positional, machine::System, r1, value::Value};
+use pcpos_core::{boot_report::{expand_positional, BootId}, machine::System, r1, value::Value};
 use wire::{Format, Message};
 
 fn text(s: &str) -> Value {
@@ -23,13 +23,33 @@ fn compare(message: Message<'_>, fields: &[(&str, Value)]) {
     let mut items = vec![Value::Int(2), Value::Int(tag)];
     items.extend(keys.iter().map(|key| row.get(key).unwrap().clone()));
     let positional = r1::encode(&Value::List(items));
-    for (format, expected) in [(Format::Json, json), (Format::Cbor, r1::encode(&row)), (Format::Cbor2, positional)] {
+    let id = BootId::parse("00112233445566778899aabbccddeeff").unwrap();
+    let mut bound = vec![0x83, 3, 0x50, 0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+                         0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff];
+    bound.extend_from_slice(&positional);
+    for (format, expected) in [
+        (Format::Json, json), (Format::Cbor, r1::encode(&row)),
+        (Format::Cbor2, positional), (Format::Cbor3(id), bound),
+    ] {
         let mut raw = Vec::new();
         message.write(format, |bytes| raw.extend_from_slice(bytes));
         assert_eq!(raw, expected);
         if matches!(format, Format::Cbor2) {
             assert_eq!(expand_positional(r1::decode(&raw).unwrap()).as_ref(), Some(&row));
         }
+    }
+}
+
+#[test]
+fn boot_id_requires_exact_lowercase_hex() {
+    let zero = BootId::parse("00000000000000000000000000000000").unwrap();
+    assert_eq!(&zero.prefix()[3..], &[0; 16]);
+    for invalid in [
+        "", "0000000000000000000000000000000", "000000000000000000000000000000000",
+        "0000000000000000000000000000000A", "+0000000000000000000000000000000",
+        "000000000000000000000000000000é",
+    ] {
+        assert!(BootId::parse(invalid).is_none(), "{invalid:?}");
     }
 }
 

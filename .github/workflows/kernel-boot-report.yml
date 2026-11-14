@@ -48,3 +48,5 @@ jobs:
           /usr/bin/python3 tests/boot_report.py target/pcpos-kernel.elf32 \
             --host "$GITHUB_WORKSPACE/PCP_OS_Rust/target/release/pcpos"
           /usr/bin/python3 tests/quiet_console.py target/pcpos-kernel.elf32
+          /usr/bin/python3 tests/bound_boot_report.py target/pcpos-kernel.elf32 \
+            --host "$GITHUB_WORKSPACE/PCP_OS_Rust/target/release/pcpos"
