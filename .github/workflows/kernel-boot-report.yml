@@ -34,8 +34,9 @@ jobs:
         working-directory: PCP_OS_Rust
         run: |
           cargo build --locked --release --bin pcpos
-          # The kernel and receiver share pcpos-core. Run all workspace regressions,
-          # not only the boot-report tests, before trusting this candidate.
+          # The kernel and receiver share pcpos-core. The guard suite requires
+          # generated cross-implementation vectors, absent from source archives.
+          cargo run --locked --release --bin pcpos-vectors -- vectors
           cargo test --locked --workspace
       - name: Boot the kernel and compare all report encodings and console modes with the receiver
         working-directory: PCP_OS_Rust/crates/pcpos-kernel
