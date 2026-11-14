@@ -26,7 +26,7 @@
 use pcpos_core::acr::{self, Problem, Record, State, SubmitError};
 use pcpos_core::authority::{Edition, Method, ModelFindings, Standard};
 use pcpos_core::machine::{self, Delivery, Link, Review, System, Use};
-use pcpos_core::value::Value;
+use pcpos_core::value::{ParseError, Value, MAX_DEPTH};
 use pcpos_core::{ledger, sha256_hex};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -1808,10 +1808,17 @@ fn serve(se: &Session) {
         }
         let reply = match Value::parse(&line) {
             // Not in the record's strict form: say so to whoever asked, if the message can be read at all.
-            Err(_) => Some(match lenient::parse(&line).and_then(|m| m.get("id").cloned()) {
-                Some(id) => error(id, -32600, "the message holds a fraction, an exponent or a repeated key; this server accepts whole numbers and distinct keys only"),
-                None => error(Value::Null, -32700, "the message is not JSON this server accepts"),
-            }),
+            Err(reason) => {
+                let id = lenient::parse(&line).and_then(|m| m.get("id").cloned());
+                Some(match (reason, id) {
+                    (ParseError::TooDeep(_), id) => {
+                        let code = if id.is_some() { -32600 } else { -32700 };
+                        error(id.unwrap_or(Value::Null), code, &format!("the message exceeds the maximum nesting depth of {MAX_DEPTH}"))
+                    }
+                    (_, Some(id)) => error(id, -32600, "the message holds a fraction, an exponent or a repeated key; this server accepts whole numbers and distinct keys only"),
+                    (_, None) => error(Value::Null, -32700, "the message is not JSON this server accepts"),
+                })
+            }
             Ok(Value::Map(_)) => None,
             Ok(_) => Some(error(Value::Null, -32600, "one message is one JSON object; batches are not accepted")),
         };
