@@ -2336,12 +2336,15 @@ fn module_command(args: &[String]) -> Result<i32, String> {
             if !label_ok(&want) || !home.join(&want).is_dir() {
                 return Err(format!("{what} is not an added module here. A module of the method text is not removed"));
             }
-            let found = modules_in(&se).into_iter().find(|m| m.added && m.key == want);
+            // A directory is not an installed module simply because its name is valid.
+            // Only remove text that the same module discovery used for listing and
+            // selection has recognized as an added local module.
+            let found = modules_in(&se).into_iter().find(|m| m.added && m.key == want)
+                .ok_or_else(|| format!("{what} is not a recognized added module here; no directory was removed"))?;
             let mut tx = Tx::begin(&se.root, &name, false)?.ok_or(format!("there is no register at {}", args[2]))?;
             fs::remove_dir_all(home.join(&want)).map_err(|e| format!("the module could not be removed: {e}"))?;
             println!("removed the added module {want}. Reviews already commissioned with it keep its digest in the record.");
-            let m = found.map(|m| m.record()).unwrap_or_else(|| obj(vec![("id", s(&format!("local.{want}")))]));
-            event(&mut tx, "MODULE_REMOVED", m).map(|p| (tx, p))?
+            event(&mut tx, "MODULE_REMOVED", found.record()).map(|p| (tx, p))?
         }
         _ => return Err("usage".to_string()),
     };
