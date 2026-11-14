@@ -102,7 +102,7 @@ Both summary modes write one JSON line and send diagnostics to stderr. They acce
 | 6 | `{"admit":null}` when the two records are incomplete or invalid | `{"boot":"unknown"}` when the completed capture is incomplete or invalid |
 | 2 | Command usage or local I/O error | Command usage or local I/O error |
 
-Give admission its own stream or capture branch. The receiver may read ahead and exits after reporting admission. Preserve the full capture separately for later health checks and the image and register digests. These summaries describe the emitter's observations. Checking its origin or independently replaying its register requires separate evidence. Pass `--host /path/to/pcpos` to `tests/boot_report.py` to exercise all three encodings during interactive sessions and after shutdown.
+Give admission its own stream or capture branch. The receiver may read ahead and exits after reporting admission. Preserve the full capture separately for later health checks and the image and register digests. These summaries describe the emitter's observations. Keep the COM2 capture bound to one guest boot and preserve the process/VM identity outside the stream. The three records contain no shared boot identifier or challenge; they cannot independently detect a capture assembled from portions of different boots. A healthy reply is not authenticated attestation of the running image, nor independent replay of its register. Those guarantees require separate evidence or a versioned binding mechanism ([tracking issue #64](https://github.com/KirtusJ/pcp-os/issues/64)). Pass `--host /path/to/pcpos` to `tests/boot_report.py` to exercise all three encodings during interactive sessions and after shutdown.
 
 ### Quiet boot console for a machine receiver
 
