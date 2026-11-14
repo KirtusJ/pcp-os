@@ -9,11 +9,15 @@ use std::{
 };
 
 const OWNER: &str = "kirtusj";
-const GAMES: [(&str, [&str; 2]); 2] = [
-    ("night-post", ["Night_Post.html", "nightpost.elf"]),
+const GAMES: [(&str, &[&str]); 3] = [
+    ("night-post", &["dist/Night_Post.html", "dist/nightpost.elf"]),
     (
         "bellweather-harbor",
-        ["Bellweather_Harbor.html", "bellweather.elf"],
+        &["dist/Bellweather_Harbor.html", "dist/bellweather.elf"],
+    ),
+    (
+        "gullpost-express-64",
+        &["dist/gull64.elf", "evidence/render-0.1.1/REPORT.md"],
     ),
 ];
 
@@ -21,7 +25,7 @@ fn read(path: &Path) -> Result<Vec<u8>, String> {
     fs::read(path).map_err(|error| format!("cannot read {}: {error}", path.display()))
 }
 
-fn check_game(root: &Path, name: &str, required: [&str; 2]) -> Result<(), String> {
+fn check_game(root: &Path, name: &str, required: &[&str]) -> Result<(), String> {
     let shard = index_path(OWNER, name)?;
     let listing = root.join("store/index").join(&shard);
     let entry = Entry::parse(&read(&listing)?)
@@ -42,7 +46,7 @@ fn check_game(root: &Path, name: &str, required: [&str; 2]) -> Result<(), String
         ));
     }
     for filename in required {
-        let path = format!("store/games/{name}/dist/{filename}");
+        let path = format!("store/games/{name}/{filename}");
         if !entry.files().iter().any(|file| file.path() == path) {
             return Err(format!("{} omits required artifact {path}", entry.id()));
         }
