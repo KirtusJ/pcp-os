@@ -1036,6 +1036,46 @@ fn component_header(text: &str) -> Result<(String, String, String, Option<String
 /// The largest Specification this program reads.
 const MAX_SPECIFICATION: u64 = 4 * 1024 * 1024;
 
+/// When a method tree carries a manifest, that file defines the *whole* set of
+/// Specifications eligible to be discovered as method modules. A valid header
+/// alone does not give an unlisted acr.* file the standing of a released module.
+///
+/// Old development fixtures without a manifest are still inspectable; their
+/// release is never reported as verified. A present but malformed/unreadable
+/// manifest instead yields an empty eligible set (fail closed).
+fn declared_method_specifications(method: &Path) -> Option<BTreeMap<PathBuf, String>> {
+    let manifest = method.join("MANIFEST.json");
+    let meta = match fs::symlink_metadata(&manifest) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+        Ok(meta) => Some(meta),
+        Err(_) => None,
+    };
+    let mut eligible = BTreeMap::new();
+    let Some(meta) = meta else { return Some(eligible) };
+    if !meta.file_type().is_file() {
+        return Some(eligible);
+    }
+    let Ok(raw) = fs::read(&manifest) else { return Some(eligible) };
+    let Some(doc) = lenient::parse(&raw) else { return Some(eligible) };
+    let Some(Value::List(entries)) = doc.get("files") else { return Some(eligible) };
+    let mut seen = BTreeSet::new();
+    for entry in entries {
+        let (Some(path), Some(digest)) =
+            (entry.get("path").and_then(Value::as_str), entry.get("sha256").and_then(Value::as_str))
+        else { return Some(BTreeMap::new()) };
+        let relative = Path::new(path);
+        if !relative.components().all(|c| matches!(c, Component::Normal(_)))
+            || !seen.insert(relative.to_path_buf())
+        {
+            return Some(BTreeMap::new());
+        }
+        if path.starts_with("MODULES/") && path.ends_with("/SOURCE/Specification.md") {
+            eligible.insert(relative.to_path_buf(), digest.to_string());
+        }
+    }
+    Some(eligible)
+}
+
 /// The modules at hand: every folder under the method text's MODULES that holds a Specification naming its
 /// own component, and then every module a person added beside the register. Adding or removing a module is
 /// adding or removing a folder; nothing here is edited.
@@ -1050,6 +1090,7 @@ fn modules_and_oddities(se: &Session) -> (Vec<Module>, Vec<String>) {
     let mut odd: Vec<String> = Vec::new();
     let mut out: Vec<Module> = Vec::new();
     let mut ambiguous: Vec<String> = Vec::new();
+    let manifested = se.method.as_deref().and_then(declared_method_specifications);
     let added = se.added().filter(|d| d.canonicalize().map(|c| c.starts_with(&se.root)).unwrap_or(false));
     let sources: Vec<(PathBuf, bool)> = se.method.iter().map(|m| (m.join("MODULES"), false)).chain(added.into_iter().map(|d| (d, true))).collect();
     if se.method.is_some() && !se.method.as_ref().map(|m| m.join("MODULES").is_dir()).unwrap_or(false) {
@@ -1101,7 +1142,21 @@ fn modules_and_oddities(se: &Session) -> (Vec<Module>, Vec<String>) {
                 ambiguous.push(key);
                 continue;
             }
-            let m = Module { key, id, version, sha256: sha256_hex(&bytes), words: text.split_whitespace().count(), core, file, added: is_added };
+            // The released namespace is not created by a parseable header.
+            // If MANIFEST.json is present, its exact path and content digest
+            // determine which Specifications may be consumed. This check is
+            // shared by listing, clause lookup, workspace and commissions.
+            let actual_sha = sha256_hex(&bytes);
+            if !is_added {
+                if let (Some(listed), Some(method)) = (&manifested, se.method.as_deref()) {
+                    let relative = file.strip_prefix(method).unwrap_or(Path::new(""));
+                    if listed.get(relative).map(String::as_str) != Some(actual_sha.as_str()) {
+                        odd.push(format!("{folder}: {id} is not a manifest-listed Specification with its declared SHA-256; not a released module"));
+                        continue;
+                    }
+                }
+            }
+            let m = Module { key, id, version, sha256: actual_sha, words: text.split_whitespace().count(), core, file, added: is_added };
             if m.other_core() {
                 odd.push(format!("{folder}: {} says it was written for another Core than this program implements; it can be read, and cannot be selected", m.id));
             }
