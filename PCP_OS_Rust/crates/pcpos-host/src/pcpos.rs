@@ -2715,7 +2715,8 @@ mod method_inventory_tests {
         fs::rename(&source, dir.join("original-source")).unwrap();
         symlink(dir.join("original-source"), &source).unwrap();
         let check = method_check(&dir).unwrap();
-        assert_eq!(check.equal, 1, "the bytes alone still match");
+        assert_eq!(check.equal, 0, "the verifier must refuse the link before reading its bytes");
+        assert!(check.differing.iter().any(|x| x.contains("not a regular file")));
         assert!(check.unexpected.iter().any(|x| x.ends_with("Specification.md")));
         assert!(!check.complete());
         fs::remove_dir_all(dir).unwrap();
