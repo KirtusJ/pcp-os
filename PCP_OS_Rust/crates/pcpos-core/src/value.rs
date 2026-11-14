@@ -67,38 +67,38 @@ impl Value {
     /// The canonical JSON form: sorted keys, no spaces, ASCII only. One value has one byte form.
     pub fn canonical_json(&self) -> Vec<u8> {
         let mut out = Vec::new();
-        self.write_json(&mut out);
+        self.write_json(&mut |bytes| out.extend_from_slice(bytes));
         out
     }
 
-    fn write_json(&self, out: &mut Vec<u8>) {
+    pub(crate) fn write_json(&self, emit: &mut impl FnMut(&[u8])) {
         match self {
-            Value::Null => out.extend_from_slice(b"null"),
-            Value::Bool(true) => out.extend_from_slice(b"true"),
-            Value::Bool(false) => out.extend_from_slice(b"false"),
-            Value::Int(n) => write_int(*n, out),
-            Value::Str(s) => write_str(s, out),
+            Value::Null => emit(b"null"),
+            Value::Bool(true) => emit(b"true"),
+            Value::Bool(false) => emit(b"false"),
+            Value::Int(n) => write_int(*n, emit),
+            Value::Str(s) => write_str(s, emit),
             Value::List(items) => {
-                out.push(b'[');
+                emit(b"[");
                 for (n, v) in items.iter().enumerate() {
                     if n > 0 {
-                        out.push(b',');
+                        emit(b",");
                     }
-                    v.write_json(out);
+                    v.write_json(emit);
                 }
-                out.push(b']');
+                emit(b"]");
             }
             Value::Map(m) => {
-                out.push(b'{');
+                emit(b"{");
                 for (n, (k, v)) in m.iter().enumerate() {
                     if n > 0 {
-                        out.push(b',');
+                        emit(b",");
                     }
-                    write_str(k, out);
-                    out.push(b':');
-                    v.write_json(out);
+                    write_str(k, emit);
+                    emit(b":");
+                    v.write_json(emit);
                 }
-                out.push(b'}');
+                emit(b"}");
             }
         }
     }
@@ -128,7 +128,7 @@ impl Value {
     }
 }
 
-pub(crate) fn write_int(n: i64, out: &mut Vec<u8>) {
+pub(crate) fn write_int(n: i64, emit: &mut impl FnMut(&[u8])) {
     let mut buf = [0u8; 20];
     let mut i = buf.len();
     let neg = n < 0;
@@ -145,38 +145,44 @@ pub(crate) fn write_int(n: i64, out: &mut Vec<u8>) {
         i -= 1;
         buf[i] = b'-';
     }
-    out.extend_from_slice(&buf[i..]);
+    emit(&buf[i..]);
 }
 
-fn write_u16_escape(u: u16, out: &mut Vec<u8>) {
-    out.extend_from_slice(b"\\u");
-    for shift in [12u32, 8, 4, 0] {
-        out.push(crate::HEX[((u >> shift) & 15) as usize]);
+fn write_u16_escape(u: u16, emit: &mut impl FnMut(&[u8])) {
+    let mut bytes = *b"\\u0000";
+    for (digit, shift) in bytes[2..].iter_mut().zip([12, 8, 4, 0]) {
+        *digit = crate::HEX[((u >> shift) & 15) as usize];
     }
+    emit(&bytes);
 }
 
-fn write_str(s: &str, out: &mut Vec<u8>) {
-    out.push(b'"');
+pub(crate) fn write_str(s: &str, emit: &mut impl FnMut(&[u8])) {
+    emit(b"\"");
+    if s.bytes().all(|b| matches!(b, 0x20..=0x7e) && b != b'"' && b != b'\\') {
+        emit(s.as_bytes());
+        emit(b"\"");
+        return;
+    }
     for c in s.chars() {
         match c {
-            '"' => out.extend_from_slice(b"\\\""),
-            '\\' => out.extend_from_slice(b"\\\\"),
-            '\n' => out.extend_from_slice(b"\\n"),
-            '\r' => out.extend_from_slice(b"\\r"),
-            '\t' => out.extend_from_slice(b"\\t"),
-            '\u{8}' => out.extend_from_slice(b"\\b"),
-            '\u{c}' => out.extend_from_slice(b"\\f"),
-            c if (c as u32) < 0x20 || c == '\u{7f}' => write_u16_escape(c as u16, out), // every byte outside space..tilde is escaped
-            c if (c as u32) < 0x80 => out.push(c as u8),
+            '"' => emit(b"\\\""),
+            '\\' => emit(b"\\\\"),
+            '\n' => emit(b"\\n"),
+            '\r' => emit(b"\\r"),
+            '\t' => emit(b"\\t"),
+            '\u{8}' => emit(b"\\b"),
+            '\u{c}' => emit(b"\\f"),
+            c if (c as u32) < 0x20 || c == '\u{7f}' => write_u16_escape(c as u16, emit), // every byte outside space..tilde is escaped
+            c if (c as u32) < 0x80 => emit(&[c as u8]),
             c => {
                 let mut units = [0u16; 2];
                 for u in c.encode_utf16(&mut units) {
-                    write_u16_escape(*u, out);
+                    write_u16_escape(*u, emit);
                 }
             }
         }
     }
-    out.push(b'"');
+    emit(b"\"");
 }
 
 struct Parser<'a> {

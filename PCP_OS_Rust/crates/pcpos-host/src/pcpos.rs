@@ -453,16 +453,23 @@ impl Tx {
         self.rec.ledger().head().to_string()
     }
 
-    /// Offer an event. A register that holds an event the guards would refuse is not continued as though
-    /// nothing were wrong: only a halt is added to it. A halt is never refused on that ground.
-    fn put(&mut self, actor: &str, auth: &str, kind: &str, body: Value) -> Result<Put, String> {
+    fn replay_refusal(&self, kind: &str) -> Option<acr::Refusal> {
         if !self.problems.is_empty() && kind != "HALTED" {
-            return Ok(Put::Refused(acr::Refusal {
+            return Some(acr::Refusal {
                 code: acr::INTEGRITY,
                 clause: None,
                 message: format!("this register holds {} event(s) the guards would refuse (first: event {}: {}). It accepts a halt and nothing else. Continue in a new register that admits this one as a submission by its head digest",
                                  self.problems.len(), self.problems[0].seq, self.problems[0].message),
-            }));
+            });
+        }
+        None
+    }
+
+    /// Offer an event. A register that holds an event the guards would refuse is not continued as though
+    /// nothing were wrong: only a halt is added to it. A halt is never refused on that ground.
+    fn put(&mut self, actor: &str, auth: &str, kind: &str, body: Value) -> Result<Put, String> {
+        if let Some(r) = self.replay_refusal(kind) {
+            return Ok(Put::Refused(r));
         }
         let prev = self.head();
         match self.rec.submit(&now_utc(), actor, auth, kind, body) {
@@ -1260,6 +1267,24 @@ fn refusal_text(r: &acr::Refusal) -> String {
     format!("REFUSE (exit code {}){}\n{}\nNothing was written.\n", r.code, r.clause.map(|c| format!(" [{c}]")).unwrap_or_default(), r.message)
 }
 
+/// A successful preview relative to the exact body in this RPC request.
+fn offer_delta(request: &Value, accepted: &Value) -> Result<String, String> {
+    let (Value::Map(before), Value::Map(after)) = (request, accepted) else {
+        return Err("an accepted event body must be an object".to_string());
+    };
+    let mut patch = vec![("accept", Value::Bool(true))];
+    let set: BTreeMap<_, _> = after.iter().filter(|(k, v)| before.get(*k) != Some(*v))
+        .map(|(k, v)| (k.clone(), v.clone())).collect();
+    if !set.is_empty() {
+        patch.push(("set", Value::Map(set)));
+    }
+    let removed: Vec<_> = before.keys().filter(|k| !after.contains_key(*k)).map(|k| s(k)).collect();
+    if !removed.is_empty() {
+        patch.push(("remove", Value::List(removed)));
+    }
+    Ok(String::from_utf8(obj(patch).canonical_json()).expect("canonical JSON is UTF-8"))
+}
+
 fn receipt(seq: u64, head: &str, prev: &str, kind: &str, actor: &str, auth: &str) -> String {
     format!("WRITTEN as event {seq}: {kind} by {actor} ({auth})\nhead {head}\nprevious head {prev}\n")
 }
@@ -1425,7 +1450,7 @@ fn tools() -> Value {
         tool("acr_halt", "Stop ACR use now, on the person's instruction or for your own part. Closes open reviews as incomplete and asks their tasks to stop. Never refused for the state of the work.",
              schema(vec![reg, ("words", "string", "Optional. The instruction to stop, in its original words")], vec![])),
         tool("acr_offer", "Ask the guards what they would answer to an event, without writing it: ACCEPT with the exact body that would be written, or REFUSE with the clause.",
-             schema(vec![reg, ("kind", "string", "Event kind, e.g. FINDING_RECORDED"), ("body", "object", "The event body")], vec!["kind", "body"])),
+             schema(vec![reg, ("kind", "string", "Event kind, e.g. FINDING_RECORDED"), ("body", "object", "The event body"), ("delta", "boolean", "On acceptance return JSON {accept:true,set?,remove?} relative to this request body. Replace whole top-level fields from set and delete keys in remove. Refusals keep their explanation.")], vec!["kind", "body"])),
         tool("acr_submit", "Offer an event as this session's participant and, if the guards accept it, append it. The actor is fixed by the server; it is not an argument. With expected_head, the event is written only if the register's head is still that digest.",
              schema(vec![reg, ("kind", "string", "Event kind"), ("body", "object", "The event body"), ("expected_head", "string", "Optional. The full head digest the caller last saw")], vec!["kind", "body"])),
         tool("acr_modules", "The modules found in the method text at hand, each with its identifier, version and the digest of its Specification, and the modules this workspace's reviews use as the record has them. Use it to fill 'modules' when commissioning a review. It selects nothing.", schema(vec![reg], vec![])),
@@ -1715,25 +1740,31 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
         }
         "acr_offer" | "acr_submit" => {
             let kind = arg("kind")?;
-            let body = args.get("body").ok_or("argument body is required")?;
+            let requested = args.get("body").ok_or("argument body is required")?;
+            let delta = match (name, args.get("delta")) {
+                (_, None) | ("acr_offer", Some(Value::Bool(false))) => false,
+                ("acr_offer", Some(Value::Bool(true))) => true,
+                ("acr_offer", _) => return Err("argument delta is boolean".to_string()),
+                _ => return Err("delta is only for acr_offer".to_string()),
+            };
             // A check offered here is the participant's own account of a command: the host did not see it run, and the record says so.
             // Only acr_check, which reads the host's own observation, records a check as observed.
             let reported;
-            let body = match (kind, body) {
+            let body = match (kind, requested) {
                 ("CHECK_RAN", Value::Map(m)) => {
                     let mut m = m.clone();
                     m.insert("observed".to_string(), s("REPORTED_BY_PARTICIPANT"));
                     reported = Value::Map(m);
                     &reported
                 }
-                _ => body,
+                _ => requested,
             };
             if let Some(why) = not_from_a_session(kind, body) {
                 return Ok(format!("REFUSE (exit code {})\n{}\nNothing was written.\n", acr::REFUSED, why));
             }
             let mut tx = Tx::begin(&se.root, &reg, false)?.ok_or_else(none)?;
             session_may_write(&tx, se)?;
-            if name == "acr_submit" && kind == "ARTIFACT_ADDED" && body.get("origin").and_then(Value::as_str) == Some("SUPPLIED") && open_review_floor(&tx).is_some() {
+            if kind == "ARTIFACT_ADDED" && body.get("origin").and_then(Value::as_str) == Some("SUPPLIED") && open_review_floor(&tx).is_some() {
                 return Ok(format!("REFUSE (exit code {}) [Core 4.3]\nA review is open, and material recorded now as SUPPLIED on a digest alone is your report that it was supplied: the server did not read it. Use acr_artifact with its path or its text, so that the server reads it and says how it came by it; record a source you retrieved as RETRIEVED, with where and when; record your own working as PRODUCED.\nNothing was written.\n", acr::REFUSED));
             }
             if kind == "REVIEW_COMMISSIONED" {
@@ -1745,9 +1776,14 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
                 return Ok(format!("REFUSE (exit code {})\n{MAX_OPEN_REVIEWS} reviews are open. Close one first: a halt names every review it closes in one event, and must always fit.\nNothing was written.\n", acr::REFUSED));
             }
             if name == "acr_offer" {
-                return match acr::guard(tx.state(), kind, body, &se.actor) {
+                if let Some(r) = tx.replay_refusal(kind) {
+                    return Ok(refusal_text(&r));
+                }
+                return match tx.rec.preview(&now_utc(), &se.actor, "HOST", kind, body) {
+                    Ok(out) if delta => offer_delta(requested, &out),
                     Ok(out) => Ok(format!("ACCEPT\nbody that would be written: {}\n", String::from_utf8_lossy(&out.canonical_json()))),
-                    Err(r) => Ok(format!("REFUSE (exit code {}){}\n{}\n", r.code, r.clause.map(|c| format!(" [{c}]")).unwrap_or_default(), r.message)),
+                    Err(SubmitError::Refused(r)) => Ok(format!("REFUSE (exit code {}){}\n{}\n", r.code, r.clause.map(|c| format!(" [{c}]")).unwrap_or_default(), r.message)),
+                    Err(SubmitError::Ledger(e)) => Err(format!("the register refused the event: {:?}", e)),
                 };
             }
             if let Some(want) = text_arg("expected_head")? {

@@ -335,6 +335,12 @@ fn a_register_holding_an_event_the_guards_refuse_accepts_a_halt_and_nothing_else
     fs::write(root.join(REG), l.bytes()).unwrap();
     assert!(Record::open(l.bytes()).unwrap().1.len() == 1);
     assert!(tool(&root, "acr_status", "{}").0.contains("would not pass the guards"));
+    let args = r#"{"kind":"NOTE","body":{}}"#;
+    let refused = tool(&root, "acr_submit", args);
+    assert!(refused.0.contains("accepts a halt and nothing else"));
+    assert_eq!(tool(&root, "acr_offer", args), refused);
+    assert_eq!(tool(&root, "acr_offer", r#"{"kind":"NOTE","body":{},"delta":true}"#), refused);
+    assert_eq!(fs::read(root.join(REG)).unwrap(), l.bytes());
     for (t, a) in [("acr_submit", r#"{"kind":"NOTE","body":{}}"#), ("acr_adopt", r#"{"basis":"Use ACR here."}"#), ("acr_begin", "{}")] {
         let (text, err) = tool(&root, t, a);
         assert!(text.contains("accepts a halt and nothing else") || (err && t == "acr_begin") || text.contains("already begun") || text.contains("already in use"), "{t}: {text}");
@@ -989,4 +995,82 @@ fn an_instrument_is_run_by_the_program_and_recorded_as_a_check_it_ran() {
     let k = kinds(&quiet).len();
     let (out, _) = tool(&quiet, "acr_instrument", r#"{"instrument":"engineering.units","input":{"from":"1 in","to":"25.4 mm"}}"#);
     assert!(out.contains("EQUAL to the last digit given") && out.contains("No review is open") && kinds(&quiet).len() == k, "{out}");
+}
+
+#[test]
+fn offer_delta_round_trips_the_callers_body_without_writing() {
+    let root = dir("offer-delta");
+    assert!(!tool(&root, "acr_begin", "{}").1);
+    let register = fs::read(root.join(REG)).unwrap();
+    let digest = sha256_hex(b"");
+    let check = format!(r#"{{"argv":["echo","1"],"exit":0,"expect_exit":0,"timeout":false,"stdout":"{digest}","stderr":"{digest}","observed":"HOST_OBSERVED_TOOL"}}"#);
+    for (kind, input) in [
+        ("NOTE", r#"{"text":"保持 Δ","extra":{"n":null,"xs":[false,2]}}"#),
+        ("PARTICIPANT_ADDED", r#"{"label":"peer","kind":"AUTOMATED"}"#),
+        ("CHECK_RAN", check.as_str()),
+    ] {
+        let args = |extra: &str| format!(r#"{{"kind":"{kind}","body":{input}{extra}}}"#);
+        let full = tool(&root, "acr_offer", &args(""));
+        assert!(!full.1);
+        assert_eq!(full, tool(&root, "acr_offer", &args(r#","delta":false"#)));
+        let accepted = full.0.strip_prefix("ACCEPT\nbody that would be written: ").unwrap();
+        let (wire, error) = tool(&root, "acr_offer", &args(r#","delta":true"#));
+        assert!(!error);
+        let patch = Value::parse(wire.as_bytes()).unwrap();
+        assert_eq!(patch.get("accept"), Some(&Value::Bool(true)));
+        let Value::Map(mut rebuilt) = Value::parse(input.as_bytes()).unwrap() else { panic!() };
+        if let Some(Value::List(keys)) = patch.get("remove") {
+            for k in keys { rebuilt.remove(k.as_str().unwrap()); }
+        }
+        if let Some(Value::Map(fields)) = patch.get("set") { rebuilt.extend(fields.clone()); }
+        assert_eq!(Value::Map(rebuilt), Value::parse(accepted.as_bytes()).unwrap());
+        if kind == "NOTE" { assert_eq!(wire, r#"{"accept":true}"#); }
+        if kind == "CHECK_RAN" { assert!(wire.contains("REPORTED_BY_PARTICIPANT")); }
+    }
+    let invalid = r#"{"kind":"SYSTEM_STATE","body":{}}"#;
+    let refused = tool(&root, "acr_offer", invalid);
+    assert!(refused.0.starts_with("REFUSE"));
+    assert_eq!(refused, tool(&root, "acr_offer", r#"{"kind":"SYSTEM_STATE","body":{},"delta":true}"#));
+    assert!(tool(&root, "acr_offer", r#"{"kind":"NOTE","body":{},"delta":1}"#).1);
+    assert!(tool(&root, "acr_submit", r#"{"kind":"NOTE","body":{},"delta":true}"#).1);
+    assert_eq!(fs::read(root.join(REG)).unwrap(), register);
+}
+
+#[test]
+fn previews_check_the_complete_canonical_event_size_without_consuming_a_slot() {
+    let root = dir("preview-size");
+    assert!(!tool(&root, "acr_begin", "{}").1);
+    let original = fs::read(root.join(REG)).unwrap();
+    let mut ledger = Ledger::from_bytes(&original).unwrap();
+    let body = Value::parse(br#"{"text":""}"#).unwrap();
+    ledger.append("2000-02-29T23:59:59Z", "assistant", "HOST", "NOTE", body).unwrap();
+    let envelope = ledger.bytes().len() - original.len() - 1;
+    let room = ledger::MAX_EVENT_BYTES - envelope;
+    // One BMP character occupies six bytes in canonical JSON, even if the caller used raw UTF-8.
+    let text = "鳥".repeat(room / 6) + &"a".repeat(room % 6);
+    let args = |text: &str, extra: &str| format!(r#"{{"kind":"NOTE","body":{{"text":"{text}"}}{extra}}}"#);
+    let over = text.clone() + "a";
+    let refusal = tool(&root, "acr_submit", &args(&over, ""));
+    assert!(refusal.1 && refusal.0.contains("size limit"));
+    for extra in ["", r#","delta":true"#] {
+        assert_eq!(tool(&root, "acr_offer", &args(&over, extra)), refusal);
+    }
+    assert!(tool(&root, "acr_offer", &args(&text, "")).0.starts_with("ACCEPT"));
+    assert_eq!(tool(&root, "acr_offer", &args(&text, r#","delta":true"#)), (r#"{"accept":true}"#.into(), false));
+    assert_eq!(fs::read(root.join(REG)).unwrap(), original);
+    assert!(tool(&root, "acr_submit", &args(&text, "")).0.starts_with("WRITTEN"));
+    assert_eq!(fs::read(root.join(REG)).unwrap().len(), original.len() + ledger::MAX_EVENT_BYTES + 1);
+}
+
+#[test]
+fn supplied_digest_previews_report_the_same_open_review_constraint_as_submission() {
+    let root = in_use("preview-supplied");
+    let original = fs::read(root.join(REG)).unwrap();
+    let digest = sha256_hex(b"other material");
+    let args = |extra: &str| format!(r#"{{"kind":"ARTIFACT_ADDED","body":{{"origin":"SUPPLIED","sha256":"{digest}","size":14}}{extra}}}"#);
+    let refusal = tool(&root, "acr_submit", &args(""));
+    assert!(!refusal.1 && refusal.0.contains("Core 4.3") && refusal.0.contains("acr_artifact"));
+    assert_eq!(tool(&root, "acr_offer", &args("")), refusal);
+    assert_eq!(tool(&root, "acr_offer", &args(r#","delta":true"#)), refusal);
+    assert_eq!(fs::read(root.join(REG)).unwrap(), original);
 }
