@@ -586,10 +586,17 @@ fn asynchronous(failed: &mut u32) {
     let end = r.as_ref().map(|p| p.end).unwrap_or(None);
     check("a stop key pressed before a program is started does not stop it", end == Some(End::Exited(0)) && free0 == free1, failed);
 
-    // 7. A name the task table refuses as a label (33 bytes; it takes 32). Whatever the kernel answers, no memory may be lost.
+    // 7. A task label that is 33 bytes must be refused, while the same ELF under
+    // a 32-byte label must be admitted. Freeing frames alone cannot certify a
+    // refusal: a mistakenly admitted program could exit and free them too.
     let (r, free0, free1, _) = loaded("sleeper", "a-name-of-thirty-three-characters", &[], 0);
-    say!("  note a 33-byte name: {:?}; frames free {} before, {} after", r.as_ref().map(|p| p.end), free0, free1);
-    check("a program that cannot be admitted as a task leaves no memory behind: as many frames are free after as before", free0 == free1, failed);
+    let refused = matches!(r, Err("the program could not be admitted as a task"));
+    say!("  note a 33-byte name: {:?}; frames free {} before, {} after", r.as_ref().err(), free0, free1);
+    let good_name = "x".repeat(32);
+    let (normal, free2, free3, _) = loaded("sleeper", &good_name, &[], 0);
+    let accepted = matches!(normal, Ok(p) if p.end == Some(End::Exited(0)));
+    check("a 33-byte task label is refused, a 32-byte label is admitted, and neither path leaks frames",
+          refused && accepted && free0 == free1 && free2 == free3, failed);
 }
 
 /// The kernel proper, entered from `arch` in 64-bit mode with interrupts off.
