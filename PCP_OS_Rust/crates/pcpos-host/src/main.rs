@@ -2,15 +2,51 @@
 //!
 //!     pcpos-verify <register.jsonl> [--r1 <output file>]
 //!
+//!     pcpos-verify --from-r1 <input.r1> <expected register head> > register.jsonl
+//!
 //! Exit status: 0 the register is intact; 6 it is not; 2 usage. A pass is a fact about these bytes.
 #![forbid(unsafe_code)]
 use pcpos_core::{ledger, r1, sha256_hex};
 use std::{env, fs, process::exit};
 
+/// Restore only after the complete chain matches the supplied canonical register head.
+fn receive(input: &str, expected: &str) -> Result<ledger::Ledger, (i32, String)> {
+    if expected.len() != 64 || !expected.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+        return Err((2, "expected register head must be 64 lower-case hex digits".into()));
+    }
+    let wire = fs::read(input).map_err(|e| (2, format!("cannot read {input}: {e}")))?;
+    let mut rest = wire.as_slice();
+    let mut register = ledger::Ledger::new();
+    while !rest.is_empty() {
+        let (event, tail) = r1::decode_event(rest).map_err(|e| (6, format!("R1 event {}: {e:?}", register.len())))?;
+        let mut line = event.canonical_json();
+        line.push(b'\n');
+        register.extend(&line).map_err(|e| (6, format!("register chain: {e:?}")))?;
+        rest = tail;
+    }
+    if register.head() != expected {
+        return Err((6, format!("received register head {} differs from expected {expected}", register.head())));
+    }
+    Ok(register)
+}
+
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
+    if let [flag, input, expected] = args.as_slice() {
+        if flag == "--from-r1" {
+            use std::io::Write;
+            let result = receive(input, expected).and_then(|register| {
+                std::io::stdout().lock().write_all(register.bytes()).map_err(|e| (2, format!("cannot write register: {e}")))
+            });
+            if let Err((code, message)) = result {
+                eprintln!("pcpos-verify: {message}");
+                exit(code);
+            }
+            return;
+        }
+    }
     if args.is_empty() || args[0].starts_with('-') {
-        eprintln!("usage: pcpos-verify <register.jsonl> [--r1 <output file>]");
+        eprintln!("usage: pcpos-verify <register.jsonl> [--r1 <output file>] | --from-r1 <input.r1> <expected register head>");
         exit(2);
     }
     let raw = match fs::read(&args[0]) {

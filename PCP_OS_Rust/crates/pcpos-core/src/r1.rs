@@ -223,7 +223,7 @@ impl<'a> Dec<'a> {
                 Value::Str(s)
             }
             3 => {
-                let raw = self.take(n as usize)?;
+                let raw = self.take(usize::try_from(n).map_err(|_| R1Error::BadContent(at))?)?;
                 let s = core::str::from_utf8(raw).map_err(|_| R1Error::BadContent(at))?;
                 if hex_digest(s).is_some() {
                     return Err(R1Error::NotInProfile(at)); // a digest has one form: bytes
@@ -244,9 +244,9 @@ impl<'a> Dec<'a> {
                     let kstart = self.i;
                     let (kmajor, kn) = self.head()?;
                     let key = match kmajor {
-                        0 => KEYS.get(kn as usize).ok_or(R1Error::BadContent(kstart))?.to_string(),
+                        0 => KEYS.get(usize::try_from(kn).map_err(|_| R1Error::BadContent(kstart))?).ok_or(R1Error::BadContent(kstart))?.to_string(),
                         3 => {
-                            let raw = self.take(kn as usize)?;
+                            let raw = self.take(usize::try_from(kn).map_err(|_| R1Error::BadContent(kstart))?)?;
                             let s = core::str::from_utf8(raw).map_err(|_| R1Error::BadContent(kstart))?;
                             if KEYS.contains(&s) {
                                 return Err(R1Error::NotInProfile(kstart)); // a tabled name has one form: its number
@@ -280,6 +280,56 @@ pub fn decode(input: &[u8]) -> Result<Value, R1Error> {
         return Err(R1Error::TrailingBytes(d.i));
     }
     Ok(v)
+}
+
+/// Format signed Unix seconds using the proleptic Gregorian calendar.
+pub fn format_utc(secs: i64) -> String {
+    let (days, rem) = (secs.div_euclid(86400), secs.rem_euclid(86400));
+    // Civil date from a day count (proleptic Gregorian calendar).
+    let z = days + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z.rem_euclid(146097);
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let (d, m) = (doy - (153 * mp + 2) / 5 + 1, if mp < 10 { mp + 3 } else { mp - 9 });
+    let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
+    alloc::format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, m, d, rem / 3600, rem % 3600 / 60, rem % 60)
+}
+
+/// Decode the first positional event and return the remaining transport bytes.
+/// This checks its representation and field types. Sequence and predecessor
+/// verification belong to the register receiver.
+pub fn decode_event(input: &[u8]) -> Result<(Value, &[u8]), R1Error> {
+    // Seven items have exactly one definite-length header. Reject other roots before parsing.
+    match input.first() {
+        None => return Err(R1Error::UnexpectedEnd),
+        Some(0x87) => (),
+        _ => return Err(R1Error::NotInProfile(0)),
+    }
+    let mut d = Dec { b: input, i: 1 };
+    let mut fields = BTreeMap::new();
+    for key in ["seq", "prev", "ts", "actor", "auth", "kind", "body"] {
+        let at = d.i;
+        let value = d.value(1)?;
+        let value = match (key, value) {
+            ("seq", v @ Value::Int(0..)) => v,
+            ("prev", Value::Str(prev)) if hex_digest(&prev).is_some() => Value::Str(prev),
+            ("ts", Value::Int(seconds)) => {
+                // First and last seconds representable by a four-digit UTC year.
+                if !(-62_167_219_200..=253_402_300_799).contains(&seconds) {
+                    return Err(R1Error::BadContent(at));
+                }
+                Value::Str(format_utc(seconds))
+            }
+            ("auth", Value::Int(0)) => Value::Str("DECLARED".to_string()),
+            ("auth", Value::Int(1)) => Value::Str("HOST".to_string()),
+            ("actor" | "kind", v @ Value::Str(_)) | ("body", v @ Value::Map(_)) => v,
+            _ => return Err(R1Error::BadContent(at)),
+        };
+        fields.insert(key.to_string(), value);
+    }
+    Ok((Value::Map(fields), &input[d.i..]))
 }
 
 /// Seconds since 1970-01-01T00:00:00Z for a time of the form YYYY-MM-DDTHH:MM:SSZ.

@@ -953,3 +953,34 @@ fn an_instrument_is_run_by_the_program_and_recorded_as_a_check_it_ran() {
     let (out, _) = tool(&quiet, "acr_instrument", r#"{"instrument":"engineering.units","input":{"from":"1 in","to":"25.4 mm"}}"#);
     assert!(out.contains("EQUAL to the last digit given") && out.contains("No review is open") && kinds(&quiet).len() == k, "{out}");
 }
+
+#[test]
+fn positional_transport_restores_bytes_only_for_the_addressed_chain() {
+    let root = dir("receive-r1");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vectors/register_scenario.jsonl");
+    let original = fs::read(&fixture).unwrap();
+    let (events, head) = ledger::verify(&original).unwrap();
+    let path = root.join("transport.r1");
+    let bin = env!("CARGO_BIN_EXE_pcpos-verify");
+    assert!(Command::new(bin).arg(&fixture).arg("--r1").arg(&path).output().unwrap().status.success());
+    let received = || Command::new(bin).arg("--from-r1").arg(&path).arg(&head).output().unwrap();
+    let result = received();
+    assert!(result.status.success());
+    assert_eq!(result.stdout, original);
+    let packed = fs::read(&path).unwrap();
+    let last = pcpos_core::r1::encode_event(events.last().unwrap()).unwrap().len();
+    let first = pcpos_core::r1::encode_event(&events[0]).unwrap().len();
+    let mut interrupted = packed.clone();
+    interrupted.remove(first);
+    let mut duplicate = packed.clone();
+    duplicate.extend_from_slice(&packed[..first]);
+    for bad in [&packed[..packed.len()-1], &packed[..packed.len()-last], &packed[first..],
+                interrupted.as_slice(), duplicate.as_slice(), &[]] {
+        fs::write(&path, bad).unwrap();
+        let fail = received();
+        assert_eq!(fail.status.code(), Some(6));
+        assert!(fail.stdout.is_empty());
+    }
+    let empty = Command::new(bin).arg("--from-r1").arg(&path).arg(pcpos_core::ZERO).output().unwrap();
+    assert!(empty.status.success() && empty.stdout.is_empty());
+}

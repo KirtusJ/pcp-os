@@ -170,7 +170,12 @@ fn self_test() -> u32 {
             let enc = r1::encode(ev);
             round &= r1::decode(&enc).as_ref() == Ok(ev);
             json += ev.canonical_json().len() + 1;
-            compact += r1::encode_event(ev).map(|e| e.len()).unwrap_or(usize::MAX / 2);
+            if let Some(frame) = r1::encode_event(ev) {
+                round &= matches!(r1::decode_event(&frame), Ok((decoded, [])) if decoded == *ev);
+                compact += frame.len();
+            } else {
+                round = false;
+            }
         }
     }
     check("the draft compact record form round-trips every event", round && compact < json, &mut failed);

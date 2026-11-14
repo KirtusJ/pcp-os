@@ -62,6 +62,18 @@ Designing a wholly new encoding was considered and set aside: the gain over a re
 
 Every event of both registers decodes to exactly the value encoded.
 
+### Transmitting an existing register
+
+A sender can run `pcpos-verify register.jsonl --r1 transfer.r1` and give the recipient the full canonical register head through an authenticated or independently trusted channel. The compact file is a sequence of self-delimiting positional events. A receiver can restore the canonical JSONL bytes with the Rust host:
+
+```sh
+pcpos-verify --from-r1 transfer.r1 "$expected_register_head" > received.jsonl
+```
+
+The receiver decodes the positional fields, checks each original JSON predecessor and sequence number, and compares the final JSON head with the supplied head before emitting any bytes. It returns 6 for a bad frame, broken chain or head mismatch and 2 for an invalid head argument or I/O error. Shell redirection opens the destination before the program runs. Use a fresh destination. This command verifies record integrity. It does not replay ACR guards or authenticate the source of the supplied head.
+
+The 82-event scenario travels in 12,787 bytes and recovers all 28,651 JSONL bytes, including the final newline. A full lowercase-hex head adds 64 bytes if sent separately, before transport framing. With this transport the sender and receiver can pass compact bytes between programs without supplying the register to a model. This measures wire bytes only. A model-facing adapter still determines which fields become tokens.
+
 ## 6. Open, in order of importance
 
 1. **Two forms, one record.** What is hashed has to be the compact form. What a person or a model reads should be a rendering generated from it, never a second source. The rendering for models is a separate design problem: its cost is counted in tokens, not bytes, and no tokenizer was measured here.

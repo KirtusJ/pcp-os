@@ -137,7 +137,9 @@ fn r1_round_trips_and_has_one_form_per_value() {
             let enc = r1::encode(&ev);
             assert_eq!(r1::decode(&enc).unwrap(), ev);
             assert_eq!(r1::encode(&r1::decode(&enc).unwrap()), enc);
-            assert!(r1::encode_event(&ev).unwrap().len() < enc.len());
+            let frame = r1::encode_event(&ev).unwrap();
+            assert!(frame.len() < enc.len());
+            assert_eq!(r1::decode_event(&frame), Ok((ev, &[][..])));
         }
     }
     // not in profile: indefinite length, non-shortest head, a float, unsorted keys, a digest sent as text
@@ -190,5 +192,35 @@ fn positional_seconds_preserve_calendar_identity() {
                          ("2000-02-29", "2000-03-01"), ("9999-04-30", "9999-05-01")] {
         assert_eq!(r1::ts_to_seconds(&format!("{last}T23:59:59Z")).unwrap() + 1,
                    r1::ts_to_seconds(&format!("{next}T00:00:00Z")).unwrap());
+    }
+}
+
+#[test]
+fn positional_decoder_checks_types_bounds_and_exact_frame_ends() {
+    let raw = vectors("register_scenario.jsonl");
+    let event = ledger::verify(&raw).unwrap().0.remove(0);
+    let frame = r1::encode_event(&event).unwrap();
+    for n in 0..frame.len() {
+        assert!(r1::decode_event(&frame[..n]).is_err(), "prefix {n}");
+    }
+    let mut two = frame.clone();
+    two.extend_from_slice(&frame);
+    assert_eq!(r1::decode_event(&two), Ok((event.clone(), frame.as_slice())));
+    let Value::List(fields) = r1::decode(&frame).unwrap() else { panic!() };
+    for (index, bad) in [(0, Value::Int(-1)), (1, Value::Str("short".into())),
+                         (2, Value::Int(-62_167_219_201)), (2, Value::Int(253_402_300_800)),
+                         (2, Value::Int(i64::MIN)), (2, Value::Int(i64::MAX)),
+                         (3, Value::Null), (4, Value::Int(2)), (5, Value::Bool(false)),
+                         (6, Value::List(vec![]))] {
+        let mut broken = fields.clone();
+        broken[index] = bad;
+        assert!(r1::decode_event(&r1::encode(&Value::List(broken))).is_err());
+    }
+    let Value::Map(mut event) = event else { panic!() };
+    for ts in ["0000-01-01T00:00:00Z", "0000-02-29T23:59:59Z", "1969-12-31T23:59:59Z",
+               "2000-02-29T12:00:00Z", "9999-12-31T23:59:59Z"] {
+        event.insert("ts".into(), Value::Str(ts.into()));
+        let original = Value::Map(event.clone());
+        assert_eq!(r1::decode_event(&r1::encode_event(&original).unwrap()), Ok((original, &[][..])));
     }
 }

@@ -710,17 +710,7 @@ fn now_utc() -> String {
 /// A time as the register writes it, to the second.
 fn utc_at(t: std::time::SystemTime) -> String {
     let secs = t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) as i64;
-    let (days, rem) = (secs.div_euclid(86400), secs.rem_euclid(86400));
-    // Civil date from a day count (proleptic Gregorian calendar).
-    let z = days + 719468;
-    let era = z.div_euclid(146097);
-    let doe = z.rem_euclid(146097);
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let (d, m) = (doy - (153 * mp + 2) / 5 + 1, if mp < 10 { mp + 3 } else { mp - 9 });
-    let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
-    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, m, d, rem / 3600, rem % 3600 / 60, rem % 60)
+    pcpos_core::r1::format_utc(secs)
 }
 
 // ---- values ---------------------------------------------------------------------------------------------
