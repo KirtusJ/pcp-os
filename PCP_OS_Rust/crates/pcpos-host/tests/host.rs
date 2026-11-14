@@ -976,6 +976,28 @@ fn a_file_is_material_a_review_was_given_only_if_its_last_write_is_shown_to_be_e
 }
 
 #[test]
+fn a_mistyped_digest_claim_cannot_be_recorded_as_a_passing_check() {
+    let root = in_use("digest-claim");
+    let check = |claim: &str| tool(&root, "acr_instrument", &format!(
+        r#"{{"instrument":"cryptography.digest","input":{{"text":"abc"{claim}}}}}"#
+    ));
+    let before = fs::read(root.join(REG)).unwrap();
+    for invalid in ["null", "false", "0", "[]", "{}"] {
+        let (out, err) = check(&format!(r#","claimed":{invalid}"#));
+        assert!(err && out.contains("claimed"), "{invalid}: {out}");
+        assert_eq!(fs::read(root.join(REG)).unwrap(), before);
+    }
+    for (claim, expected_exit) in [("".to_string(), 0), (format!(r#","claimed":"{}""#, sha256_hex(b"abc")), 0),
+                                    (format!(r#","claimed":"{}""#, "0".repeat(64)), 1)] {
+        let (out, err) = check(&claim);
+        assert!(!err && out.contains("WRITTEN"), "{out}");
+        let last = events(&root).pop().unwrap();
+        assert_eq!(last.get("kind").and_then(Value::as_str), Some("CHECK_RAN"));
+        assert_eq!(last.get("body").unwrap().get("exit").and_then(Value::as_int), Some(expected_exit));
+    }
+}
+
+#[test]
 fn an_instrument_is_run_by_the_program_and_recorded_as_a_check_it_ran() {
     let root = in_use("instrument");
     let n = kinds(&root).len();
