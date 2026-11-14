@@ -2192,11 +2192,17 @@ fn hook(event: &str, input: &Value) -> Result<String, String> {
             // Earlier versions may have clipped or trimmed this identifier.
             // Do not assign an exit to a legacy row from a lossy match.
             let legacy_id = (agent.chars().count() < 200 && clip(agent, 200) == agent).then_some(agent);
-            let id = match open(&se.root, &reg)?.filter(|r| r.problems.is_empty())
-                .and_then(|r| active_stop_id(&r.state, &key, legacy_id)) {
+            let snapshot = match open(&se.root, &reg)? {
+                Some(snapshot) if snapshot.problems.is_empty() => snapshot,
+                _ => return Ok(String::new()),
+            };
+            let id = match active_stop_id(&snapshot.state, &key, legacy_id) {
                 Some(id) => id,
                 None => return Ok(String::new()),
             };
+            let observed_len = snapshot.raw.len();
+            let observed_head = snapshot.head.clone();
+            drop(snapshot);
             // The external read and hashing never hold the register lock. A
             // halt, another stop, or a resumed attempt may be recorded meanwhile.
             let (evidence, source) = match input.get("last_assistant_message").and_then(Value::as_str) {
@@ -2210,6 +2216,13 @@ fn hook(event: &str, input: &Value) -> Result<String, String> {
                 Some(tx) if tx.problems.is_empty() => tx,
                 _ => return Ok(String::new()),
             };
+            // A different valid register at the same path can reuse T1 and
+            // the same agent identity. Only a verified extension of the
+            // observed chain owns this pending stop. Hash just its last line.
+            let observed_last = tx.rec.ledger().bytes().get(..observed_len)
+                .and_then(|prefix| prefix.strip_suffix(b"\n"))
+                .and_then(|prefix| prefix.rsplit(|&b| b == b'\n').next());
+            if !observed_last.is_some_and(|line| sha256_hex(line) == observed_head) { return Ok(String::new()); }
             if active_stop_id(tx.state(), &key, legacy_id).as_ref() != Some(&id) { return Ok(String::new()); }
             let stop_asked = tx.state().tasks[&id].stop_requested.is_some();
             let digest = evidence.as_ref().map(|(d, _)| d.clone());
