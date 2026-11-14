@@ -1233,15 +1233,46 @@ fn clip_long(text: &str, chars: usize) -> String {
     if text.chars().count() <= chars { text.to_string() } else { format!("{}\n[cut at {chars} characters]", text.chars().take(chars).collect::<String>()) }
 }
 
+/// A METHOD_PINNED event reports a check at the time it was recorded. It
+/// cannot grant a new released-module selection from text that has since
+/// changed, even when the register's own hash chain remains intact.
+///
+/// Provisional registers that have never reported verified method files retain
+/// their development-mode handling. The check is made only for a consequential
+/// new released-namespace selection, not on the ordinary work path.
+fn require_current_method_after_verified_pin(tx: &Tx, se: &Session) -> Result<(), String> {
+    let (events, _) = ledger::verify(tx.rec.ledger().bytes())
+        .map_err(|e| format!("cannot inspect the pinned method's register history: {e:?}"))?;
+    let was_verified = events.iter().rev()
+        .find(|e| e.get("kind").and_then(Value::as_str) == Some("METHOD_PINNED"))
+        .and_then(|e| e.get("body"))
+        .and_then(|b| b.get("verified"))
+        .and_then(Value::as_str) == Some("FILES_VERIFIED_AGAINST_OWN_MANIFEST");
+    if !was_verified {
+        return Ok(());
+    }
+    let method = se.method.as_deref()
+        .ok_or("this register previously verified the method, but no current method text is at hand; a new released-module selection is held")?;
+    let check = method_check(method)
+        .map_err(|e| format!("this register previously verified the method, but current verification failed: {e}; no released-module selection was made"))?;
+    if !check.complete() {
+        return Err(format!("this register previously verified the method, but its present files no longer match the pinned release: {}; no released-module selection was made", clip(&check.text(), 1100)));
+    }
+    Ok(())
+}
+
 /// A commission names its modules by identifier, version and digest. Where the method text is at hand,
 /// each must be a specialist module found there, with that version and that digest, once.
-fn commission_modules(se: &Session, body: &Value) -> Result<(), String> {
+fn commission_modules(se: &Session, tx: &Tx, body: &Value) -> Result<(), String> {
     let list = match body.get("modules") {
         Some(Value::List(l)) if !l.is_empty() => l,
         _ => return Ok(()),
     };
+    if list.iter().any(|m| m.get("id").and_then(Value::as_str).map(|id| id.starts_with("acr.")).unwrap_or(false)) {
+        require_current_method_after_verified_pin(tx, se)?;
+    }
     if se.method.is_none() {
-        return Ok(()); // nothing to compare with: the record keeps what was declared, and METHOD_PINNED says the text was not at hand
+        return Ok(()); // no source to compare on an unverified provisional register
     }
     let found = modules_in(se);
     let mut seen: Vec<&str> = Vec::new();
@@ -1312,6 +1343,9 @@ fn set_profile(tx: &mut Tx, se: &Session, names: &[&str], by: &str, observed: &s
             Some(_) => {}
             None => return Err(format!("{} is not a module of the method text at hand. The modules are: {}", clip(n, 60), found.iter().map(|m| m.key.as_str()).collect::<Vec<_>>().join(", "))),
         }
+    }
+    if chosen.iter().any(|m| !m.added) {
+        require_current_method_after_verified_pin(tx, se)?;
     }
     let mut body = vec![("event", s("WORKSPACE_PROFILE")), ("by", s(by)), ("observed", s(observed)), ("words", s(&clip(words, 2000))),
                         ("modules", Value::List(chosen.iter().map(|m| m.record()).collect()))];
@@ -1866,7 +1900,7 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
                 return Ok(format!("REFUSE (exit code {}) [Core 4.3]\nA review is open, and material recorded now as SUPPLIED on a digest alone is your report that it was supplied: the server did not read it. Use acr_artifact with its path or its text, so that the server reads it and says how it came by it; record a source you retrieved as RETRIEVED, with where and when; record your own working as PRODUCED.\nNothing was written.\n", acr::REFUSED));
             }
             if kind == "REVIEW_COMMISSIONED" {
-                if let Err(why) = commission_modules(se, body) {
+                if let Err(why) = commission_modules(se, &tx, body) {
                     return Ok(format!("REFUSE (exit code {}) [Core 14.1]\n{why}\nNothing was written.\n", acr::REFUSED));
                 }
             }
