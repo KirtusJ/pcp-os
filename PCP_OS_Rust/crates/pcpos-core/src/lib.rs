@@ -23,6 +23,7 @@ extern crate alloc;
 
 pub mod acr;
 pub mod authority;
+pub mod boot_report;
 pub mod cap;
 pub mod ledger;
 pub mod machine;

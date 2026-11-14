@@ -54,6 +54,15 @@ macro_rules! say {
     ($($arg:tt)*) => {{ let _ = writeln!(Console, $($arg)*); }};
 }
 
+// Only routine boot messages use this gate. Session output and errors always go to COM1.
+macro_rules! boot_note {
+    ($($arg:tt)*) => {{
+        if !QUIET_CONSOLE.load(core::sync::atomic::Ordering::Relaxed) {
+            say!($($arg)*);
+        }
+    }};
+}
+
 /// One line on the serial port, for the other files of the kernel.
 pub fn log(args: fmt::Arguments) {
     let _ = Console.write_fmt(args);
@@ -104,6 +113,7 @@ pub(crate) fn logged<T, E: core::fmt::Debug>(what: &str, r: Result<T, E>) -> Res
     r
 }
 
+static QUIET_CONSOLE: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 static BRIEF_CHECKS: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 static PASSED: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 
@@ -183,7 +193,7 @@ fn self_test() -> u32 {
         }
     }
     check("the draft compact record form round-trips every event", round && compact < json, &mut failed);
-    say!("  note the same 13 events: {} bytes as JSON, {} bytes in the draft compact form", json, compact);
+    boot_note!("  note the same 13 events: {} bytes as JSON, {} bytes in the draft compact form", json, compact);
 
     // 6. The state machines in this image are well formed and are the tables of the vectors.
     let mut tables = String::new();
@@ -405,7 +415,7 @@ fn processes(rec: &mut Record, measured: &str, failed: &mut u32) {
     };
     let p = |n: usize| &procs[n - 1];
     let refused = |n: usize, want_vector: u64, test: &dyn Fn(u64, u64) -> bool| matches!(p(n).end, Some(End::Refused { vector, error, address, .. }) if vector == want_vector && test(error, address));
-    say!("  note {} processes ran for {} timer periods; the timer took the processor back {} times", procs.len(), arch::ticks() - before, procs.iter().map(|x| x.preempted).sum::<u64>());
+    boot_note!("  note {} processes ran for {} timer periods; the timer took the processor back {} times", procs.len(), arch::ticks() - before, procs.iter().map(|x| x.preempted).sum::<u64>());
     check("a program runs in user mode in its own address space, writes through a system call and exits; the kernel kept what it wrote",
           p(1).end == Some(End::Exited(0)) && p(1).output == b"hello from user mode" && p(1).settled == Some(Task::Done), failed);
     check("a program that yields is resumed where it left off, three times",
@@ -545,7 +555,7 @@ fn asynchronous(failed: &mut u32) {
         let before = user::frames_free();
         let rejected = user::run(&specifications).is_none();
         let after = user::frames_free();
-        say!("  note refused group {}: refused {}, free frames {} before and {} after", label, rejected, before, after);
+        boot_note!("  note refused group {}: refused {}, free frames {} before and {} after", label, rejected, before, after);
         check("rejected batch returns the frames of every member", rejected && before == after, failed);
     }
 
@@ -556,7 +566,7 @@ fn asynchronous(failed: &mut u32) {
     let took = arch::ticks() - t0;
     let drained = script_drain();
     let (end, settled) = procs.as_ref().and_then(|p| p.first()).map(|p| (p.end, p.settled)).unwrap_or((None, None));
-    say!("  note stop key while running: end {:?}, task {:?}, after {} timer periods", end, settled, took);
+    boot_note!("  note stop key while running: end {:?}, task {:?}, after {} timer periods", end, settled, took);
     check("the stop key ends a program that never yields, long before its budget", drained && end == Some(End::Stopped) && took < 100, failed);
     check("a program the person stopped is STOPPED in the kernel's task table, as it is in what the kernel observed of it", settled == Some(Task::Stopped), failed);
 
@@ -564,7 +574,7 @@ fn asynchronous(failed: &mut u32) {
     // ceil(50,000,000 / 999,847) = 51. The processor idles through exactly those 51 ticks if the program is woken at its tick.
     let (r, free0, free1, took) = loaded("sleeper", "sleeper", &[], 0);
     let (end, idle) = r.as_ref().map(|p| (p.end, p.idle)).unwrap_or((None, 0));
-    say!("  note sleep of 50 ms: {:?}, end {:?}, idle {} of {} timer periods", r.as_ref().err(), end, idle, took);
+    boot_note!("  note sleep of 50 ms: {:?}, end {:?}, idle {} of {} timer periods", r.as_ref().err(), end, idle, took);
     check("a program that sleeps 50 ms is woken at its millisecond: the processor idled 51 timer periods, no fewer and no more, and the sleep answered 0",
           end == Some(End::Exited(0)) && idle == 51 && took >= 51 && free0 == free1, failed);
 
@@ -573,14 +583,14 @@ fn asynchronous(failed: &mut u32) {
     // The eighth is exit: the key's release has not arrived by then.
     let (r, free0, free1, took) = loaded("key_reader", "key_reader", &[0x2A, 0xAA, 0x1E, 0x9E], 20);
     let (end, idle, calls) = r.as_ref().map(|p| (p.end, p.idle, p.calls)).unwrap_or((None, 0, 0));
-    say!("  note key while waiting: {:?}, end {:?}, idle {} of {} timer periods, {} calls", r.as_ref().err(), end, idle, took, calls);
+    boot_note!("  note key while waiting: {:?}, end {:?}, idle {} of {} timer periods, {} calls", r.as_ref().err(), end, idle, took, calls);
     check("a program waiting in a read of the keyboard is woken by each key's interrupt and reads the keys in order: it idled until the first and exited 0 on the third",
           end == Some(End::Exited(0)) && idle >= 20 && calls == 8 && free0 == free1, failed);
 
     // 4. The stop key while a program is asleep, with the longest sleep the kernel accepts (2^32 s and 999,999,999 ns).
     let (r, free0, free1, took) = loaded("sleeper_long", "sleeper_long", &STOP_KEYS, 10);
     let (end, idle) = r.as_ref().map(|p| (p.end, p.idle)).unwrap_or((None, 0));
-    say!("  note stop key while asleep: {:?}, end {:?}, idle {} of {} timer periods", r.as_ref().err(), end, idle, took);
+    boot_note!("  note stop key while asleep: {:?}, end {:?}, idle {} of {} timer periods", r.as_ref().err(), end, idle, took);
     check("the stop key ends a program that is asleep (for the longest sleep accepted: its deadline does not overflow) at once, and all its memory comes back",
           end == Some(End::Stopped) && idle >= 10 && took < 100 && free0 == free1, failed);
 
@@ -588,7 +598,7 @@ fn asynchronous(failed: &mut u32) {
     // Six calls: open, and three reads that wait, of which the first two are made again and answered with Ctrl and with Alt.
     let (r, free0, free1, took) = loaded("key_reader", "key_reader", &STOP_KEYS, 10);
     let (end, idle, calls) = r.as_ref().map(|p| (p.end, p.idle, p.calls)).unwrap_or((None, 0, 0));
-    say!("  note stop key while waiting for a key: {:?}, end {:?}, idle {} of {} timer periods, {} calls", r.as_ref().err(), end, idle, took, calls);
+    boot_note!("  note stop key while waiting for a key: {:?}, end {:?}, idle {} of {} timer periods, {} calls", r.as_ref().err(), end, idle, took, calls);
     check("the stop key ends a program that waits in a read of the keyboard; it had read Ctrl and Alt and was never handed Delete; all its memory comes back",
           end == Some(End::Stopped) && idle >= 10 && took < 100 && calls == 6 && free0 == free1, failed);
 
@@ -612,10 +622,10 @@ fn asynchronous(failed: &mut u32) {
     // name one byte shorter, which must run: it shows that the refusal is the name's and not the loader's.
     let (r, free0, free1, _) = loaded("sleeper", "a-name-of-thirty-three-character", &[], 0);
     let end = r.as_ref().map(|p| p.end).unwrap_or(None);
-    say!("  note a 32-byte name: {:?}; frames free {} before, {} after", r.as_ref().map(|p| p.end), free0, free1);
+    boot_note!("  note a 32-byte name: {:?}; frames free {} before, {} after", r.as_ref().map(|p| p.end), free0, free1);
     check("a program under a name of 32 bytes is admitted and runs to its end", end == Some(End::Exited(0)) && free0 == free1, failed);
     let (r, free0, free1, _) = loaded("sleeper", "a-name-of-thirty-three-characters", &[], 0);
-    say!("  note a 33-byte name: {:?}; frames free {} before, {} after", r.as_ref().map(|p| p.end), free0, free1);
+    boot_note!("  note a 33-byte name: {:?}; frames free {} before, {} after", r.as_ref().map(|p| p.end), free0, free1);
     let refused = matches!(r, Err("the program could not be admitted as a task"));
     check("a program under a name of 33 bytes is refused admission as a task", refused, failed);
     check("a program that cannot be admitted as a task leaves no memory behind: as many frames are free after as before", free0 == free1, failed);
@@ -656,31 +666,36 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     arch::interrupts_init();
     let mut boot = arch::boot_info(magic, info);
     let brief = boot.command_line.split_whitespace().find_map(|word| word.strip_prefix("checks=")) == Some("brief");
-    BRIEF_CHECKS.store(brief, core::sync::atomic::Ordering::Relaxed);
     let report = report::Report::open(&boot.command_line);
+    let quiet = report.is_some()
+        && boot.command_line.split_whitespace().find_map(|word| word.strip_prefix("console=")) == Some("quiet");
+    QUIET_CONSOLE.store(quiet, core::sync::atomic::Ordering::Relaxed);
+    BRIEF_CHECKS.store(brief || quiet, core::sync::atomic::Ordering::Relaxed);
     match boot.memory {
-        Some((lower, upper)) => say!("memory reported by the loader: {} KiB below 1 MiB, {} KiB above", lower, upper),
+        Some((lower, upper)) => boot_note!("memory reported by the loader: {} KiB below 1 MiB, {} KiB above", lower, upper),
         None => say!("the loader reported no memory size"),
     }
     let [ts, te, rs, re, end] = arch::layout();
-    say!("kernel image: code {:#x}..{:#x}, read-only data {:#x}..{:#x}, end {:#x}", ts, te, rs, re, end);
+    boot_note!("kernel image: code {:#x}..{:#x}, read-only data {:#x}..{:#x}, end {:#x}", ts, te, rs, re, end);
     let (cr0, _cr4, efer) = arch::protection_registers();
-    say!("protections: paging {}, supervisor write protection {}, no-execute {}, long mode {}",
+    boot_note!("protections: paging {}, supervisor write protection {}, no-execute {}, long mode {}",
          cr0 >> 31 & 1 == 1, cr0 >> 16 & 1 == 1, efer >> 11 & 1 == 1, efer >> 10 & 1 == 1);
     let (pool_start, pool_end) = arch::protect(&mut boot);
     let frames = mem::init();
     arch::fpu_init();
     arch::syscall_init();
-    say!("memory for programs: {} frames of 4 KiB, {:#x}..{:#x}", frames, pool_start, pool_end);
+    boot_note!("memory for programs: {} frames of 4 KiB, {:#x}..{:#x}", frames, pool_start, pool_end);
     for m in &boot.modules {
-        say!("file from the loader: {} ({} bytes at {:#x}){}", m.name, m.end - m.start, m.start, if m.usable { "" } else { ": NOT USABLE, it lies where the kernel cannot map it" });
+        if !quiet || !m.usable {
+            say!("file from the loader: {} ({} bytes at {:#x}){}", m.name, m.end - m.start, m.start, if m.usable { "" } else { ": NOT USABLE, it lies where the kernel cannot map it" });
+        }
     }
     if !boot.command_line.is_empty() {
-        say!("command line: {}", boot.command_line);
+        boot_note!("command line: {}", boot.command_line);
     }
     let (offered, enabled) = arch::harden();
     let on = |bit: u32| if offered >> bit & 1 == 0 { "not offered by this processor" } else if enabled >> bit & 1 == 1 { "on" } else { "OFFERED AND NOT ON" };
-    say!("further protections: supervisor execution prevention {}, supervisor access prevention {}, user-mode instruction prevention {}", on(20), on(21), on(11));
+    boot_note!("further protections: supervisor execution prevention {}, supervisor access prevention {}, user-mode instruction prevention {}", on(20), on(21), on(11));
     let measured = sha256_hex(arch::image());
     // K-12: the measurement is compared with a value the kernel did not compute, where whoever started it named one
     // (`image=<SHA-256>` on the loader's command line; tools/measure.py computes it from the image file without
@@ -692,9 +707,9 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
         report.boot(&measured, as_expected);
     }
     match (expected, as_expected) {
-        (Some(_), Some(true)) => say!("running image (code and read-only data), SHA-256: {} (measured; equal to the value the loader named)", measured),
+        (Some(_), Some(true)) => boot_note!("running image (code and read-only data), SHA-256: {} (measured; equal to the value the loader named)", measured),
         (Some(e), _) => say!("running image (code and read-only data), SHA-256: {} (measured; NOT the value the loader named, which is {})", measured, e),
-        _ => say!("running image (code and read-only data), SHA-256: {} (measured; the loader named no value to compare it with)", measured),
+        _ => boot_note!("running image (code and read-only data), SHA-256: {} (measured; the loader named no value to compare it with)", measured),
     }
     let mut failed = 0;
 
@@ -715,9 +730,9 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     system_event(&mut rec, "BEGIN_VERIFY", "self-tests", &mut failed);
 
     let map = arch::kernel_map_audit();
-    say!("memory map replaced, read back from the page tables: {} pages of the kernel image, {} pages of the loader's files, {} KiB of frame memory, {} KiB of device memory; writable and executable at once: {}",
+    boot_note!("memory map replaced, read back from the page tables: {} pages of the kernel image, {} pages of the loader's files, {} KiB of frame memory, {} KiB of device memory; writable and executable at once: {}",
          map.image_pages, map.module_pages, map.pool_bytes / 1024, map.device_bytes / 1024, map.writable_and_executable);
-    say!("self-test:");
+    boot_note!("self-test:");
     check("the kernel opens its own register and records the native method by measurement", created && pinned, &mut failed);
     if let Some(equal) = as_expected {
         check("the running image measures as the value the loader named", equal, &mut failed);
@@ -761,19 +776,19 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     // Devices are looked for only now: the kernel has verified itself with nothing but itself mapped.
     let bus = dev::bus_scan();
     for d in &bus {
-        say!("device on the bus: {:02x}:{:02x}.{} maker {:04x} device {:04x} class {:02x}.{:02x} line {}", d.bus, d.slot, d.function, d.vendor, d.device, d.class, d.subclass, d.line);
+        boot_note!("device on the bus: {:02x}:{:02x}.{} maker {:04x} device {:04x} class {:02x}.{:02x} line {}", d.bus, d.slot, d.function, d.vendor, d.device, d.class, d.subclass, d.line);
     }
     let display = dev::display_init(&bus, boot.display);
     match display {
-        Some(d) => say!("display: {:?}, {}x{}, {} page(s), {} KiB of its memory mapped at {:#x}", d.kind, d.width, d.height, d.pages, d.mapped / 1024, d.memory),
-        None => say!("display: none this kernel can drive"),
+        Some(d) => boot_note!("display: {:?}, {}x{}, {} page(s), {} KiB of its memory mapped at {:#x}", d.kind, d.width, d.height, d.pages, d.mapped / 1024, d.memory),
+        None => boot_note!("display: none this kernel can drive"),
     }
     let keyboard = dev::keyboard_init();
-    say!("keyboard: {}", if keyboard { "a PS/2 controller answered" } else { "no controller" });
+    boot_note!("keyboard: {}", if keyboard { "a PS/2 controller answered" } else { "no controller" });
     let sound = dev::sound_init(&bus);
-    say!("sound: {}", if sound { "an AC'97 device, 48000 pairs of 16-bit samples a second" } else { "no device this kernel drives" });
+    boot_note!("sound: {}", if sound { "an AC'97 device, 48000 pairs of 16-bit samples a second" } else { "no device this kernel drives" });
     let music = dev::fm_init();
-    say!("music: {}", if music { "an FM synthesiser of the AdLib kind answered at its usual ports" } else { "no FM synthesiser" });
+    boot_note!("music: {}", if music { "an FM synthesiser of the AdLib kind answered at its usual ports" } else { "no FM synthesiser" });
     if display.is_some() {
         // With device memory mapped the kernel's map is read back once more: what was added is the display's
         // memory, never executable, and nothing else changed.
@@ -803,7 +818,7 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
         && r.state().system() == Some(System::Stopped) && r.ledger().head() == rec.ledger().head());
     check("the kernel's register of its own start, verification and stop verifies and replays without a problem",
           replay_ok, &mut failed);
-    say!("kernel register: {} events, head {}", rec.ledger().len(), rec.ledger().head());
+    boot_note!("kernel register: {} events, head {}", rec.ledger().len(), rec.ledger().head());
     #[cfg(feature = "overflow-demo")]
     {
         say!("overflow demonstration: recursing until the stack is exhausted");
@@ -816,9 +831,9 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     }
     let (live, carved) = arch::heap_used();
     let (pool_frames, pool_free, taken, given) = mem::census();
-    say!("kernel heap: {} bytes in use, {} bytes ever carved; frames: {} of {} free, {} handed out and {} given back since the start", live, carved, pool_free, pool_frames, taken, given);
+    boot_note!("kernel heap: {} bytes in use, {} bytes ever carved; frames: {} of {} free, {} handed out and {} given back since the start", live, carved, pool_free, pool_frames, taken, given);
     if failed == 0 {
-        say!("ALL SELF-TESTS PASS. Present: user mode and preemptive processes; programs loaded from the loader's files; a display, a keyboard, sound and music where the machine has ones this kernel drives. Not present: storage that outlasts power, a mouse, network, a second processor.");
+        boot_note!("ALL SELF-TESTS PASS. Present: user mode and preemptive processes; programs loaded from the loader's files; a display, a keyboard, sound and music where the machine has ones this kernel drives. Not present: storage that outlasts power, a mouse, network, a second processor.");
     } else {
         say!("{} SELF-TEST(S) FAILED", failed);
     }

@@ -29,7 +29,7 @@ The self-tests cover rollback of a refused group of built-in programs. For the s
 
 ## Machine boot report
 
-To receive boot health without parsing the console, attach a second 16550-compatible UART (COM2, I/O 0x2F8) and put `report=json` or `report=cbor` on the loader command line. Leave the option out for ordinary console operation. Configure the receiver to read only the second UART. The first UART still carries diagnostics and user-program output. In QEMU the order of the two `-serial` arguments selects the ports:
+To receive boot health without parsing the console, attach a second 16550-compatible UART (COM2, I/O 0x2F8) and select `report=json`, `report=cbor` or `report=cbor2` on the loader command line. Leave the option out for ordinary console operation. Configure the receiver to read only the second UART. The first UART still carries diagnostics and user-program output. In QEMU the order of the two `-serial` arguments selects the ports:
 
 ```sh
 qemu-system-x86_64 -cpu max -m 128M -kernel target/pcpos-kernel.elf32 \
@@ -37,17 +37,33 @@ qemu-system-x86_64 -cpu max -m 128M -kernel target/pcpos-kernel.elf32 \
   -append 'then=off report=json' -device isa-debug-exit,iobase=0xf4,iosize=0x04
 ```
 
-**JSON** emits one UTF-8 object per LF, with no terminal carriage returns. This is the text form for models and tools. **CBOR** emits a sequence of self-delimiting maps using the existing Rust R1 value encoder. Version 1 uses integer key 70 for `event`, text for the other keys, and 32-byte strings for the two SHA-256 values. JSON gives those digests in full lowercase hex. Both forms carry the same fields and values. No register record is encoded or rehashed for this report. [CBOR Sequences, RFC 8742](https://www.rfc-editor.org/rfc/rfc8742)
+**JSON** emits one UTF-8 object per LF, with no terminal carriage returns. This is the text form for models and tools. **CBOR** emits a sequence of self-delimiting maps using the existing Rust R1 value encoder. Version 1 uses integer key 70 for `event`, text for the other keys, and 32-byte strings for the two SHA-256 values. JSON gives those digests in full lowercase hex. The positional CBOR form (`report=cbor2`) sends the same observations in fixed-order arrays. No register record is encoded or rehashed for this report. [CBOR Sequences, RFC 8742](https://www.rfc-editor.org/rfc/rfc8742)
 
-Each message carries integer `v=1` and a text `event`. For one boot, expect these three messages in order.
+A named observation carries integer `v=1` and a text `event`. A positional record starts with the integer layout version 2 and an integer event tag. Each record is a complete, definite-length CBOR item. Array lengths and positions are fixed. The values have the same types as the named observations, including the 32-byte digest strings, the system name or null, and the three possible image comparison results.
 
-For a binary link, capture COM2 with `report=cbor` and `-serial file:health.cbor` as the second serial argument. The host can then render the captured report for a model or a JSON consumer:
+| Observation | Positional CBOR item in wire order |
+|---|---|
+| Boot | `[2, 0, image, match]` |
+| Session entry | `[2, 1, pass, fail, system, admit]` |
+| Stop | `[2, 2, pass, fail, replay, events, head]` |
+
+Measured COM2 bytes from this kernel under QEMU are below. The admission prefix contains the boot and session items. The complete capture adds the stop item.
+
+| Observed outcome | JSON prefix / complete | Named CBOR prefix / complete | Positional CBOR prefix / complete |
+|---|---:|---:|---:|
+| Admitted, image unchecked or matched | 192 / 334 | 111 / 191 | 57 / 100 |
+| Held, image mismatch and SAFE | 187 / 328 | 104 / 183 | 50 / 92 |
+| Admitted, requested program missing later | 192 / 334 | 111 / 191 | 57 / 100 |
+
+The positional framing saves 91 bytes per complete capture by encoding the event tag and field order directly. All three kernel writers stream the data to COM2 from borrowed values and stack buffers. Larger counter values can change the total size in either layout. Both binary forms produced the same host verdict for each case. For example, an admitted, unchecked boot produced a 35-byte admission reply and a 34-byte final health reply, including LF. These measurements cover COM2 and the host verdict. The independent COM1 console has its own output volume.
+
+For a binary link, select either CBOR form and use `-serial file:health.cbor` as the second serial argument. The host can then render the captured report for a model or a JSON consumer:
 
 ```sh
 pcpos boot-report health.cbor > health.jsonl
 ```
 
-The command emits a JSON line for each complete, valid v1 message in order. Check its exit status as well as the fields. A zero exit means the three-message report was structurally complete. Use `fail`, `replay`, `match` and `admit` to interpret what the kernel reported. A partial capture can yield valid earlier lines and a nonzero exit. The `head` is the digest the guest reported. Independently checking the register requires its bytes.
+The command detects the binary layout from the first item, requires that layout throughout, and emits each complete observation as the same canonical v1 JSON line. Check its exit status as well as the fields. A zero exit means the three-message report was structurally complete. Use `fail`, `replay`, `match` and `admit` to interpret what the kernel reported. A partial capture can yield valid earlier lines and a nonzero exit. The `head` is the digest the guest reported. Independently checking the register requires its bytes.
 
 | Event | Fields | Meaning |
 |---|---|---|
@@ -55,17 +71,17 @@ The command emits a JSON line for each complete, valid v1 message in order. Chec
 | `session` | `system`, `admit`, `pass`, `fail` | Register-derived system state (or null if unavailable), whether verification allows the session to start programs, and cumulative counts at entry. Admission is eligibility, regardless of whether a program actually ran. |
 | `stop` | `pass`, `fail`, `replay`, `events`, `head` | Final passed-check count and cumulative failure count, result of reopening and checking the stopped register, its event count and full head digest. Failures can also come from session or recording errors. |
 
-A complete successful run has a complete `stop` with `fail=0` and `replay=true`. A register can replay correctly after failed verification. Missing, truncated, out-of-order or unknown-version messages give an incomplete or unsupported result. An early halt, panic, or disconnected UART can leave the stream empty or partial. The first `report=` option selects the format; an unknown value disables the report. A missing reporting port is noted on the console. For unattended boots, add `checks=brief` to omit individual successful check descriptions on COM1. Every check still runs, individual failures print immediately, and the cumulative totals print at shutdown. This option also works without COM2. Detailed diagnostics and program output remain on COM1. Run `python3 tests/boot_report.py target/pcpos-kernel.elf32` with QEMU and Python's `cbor2` installed to exercise both forms.
+A complete successful run has a complete `stop` with `fail=0` and `replay=true`. A register can replay correctly after failed verification. Missing, truncated, out-of-order or unknown-version messages give an incomplete or unsupported result. An early halt, panic, or disconnected UART can leave the stream empty or partial. The first `report=` option selects the format; an unknown value disables the report. A missing reporting port is noted on the console. For unattended boots, add `checks=brief` to omit individual successful check descriptions on COM1. Every check still runs, individual failures print immediately, and the cumulative totals print at shutdown. This option also works without COM2. Detailed diagnostics and program output remain on COM1. Run `python3 tests/boot_report.py target/pcpos-kernel.elf32` with QEMU and Python's `cbor2` installed to exercise all three encodings.
 
 ### Reading admission during a session
 
-A controller can read a dedicated copy of COM2 from the beginning of a boot. Attach to a binary-clean byte stream in the format selected by the loader. For example, with `report=cbor` and a named pipe connected to that stream, run:
+A controller can read a dedicated copy of COM2 from the beginning of a boot. Attach to a binary-clean byte stream in the format selected by the loader. For example, with `report=cbor2` and a named pipe connected to that stream, run
 
 ```sh
-pcpos boot-report --admission cbor < com2.fifo
+pcpos boot-report --admission cbor2 < com2.fifo
 ```
 
-The receiver returns as soon as the `boot` and `session` records validate, even while the writer stays open. A typical result is `{"admit":true,"image":"unchecked"}`. Admission describes whether verification allowed the kernel to start programs at session entry. A program can fail later. Image values describe the kernel's comparison with the loader's expected digest. An omitted expectation gives `unchecked`. A successful comparison gives `matched`.
+The receiver returns as soon as the `boot` and `session` records validate, even while the writer stays open. A typical result is `{"admit":true,"image":"unchecked"}`. Admission describes whether verification allowed the kernel to start programs at session entry. It is an observation, **not a request for host authorization**: the kernel does not wait for a COM2 acknowledgement before proceeding to its session. A program may already be running when a separate supervisor reads the verdict, and it can fail later. A future pre-execution host gate would require a separate protocol and an enforceable wait/deny path. Image values describe the kernel's comparison with the loader's expected digest. An omitted expectation gives `unchecked`. A successful comparison gives `matched`.
 
 ### Reading final health
 
@@ -73,10 +89,11 @@ Capture one boot through shutdown, close the capture and run:
 
 ```sh
 pcpos boot-report --health json < health.jsonl
-pcpos boot-report --health cbor < health.cbor
+pcpos boot-report --health cbor < maps.cbor
+pcpos boot-report --health cbor2 < arrays.cbor
 ```
 
-Both summary modes write one JSON line and send diagnostics to stderr. They accept up to 4,096 bytes through the requested observation. Each binary v1 record fits in a 128-byte input buffer. Final health requires all three records in order, both full digest fields, consistent counters and EOF. A live stream waiting for bytes can stay open indefinitely. Supervisors with a deadline should treat expiration before a verdict as unknown.
+Both summary modes write one JSON line and send diagnostics to stderr. They accept up to 4,096 bytes through the requested observation. Each record in either binary layout fits in a 128-byte input buffer. Select the producer’s encoding explicitly for `--admission` and `--health`. Final health requires all three records in order, both full digest fields, consistent counters and EOF. A live stream waiting for bytes can stay open indefinitely. Supervisors with a deadline should treat expiration before a verdict as unknown.
 
 | Exit | Admission | Final health |
 |---|---|---|
@@ -85,7 +102,24 @@ Both summary modes write one JSON line and send diagnostics to stderr. They acce
 | 6 | `{"admit":null}` when the two records are incomplete or invalid | `{"boot":"unknown"}` when the completed capture is incomplete or invalid |
 | 2 | Command usage or local I/O error | Command usage or local I/O error |
 
-Give admission its own stream or capture branch. The receiver may read ahead and exits after reporting admission. Preserve the full capture separately for later health checks and the image and register digests. These summaries describe the emitter's observations. Checking its origin or independently replaying its register requires separate evidence. Pass `--host /path/to/pcpos` to `tests/boot_report.py` to exercise both formats during interactive sessions and after shutdown.
+Give admission its own stream or capture branch. The receiver may read ahead and exits after reporting admission. Preserve the full capture separately for later health checks and the image and register digests. These summaries describe the emitter's observations. Keep the COM2 capture bound to one guest boot and preserve the process/VM identity outside the stream. The three records contain no shared boot identifier or challenge; they cannot independently detect a capture assembled from portions of different boots. A healthy reply is not authenticated attestation of the running image, nor independent replay of its register. Those guarantees require separate evidence or a versioned binding mechanism ([tracking issue #64](https://github.com/KirtusJ/pcp-os/issues/64)). Pass `--host /path/to/pcpos` to `tests/boot_report.py` to exercise all three encodings during interactive sessions and after shutdown.
+
+### Quiet boot console for a machine receiver
+
+With `console=quiet`, a kernel that successfully initializes its selected COM2 reporter omits routine boot diagnostics on COM1. For example, use `then=off report=cbor console=quiet` for an unattended boot. COM1 still carries the early kernel banner, individual failed checks, image mismatch details, SAFE diagnostics, fatal errors, session messages and application output. Adding `checks=brief` explicitly also prints the shutdown check totals. The checks, device setup and machine report run in each mode.
+
+If no report format is selected or COM2 fails its initialization probe, the kernel follows the ordinary console settings. The probe checks the UART hardware. The operator is responsible for attaching a consumer and retaining the machine report. Quiet mode intentionally omits the successful image and register digests from COM1. Both are present in the complete report on COM2.
+
+These healthy QEMU boots used one image at a fixed path and no loader-supplied application. Each run reported 71 passed checks, zero failures, 43 register events and successful replay.
+
+| Loader options in addition to `then=off` | COM1 | COM2 | Total bytes |
+|---|---:|---:|---:|
+| `report=cbor` | 9,641 | 191 | 9,832 |
+| `checks=brief report=cbor` | 3,257 | 191 | 3,448 |
+| `console=quiet report=cbor` | 68 | 191 | 259 |
+| `console=quiet report=cbor2` | 68 | 100 | 168 |
+
+An image mismatch with the last combination produced 636 console bytes and a 92-byte report. A missing requested program after admission produced 153 and 100 bytes respectively. Console lengths vary with diagnostic text, command lines and program output. Run `python3 tests/quiet_console.py target/pcpos-kernel.elf32` to compare the modes on a built image, including a user program that writes to its console.
 
 ## Rules of this crate
 

@@ -12,6 +12,14 @@ import sys
 import cbor2
 
 
+REPORT_MODES = ("json", "cbor", "cbor2")
+POSITIONAL_FIELDS = (
+    ("boot", ("image", "match")),
+    ("session", ("pass", "fail", "system", "admit")),
+    ("stop", ("pass", "fail", "replay", "events", "head")),
+)
+
+
 def read_messages(mode, wire):
     if mode == "json":
         assert wire.endswith(b"\n") and b"\r" not in wire
@@ -19,14 +27,33 @@ def read_messages(mode, wire):
     stream = io.BytesIO(wire)
     messages = []
     while stream.tell() < len(wire):
+        start = stream.tell()
         raw = cbor2.load(stream)
+        if mode == "cbor2":
+            stage = len(messages)
+            event, fields = POSITIONAL_FIELDS[stage]
+            assert isinstance(raw, list) and len(raw) == 2 + len(fields)
+            assert type(raw[0]) is int and raw[0] == 2 and type(raw[1]) is int and raw[1] == stage
+            assert wire[start:stream.tell()] == cbor2.dumps(raw, canonical=True)
+            raw = dict(zip(fields, raw[2:]))
+            for key in ("pass", "fail", "events"):
+                if key in raw:
+                    assert type(raw[key]) is int and raw[key] >= 0
+            for key in ("admit", "replay"):
+                if key in raw:
+                    assert type(raw[key]) is bool
+            if "match" in raw:
+                assert raw["match"] is None or type(raw["match"]) is bool
+            if "system" in raw:
+                assert raw["system"] is None or isinstance(raw["system"], str)
+            raw.update(event=event, v=1)
+        for key in ("head", "image"):
+            if key in raw:
+                assert isinstance(raw[key], bytes) and len(raw[key]) == 32
         messages.append({
             "event" if key == 70 else key: value.hex() if isinstance(value, bytes) else value
             for key, value in raw.items()
         })
-        for key in ("head", "image"):
-            if key in raw:
-                assert isinstance(raw[key], bytes) and len(raw[key]) == 32
     return messages
 
 
@@ -84,9 +111,32 @@ def validate_host(host, mode, wire, match, safe=False, session_error=False):
     health = {"boot": "failed" if failed else "ok", "image": admission["image"]}
     if failed:
         health.update(admit=not safe, fail=1, replay=True, system="SAFE" if safe else "OPERATIONAL")
+    outputs = {}
     for view, expected, code in (("--admission", admission, int(safe)), ("--health", health, int(failed))):
         result = subprocess.run([host, "boot-report", view, mode], input=wire, capture_output=True, timeout=10)
         assert result.returncode == code and json.loads(result.stdout) == expected, result
+        outputs[view] = (result.returncode, result.stdout)
+    if mode == "cbor2":
+        rows = read_messages(mode, wire)
+        expected_json = "".join(json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n"
+                                for row in rows).encode()
+        with TemporaryDirectory() as tmp:
+            capture = Path(tmp) / "capture"
+            capture.write_bytes(wire)
+            translated = subprocess.check_output([host, "boot-report", capture], timeout=10)
+            assert translated == expected_json
+        # Exercise the legacy wire format with the exact same observations, including both digests.
+        v1 = b"".join(cbor2.dumps({
+            70 if key == "event" else key: bytes.fromhex(value) if key in ("head", "image") else value
+            for key, value in row.items()
+        }, canonical=True) for row in rows)
+        # Fixed schema overhead (including the change in stage tags) for each complete boot.
+        # Variable-sized observations, including the system name and counters, are identical.
+        assert len(v1) - len(wire) == 91
+        for view, output in outputs.items():
+            cmd = [host, "boot-report", view, "cbor"]
+            older = subprocess.run(cmd, input=v1, capture_output=True, timeout=10)
+            assert (older.returncode, older.stdout) == output
 
 
 def live_admission(kernel, qemu, directory, host, mode, safe):
@@ -150,7 +200,7 @@ def main():
         measured = subprocess.check_output(
             [sys.executable, str(Path(__file__).resolve().parents[1] / "tools/measure.py"), str(kernel)],
             text=True).strip()
-        for mode in ("json", "cbor"):
+        for mode in REPORT_MODES:
             def run(case, opts="", expected=33):
                 return boot(kernel, args.qemu, directory, mode + case,
                             "report=" + mode + " " + opts, expected=expected)
@@ -177,10 +227,10 @@ def main():
         console, _ = boot(kernel, args.qemu, directory, "no-port", "report=json", second=False)
         assert b"COM2 did not respond" in console and b"ALL SELF-TESTS PASS" in console
         if host:
-            for mode in ("json", "cbor"):
+            for mode in REPORT_MODES:
                 for safe in (False, True):
                     live_admission(kernel, args.qemu, directory, host, mode, safe)
-    print("16 completed boot-report cases passed" + ("; 4 live admission cases passed" if host else ""))
+    print("22 completed boot-report cases passed" + ("; 6 live admission cases passed" if host else ""))
 
 
 if __name__ == "__main__":

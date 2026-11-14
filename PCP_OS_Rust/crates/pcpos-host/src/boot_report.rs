@@ -1,5 +1,5 @@
 //! Read the kernel's COM2 observations on the host.
-use pcpos_core::{machine::System, r1, value::Value};
+use pcpos_core::{boot_report::expand_positional, machine::System, r1, value::Value};
 use std::{
     fmt,
     io::{self, Read, Write},
@@ -8,6 +8,7 @@ use std::{
 pub enum Format {
     Json,
     Cbor,
+    Cbor2,
 }
 
 pub enum View {
@@ -45,7 +46,8 @@ fn invalid(reason: impl Into<String>) -> Error {
 /// Bound both the current record and the bytes consumed through the requested observation.
 struct Records<R, const N: usize> {
     input: R,
-    format: Format,
+    // Only the CBOR file translator infers its layout from the first observation.
+    format: Option<Format>,
     bytes: [u8; N],
     filled: usize,
     remaining: usize,
@@ -61,7 +63,7 @@ fn read(input: &mut impl Read, buffer: &mut [u8]) -> io::Result<usize> {
 }
 
 impl<R: Read, const N: usize> Records<R, N> {
-    fn new(input: R, format: Format, remaining: usize) -> Self {
+    fn new(input: R, format: Option<Format>, remaining: usize) -> Self {
         Self { input, format, bytes: [0; N], filled: 0, remaining }
     }
 
@@ -76,7 +78,7 @@ impl<R: Read, const N: usize> Records<R, N> {
         loop {
             let bytes = &self.bytes[..self.filled];
             let decoded = match self.format {
-                Format::Json => {
+                Some(Format::Json) => {
                     let end = bytes[scanned..].iter().position(|&b| b == b'\n').map(|i| scanned + i);
                     scanned = self.filled;
                     match end {
@@ -87,13 +89,21 @@ impl<R: Read, const N: usize> Records<R, N> {
                         None => None,
                     }
                 }
-                Format::Cbor => match r1::decode_prefix(bytes) {
+                None | Some(Format::Cbor | Format::Cbor2) => match r1::decode_prefix(bytes) {
                     Ok((value, rest)) => Some((value, bytes.len() - rest.len())),
                     Err(r1::R1Error::UnexpectedEnd) => None,
                     Err(_) => return Err(invalid(format!("invalid {event} CBOR message"))),
                 },
             };
             if let Some((row, used)) = decoded {
+                let layout = self.format.get_or_insert_with(|| {
+                    if matches!(&row, Value::List(_)) { Format::Cbor2 } else { Format::Cbor }
+                });
+                let row = match layout {
+                    Format::Cbor2 => expand_positional(row)
+                        .ok_or_else(|| invalid(format!("invalid positional {event} message")))?,
+                    Format::Cbor | Format::Json => row,
+                };
                 if row.get("v") != Some(&Value::Int(1)) {
                     return Err(invalid("missing or unsupported boot report version"));
                 }
@@ -204,7 +214,7 @@ fn write_line(output: &mut impl Write, value: &Value) -> io::Result<()> {
 
 /// Forward every structurally valid CBOR observation, including a reported failure.
 pub fn translate(input: impl Read, mut output: impl Write) -> Result<()> {
-    let mut records = Records::<_, 1024>::new(input, Format::Cbor, 3 * 1024);
+    let mut records = Records::<_, 1024>::new(input, None, 3 * 1024);
     write_line(&mut output, &records.record("boot", 4, image)?.0)?;
     write_line(&mut output, &records.record("session", 6, session)?.0)?;
     write_line(&mut output, &records.record("stop", 7, stop)?.0)?;
@@ -260,11 +270,10 @@ fn verdict<R: Read, const N: usize>(mut records: Records<R, N>, view: &View) -> 
 }
 
 pub fn summarize(input: impl Read, format: Format, view: View) -> i32 {
-    // A CBOR v1 frame has fixed keys, bounded integers and at most one 32-byte
-    // digest. Even the largest stop frame fits in 128 bytes. JSON permits whitespace.
+    // Both binary layouts fit within 128 bytes for each observation. JSON permits whitespace.
     let result = match format {
-        Format::Json => verdict(Records::<_, 4096>::new(input, format, 4096), &view),
-        Format::Cbor => verdict(Records::<_, 128>::new(input, format, 4096), &view),
+        Format::Json => verdict(Records::<_, 4096>::new(input, Some(format), 4096), &view),
+        Format::Cbor | Format::Cbor2 => verdict(Records::<_, 128>::new(input, Some(format), 4096), &view),
     };
     let (code, summary) = match result {
         Ok((ok, summary)) => (if ok { 0 } else { 1 }, summary),

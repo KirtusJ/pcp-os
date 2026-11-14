@@ -34,11 +34,17 @@ jobs:
         working-directory: PCP_OS_Rust
         run: |
           cargo build --locked --release --bin pcpos
-          cargo test --locked -p pcpos-host --test boot_report --test boot_report_wire
-          cargo test --locked -p pcpos-host --test host boot_report
-      - name: Boot the kernel and compare both serial encodings with the receiver
+          # The kernel and receiver share pcpos-core. The guard suite requires
+          # generated cross-implementation vectors, absent from source archives.
+          cargo run --locked --release --bin pcpos-vectors -- vectors
+          # The generated guard verdicts come from this same core and are not
+          # independent evidence. Catch drift against *tracked* reference bytes.
+          git diff --exit-code -- vectors/register_scenario.jsonl vectors/register_scenario.expected.json vectors/machines.tsv
+          cargo test --locked --workspace
+      - name: Boot the kernel and compare all report encodings and console modes with the receiver
         working-directory: PCP_OS_Rust/crates/pcpos-kernel
         run: |
           sh run.sh build
           /usr/bin/python3 tests/boot_report.py target/pcpos-kernel.elf32 \
             --host "$GITHUB_WORKSPACE/PCP_OS_Rust/target/release/pcpos"
+          /usr/bin/python3 tests/quiet_console.py target/pcpos-kernel.elf32

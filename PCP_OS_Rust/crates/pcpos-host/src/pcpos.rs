@@ -3,7 +3,7 @@
 //!     pcpos status <register>                 what is running, what needs a response, what a halt would stop
 //!     pcpos verify <register>                 check the chain and replay every guard
 //!     pcpos boot-report <file>                 translate one captured kernel CBOR boot report to JSON Lines
-//!     pcpos boot-report --admission|--health json|cbor < COM2    summarize session entry or completed boot
+//!     pcpos boot-report --admission|--health json|cbor|cbor2 < COM2    summarize session entry or completed boot
 //!     pcpos machine [name [state event]]      print state-machine tables or one transition row
 //!     pcpos method <directory>                check a method packet against the release this core implements
 //!     pcpos init <register> --principal L     begin a register (a person, at a terminal)
@@ -2558,7 +2558,7 @@ fn person(args: &[String]) -> Result<i32, String> {
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
     let usage = || -> ! {
-        eprintln!("usage: pcpos status|verify <register> | boot-report <file> | boot-report --admission|--health json|cbor < COM2 | machine [name [state event]] | method <directory> | repair <register> | modules <method directory> | clause <method directory> <module> [section] | instrument list | instrument <name> <input as JSON> [register] | workspace <register> --by <label> [--method <directory>] [module ...] | module list <register> | module add <register> <folder or Specification.md> --by <label> [--method <directory>] | module remove <register> <name> --by <label> | init <register> --principal <label> [--name <name>] | adopt <register> --by <label> --basis <words> | halt <register> --by <label> [--words <words>] | standard <register> --by <label> [--second <label>] BASELINE|CRITICAL|key=value... | mcp | hook <event>");
+        eprintln!("usage: pcpos status|verify <register> | boot-report <file> | boot-report --admission|--health json|cbor|cbor2 < COM2 | machine [name [state event]] | method <directory> | repair <register> | modules <method directory> | clause <method directory> <module> [section] | instrument list | instrument <name> <input as JSON> [register] | workspace <register> --by <label> [--method <directory>] [module ...] | module list <register> | module add <register> <folder or Specification.md> --by <label> [--method <directory>] | module remove <register> <name> --by <label> | init <register> --principal <label> [--name <name>] | adopt <register> --by <label> --basis <words> | halt <register> --by <label> [--words <words>] | standard <register> --by <label> [--second <label>] BASELINE|CRITICAL|key=value... | mcp | hook <event>");
         exit(2)
     };
     match args.first().map(String::as_str) {
@@ -2578,6 +2578,7 @@ fn main() {
             let format = match args[2].as_str() {
                 "json" => boot_report::Format::Json,
                 "cbor" => boot_report::Format::Cbor,
+                "cbor2" => boot_report::Format::Cbor2,
                 _ => usage(),
             };
             exit(boot_report::summarize(std::io::stdin().lock(), format, view))
