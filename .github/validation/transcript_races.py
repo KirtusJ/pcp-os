@@ -103,6 +103,19 @@ with fixture() as (root, env, hook, bodies):
         ("T1", digest(b"earlier exit")), ("T2", digest(b"its own exit"))]
     print("PASS competing completion followed by resume; original observer cannot credit resumed task", flush=True)
 
+with fixture() as (root, env, hook, bodies):
+    with delayed_stop(root, env, "after"):
+        reg = root / ".pcp/register.jsonl"
+        reg.rename(root / "archived-register")
+        # A second independent synthetic review reuses both the hook key and T1.
+        hook("prompt", hook_event_name="UserPromptExpansion", expansion_type="slash_command",
+             command_name="pcp-os:review", command_args="new review", prompt="new review")
+        hook("subagent-start", agent_id="a", agent_type="replacement")
+        assert bodies("TASK_STARTED")[-1]["id"] == "T1"
+        untouched = reg.read_bytes()
+    assert reg.read_bytes() == untouched
+    print("PASS new register with reused task and hook IDs is not credited", flush=True)
+
 for mode in ("disabled", "unmatched", "ambiguous"):
     with fixture() as (root, env, hook, bodies):
         reg = root / ".pcp/register.jsonl"
