@@ -683,6 +683,71 @@ fn a_clause_is_fetched_by_the_program_itself_from_the_text_at_hand_or_said_to_be
 }
 
 #[test]
+fn mcp_clause_lookup_preserves_source_identity_and_refuses_bad_sources() {
+    let root = dir("mcp-clause-snapshot");
+    let method = small_method(&root);
+    let spec = method.join("MODULES/01_Core/SOURCE/Specification.md");
+
+    // Read-only MCP sessions; none adopts ACR, writes a register or grants a role.
+    let clause = || {
+        let mut c = with_method(&root, &method);
+        c.arg("mcp");
+        let (out, code) = feed(
+            c,
+            br#"{"id":1,"jsonrpc":"2.0","method":"tools/call","params":{"arguments":{"module":"core","section":"1.1"},"name":"acr_clause"}}
+"#,
+        );
+        assert_eq!(code, 0, "MCP server exited abnormally: {out}");
+        let v = Value::parse(out.lines().next().unwrap().as_bytes()).unwrap();
+        let r = v.get("result").unwrap();
+        let content = match r.get("content") {
+            Some(Value::List(c)) => c[0].get("text").and_then(Value::as_str).unwrap().to_owned(),
+            _ => panic!("MCP call has no text content: {out}"),
+        };
+        (content, r.get("isError") == Some(&Value::Bool(true)))
+    };
+
+    let a = b"# T\n\n**Component:** `acr.core`, Version 1.0  \n\n## 1. Evidence\n\n### 1.1 Source\n\nSOURCE_VERSION_ALPHA\n\n## 2. End\n";
+    let b = b"# T\n\n**Component:** `acr.core`, Version 1.0  \n\n## 1. Evidence\n\n### 1.1 Source\n\nSOURCE_VERSION_BETA\n\n## 2. End\n";
+    fs::write(&spec, a).unwrap();
+    let (reply_a, error_a) = clause();
+    assert!(!error_a && reply_a.contains("SOURCE_VERSION_ALPHA")
+        && !reply_a.contains("SOURCE_VERSION_BETA")
+        && reply_a.contains(&sha256_hex(a)), "{reply_a}");
+
+    fs::write(&spec, b).unwrap();
+    let (reply_b, error_b) = clause();
+    assert!(!error_b && reply_b.contains("SOURCE_VERSION_BETA")
+        && !reply_b.contains("SOURCE_VERSION_ALPHA")
+        && reply_b.contains(&sha256_hex(b))
+        && !reply_b.contains(&sha256_hex(a)), "{reply_b}");
+
+    // Invalid UTF-8 cannot be attributed to a valid released module.
+    fs::write(&spec, [0xff, 0xfe, 0xfd]).unwrap();
+    let (invalid, is_error) = clause();
+    assert!(is_error && !invalid.contains("SOURCE_VERSION_BETA"), "{invalid}");
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+        let replacement = root.join("outside-specification.md");
+        fs::write(&replacement, a).unwrap();
+        fs::remove_file(&spec).unwrap();
+        symlink(&replacement, &spec).unwrap();
+        let (linked, is_error) = clause();
+        assert!(is_error && !linked.contains("SOURCE_VERSION_ALPHA"), "{linked}");
+        fs::remove_file(&spec).unwrap();
+    }
+
+    fs::write(&spec, a).unwrap();
+    let (restored, is_error) = clause();
+    assert!(!is_error && restored.contains("SOURCE_VERSION_ALPHA")
+        && restored.contains(&sha256_hex(a)), "{restored}");
+    assert!(!root.join(REG).exists(), "read-only MCP lookups created a register");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn a_prompt_that_is_only_a_word_to_stop_is_a_halt_the_host_saw_and_other_prompts_are_left_alone() {
     let root = dir("bare-stop");
     let p = |text: &str| hook(&root, "prompt", &format!(r#"{{"hook_event_name":"UserPromptSubmit","prompt":"{text}","cwd":"{}"}}"#, root.display()));
