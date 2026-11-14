@@ -317,6 +317,9 @@ pub struct State {
     created: bool,
     workspace: String,
     method_presence: Option<Option<String>>,
+    /// Whether the latest METHOD_PINNED event reported verified release bytes.
+    /// This is historical state; it does not establish that today's files match.
+    method_verified: bool,
     /// Participants by label.
     pub participants: BTreeMap<String, Participant>,
     artifacts: BTreeMap<String, Artifact>,
@@ -394,6 +397,12 @@ impl State {
     /// True if a method identity is recorded.
     pub fn method_pinned(&self) -> bool {
         self.method_presence.is_some()
+    }
+
+    /// What the last METHOD_PINNED event reported, without replaying the ledger.
+    /// The caller must re-check the current method tree before relying on it.
+    pub fn method_verified_at_pin(&self) -> bool {
+        self.method_verified
     }
 
     /// Number of events applied.
@@ -1555,6 +1564,7 @@ pub fn apply(state: &mut State, ev: &Value) -> R<()> {
                 }
             }
             state.method_presence = Some(st("presence"));
+            state.method_verified = st("verified").as_deref() == Some("FILES_VERIFIED_AGAINST_OWN_MANIFEST");
         }
         "DELIVERY_STATE" => {
             let to = st("to").and_then(|x| Delivery::from_name(&x)).ok_or(()).or_else(|_| integrity(seq, kind))?;

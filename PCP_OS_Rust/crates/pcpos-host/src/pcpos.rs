@@ -1093,6 +1093,40 @@ fn component_header(text: &str) -> Result<(String, String, String, Option<String
 /// The largest method text file this program reads, including a Specification.
 const MAX_SPECIFICATION: u64 = 4 * 1024 * 1024;
 
+/// When a method tree carries a manifest, that file defines the *whole* set of
+/// Specifications eligible to be discovered as method modules. A valid header
+/// alone does not give an unlisted acr.* file the standing of a released module.
+///
+/// Old development fixtures without a manifest are still inspectable; their
+/// release is never reported as verified. A present but malformed/unreadable
+/// manifest instead yields an empty eligible set (fail closed).
+fn declared_method_specifications(method: &Path) -> Option<BTreeMap<PathBuf, String>> {
+    let raw = match read_method_regular_file(&method.join("MANIFEST.json")) {
+        Ok(Some(bytes)) => bytes,
+        Ok(None) => return None,
+        Err(_) => return Some(BTreeMap::new()),
+    };
+    let mut eligible = BTreeMap::new();
+    let Some(doc) = lenient::parse(&raw) else { return Some(eligible) };
+    let Some(Value::List(entries)) = doc.get("files") else { return Some(eligible) };
+    let mut seen = BTreeSet::new();
+    for entry in entries {
+        let (Some(path), Some(digest)) =
+            (entry.get("path").and_then(Value::as_str), entry.get("sha256").and_then(Value::as_str))
+        else { return Some(BTreeMap::new()) };
+        let relative = Path::new(path);
+        if !relative.components().all(|c| matches!(c, Component::Normal(_)))
+            || !seen.insert(relative.to_path_buf())
+        {
+            return Some(BTreeMap::new());
+        }
+        if path.starts_with("MODULES/") && path.ends_with("/SOURCE/Specification.md") {
+            eligible.insert(relative.to_path_buf(), digest.to_string());
+        }
+    }
+    Some(eligible)
+}
+
 /// The modules at hand: every folder under the method text's MODULES that holds a Specification naming its
 /// own component, and then every module a person added beside the register. Adding or removing a module is
 /// adding or removing a folder; nothing here is edited.
@@ -1107,6 +1141,7 @@ fn modules_and_oddities(se: &Session) -> (Vec<Module>, Vec<String>) {
     let mut odd: Vec<String> = Vec::new();
     let mut out: Vec<Module> = Vec::new();
     let mut ambiguous: Vec<String> = Vec::new();
+    let manifested = se.method.as_deref().and_then(declared_method_specifications);
     let added = se.added().filter(|d| d.canonicalize().map(|c| c.starts_with(&se.root)).unwrap_or(false));
     let sources: Vec<(PathBuf, bool)> = se.method.iter().map(|m| (m.join("MODULES"), false)).chain(added.into_iter().map(|d| (d, true))).collect();
     if se.method.is_some() && !se.method.as_ref().map(|m| m.join("MODULES").is_dir()).unwrap_or(false) {
@@ -1173,6 +1208,18 @@ fn modules_and_oddities(se: &Session) -> (Vec<Module>, Vec<String>) {
                 odd.push(format!("{folder}: {id} is not {}; not used", if is_added { "named `local.<name>`, as an added module is" } else { "named `acr.<name>`, as a module of the method is" }));
                 continue;
             }
+            // Resolve manifest membership before an ineligible folder can
+            // contribute a name to duplicate-identity detection.
+            let actual_sha = sha256_hex(&bytes);
+            if !is_added {
+                if let (Some(listed), Some(method)) = (&manifested, se.method.as_deref()) {
+                    let declared = file.strip_prefix(method).ok().and_then(|path| listed.get(path));
+                    if declared != Some(&actual_sha) {
+                        odd.push(format!("{folder}: {id} is not a manifest-listed Specification with its declared SHA-256; not a released module"));
+                        continue;
+                    }
+                }
+            }
             if is_added && packet.contains(&key) {
                 odd.push(format!("{folder}: {id} takes the name of a module of the method text; the added folder is not used"));
                 continue;
@@ -1187,7 +1234,7 @@ fn modules_and_oddities(se: &Session) -> (Vec<Module>, Vec<String>) {
                 ambiguous.push(key);
                 continue;
             }
-            let m = Module { key, id, version, sha256: sha256_hex(&bytes), words: text.split_whitespace().count(), core, file, added: is_added };
+            let m = Module { key, id, version, sha256: actual_sha, words: text.split_whitespace().count(), core, file, added: is_added };
             if m.other_core() {
                 odd.push(format!("{folder}: {} says it was written for another Core than this program implements; it can be read, and cannot be selected", m.id));
             }
@@ -1293,15 +1340,41 @@ fn clip_long(text: &str, chars: usize) -> String {
     if text.chars().count() <= chars { text.to_string() } else { format!("{}\n[cut at {chars} characters]", text.chars().take(chars).collect::<String>()) }
 }
 
+/// A METHOD_PINNED event reports a check at the time it was recorded. It
+/// cannot grant a new released-module selection from text that has since
+/// changed, even when the register's own hash chain remains intact.
+///
+/// Provisional registers that have never reported verified method files retain
+/// their development-mode handling. The check is made only for a consequential
+/// new released-namespace selection, not on the ordinary work path.
+fn require_current_method_after_verified_pin(tx: &Tx, se: &Session) -> Result<(), String> {
+    // The record's incremental replay has already applied the last METHOD_PINNED
+    // event. Do not re-verify the entire ledger for a single new selection.
+    if !tx.state().method_verified_at_pin() {
+        return Ok(());
+    }
+    let method = se.method.as_deref()
+        .ok_or("this register previously verified the method, but no current method text is at hand; a new released-module selection is held")?;
+    let check = method_check(method)
+        .map_err(|e| format!("this register previously verified the method, but current verification failed: {e}; no released-module selection was made"))?;
+    if !check.complete() {
+        return Err(format!("this register previously verified the method, but its present files no longer match the pinned release: {}; no released-module selection was made", clip(&check.text(), 1100)));
+    }
+    Ok(())
+}
+
 /// A commission names its modules by identifier, version and digest. Where the method text is at hand,
 /// each must be a specialist module found there, with that version and that digest, once.
-fn commission_modules(se: &Session, body: &Value) -> Result<(), String> {
+fn commission_modules(se: &Session, tx: &Tx, body: &Value) -> Result<(), String> {
     let list = match body.get("modules") {
         Some(Value::List(l)) if !l.is_empty() => l,
         _ => return Ok(()),
     };
+    if list.iter().any(|m| m.get("id").and_then(Value::as_str).map(|id| id.starts_with("acr.")).unwrap_or(false)) {
+        require_current_method_after_verified_pin(tx, se)?;
+    }
     if se.method.is_none() {
-        return Ok(()); // nothing to compare with: the record keeps what was declared, and METHOD_PINNED says the text was not at hand
+        return Ok(()); // no source to compare on an unverified provisional register
     }
     let found = modules_in(se);
     let mut seen: Vec<&str> = Vec::new();
@@ -1372,6 +1445,9 @@ fn set_profile(tx: &mut Tx, se: &Session, names: &[&str], by: &str, observed: &s
             Some(_) => {}
             None => return Err(format!("{} is not a module of the method text at hand. The modules are: {}", clip(n, 60), found.iter().map(|m| m.key.as_str()).collect::<Vec<_>>().join(", "))),
         }
+    }
+    if chosen.iter().any(|m| !m.added) {
+        require_current_method_after_verified_pin(tx, se)?;
     }
     let mut body = vec![("event", s("WORKSPACE_PROFILE")), ("by", s(by)), ("observed", s(observed)), ("words", s(&clip(words, 2000))),
                         ("modules", Value::List(chosen.iter().map(|m| m.record()).collect()))];
@@ -1926,7 +2002,7 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
                 return Ok(format!("REFUSE (exit code {}) [Core 4.3]\nA review is open, and material recorded now as SUPPLIED on a digest alone is your report that it was supplied: the server did not read it. Use acr_artifact with its path or its text, so that the server reads it and says how it came by it; record a source you retrieved as RETRIEVED, with where and when; record your own working as PRODUCED.\nNothing was written.\n", acr::REFUSED));
             }
             if kind == "REVIEW_COMMISSIONED" {
-                if let Err(why) = commission_modules(se, body) {
+                if let Err(why) = commission_modules(se, &tx, body) {
                     return Ok(format!("REFUSE (exit code {}) [Core 14.1]\n{why}\nNothing was written.\n", acr::REFUSED));
                 }
             }
@@ -2811,6 +2887,21 @@ mod method_tree_inventory_tests {
     }
 
     #[test]
+    fn module_discovery_uses_the_same_manifest_size_limit_as_verification() {
+        let dir = sample();
+        let manifest = dir.join("MANIFEST.json");
+        let mut raw = fs::read(&manifest).unwrap();
+        raw.resize(MAX_SPECIFICATION as usize, b' ');
+        fs::write(&manifest, &raw).unwrap();
+        assert_eq!(declared_method_specifications(&dir).unwrap().len(), 1);
+        raw.push(b' ');
+        fs::write(&manifest, &raw).unwrap();
+        assert!(declared_method_specifications(&dir).unwrap().is_empty());
+        assert!(method_check(&dir).is_err());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn unlisted_module_and_empty_directory_invalidate_tree_inventory() {
         let dir = sample();
         let extra = dir.join("MODULES/99_Probe/SOURCE/Specification.md");
@@ -2952,5 +3043,104 @@ mod coherent_specification_tests {
         let error = coherent_specification_text(&module).unwrap_err();
         assert!(error.contains("not valid UTF-8"), "{error}");
         fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod method_inventory_tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn fixture() -> PathBuf {
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let dir = env::temp_dir().join(format!("pcpos-inventory-{}-{nonce}", std::process::id()));
+        let spec = dir.join("MODULES/01_Core/SOURCE/Specification.md");
+        fs::create_dir_all(spec.parent().unwrap()).unwrap();
+        fs::write(&spec, b"source bytes").unwrap();
+        fs::write(dir.join("MANIFEST.json"), format!(
+            r#"{{"files":[{{"path":"MODULES/01_Core/SOURCE/Specification.md","sha256":"{}"}}]}}"#,
+            sha256_hex(b"source bytes")
+        )).unwrap();
+        dir
+    }
+
+    #[test]
+    fn clean_tree_and_unlisted_module() {
+        let dir = fixture();
+        let clean = method_check(&dir).unwrap();
+        assert_eq!(clean.equal, 1);
+        assert!(clean.unexpected.is_empty());
+        let extra = dir.join("MODULES/99_New/SOURCE/Specification.md");
+        fs::create_dir_all(extra.parent().unwrap()).unwrap();
+        fs::write(&extra, b"unlisted module").unwrap();
+        let altered = method_check(&dir).unwrap();
+        assert_eq!(altered.equal, 1);
+        assert!(altered.unexpected.iter().any(|x| x.contains("99_New")));
+        assert!(!altered.complete());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn unlisted_file_and_empty_directory() {
+        let dir = fixture();
+        fs::write(dir.join("unlisted.txt"), b"extra").unwrap();
+        fs::create_dir_all(dir.join("MODULES/98_Empty")).unwrap();
+        let check = method_check(&dir).unwrap();
+        assert!(check.unexpected.contains(&"unlisted.txt".to_string()));
+        assert!(check.unexpected.contains(&"MODULES/98_Empty/".to_string()));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn symlink_is_not_release_text() {
+        use std::os::unix::fs::symlink;
+        let dir = fixture();
+        let source = dir.join("MODULES/01_Core/SOURCE/Specification.md");
+        fs::rename(&source, dir.join("original-source")).unwrap();
+        symlink(dir.join("original-source"), &source).unwrap();
+        let check = method_check(&dir).unwrap();
+        assert_eq!(check.equal, 0, "the verifier must refuse the link before reading its bytes");
+        assert!(check.differing.iter().any(|x| x.starts_with("MODULES/01_Core/SOURCE/Specification.md")));
+        assert!(check.unexpected.iter().any(|x| x.ends_with("Specification.md")));
+        assert!(!check.complete());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn unreadable_optional_file_must_not_count_as_omitted() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = fixture();
+        let optional = dir.join("TOOLS/acr.py");
+        fs::create_dir_all(optional.parent().unwrap()).unwrap();
+        fs::write(&optional, b"an optionally omitted file").unwrap();
+        let manifest = format!(
+            r#"{{"files":[{{"path":"MODULES/01_Core/SOURCE/Specification.md","sha256":"{}"}},{{"path":"TOOLS/acr.py","sha256":"{}"}}]}}"#,
+            sha256_hex(b"source bytes"), sha256_hex(b"an optionally omitted file")
+        );
+        fs::write(dir.join("MANIFEST.json"), manifest).unwrap();
+        fs::set_permissions(&optional, fs::Permissions::from_mode(0o000)).unwrap();
+        // A privileged test runner may remain able to read mode 000 files.
+        // Do not misreport that as a negative-control result.
+        if fs::read(&optional).is_err() {
+            let checked = method_check(&dir).unwrap();
+            assert_eq!(checked.absent, 0, "present but unreadable is not absent");
+            assert!(checked.differing.iter().any(|x| x.contains("TOOLS/acr.py")));
+        }
+        fs::set_permissions(&optional, fs::Permissions::from_mode(0o600)).unwrap();
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn complete_requires_no_unlisted_entries() {
+        let mut check = MethodCheck {
+            fingerprint: acr::METHOD_FINGERPRINT.to_string(),
+            listed: 1, equal: 1, absent: 0, absent_text: 0,
+            differing: Vec::new(), unexpected: Vec::new(),
+        };
+        assert!(check.complete());
+        check.unexpected.push("unlisted.txt".to_string());
+        assert!(!check.complete());
     }
 }
