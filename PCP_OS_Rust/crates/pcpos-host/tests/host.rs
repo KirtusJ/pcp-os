@@ -762,6 +762,44 @@ fn a_person_adds_a_module_beside_the_register_and_it_never_displaces_the_method_
 }
 
 #[test]
+fn text_artifact_writer_refuses_hardlinked_and_corrupt_digest_targets() {
+    let root = dir("native-artifact-hardlink");
+    let outside = dir("native-artifact-outside");
+    let contents = b"HOST_TEXT_EXACT";
+    let digest = sha256_hex(contents);
+    let target = root.join(".pcp/artifacts").join(&digest);
+    fs::create_dir_all(target.parent().unwrap()).unwrap();
+    let sentinel = outside.join("synthetic-sentinel.txt");
+    fs::write(&sentinel, b"EXTERNAL ORIGINAL").unwrap();
+    fs::hard_link(&sentinel, &target).unwrap();
+
+    let (begin, begin_error) = tool(&root, "acr_begin", "{}");
+    assert!(!begin_error, "{begin}");
+    let previous_events = events(&root).len();
+    let request = r#"{"text":"HOST_TEXT_EXACT","origin":"PRODUCED","name":"synthetic"}"#;
+
+    let (response, rejected) = tool(&root, "acr_artifact", request);
+    assert!(rejected, "a hard-linked digest target was accepted: {response}");
+    assert_eq!(fs::read(&sentinel).unwrap(), b"EXTERNAL ORIGINAL");
+    assert_eq!(events(&root).len(), previous_events, "refused store must not commit an event");
+    fs::remove_file(&target).unwrap();
+
+    fs::write(&target, b"CORRUPTED").unwrap();
+    let (response, rejected) = tool(&root, "acr_artifact", request);
+    assert!(rejected, "an existing corrupt digest-named artifact was accepted: {response}");
+    assert_eq!(fs::read(&target).unwrap(), b"CORRUPTED");
+    assert_eq!(events(&root).len(), previous_events);
+    fs::remove_file(&target).unwrap();
+
+    let (response, rejected) = tool(&root, "acr_artifact", request);
+    assert!(!rejected && response.contains("WRITTEN as event"), "{response}");
+    assert_eq!(fs::read(&target).unwrap(), contents);
+    let mut cmd = pcpos(&root);
+    cmd.args(["verify", REG]);
+    assert_eq!(feed(cmd, b"").1, 0);
+}
+
+#[test]
 fn verify_says_why_it_exits_1_and_a_subagent_the_host_cannot_name_is_not_recorded() {
     let root = in_use("verify-reason");
     let before = kinds(&root).len();
