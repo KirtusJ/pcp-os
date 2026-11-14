@@ -1,0 +1,10 @@
+{
+  "arm": "truncated",
+  "address": "10.0.2.50",
+  "resolver_port": 53,
+  "paths": [],
+  "pages": {},
+  "pcap_sha256": "195353ce9c877b4a6b3e324872cafc6258ecddd8689503690dc9ce93cde9ee02",
+  "guest_sha256": "fda8cf7d8f0a48d58b01475f4568661adac9255725bf52d7de571ceb8b72e5b1",
+  "kernel_measurement": "a50f1832ee996245634dcae8801c1bf8b5ec23b2cbb7d68030c870e44e7a9a3c"
+}

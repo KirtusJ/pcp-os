@@ -14,9 +14,13 @@ bench = false
 pcp-game-guest = { path = "../../../store/native/guest" }
 smoltcp = { version = "0.14", optional = true, default-features = false, features = ["medium-ethernet", "proto-ipv4", "socket-tcp"] }
 
+[dev-dependencies]
+smoltcp = { version = "0.14", default-features = false, features = ["medium-ethernet", "proto-ipv4", "proto-dns", "socket-udp"] }
+
 [features]
 tcp-ip = ["dep:smoltcp"]
 probe-ethernet-modes = ["tcp-ip"]
+dns = ["tcp-ip", "smoltcp/socket-udp", "smoltcp/proto-dns"]
 
 [profile.release]
 panic = "abort"

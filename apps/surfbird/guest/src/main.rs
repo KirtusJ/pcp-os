@@ -4,6 +4,7 @@
 use pcp_game_guest::{exit, ink::Frame, log, sleep_us, time_us, Display};
 #[cfg(feature = "tcp-ip")]
 mod tcp;
+const ORIGIN_HOST: &str = "fixture.test";
 use surfbird_cable::{body_length, parse, Page, CAPACITY, START};
 
 const W: usize = 640;
@@ -62,13 +63,21 @@ fn fetch(
     wire: &mut [u8; CAPACITY],
 ) -> Result<usize, &'static str> {
     let deadline = time_us() + 8_000_000;
+    let mut request_len = 0;
     for bytes in [
         b"GET ".as_slice(),
         path.as_bytes(),
-        b" HTTP/1.1\r\nHost: fixture.test\r\nAccept: text/html\r\n\r\n",
+        b" HTTP/1.1\r\nHost: ",
+        ORIGIN_HOST.as_bytes(),
+        b"\r\nAccept: text/html\r\n\r\n",
     ] {
-        send(stream, bytes, deadline)?;
+        let end = request_len + bytes.len();
+        wire.get_mut(request_len..end)
+            .ok_or("request too large")?
+            .copy_from_slice(bytes);
+        request_len = end;
     }
+    send(stream, &wire[..request_len], deadline)?;
     let mut used = 0;
     let mut body = None;
     loop {
