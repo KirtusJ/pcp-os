@@ -34,6 +34,27 @@ pub fn answer(bytes: &[u8], id: u16, host: &str) -> Result<Option<Ipv4Address>, 
     if packet.flags().contains(DnsFlags::TRUNCATED) {
         return Err("DNS truncated response");
     }
+    // Authority and additional records cannot select the destination. Verify their boundaries,
+    // along with every answer, before trusting either an address or a negative result.
+    let mut tail = records;
+    for count in [
+        packet.answer_record_count(),
+        packet.authority_record_count(),
+        packet.additional_record_count(),
+    ] {
+        for _ in 0..count {
+            let Ok((next, rr)) = DnsRecord::parse(tail) else {
+                return Ok(None);
+            };
+            if !packet.parse_name(rr.name).all(|label| label.is_ok()) {
+                return Ok(None);
+            }
+            tail = next;
+        }
+    }
+    if !tail.is_empty() {
+        return Ok(None);
+    }
     match packet.rcode() {
         DnsRcode::NXDomain => return Err("DNS name does not exist"),
         DnsRcode::NoError => (),
@@ -81,6 +102,27 @@ mod tests {
         for len in 0..RESPONSE.len() {
             assert_eq!(check(&RESPONSE[..len]), Ok(None), "length {len}");
         }
+    }
+
+    #[test]
+    fn validates_declared_sections_and_datagram_end() {
+        let check = |msg: &[u8]| answer(msg, 0x1234, "fixture.test");
+        for count in [9, 11] {
+            let mut packet = [0; 62];
+            packet[..46].copy_from_slice(RESPONSE);
+            packet[count] = 1;
+            assert_eq!(check(&packet[..46]), Ok(None), "missing section");
+            packet[46..].copy_from_slice(&RESPONSE[30..]);
+            assert_eq!(check(&packet[..61]), Ok(None), "truncated section");
+            assert_eq!(check(&packet), check(RESPONSE), "complete section");
+        }
+        let mut extra = [0xff; 47];
+        extra[..46].copy_from_slice(RESPONSE);
+        assert_eq!(check(&extra), Ok(None), "undeclared suffix");
+        extra[3] = 3;
+        extra[7] = 0;
+        extra[9] = 1;
+        assert_eq!(check(&extra[..30]), Ok(None), "incomplete NXDOMAIN");
     }
 
     #[test]

@@ -17,7 +17,7 @@ def verify_dns(capture, resolver_port, destination, arm, paths, pages):
     key = None
     queries = 0
     replies = []
-    answered = False
+    terminal_reply = None
     guest_tcp = 0
     packets = list(frames(raw))
     for frame in packets:
@@ -27,7 +27,7 @@ def verify_dns(capture, resolver_port, destination, arm, paths, pages):
         src, dst = ip[12:16], ip[16:20]
         payload = ip[4 * (ip[0] & 15) : int.from_bytes(ip[2:4], "big")]
         if ip[9] == 6:
-            check(answered, "TCP traffic preceded a matching DNS answer")
+            check(terminal_reply == "A", "TCP traffic preceded a matching DNS answer")
             if (src, dst) == (GUEST_IP, address):
                 check(payload[2:4] == b"\0P", "unexpected HTTP destination port")
                 guest_tcp += 1
@@ -43,6 +43,7 @@ def verify_dns(capture, resolver_port, destination, arm, paths, pages):
         ident, flags, qd, an, ns, ar = struct.unpack_from("!6H", payload, 8)
         records = payload[20:]
         if src == GUEST_IP:
+            check(terminal_reply is None, "unexpected query after terminal DNS reply")
             check(
                 dst == HOST_IP and dport == resolver_port and sport >= 49152, "wrong DNS endpoint"
             )
@@ -63,12 +64,29 @@ def verify_dns(capture, resolver_port, destination, arm, paths, pages):
             elif not records.startswith(question):
                 replies.append("wrong question")
             elif (flags, qd, an, ns, ar) == (0x8503, 1, 0, 0, 0) and records == question:
+                terminal_reply = "NXDOMAIN"
                 replies.append("NXDOMAIN")
             elif (flags, qd, an, ns, ar) == (0x8700, 1, 1, 0, 0) and records == question + answer:
+                terminal_reply = "truncated"
                 replies.append("truncated")
             elif (flags, qd, an, ns, ar) == (0x8500, 1, 1, 0, 0) and records == question + answer:
-                answered = True
+                check(arm != "retry" or queries >= 2, "DNS answer arrived before the retry")
+                terminal_reply = "A"
                 replies.append("A")
+            elif (
+                (flags, qd, an) == (0x8500, 1, 1)
+                and records == question + answer
+                and (ns, ar) in ((1, 0), (0, 1))
+            ):
+                replies.append("missing authority" if ns else "missing additional")
+            elif (flags, qd, an, ns, ar) == (
+                0x8500,
+                1,
+                1,
+                0,
+                0,
+            ) and records == question + answer + b"\xff":
+                replies.append("undeclared suffix")
             else:
                 wrong_owner = b"\x07another\x04test\0" + answer[2:]
                 check(
@@ -88,17 +106,21 @@ def verify_dns(capture, resolver_port, destination, arm, paths, pages):
         "pcap_sha256": hashlib.sha256(raw).hexdigest(),
     }
     if arm in ("allowed", "alternate", "retry"):
-        check(answered and guest_tcp and replies == ["A"], "missing DNS-to-HTTP navigation")
-        check(arm != "retry" or queries >= 2, "missing query retransmission")
+        check(
+            terminal_reply == "A" and guest_tcp and replies == ["A"],
+            "missing DNS-to-HTTP navigation",
+        )
         report.update(verify(capture, 80, paths, "allowed", pages, address))
     else:
         wanted = {
             "nxdomain": {"NXDOMAIN"},
             "truncated": {"truncated"},
             "mismatch": {"wrong ID", "wrong question", "wrong owner", "wrong port"},
+            "malformed": {"missing authority", "missing additional", "undeclared suffix"},
         }[arm]
         check(
-            not guest_tcp and not answered and set(replies) == wanted, "negative DNS case differs"
+            not guest_tcp and terminal_reply != "A" and set(replies) == wanted,
+            "negative DNS case differs",
         )
     return report
 

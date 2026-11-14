@@ -8,11 +8,12 @@ import struct
 import threading
 
 QUESTION = b"\x07fixture\x04test\x00\x00\x01\x00\x01"
-DNS_ARMS = ("allowed", "alternate", "retry", "nxdomain", "truncated", "mismatch")
+DNS_ARMS = ("allowed", "alternate", "retry", "nxdomain", "truncated", "mismatch", "malformed")
 DNS_ERRORS = {
     "nxdomain": "DNS name does not exist",
     "truncated": "DNS truncated response",
     "mismatch": "DNS timeout",
+    "malformed": "DNS timeout",
 }
 
 
@@ -38,14 +39,18 @@ def resolver(scenario, port):
             ident = int.from_bytes(data[:2], "big")
             record = bytes.fromhex("c00c 0001 0001 0000003c 0004") + socket.inet_aton(address)
 
-            def reply(flags, question=QUESTION, body=b"", txid=ident, sender=sock):
-                head = struct.pack("!6H", txid, flags, 1, int(bool(body)), 0, 0)
+            def reply(flags, question=QUESTION, body=b"", txid=ident, sender=sock, ns=0, ar=0):
+                head = struct.pack("!6H", txid, flags, 1, int(bool(body)), ns, ar)
                 sender.sendto(head + question + body, self.client_address)
 
             if scenario == "nxdomain":
                 reply(0x8503)
             elif scenario == "truncated":
                 reply(0x8700, body=record)
+            elif scenario == "malformed":
+                reply(0x8500, body=record, ns=1)
+                reply(0x8500, body=record, ar=1)
+                reply(0x8500, body=record + b"\xff")
             elif scenario == "mismatch":
                 reply(0x8500, body=record, txid=ident ^ 1)
                 reply(0x8503, question=QUESTION.replace(b"fixture", b"another"))

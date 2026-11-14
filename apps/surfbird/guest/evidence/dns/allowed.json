@@ -1,18 +1,18 @@
 {
   "arm": "allowed",
-  "address": "10.0.2.60",
+  "address": "10.0.2.40",
   "resolver_port": 53,
   "paths": [
     "/harbour",
-    "/jetty-3924a3cc6cd3",
-    "/bar-3924a3cc6cd3"
+    "/jetty-801b55605109",
+    "/bar-801b55605109"
   ],
   "pages": {
-    "/harbour": "<title>Harbour</title><p>Tide 3924a3cc6cd3</p><a href=\"/bar-3924a3cc6cd3\">Bar</a><a href=\"/jetty-3924a3cc6cd3\">Jetty</a>",
-    "/bar-3924a3cc6cd3": "<title>Bar</title><p>Report 3924a3cc6cd3 Bar</p>",
-    "/jetty-3924a3cc6cd3": "<title>Jetty</title><p>Report 3924a3cc6cd3 Jetty</p>"
+    "/harbour": "<title>Harbour</title><p>Tide 801b55605109</p><a href=\"/bar-801b55605109\">Bar</a><a href=\"/jetty-801b55605109\">Jetty</a>",
+    "/bar-801b55605109": "<title>Bar</title><p>Report 801b55605109 Bar</p>",
+    "/jetty-801b55605109": "<title>Jetty</title><p>Report 801b55605109 Jetty</p>"
   },
-  "pcap_sha256": "1bf5a7a730d24ffa879bbc1a0691f782d6e334bf2a5d8f8c22b5397cd19900ae",
-  "guest_sha256": "73c282a5dee74cf0dc569a868cad5ba70681a3b86e4923774ebb3c6339882d0e",
-  "kernel_measurement": "0232c02a8946d66216da0ac65953a246ce3d41d7a966ae31aa83c3335b3259e3"
+  "pcap_sha256": "f9a9643a259aaa9f406adff6ee380561e003d86d0b4edea381c80f9d297b90e4",
+  "guest_sha256": "fda8cf7d8f0a48d58b01475f4568661adac9255725bf52d7de571ceb8b72e5b1",
+  "kernel_measurement": "a50f1832ee996245634dcae8801c1bf8b5ec23b2cbb7d68030c870e44e7a9a3c"
 }
