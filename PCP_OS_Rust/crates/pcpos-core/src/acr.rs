@@ -164,10 +164,15 @@ fn label_ok(l: &str) -> bool {
     !b.is_empty() && b.len() <= 64 && b[0].is_ascii_alphanumeric() && b.iter().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'.' | b'_' | b'-'))
 }
 
+/// Whether a string may be used as a registered name or task label.
+pub fn is_register_label(label: &str) -> bool {
+    let first = label.split('.').next().unwrap_or("");
+    label_ok(label) && !RESERVED.iter().any(|r| first.eq_ignore_ascii_case(r))
+}
+
 fn check_label<'a>(v: &'a Value, what: &str) -> R<&'a str> {
     if let Value::Str(l) = v {
-        let first = l.split('.').next().unwrap_or("");
-        if label_ok(l) && !RESERVED.iter().any(|r| first.eq_ignore_ascii_case(r)) {
+        if is_register_label(l) {
             return Ok(l);
         }
     }
