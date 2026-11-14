@@ -2239,7 +2239,7 @@ fn hook(event: &str, input: &Value) -> Result<String, String> {
                 let part = |k: &str| r.and_then(|r| r.get(k)).and_then(Value::as_str).unwrap_or("").to_string();
                 (if interrupted { Value::Null } else { Value::Int(0) }, interrupted, part("stdout"), part("stderr"), "STDOUT_AND_STDERR")
             };
-            let line = obj(vec![("ts", s(&now_utc())), ("tool_use_id", s(&clip(field("tool_use_id"), 200))), ("command", s(command)), ("exit", exit), ("timeout", Value::Bool(timeout)),
+            let line = obj(vec![("ts", s(&now_utc())), ("tool_use_id", s(&shell_observation_id(field("tool_use_id")))), ("command", s(command)), ("exit", exit), ("timeout", Value::Bool(timeout)),
                                 ("stdout", s(&sha256_hex(out.as_bytes()))), ("stderr", s(&sha256_hex(err.as_bytes()))), ("output", s(form)), ("output_bytes", Value::Int((out.len() + err.len()) as i64)), ("at_event", Value::Int(at_event)),
                                 ("duration_ms", input.get("duration_ms").and_then(Value::as_int).map(Value::Int).unwrap_or(Value::Null))]).canonical_json();
             if let Some(mut h) = confined(&se.root, &se.observed_tools(), true, true)? {
@@ -2259,6 +2259,18 @@ fn hook(event: &str, input: &Value) -> Result<String, String> {
             Ok(String::new())
         }
         _ => Err(format!("no hook named {event}")),
+    }
+}
+
+/// Preserve short opaque IDs exactly. A long ID's key is longer than every short ID and every
+/// historical clipped ID. Older readers copy this same key from the observation into the check.
+fn shell_observation_id(id: &str) -> String {
+    let mut chars = id.chars();
+    let prefix: String = chars.by_ref().take(200).collect();
+    if chars.next().is_some() {
+        format!("{prefix}#sha256:{}", sha256_hex(id.as_bytes()))
+    } else {
+        prefix
     }
 }
 
