@@ -6,7 +6,7 @@
 //! Exit status: 0 intact; 6 integrity failure; 2 usage, representation or I/O error.
 #![forbid(unsafe_code)]
 use pcpos_core::{ledger, r1, sha256_hex};
-use std::io::{self, Read, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::{env, fs, process::exit};
 
 type Error = (i32, String);
@@ -63,6 +63,47 @@ fn write_frames(source: &fs::File, output: &str, packed: &[u8]) -> io::Result<()
     file.write_all(packed)
 }
 
+/// Verify the source in one forward pass. Retain only the current JSON line and
+/// the frames to send. Do not open the destination until the scan succeeds.
+fn export_after(source: &fs::File, input: &str, output: &str, base: &str) -> Result<(), Error> {
+    let mut reader = BufReader::new(source);
+    let mut line = Vec::new();
+    let mut packed = Vec::new();
+    let mut count = 0;
+    let mut head = pcpos_core::ZERO.to_owned();
+    let mut start = (base == head).then_some(0);
+    let mut unrepresentable = None;
+    loop {
+        line.clear();
+        if reader.read_until(b'\n', &mut line).map_err(|e| (2, format!("cannot read {input}: {e}")))? == 0 {
+            break;
+        }
+        let content = line.strip_suffix(b"\n").ok_or_else(|| (6, "the register is not intact: IncompleteFinalLine".to_owned()))?;
+        let (event, next) = ledger::verify_line(count, content, &head)
+            .map_err(|e| (6, format!("the register is not intact: {e:?}")))?;
+        if start.is_some() && unrepresentable.is_none() {
+            match r1::encode_event(&event) {
+                Some(frame) => packed.extend_from_slice(&frame),
+                None => unrepresentable = Some(count),
+            }
+        }
+        count += 1;
+        head = next;
+        if head == base {
+            start = Some(count);
+        }
+    }
+    println!("register: {count} events, chain intact, head {head}");
+    let start = start.ok_or_else(|| (6, format!("base head {base} is absent from the verified register")))?;
+    if let Some(index) = unrepresentable {
+        return Err((2, format!("positional form unavailable at event {index}")));
+    }
+    println!("after {base}: {} events, {} positional bytes", count - start, packed.len());
+    write_frames(source, output, &packed).map_err(|e| (2, format!("cannot write {output}: {e}")))?;
+    println!("wrote {} ({} bytes, sha256 {})", output, packed.len(), sha256_hex(&packed));
+    Ok(())
+}
+
 fn inspect(input: &str, output: Option<&str>, after: Option<&str>) -> Result<(), Error> {
     if let Some(base) = after {
         check_head(base, "base head")?;
@@ -75,52 +116,40 @@ fn inspect(input: &str, output: Option<&str>, after: Option<&str>) -> Result<(),
         options.share_mode(1 | 4); // FILE_SHARE_READ | FILE_SHARE_DELETE, excluding write opens to this snapshot
     }
     let mut source = options.open(input).map_err(|e| (2, format!("cannot read {input}: {e}")))?;
+    if let (Some(base), Some(path)) = (after, output) {
+        return export_after(&source, input, path, base);
+    }
     let mut raw = Vec::new();
     source.read_to_end(&mut raw).map_err(|e| (2, format!("cannot read {input}: {e}")))?;
     let (events, head) = ledger::verify(&raw).map_err(|e| (6, format!("the register is not intact: {e:?}")))?;
     println!("register: {} events, chain intact, head {}", events.len(), head);
     let mut packed = Vec::new();
-    if let Some(base) = after {
-        // Each verified event already carries the hash of the preceding canonical line.
-        let start = if base == head {
-            events.len()
-        } else {
-            events.iter().position(|ev| ev.get("prev").and_then(|v| v.as_str()) == Some(base))
-                .ok_or_else(|| (6, format!("base head {base} is absent from the verified register")))?
-        };
-        for (index, ev) in events.iter().enumerate().skip(start) {
-            let frame = r1::encode_event(ev).ok_or_else(|| (2, format!("positional form unavailable at event {index}")))?;
-            packed.extend_from_slice(&frame);
-        }
-        println!("after {base}: {} events, {} positional bytes", events.len() - start, packed.len());
-    } else {
-        let (mut generic, mut positional) = (0usize, 0usize);
-        let mut first_unrepresentable = None;
-        for (index, ev) in events.iter().enumerate() {
-            let g = r1::encode(ev);
-            assert_eq!(&r1::decode(&g).expect("R1 decodes"), ev, "R1 must decode to the value encoded");
-            generic += g.len();
-            if first_unrepresentable.is_none() {
-                match r1::encode_event(ev) {
-                    Some(p) => {
-                        positional += p.len();
-                        if output.is_some() { packed.extend_from_slice(&p); }
-                    }
-                    None => first_unrepresentable = Some(index),
+    let (mut generic, mut positional) = (0usize, 0usize);
+    let mut first_unrepresentable = None;
+    for (index, ev) in events.iter().enumerate() {
+        let g = r1::encode(ev);
+        assert_eq!(&r1::decode(&g).expect("R1 decodes"), ev, "R1 must decode to the value encoded");
+        generic += g.len();
+        if first_unrepresentable.is_none() {
+            match r1::encode_event(ev) {
+                Some(p) => {
+                    positional += p.len();
+                    if output.is_some() { packed.extend_from_slice(&p); }
                 }
+                None => first_unrepresentable = Some(index),
             }
         }
-        let json = raw.len();
-        let pct = |n: usize| if json == 0 { 0 } else { n * 100 / json };
-        if let Some(index) = first_unrepresentable {
-            println!("size: JSON form {json} bytes; draft R1, map form {generic} bytes; positional form unavailable at event {index}");
-            if output.is_some() {
-                return Err((2, "positional export requires a representable UTC calendar timestamp at every event".into()));
-            }
-            return Ok(());
-        }
-        println!("size: JSON form {} bytes; draft R1, map form {} bytes ({}%); draft R1, event form {} bytes ({}%)", json, generic, pct(generic), positional, pct(positional));
     }
+    let json = raw.len();
+    let pct = |n: usize| if json == 0 { 0 } else { n * 100 / json };
+    if let Some(index) = first_unrepresentable {
+        println!("size: JSON form {json} bytes; draft R1, map form {generic} bytes; positional form unavailable at event {index}");
+        if output.is_some() {
+            return Err((2, "positional export requires a representable UTC calendar timestamp at every event".into()));
+        }
+        return Ok(());
+    }
+    println!("size: JSON form {} bytes; draft R1, map form {} bytes ({}%); draft R1, event form {} bytes ({}%)", json, generic, pct(generic), positional, pct(positional));
     if let Some(path) = output {
         write_frames(&source, path, &packed).map_err(|e| (2, format!("cannot write {path}: {e}")))?;
         println!("wrote {} ({} bytes, sha256 {})", path, packed.len(), sha256_hex(&packed));

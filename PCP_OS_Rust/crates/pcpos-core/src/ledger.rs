@@ -42,7 +42,9 @@ pub(crate) fn is_ts(s: &str) -> bool {
         })
 }
 
-fn check_event(n: usize, line: &[u8], prev: &str) -> Result<Value, LedgerError> {
+/// Check one canonical event line (without its newline) at zero-based index `n`
+/// against the preceding head. Return its event and the head for the next line.
+pub fn verify_line(n: usize, line: &[u8], prev: &str) -> Result<(Value, String), LedgerError> {
     let ev = Value::parse(line).map_err(|e| LedgerError::Parse(n + 1, e))?;
     let m = match &ev {
         Value::Map(m) => m,
@@ -65,7 +67,7 @@ fn check_event(n: usize, line: &[u8], prev: &str) -> Result<Value, LedgerError> 
     if m.get("seq").and_then(Value::as_int) != Some(n as i64) || m.get("prev").and_then(Value::as_str) != Some(prev) {
         return Err(LedgerError::BrokenChain(n + 1));
     }
-    Ok(ev)
+    Ok((ev, sha256_hex(line)))
 }
 
 /// Check a whole register. Returns its events and its head: the digest of the last line, or zeros if empty.
@@ -91,8 +93,8 @@ fn walk_tail(raw: &[u8], first: usize, prev: &str, mut visit: impl FnMut(Value))
     let mut count = 0;
     for line in raw.split_inclusive(|&b| b == b'\n') {
         let content = &line[..line.len() - 1];
-        let ev = check_event(first + count, content, &prev)?;
-        prev = sha256_hex(content);
+        let (ev, head) = verify_line(first + count, content, &prev)?;
+        prev = head;
         visit(ev);
         count += 1;
     }
