@@ -487,8 +487,9 @@ fn elf_of(name: &str) -> Option<alloc::vec::Vec<u8>> {
 const STOP_KEYS: [u8; 6] = [0x1D, 0x38, 0x53, 0xD3, 0xB8, 0x9D];
 
 /// Let whatever is left of a key script reach the controller and the keyboard's handler, then forget the keys and
-/// any stop they asked for. Called and left with interrupts off. False if the script did not finish.
-fn script_drain() -> bool {
+/// any stop they asked for. Called and left with interrupts off. Report a missed wake or unfinished script.
+fn script_drain() -> Result<(), &'static str> {
+    let woke_on_interrupt = dev::keyboard_script_finish();
     arch::interrupts_on();
     let mut done = false;
     for _ in 0..200 {
@@ -502,30 +503,36 @@ fn script_drain() -> bool {
     arch::interrupts_off();
     dev::keys_forget();
     let _ = dev::stop_requested();
-    done
+    if !done {
+        Err("the key script did not finish")
+    } else if !woke_on_interrupt {
+        Err("a key was queued but the reader was still idle on the next timer tick")
+    } else {
+        Ok(())
+    }
 }
 
 /// The asynchronous side, observed: sleeping, waiting for a key, and the stop key arriving while a program runs,
 /// sleeps or waits. Keys arrive through the keyboard's interrupt (see `dev::keyboard_script`). Interrupts are off
 /// when this is called and when it returns. None of these runs is a task in the kernel's register.
 fn asynchronous(failed: &mut u32) {
+    use dev::KeyPacing::{BlockedRead, Timed};
     use user::{End, Grants, Program, Start, World};
     let world = || World { files: alloc::vec::Vec::new(), store: alloc::vec::Vec::new(), epoch_at_start: 0, unanswered: alloc::vec::Vec::new() };
     let grants = Grants { console: true, keys: true, ..Grants::default() };
-    let loaded = |name: &str, label: &str, keys: &[u8], after: u64| -> (Result<user::Process, &'static str>, usize, usize, u64) {
+    let loaded = |name: &str, args: &[&str], keys: &[u8], after: u64, pacing| -> (Result<user::Process, &'static str>, usize, usize, u64) {
         let free0 = user::frames_free();
         let result = match elf_of(name) {
             Some(image) => {
                 let t0 = arch::ticks();
-                // `run_program` forgets a stop asked for earlier, so the script is set before it and begins `after` ticks from now.
-                dev::keyboard_script(t0 + after, keys);
-                let (r, _) = user::run_program(&Program { name: label, image: &image, args: &[label], grants, budget: u64::MAX }, world());
+                // The first scan code is due no earlier than `after` ticks from here.
+                dev::keyboard_script(t0 + after, keys, pacing);
+                let (r, _) = user::run_program(&Program { name: args[0], image: &image, args, grants, budget: u64::MAX }, world());
                 (r, arch::ticks() - t0)
             }
             None => (Err("no such test program"), 0),
         };
-        let drained = script_drain();
-        (if drained { result.0 } else { Err("the key script did not finish") }, free0, user::frames_free(), result.1)
+        (script_drain().and(result.0), free0, user::frames_free(), result.1)
     };
 
     // Independent rollback controls: an admitted earlier group member never enters user mode.
@@ -541,11 +548,11 @@ fn asynchronous(failed: &mut u32) {
     }
 
     // 1. The stop key while a program runs. The program never yields and never ends; its budget is far away.
-    dev::keyboard_script(arch::ticks() + 5, &STOP_KEYS);
+    dev::keyboard_script(arch::ticks() + 5, &STOP_KEYS, Timed);
     let t0 = arch::ticks();
     let procs = user::run(&[Start { name: "hog", console: true, budget: 100_000 }]);
     let took = arch::ticks() - t0;
-    let drained = script_drain();
+    let drained = script_drain().is_ok();
     let (end, settled) = procs.as_ref().and_then(|p| p.first()).map(|p| (p.end, p.settled)).unwrap_or((None, None));
     say!("  note stop key while running: end {:?}, task {:?}, after {} timer periods", end, settled, took);
     check("the stop key ends a program that never yields, long before its budget", drained && end == Some(End::Stopped) && took < 100, failed);
@@ -553,23 +560,24 @@ fn asynchronous(failed: &mut u32) {
 
     // 2. Sleep and wake. 50 ms is 50,000,000 ns; a tick is 999,847 ns; the deadline is the tick of the call plus
     // ceil(50,000,000 / 999,847) = 51. The processor idles through exactly those 51 ticks if the program is woken at its tick.
-    let (r, free0, free1, took) = loaded("sleeper", "sleeper", &[], 0);
+    let (r, free0, free1, took) = loaded("sleeper", &["sleeper"], &[], 0, Timed);
     let (end, idle) = r.as_ref().map(|p| (p.end, p.idle)).unwrap_or((None, 0));
     say!("  note sleep of 50 ms: {:?}, end {:?}, idle {} of {} timer periods", r.as_ref().err(), end, idle, took);
     check("a program that sleeps 50 ms is woken at its millisecond: the processor idled 51 timer periods, no fewer and no more, and the sleep answered 0",
           end == Some(End::Exited(0)) && idle == 51 && took >= 51 && free0 == free1, failed);
 
-    // 3. A key arrives while the program waits in a read of the keyboard: Shift (which it passes over), then the key it wants.
+    // 3. The reader checks each two-byte event in order: Shift down, Shift up, then A down.
     // Eight calls: open; then for each of Shift down, Shift up and the key, a read that waits and the same read made again.
-    // The eighth is exit: the key's release has not arrived by then.
-    let (r, free0, free1, took) = loaded("key_reader", "key_reader", &[0x2A, 0xAA, 0x1E, 0x9E], 20);
+    // Each injection is on a timer tick spent idle in a blocked read. Startup can use part of the initial 20 ticks.
+    // The eighth call is exit. The remaining key release drains after the process has ended.
+    let (r, free0, free1, took) = loaded("key_reader", &["key_reader"], &[0x2A, 0xAA, 0x1E, 0x9E], 20, BlockedRead);
     let (end, idle, calls) = r.as_ref().map(|p| (p.end, p.idle, p.calls)).unwrap_or((None, 0, 0));
     say!("  note key while waiting: {:?}, end {:?}, idle {} of {} timer periods, {} calls", r.as_ref().err(), end, idle, took, calls);
     check("a program waiting in a read of the keyboard is woken by each key's interrupt and reads the keys in order: it idled until the first and exited 0 on the third",
-          end == Some(End::Exited(0)) && idle >= 20 && calls == 8 && free0 == free1, failed);
+          end == Some(End::Exited(0)) && idle >= 3 && calls == 8 && free0 == free1, failed);
 
     // 4. The stop key while a program is asleep, with the longest sleep the kernel accepts (2^32 s and 999,999,999 ns).
-    let (r, free0, free1, took) = loaded("sleeper_long", "sleeper_long", &STOP_KEYS, 10);
+    let (r, free0, free1, took) = loaded("sleeper_long", &["sleeper_long"], &STOP_KEYS, 10, Timed);
     let (end, idle) = r.as_ref().map(|p| (p.end, p.idle)).unwrap_or((None, 0));
     say!("  note stop key while asleep: {:?}, end {:?}, idle {} of {} timer periods", r.as_ref().err(), end, idle, took);
     check("the stop key ends a program that is asleep (for the longest sleep accepted: its deadline does not overflow) at once, and all its memory comes back",
@@ -577,15 +585,15 @@ fn asynchronous(failed: &mut u32) {
 
     // 5. The stop key while a program waits in a read of the keyboard. Ctrl and Alt wake it and it waits again; Delete ends it.
     // Six calls: open, and three reads that wait, of which the first two are made again and answered with Ctrl and with Alt.
-    let (r, free0, free1, took) = loaded("key_reader", "key_reader", &STOP_KEYS, 10);
+    let (r, free0, free1, took) = loaded("key_reader", &["key_reader", "stop"], &STOP_KEYS, 10, BlockedRead);
     let (end, idle, calls) = r.as_ref().map(|p| (p.end, p.idle, p.calls)).unwrap_or((None, 0, 0));
     say!("  note stop key while waiting for a key: {:?}, end {:?}, idle {} of {} timer periods, {} calls", r.as_ref().err(), end, idle, took, calls);
     check("the stop key ends a program that waits in a read of the keyboard; it had read Ctrl and Alt and was never handed Delete; all its memory comes back",
-          end == Some(End::Stopped) && idle >= 10 && took < 100 && calls == 6 && free0 == free1, failed);
+          end == Some(End::Stopped) && idle >= 3 && took < 100 && calls == 6 && free0 == free1, failed);
 
     // 6. A stop asked for before a program exists is not a stop of it.
     arch::interrupts_on();
-    dev::keyboard_script(arch::ticks(), &STOP_KEYS);
+    dev::keyboard_script(arch::ticks(), &STOP_KEYS, Timed);
     for _ in 0..200 {
         if dev::keyboard_script_left() == 0 {
             break;
@@ -594,18 +602,18 @@ fn asynchronous(failed: &mut u32) {
     }
     arch::wait_until(arch::ticks() + 2);
     arch::interrupts_off();
-    let (r, free0, free1, _) = loaded("sleeper", "sleeper", &[], 0);
+    let (r, free0, free1, _) = loaded("sleeper", &["sleeper"], &[], 0, Timed);
     let end = r.as_ref().map(|p| p.end).unwrap_or(None);
     check("a stop key pressed before a program is started does not stop it", end == Some(End::Exited(0)) && free0 == free1, failed);
 
     // 7. A name the task table refuses as a label (33 bytes; it takes 32). The program must be refused, with the
     // admission error and no other, and no memory may be lost. The control before it is the same program under a
     // name one byte shorter, which must run: it shows that the refusal is the name's and not the loader's.
-    let (r, free0, free1, _) = loaded("sleeper", "a-name-of-thirty-three-character", &[], 0);
+    let (r, free0, free1, _) = loaded("sleeper", &["a-name-of-thirty-three-character"], &[], 0, Timed);
     let end = r.as_ref().map(|p| p.end).unwrap_or(None);
     say!("  note a 32-byte name: {:?}; frames free {} before, {} after", r.as_ref().map(|p| p.end), free0, free1);
     check("a program under a name of 32 bytes is admitted and runs to its end", end == Some(End::Exited(0)) && free0 == free1, failed);
-    let (r, free0, free1, _) = loaded("sleeper", "a-name-of-thirty-three-characters", &[], 0);
+    let (r, free0, free1, _) = loaded("sleeper", &["a-name-of-thirty-three-characters"], &[], 0, Timed);
     say!("  note a 33-byte name: {:?}; frames free {} before, {} after", r.as_ref().map(|p| p.end), free0, free1);
     let refused = matches!(r, Err("the program could not be admitted as a task"));
     check("a program under a name of 33 bytes is refused admission as a task", refused, failed);

@@ -467,7 +467,7 @@ USER_PROGRAM sleeper_long          # asks for the longest sleep the kernel accep
 9:  jmp 9b
 USER_END sleeper_long
 
-USER_PROGRAM key_reader            # reads key events, waiting for each, until the press of key 0x1E; then exits 0
+USER_PROGRAM key_reader            # checks Shift down/up then A, or Ctrl then Alt while waiting to be stopped
     leaq 1f(%rip), %rdi
     xorl %esi, %esi
     movl $2, %eax                  # open, for reading
@@ -475,7 +475,11 @@ USER_PROGRAM key_reader            # reads key events, waiting for each, until t
     testq %rax, %rax
     js 2f
     movq %rax, %rbx
-    subq $16, %rsp
+    leaq 5f(%rip), %r12            # default test expects Shift down/up then A
+    cmpq $2, (%rsp)                # the stop test supplies a second argument
+    jne 4f
+    leaq 6f(%rip), %r12
+4:  subq $16, %rsp
 3:  movq %rbx, %rdi
     movq %rsp, %rsi
     movl $2, %edx
@@ -484,7 +488,10 @@ USER_PROGRAM key_reader            # reads key events, waiting for each, until t
     cmpq $2, %rax
     jne 2f
     movzwl (%rsp), %eax
-    cmpl $0x001E, %eax             # the key's number, and no flag: a press
+    cmpw (%r12), %ax               # check code and release/extended flags together
+    jne 2f
+    addq $2, %r12
+    cmpl $0x001E, %eax
     jne 3b
     xorl %edi, %edi
     movl $60, %eax
@@ -494,4 +501,6 @@ USER_PROGRAM key_reader            # reads key events, waiting for each, until t
     syscall
 9:  jmp 9b
 1:  .asciz "/dev/kbd"
+5:  .word 0x002A, 0x012A, 0x001E   # Shift down, Shift up, A down
+6:  .word 0x001D, 0x0038, 0xFFFF   # Ctrl, Alt; any delivered third key is an error
 USER_END key_reader

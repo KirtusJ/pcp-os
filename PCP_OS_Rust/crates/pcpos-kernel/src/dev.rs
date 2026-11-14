@@ -386,25 +386,42 @@ pub fn interrupt(line: u8) {
     }
 }
 
-/// For the kernel's self-tests: scan codes to hand to the keyboard controller, one each timer tick from tick `at`.
+/// The self-test can let keys arrive freely or hold each one until a process is blocked in a keyboard read.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum KeyPacing {
+    Timed,
+    BlockedRead,
+}
 struct Script {
     at: u64,
+    pacing: KeyPacing,
+    /// A key reached the queue but the idle reader was still waiting on the next timer interrupt.
+    late_wake: bool,
     bytes: [u8; 8],
     len: usize,
     next: usize,
 }
 
-static SCRIPT: arch::Single<Script> = arch::Single::new(Script { at: 0, bytes: [0; 8], len: 0, next: 0 });
+static SCRIPT: arch::Single<Script> = arch::Single::new(Script { at: 0, pacing: KeyPacing::Timed, late_wake: false, bytes: [0; 8], len: 0, next: 0 });
 
 /// For the kernel's self-tests, which have nobody at the keyboard: from timer tick `at`, hand the controller one
-/// of these scan codes (at most eight) each tick, with its command "put this byte in the output buffer as if the
+/// of these scan codes (at most eight) per eligible tick, with its command "put this byte in the output buffer as if the
 /// keyboard had sent it" (0xD2). The controller then interrupts on the keyboard's line, so each byte arrives the
 /// way a key does: asynchronously, through `interrupt` and `keyboard_byte`.
-pub fn keyboard_script(at: u64, bytes: &[u8]) {
+pub fn keyboard_script(at: u64, bytes: &[u8], pacing: KeyPacing) {
     arch::without_interrupts(|| SCRIPT.with(|s| {
         let n = bytes.len().min(s.bytes.len());
         s.bytes[..n].copy_from_slice(&bytes[..n]);
-        *s = Script { at, bytes: s.bytes, len: n, next: 0 };
+        *s = Script { at, pacing, late_wake: false, bytes: s.bytes, len: n, next: 0 };
+    }))
+}
+
+/// Release any trailing key-up bytes after the test program exits so the modifiers return to rest.
+/// True if no blocked reader was left waiting for the timer to deliver an already queued key.
+pub fn keyboard_script_finish() -> bool {
+    arch::without_interrupts(|| SCRIPT.with(|s| {
+        s.pacing = KeyPacing::Timed;
+        !s.late_wake
     }))
 }
 
@@ -418,6 +435,16 @@ fn script_tick(ticks: u64) {
     SCRIPT.with(|s| {
         // One byte a tick, and only when the controller holds nothing: neither a byte to be read nor one being taken.
         if s.next < s.len && ticks >= s.at && in8(0x64) & 3 == 0 {
+            if s.pacing == KeyPacing::BlockedRead {
+                if !crate::user::idle_in_key_read() {
+                    return;
+                }
+                // IRQ1 queued a key without resuming the reader. The timer would otherwise conceal the missed wake.
+                if keys_waiting() {
+                    s.late_wake = true;
+                    return;
+                }
+            }
             out8(0x64, 0xD2);
             controller_wait_write();
             out8(0x60, s.bytes[s.next]);
