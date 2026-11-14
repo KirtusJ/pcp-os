@@ -3,6 +3,8 @@ use super::{bus_read, in16, in32, in8, out16, out32, out8, BusDevice};
 use crate::{arch, mem};
 use core::sync::atomic::{fence, Ordering};
 pub(crate) mod completion;
+#[cfg(feature = "guest-ethernet")]
+pub(crate) mod guest;
 #[cfg(feature = "virtio-worker-probe")]
 pub(crate) mod worker_link;
 
@@ -45,6 +47,7 @@ const HEADER: usize = 10;
 const RX_CAPACITY: usize = 1516;
 const POLLS: usize = 10_000_000;
 
+#[derive(Clone, Copy)]
 struct Queue {
     index: u16,
     size: usize,

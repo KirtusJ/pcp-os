@@ -1,12 +1,12 @@
 # Surfbird guest HTTP experiment
 
-A bare-metal Rust ELF opens the existing, digest-granted `/dev/game-link` device, sends an HTTP/1.1 GET and displays a page from the response. Keys **1** and **2** follow the links that arrived in the HTML. **B** restores the previous page from guest memory. **Esc** returns to the PCP menu. The framebuffer and COM1 log use the same parsed page.
+A bare-metal Rust ELF sends HTTP/1.1 requests and displays the pages it receives. There are two transport builds. The [guest TCP/IP build and packet capture](TCP.md) use virtio Ethernet with COM2 disconnected. The cable build below uses a preconnected serial stream. Both use the same page parser, keyboard controls and two-slot history. Keys **1** and **2** follow links, **B** restores the previous page from guest memory and **Esc** returns to the PCP menu.
 
-## Where the connection runs
+## Serial cable
 
 The guest writes HTTP bytes to COM2. QEMU connects its serial backend to a loopback HTTP fixture running on the host. The fixture only learns which link was chosen when it receives the next request. The replay uses `-nic none` and a fixed HTTP Host of `fixture.test`. QEMU owns the TCP connection. [QEMU character device backends](https://www.qemu.org/docs/master/system/invocation.html#character-device-options)
 
-The guest reuses the kernel's user-mode byte-stream interface. The loader must grant the ELF digest before the process can open that device. The virtio Ethernet probes exercise fixed kernel workloads. An ordinary guest application still needs a process-accessible network interface and TCP/IP implementation to connect to an endpoint it chooses. DNS and TLS would be additional steps for general HTTPS browsing. [Guest device open and I/O](../../../PCP_OS_Rust/crates/pcpos-kernel/src/sys.rs) · [Loader grant](../../../PCP_OS_Rust/crates/pcpos-kernel/src/session.rs) · [Ethernet probes](../../../PCP_OS_Rust/crates/pcpos-kernel/README.md#isolated-ethernet-transmit-probe)
+The loader must grant the ELF digest before the process can open the serial device. The Ethernet build uses a separate raw-frame device and runs its own TCP state machine. DNS and TLS remain open for native HTTPS browsing. [Guest device open and I/O](../../../PCP_OS_Rust/crates/pcpos-kernel/src/sys.rs) · [Loader grant](../../../PCP_OS_Rust/crates/pcpos-kernel/src/session.rs)
 
 ## Document and protocol limits
 
@@ -48,4 +48,4 @@ Rust 1.91.1, QEMU 11.1.0 (TCG), measured game-link kernel `9e0cd083e00b836b4209a
 | Folded field | A tab-indented Transfer-Encoding line after an extension field triggered the same syntax error. The guest displayed zero frames. |
 
 
-All five guest boots verified their kernel registers at shutdown. The native code runs in the experimental game-link kernel. This test establishes HTTP over a preconnected cable and leaves guest Ethernet/TCP, general HTML rendering and extensions open.
+All five guest boots verified their kernel registers at shutdown. This historical replay covers the experimental game-link kernel and HTTP over its preconnected cable. The [Ethernet replay](TCP.md) tests the separate guest TCP/IP build.

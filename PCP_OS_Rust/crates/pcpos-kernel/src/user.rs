@@ -50,9 +50,11 @@ pub enum Object {
     Sound = 6,
     #[cfg(feature = "game-link")]
     GameLink = 7,
+    #[cfg(feature = "guest-ethernet")]
+    Ethernet,
 }
 
-const CAP_SLOTS: usize = Object::Sound as usize + 1 + cfg!(feature = "game-link") as usize;
+const CAP_SLOTS: usize = Object::Sound as usize + 1 + cfg!(feature = "game-link") as usize + cfg!(feature = "guest-ethernet") as usize;
 
 /// What a program is started with the right to use.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -65,6 +67,8 @@ pub struct Grants {
     pub sound: bool,
     #[cfg(feature = "game-link")]
     pub game_link: bool,
+    #[cfg(feature = "guest-ethernet")]
+    pub ethernet: bool,
 }
 
 /// The most of a process's output that is kept.
@@ -197,7 +201,8 @@ impl Table {
         for (wanted, object, rights) in [(grants.console, Object::Console, Rights::APPEND), (grants.display, Object::Display, Rights::APPEND),
                                          (grants.keys, Object::Keys, Rights::READ), (grants.files, Object::Files, Rights::READ),
                                          (grants.store, Object::Store, Rights::READ.with(Rights::APPEND)), (grants.sound, Object::Sound, Rights::APPEND),
-                  #[cfg(feature = "game-link")] (grants.game_link, Object::GameLink, Rights::READ.with(Rights::APPEND))] {
+                  #[cfg(feature = "game-link")] (grants.game_link, Object::GameLink, Rights::READ.with(Rights::APPEND)),
+                  #[cfg(feature = "guest-ethernet")] (grants.ethernet, Object::Ethernet, Rights::READ.with(Rights::APPEND))] {
             if wanted {
                 caps[object as usize] = self.caps.install(pid, object as u64, rights).ok();
             }

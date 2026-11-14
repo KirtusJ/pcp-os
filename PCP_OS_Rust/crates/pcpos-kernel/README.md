@@ -90,6 +90,8 @@ Multiboot 1 only, as provided by QEMU's `-kernel`. UEFI and other loaders are no
 
 ## Isolated Ethernet transmit probe
 
+The [Surfbird TCP/IP experiment](../../../apps/surfbird/guest/TCP.md) gives one digest-granted ELF a raw packet device on the opt-in `guest-ethernet` kernel. The guest owns the TCP endpoint. The boot-time kernel probes below can be run separately.
+
 A kernel built with the **virtio-tx-probe** feature can send one 60-byte test frame when the loader supplies `test=virtio-tx` and the preceding self-tests pass. Build the two images and run the local replay from this directory:
 
 ```sh

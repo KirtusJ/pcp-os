@@ -1,4 +1,4 @@
-"""Replay Surfbird over a digest-granted QEMU serial cable to a loopback HTTP fixture."""
+"""Replay Surfbird against a loopback HTTP fixture over guest Ethernet or a serial cable."""
 import argparse
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -13,6 +13,7 @@ import tempfile
 import threading
 import time
 from urllib.parse import urlsplit
+from packet_trace import verify as verify_trace
 
 
 def require(condition, message):
@@ -112,15 +113,30 @@ def run_arm(args, work, scenario):
     measure = subprocess.check_output([sys.executable, str(tools / "measure.py"), str(args.kernel)], text=True).strip()
     digest = hashlib.sha256(args.guest.read_bytes()).hexdigest()
     pin = "0" * 64 if scenario == "denied" else digest
+    port = server.server_port
+    refused = None
+    if scenario == "refused":
+        # Reserve a port without a listener. NAT may return RST or drop a SYN.
+        refused = socket.socket()
+        refused.bind(("127.0.0.1", 0))
+        port = refused.getsockname()[1]
     cmd = [args.qemu]
     if args.qemu_data:
         cmd.extend(["-L", str(args.qemu_data)])
     cmd.extend(["-cpu", "max", "-accel", "tcg", "-m", "256M", "-vga", "std", "-display", "none",
-                "-nic", "none", "-no-reboot", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
+                "-no-reboot", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
                 "-audiodev", "none,id=out", "-device", "AC97,audiodev=out",
-                "-serial", "file:serial.log", "-serial", f"tcp:127.0.0.1:{server.server_port}",
-                "-monitor", "stdio", "-kernel", "kernel.elf32", "-initrd", "surf.elf",
-                "-append", f"image={measure} link_image={pin}"])
+                "-serial", "file:serial.log", "-monitor", "stdio", "-kernel", "kernel.elf32"])
+    if args.tcp:
+        # Distinct boot entropy for smoltcp and ephemeral-port selection.
+        (work / "net.cfg").write_bytes(port.to_bytes(2, "big") + secrets.token_bytes(10))
+        cmd.extend(["-netdev", "user,id=fixture,ipv6=off",
+                    "-device", "virtio-net-pci,netdev=fixture,disable-modern=on,vectors=0,mac=02:00:00:00:00:01",
+                    "-object", "filter-dump,id=trace,netdev=fixture,file=guest.pcap",
+                    "-initrd", "surf.elf,net.cfg", "-append", f"image={measure} net_image={pin}"])
+    else:
+        cmd.extend(["-nic", "none", "-serial", f"tcp:127.0.0.1:{server.server_port}",
+                    "-initrd", "surf.elf", "-append", f"image={measure} link_image={pin}"])
     log = work / "serial.log"
 
     with (work / "stderr.log").open("wb") as errors:
@@ -166,11 +182,21 @@ def run_arm(args, work, scenario):
                         wait("SURFBIRD title Bar")
                         wait(f"SURFBIRD text Report {tag} Bar")
                         wait("SURFBIRD ready", 4)
+                        for n in range(args.extra_visits):
+                            key("b")
+                            wait("SURFBIRD ready", 5 + n*2)
+                            key("1")
+                            wait("SURFBIRD ready", 6 + n*2)
                         key("esc")
                         wait("surf.elf ended DONE")
-                        expected = ["/harbour", targets[1], targets[0]]
+                        expected = ["/harbour", targets[1], targets[0]] + [targets[0]]*args.extra_visits
                     elif scenario == "denied":
-                        wait("SURFBIRD error cable grant unavailable")
+                        wait("SURFBIRD error Ethernet grant unavailable" if args.tcp else "SURFBIRD error cable grant unavailable")
+                        expected = []
+                    elif scenario == "refused":
+                        wait("SURFBIRD error TCP connect")
+                        require("SURFBIRD error TCP connection refused" in log.read_text() or
+                                "SURFBIRD error TCP connect timeout" in log.read_text(), "Unexpected connection failure")
                         expected = []
                     else:
                         reason = "unsupported encoding" if scenario == "ambiguous" else "HTTP header syntax"
@@ -180,23 +206,30 @@ def run_arm(args, work, scenario):
                     key("p")
                     require(vm.wait(timeout=10) == 33, "Kernel did not power off normally")
                     require(requests == [(p, "fixture.test") for p in expected], requests)
-                    frames = 4 if scenario == "allowed" else 0
-                    require(f"{frames} frames shown (" in log.read_text(), "Unexpected rendered frame count")
+                    frames = 4 + 2*args.extra_visits if scenario == "allowed" else 0
+                    require(f"; {frames} frames shown (" in log.read_text(), "Unexpected rendered frame count")
                     require("kernel's register of its own start, verification and stop verifies" in log.read_text(), "Register verification missing")
                     if args.hosted and scenario == "allowed":
                         hosted_check(args.hosted, server.server_port, targets, tag)
-                        require(requests[len(expected):] == [(p,f"127.0.0.1:{server.server_port}") for p in expected], requests)
+                        require(requests[len(expected):] == [(p,f"127.0.0.1:{server.server_port}") for p in expected[:3]], requests)
                     if scenario != "allowed":
                         require("SURFBIRD ready" not in log.read_text(), "Unexpected page publication")
                 finally:
                     if vm.poll() is None:
                         vm.kill()
         finally:
+            if refused is not None:
+                refused.close()
             server.shutdown()
             server.server_close()
             worker.join()
+    ethernet = verify_trace(work/"guest.pcap", port, expected, scenario, pages) if args.tcp else None
+    if scenario == "refused":
+        reason = "TCP connection refused" if ethernet["reset"] else "TCP connect timeout"
+        require("SURFBIRD error " + reason in log.read_text(), "guest verdict differs from capture")
     print(json.dumps({"arm": scenario, "kernel_measurement": measure, "guest_sha256": digest,
-                      "fixture_nonce": tag, "http_requests": requests, "serial": str(log)}), flush=True)
+                      "fixture_nonce": tag, "http_requests": requests, "serial": str(log),
+                      "ethernet":ethernet}), flush=True)
 
 
 def main():
@@ -205,11 +238,20 @@ def main():
     parser.add_argument("guest", type=lambda s: Path(s).resolve())
     parser.add_argument("--qemu", default="qemu-system-x86_64")
     parser.add_argument("--qemu-data", type=Path)
+    parser.add_argument("--tcp", action="store_true", help="use a guest-ethernet kernel, TCP-enabled guest and a virtual NIC instead of the COM2 cable")
+    parser.add_argument("--arm", choices=["allowed","denied","ambiguous","space-before-colon","folded","refused"],
+                        help="run one arm and preserve its new logs separately")
+    parser.add_argument("--extra-visits", type=int, default=0,
+                        help="repeat Back and link 1 after the ordinary navigation for ring-reuse testing")
     parser.add_argument("--hosted", type=lambda s: Path(s).resolve(), help="cross-check the same pages with the hosted Surfbird executable")
     parser.add_argument("--output", type=Path, help="parent directory for unique run logs")
     args = parser.parse_args()
     root = Path(tempfile.mkdtemp(prefix="surfbird-", dir=args.output))
-    for scenario in ["allowed", "denied", "ambiguous", "space-before-colon", "folded"]:
+    if args.arm == "refused" and not args.tcp:
+        parser.error("the closed-port arm requires --tcp")
+    if args.extra_visits < 0:
+        parser.error("--extra-visits must be nonnegative")
+    for scenario in ([args.arm] if args.arm else ["allowed", "denied", "ambiguous", "space-before-colon", "folded"] + (["refused"] if args.tcp else [])):
         run_arm(args, root / scenario, scenario)
 
 
