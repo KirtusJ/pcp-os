@@ -253,10 +253,10 @@ pub fn run(programs: &[Start]) -> Option<Vec<Process>> {
     run_table(t).map(|t| t.procs)
 }
 
-/// Load one program the loader handed over and run it until it ends. Returns what the kernel observed of
-/// it, or why it could not be started, and the world as the program left it.
+/// Load one program and call `on_created` once it has a process, before it runs. Return the
+/// observed process or the reason for a refusal or loss, along with the remaining world.
 /// Interrupts must be off when this is called; it returns with them off.
-pub fn run_program(program: &Program, world: World) -> (Result<Process, &'static str>, World) {
+pub fn run_program(program: &Program, world: World, on_created: impl FnOnce()) -> (Result<Process, &'static str>, World) {
     let mut t = new_table(world);
     let mut space = match Space::empty() {
         Some(s) => s,
@@ -274,6 +274,7 @@ pub fn run_program(program: &Program, world: World) -> (Result<Process, &'static
     if t.admit(program.name, space, Frame::user(loaded.entry, loaded.stack), program.grants, program.budget, Some(linux)).is_none() {
         return (Err("the program could not be admitted as a task"), t.world);
     }
+    on_created();
     dev::keys_forget();
     let _ = dev::stop_requested(); // a stop asked for before the program existed is not a stop of it
     match run_table(t) {

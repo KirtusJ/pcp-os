@@ -519,7 +519,7 @@ fn asynchronous(failed: &mut u32) {
                 let t0 = arch::ticks();
                 // `run_program` forgets a stop asked for earlier, so the script is set before it and begins `after` ticks from now.
                 dev::keyboard_script(t0 + after, keys);
-                let (r, _) = user::run_program(&Program { name: label, image: &image, args: &[label], grants, budget: u64::MAX }, world());
+                let (r, _) = user::run_program(&Program { name: label, image: &image, args: &[label], grants, budget: u64::MAX }, world(), || {});
                 (r, arch::ticks() - t0)
             }
             None => (Err("no such test program"), 0),

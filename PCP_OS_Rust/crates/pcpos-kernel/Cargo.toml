@@ -12,6 +12,7 @@ publish = false
 pcpos-core = { path = "../pcpos-core" }
 
 [features]
+test-launch-records = []   # run the launch register regression in a test boot (PCPOS_KERNEL_FEATURES=test-launch-records sh run.sh)
 fault-demo = []            # after the self-tests, fault on purpose to show that an unexpected exception is reported and stops the kernel
 
 overflow-demo = []         # after the self-tests, exhaust the stack on purpose to show that it is reported
