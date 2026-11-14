@@ -70,6 +70,21 @@ fn hook(root: &Path, event: &str, input: &str) -> String {
     out
 }
 
+#[test]
+fn mcp_tool_discovery_fits_its_wire_budget() {
+    let root = dir("discovery");
+    let mut c = pcpos(&root);
+    c.arg("mcp");
+    let (out, code) = feed(c, b"{\"id\":1,\"jsonrpc\":\"2.0\",\"method\":\"tools/list\"}\n");
+    assert_eq!(code, 0);
+    let reply = Value::parse(out.as_bytes()).unwrap();
+    let catalog = reply.get("result").unwrap().get("tools").unwrap();
+    assert!(matches!(catalog, Value::List(tools) if !tools.is_empty()));
+    // Budget the shared catalog, never truncate an individual tool result to meet this limit.
+    let bytes = catalog.canonical_json().len();
+    assert!(bytes <= 7 * 1024, "MCP tool catalog is {bytes} bytes; review the discovery cost before raising the 7 KiB budget");
+}
+
 fn events(root: &Path) -> Vec<Value> {
     ledger::verify(&fs::read(root.join(REG)).unwrap()).unwrap().0
 }
@@ -93,6 +108,66 @@ fn in_use(name: &str) -> PathBuf {
     ]);
     assert!(r.iter().all(|(t, e)| t.starts_with("WRITTEN") && !e), "{r:?}");
     root
+}
+
+#[test]
+fn conditional_status_rechecks_the_register_and_requires_a_full_view_from_this_session() {
+    use std::io::{BufRead, BufReader};
+
+    let root = dir("conditional-status");
+    assert!(!tool(&root, "acr_begin", "{}").1);
+    let path = root.join(REG);
+    let original = fs::read(&path).unwrap();
+    let head = ledger::verify(&original).unwrap().1;
+    fs::copy(&path, root.join("copy.jsonl")).unwrap();
+    let conditional = format!(r#"{{"if_head":"{head}"}}"#);
+
+    let mut child = pcpos(&root).arg("mcp").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+    let mut input = child.stdin.take().unwrap();
+    let mut output = BufReader::new(child.stdout.take().unwrap());
+    let mut request = |method: &str, params: &str| {
+        writeln!(input, r#"{{"jsonrpc":"2.0","id":1,"method":"{method}","params":{params}}}"#).unwrap();
+        input.flush().unwrap();
+        let mut line = String::new();
+        assert!(output.read_line(&mut line).unwrap() > 0);
+        Value::parse(line.as_bytes()).unwrap().get("result").unwrap().clone()
+    };
+    request("initialize", r#"{"protocolVersion":"2025-06-18"}"#);
+    let mut poll = |args: &str| {
+        let result = request("tools/call", &format!(r#"{{"name":"acr_status","arguments":{args}}}"#));
+        let Some(Value::List(content)) = result.get("content") else { panic!("{result:?}"); };
+        (content[0].get("text").unwrap().as_str().unwrap().to_string(), result.get("isError") == Some(&Value::Bool(true)))
+    };
+    let (full, error) = poll(&conditional);
+    assert!(!error && full.lines().next().unwrap().ends_with(&head) && full.contains("ATTENTION"), "{full}");
+    assert_eq!(poll(&conditional), ("UNCHANGED".into(), false));
+    assert_eq!(poll("{}"), (full.clone(), false));
+    assert_eq!(fs::read(&path).unwrap(), original);
+    let (copied, error) = poll(&format!(r#"{{"register":"copy.jsonl","if_head":"{head}"}}"#));
+    assert!(!error && copied.starts_with("REGISTER  copy.jsonl") && copied.contains("ATTENTION"), "{copied}");
+    assert_eq!(poll(&conditional), (full, false), "only the last full view can be reused");
+    for bad in [r#"{"if_head":"1234"}"#.into(), format!(r#"{{"if_head":"{}"}}"#, "F".repeat(64)), r#"{"if_head":null}"#.into()] {
+        assert!(poll(&bad).1, "{bad}");
+    }
+
+    // A separate writer changes the basis under the running server.
+    assert!(tool(&root, "acr_submit", r#"{"kind":"PARTICIPANT_ADDED","body":{"label":"helper","kind":"AUTOMATED","model":"m"}}"#).0.starts_with("WRITTEN"));
+    let bytes = fs::read(&path).unwrap();
+    let next_head = ledger::verify(&bytes).unwrap().1;
+    assert_ne!(head, next_head);
+    let (changed, error) = poll(&conditional);
+    assert!(!error && changed.lines().next().unwrap().ends_with(&next_head) && changed.contains("ATTENTION"), "{changed}");
+    let next = format!(r#"{{"if_head":"{next_head}"}}"#);
+    assert_eq!(poll(&next), ("UNCHANGED".into(), false));
+    assert_eq!(tool(&root, "acr_status", &next), (changed, false), "a fresh server must send the full status");
+    let mut torn = bytes;
+    torn.extend_from_slice(b"unfinished");
+    fs::write(&path, &torn).unwrap();
+    let (text, error) = poll(&next);
+    assert!(error && text.contains("not intact"), "{text}");
+    assert_eq!(fs::read(path).unwrap(), torn);
+    drop(input);
+    assert!(child.wait().unwrap().success());
 }
 
 #[cfg(unix)]
@@ -989,4 +1064,48 @@ fn an_instrument_is_run_by_the_program_and_recorded_as_a_check_it_ran() {
     let k = kinds(&quiet).len();
     let (out, _) = tool(&quiet, "acr_instrument", r#"{"instrument":"engineering.units","input":{"from":"1 in","to":"25.4 mm"}}"#);
     assert!(out.contains("EQUAL to the last digit given") && out.contains("No review is open") && kinds(&quiet).len() == k, "{out}");
+}
+
+#[test]
+fn scoped_event_recipes_return_every_complete_matching_section_without_writing() {
+    let root = dir("event-recipes");
+    let plug = root.join("plug");
+    let path = plug.join("skills/review/events.md");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let first = "## 1. First gate\r\n\r\n`GATE_COMMITTED`\r\n\r\n```json\r\n{\"gate\": \"G1\"}\r\n```\r\n\r\nRègle for G1.\r\n\r\n```text\r\n## 9. Heading inside a note example\r\n```\r\n\r\n";
+    let other = "## 2. Another kind\n\n`GATE_COMMITTED_EXTRA`\n\n```json\n{}\n```\n\n`GATE_COMMITTED` occurs in prose.\n\n";
+    let last = "## 3. Last gate\n\n`GATE_COMMITTED`\n\n```json\n{\"gate\": \"G6\"}\n```\n\nRetain this final note.\n\n";
+    let tail = "## Values the guards accept\n\nGeneral guidance.\n";
+    let cookbook = format!("# Events\n\n{first}{other}{last}{tail}");
+    let call = |args: &str| {
+        let mut c = pcpos(&root);
+        c.env("CLAUDE_PLUGIN_ROOT", &plug).arg("mcp");
+        let req = format!(r#"{{"id":1,"jsonrpc":"2.0","method":"tools/call","params":{{"name":"acr_events","arguments":{args}}}}}"#);
+        let (out, code) = feed(c, format!("{req}\n").as_bytes());
+        assert_eq!(code, 0);
+        let v = Value::parse(out.trim().as_bytes()).unwrap();
+        let r = v.get("result").unwrap();
+        let Some(Value::List(content)) = r.get("content") else { panic!("{out}") };
+        (content[0].get("text").unwrap().as_str().unwrap().to_owned(), r.get("isError") == Some(&Value::Bool(true)))
+    };
+    fs::write(&path, &cookbook).unwrap();
+    let args = r#"{"kind":"GATE_COMMITTED"}"#;
+    let (selected, err) = call(args);
+    assert!(!err && selected.contains(&sha256_hex(cookbook.as_bytes())) && selected.contains("2 recipe(s)"), "{selected}");
+    assert_eq!(selected.split_once("\n\n").unwrap().1, format!("{first}{last}"));
+    let (full, err) = call("{}");
+    assert!(!err && full.ends_with(&cookbook), "{full}");
+    for bad in [r#"{"kind":null}"#, r#"{"kind":7}"#, r#"{"kind":""}"#, r#"{"kind":"gate_committed"}"#, r#"{"kind":"GATE"}"#] {
+        let (result, err) = call(bad);
+        assert!(err && !result.contains(first), "{bad}: {result}");
+    }
+    for broken in [last.replace("```json", "```text"), last.replace("{\"gate\": \"G6\"}", "{oops}"), last.replace("\n```\n", "\n"), last.replace("3. Last", "3 Last")] {
+        fs::write(&path, format!("{first}{broken}{tail}")).unwrap();
+        let (result, err) = call(args);
+        assert!(err && !result.contains(first), "incomplete guide returned a partial set: {result}");
+    }
+    fs::write(&path, format!("{first}{last}{}\n{tail}", "x".repeat(80_000))).unwrap();
+    let (result, err) = call(args);
+    assert!(err && result.contains("exceed") && !result.contains(first), "truncated examples must not be presented as complete");
+    assert!(!root.join(REG).exists());
 }

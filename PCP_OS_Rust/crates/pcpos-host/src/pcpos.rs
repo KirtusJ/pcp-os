@@ -556,10 +556,14 @@ fn attention(o: &Opened) -> Vec<(&'static str, String, &'static str)> {
     a
 }
 
-fn status(label: &str, o: &Opened) -> String {
+fn status(label: &str, o: &Opened, full_head: bool) -> String {
     let mut s = String::new();
     let st = &o.state;
-    let _ = writeln!(s, "REGISTER  {}  |  {} events  |  head {} (prefix; verify prints it in full)", label, o.events.len(), &o.head[..16]);
+    if full_head {
+        let _ = writeln!(s, "REGISTER  {}  |  {} events  |  head {}", label, o.events.len(), o.head);
+    } else {
+        let _ = writeln!(s, "REGISTER  {}  |  {} events  |  head {} (prefix; verify prints it in full)", label, o.events.len(), &o.head[..16]);
+    }
     let std = st.standard();
     let _ = writeln!(s, "SYSTEM    {}   USE {}   LINK {}{}", st.system().map(|x| x.name()).unwrap_or("not recorded (kept on another system)"), st.in_use().name(),
                      st.link().name(), if st.link() == Link::Offline { " (nothing new can be retrieved)" } else { "" });
@@ -1104,6 +1108,68 @@ fn clip_long(text: &str, chars: usize) -> String {
     if text.chars().count() <= chars { text.to_string() } else { format!("{}\n[cut at {chars} characters]", text.chars().take(chars).collect::<String>()) }
 }
 
+/// Select complete numbered recipes from the existing packaged events.md. Keep every example of the
+/// requested kind, including its notes. General guidance lives under unnumbered headings.
+fn event_recipes<'a>(text: &'a str, kind: &str) -> Result<Vec<&'a str>, String> {
+    if kind.is_empty() || kind.len() > 64 || !kind.bytes().all(|c| c.is_ascii_uppercase() || c == b'_') {
+        return Err("kind must be an exact uppercase event name such as GATE_COMMITTED".into());
+    }
+    let malformed = "events.md has an incomplete or unrecognized recipe; call acr_events without kind to inspect the guide";
+    let mut headings = Vec::new();
+    let mut fenced = false;
+    let mut offset = 0;
+    for line in text.split_inclusive('\n') {
+        if line.starts_with("```") {
+            fenced = !fenced;
+        } else if !fenced && (line.starts_with("# ") || line.starts_with("## ")) {
+            headings.push(offset);
+        }
+        offset += line.len();
+    }
+    if fenced {
+        return Err(malformed.into());
+    }
+    headings.push(text.len());
+    let mut selected = Vec::new();
+    let mut size = 0;
+    for bounds in headings.windows(2) {
+        let section = &text[bounds[0]..bounds[1]];
+        let mut lines = section.lines();
+        let Some(heading) = lines.next().and_then(|line| line.strip_prefix("## ")) else { continue };
+        let numbered = heading.split_once(". ").is_some_and(|(n, title)| !n.is_empty() && n.bytes().all(|c| c.is_ascii_digit()) && !title.trim().is_empty());
+        if !numbered {
+            if heading.starts_with(|c: char| c.is_ascii_digit()) {
+                return Err(malformed.into());
+            }
+            continue;
+        }
+        let label = lines.find(|l| !l.is_empty()).and_then(|l| l.strip_prefix('`')).and_then(|l| l.strip_suffix('`')).ok_or(malformed)?;
+        if label.is_empty() || !label.bytes().all(|c| c.is_ascii_uppercase() || c == b'_') {
+            return Err(malformed.into());
+        }
+        if label != kind {
+            continue;
+        }
+        size += section.len();
+        if size > 80_000 {
+            return Err("complete recipes exceed 80000 bytes; consult skills/review/events.md in the package".into());
+        }
+        if lines.find(|l| !l.is_empty()) != Some("```json") {
+            return Err(malformed.into());
+        }
+        let body_lines = lines.clone().position(|line| line == "```").ok_or(malformed)?;
+        let body = lines.take(body_lines).collect::<Vec<_>>().join("\n");
+        if !matches!(Value::parse(body.as_bytes()), Ok(Value::Map(_))) {
+            return Err(malformed.into());
+        }
+        selected.push(section);
+    }
+    if selected.is_empty() {
+        return Err(format!("events.md has no numbered recipe for {kind}; call acr_events without kind for the full guide"));
+    }
+    Ok(selected)
+}
+
 /// A commission names its modules by identifier, version and digest. Where the method text is at hand,
 /// each must be a specialist module found there, with that version and that digest, once.
 fn commission_modules(se: &Session, body: &Value) -> Result<(), String> {
@@ -1414,37 +1480,39 @@ fn tools() -> Value {
         obj(vec![("type", s("object")), ("properties", Value::Map(props.into_iter().map(|(k, t, d)| (k.to_string(), obj(vec![("type", s(t)), ("description", s(d))]))).collect())),
                  ("required", Value::List(required.into_iter().map(s).collect()))])
     };
-    let reg = ("register", "string", "Optional. Path of the register, relative to the served directory. Omit it to use the session's register.");
+    let reg = ("register", "string", "Path under served directory. Defaults to session register.");
     let tool = |name: &str, d: &str, sc: Value| obj(vec![("name", s(name)), ("description", s(d)), ("inputSchema", sc)]);
     Value::List(vec![
-        tool("acr_status", "What the record says now: system, ACR use, standard, what needs a response, reviews, tasks, and what a halt would stop. Read this instead of recalling state.", schema(vec![reg], vec![])),
-        tool("acr_verify", "Check the register's hash chain and replay every guard. Reports the full head digest and any recorded event the guards would refuse.", schema(vec![reg], vec![])),
-        tool("acr_begin", "Begin the session's register if there is none, and register this session's participant. Changes nothing if both are already done. It does not put ACR in use.", schema(vec![reg], vec![])),
-        tool("acr_adopt", "Record that the person directing the work asked for ACR in their own words. basis is their whole last message, copied exactly and unchanged. The adoption is recorded as relayed by you. If the host kept that exact message, the record carries its digest; if not, the status asks the person to confirm. Only a command the person types is recorded as the person's own act.",
-             schema(vec![reg, ("basis", "string", "The person's whole last message, unchanged")], vec!["basis"])),
-        tool("acr_halt", "Stop ACR use now, on the person's instruction or for your own part. Closes open reviews as incomplete and asks their tasks to stop. Never refused for the state of the work.",
-             schema(vec![reg, ("words", "string", "Optional. The instruction to stop, in its original words")], vec![])),
-        tool("acr_offer", "Ask the guards what they would answer to an event, without writing it: ACCEPT with the exact body that would be written, or REFUSE with the clause.",
-             schema(vec![reg, ("kind", "string", "Event kind, e.g. FINDING_RECORDED"), ("body", "object", "The event body")], vec!["kind", "body"])),
-        tool("acr_submit", "Offer an event as this session's participant and, if the guards accept it, append it. The actor is fixed by the server; it is not an argument. With expected_head, the event is written only if the register's head is still that digest.",
-             schema(vec![reg, ("kind", "string", "Event kind"), ("body", "object", "The event body"), ("expected_head", "string", "Optional. The full head digest the caller last saw")], vec!["kind", "body"])),
-        tool("acr_modules", "The modules found in the method text at hand, each with its identifier, version and the digest of its Specification, and the modules this workspace's reviews use as the record has them. Use it to fill 'modules' when commissioning a review. It selects nothing.", schema(vec![reg], vec![])),
-        tool("acr_clause", "The exact text of one provision of a module's Specification, read from the method text at hand: a numbered section (15.2), a numbered requirement (4.5) or an appendix (Appendix A). Without a section, the module's headings. Use it instead of recalling a rule. It does not put ACR in use.",
-             schema(vec![("module", "string", "core, mathematics, science, engineering, cryptography, statistics, quality_assurance, or another module found by acr_modules"), ("section", "string", "Optional. The provision's number")], vec!["module"])),
-        tool("acr_artifact", "Have the server compute the SHA-256 and size of material itself and record it as an artifact, so that the digest is the server's observation, not your report. Give path for a file under the served directory, which the server reads. Give text for words that exist only in the conversation, such as a claim the person typed: pass them exactly, the server keeps those bytes beside the register and records their digest; no file tool and no shell is needed. Give exactly one of path and text. origin is SUPPLIED (default) for material you were given or PRODUCED for something this work made. With record false, nothing is written and the digest is returned.",
-             schema(vec![reg, ("path", "string", "A file, relative to the served directory"), ("text", "string", "Words given in the conversation, exactly as given, when there is no file"), ("origin", "string", "SUPPLIED or PRODUCED"), ("name", "string", "Optional. A label for the artifact"), ("record", "boolean", "Optional. false: compute and return the digest, write nothing")], vec![])),
-        tool("acr_check", "Record a check on what the host itself saw. First run the command with the shell tool; then call this with exactly the same command text. The server finds the host's own observation of that command (its exit status and the digests of its output) and records the check as HOST_OBSERVED_TOOL. If the host saw no such command, nothing is recorded: a command you could not run is not a check, and the claim that needed it is UNRESOLVED (Core 5.1). Whether the command tests the claim's criterion remains your assessment.",
-             schema(vec![reg, ("command", "string", "The command, exactly as it was given to the shell tool"), ("expect_exit", "integer", "Optional. The exit status that would mean the expectation was met; 0 if omitted"), ("name", "string", "Optional. A label for the check")], vec!["command"])),
-        tool("acr_instrument", "Have this program compute something itself, with no shell: an exact calculation, an arithmetic test of a reported statistic, an exact unit conversion, a digest, or a reading of the register. Each instrument belongs to a module of the method and computes exactly one property (the Instruments section of that module's Specification says which, and what the result does not establish). With a review open the result is recorded as a check this program ran, which a finding may cite; say why the property computed is the criterion in question, because the program cannot know that. Call it with instrument \"list\" to see what is offered.",
-             schema(vec![reg, ("instrument", "string", "mathematics.exact, mathematics.statement, statistics.grim, statistics.percent, engineering.units, cryptography.digest, science.order, quality.coverage, core.calibration, or list"), ("input", "object", "The instrument's input, for example {\"expression\": \"sum(k, 1, 100, k) = 5500\"}"), ("name", "string", "Optional. A label for the check"), ("record", "boolean", "Optional. false computes and writes nothing")], vec!["instrument"])),
-        tool("acr_kernel", "The method's kernel text, whole: the operating floor and the findings table, copied without change from the Core Specification, with the SHA-256 of the file. Read it before the first step of a review, and again after your context is reset. This needs no file tool. It does not put ACR in use.", schema(vec![], vec![])),
-        tool("acr_events", "The exact body of every event a review writes, in the order a review uses them; each was accepted by the guards when the package was built. Read it before your first acr_submit. This needs no file tool. It does not put ACR in use.", schema(vec![], vec![])),
-        tool("acr_machine", "The whole table of one state machine (SYSTEM, USE, REVIEW, OBJECTION, OBLIGATION, TASK, DELIVERY, LINK): for each state and event, what follows or '-' if not accepted.",
-             schema(vec![("name", "string", "Machine name")], vec!["name"])),
+        tool("acr_status", "Read register state, attention, reviews, tasks and halt scope. Omit if_head after context reset.",
+             schema(vec![reg, ("if_head", "string", "Full lowercase digest of the last full status you still hold. A match may return UNCHANGED.")], vec![])),
+        tool("acr_verify", "Check the hash chain and replay all guards. Report the full head, total replay problems and up to 20 details.", schema(vec![reg], vec![])),
+        tool("acr_begin", "Create the register and add this participant as needed. Does not adopt ACR.", schema(vec![reg], vec![])),
+        tool("acr_adopt", "Relay the person's request for ACR. An exact host match records the prompt digest, otherwise confirmation is pending. Only their typed command records direct adoption.",
+             schema(vec![reg, ("basis", "string", "Person's whole last message, verbatim")], vec!["basis"])),
+        tool("acr_halt", "Halt ACR immediately at the person's direction or for yourself, regardless of review state. Close open reviews incomplete and request task stops. Termination needs confirmation.",
+             schema(vec![reg, ("words", "string", "Original halt instruction")], vec![])),
+        tool("acr_offer", "Preview the guard decision without writing. ACCEPT gives the exact body, REFUSE the reason and any clause.",
+             schema(vec![reg, ("kind", "string", "Event kind"), ("body", "object", "Event body")], vec!["kind", "body"])),
+        tool("acr_submit", "Append a guard-accepted event as the server-fixed session actor. A supplied expected_head must match.",
+             schema(vec![reg, ("kind", "string", "Event kind"), ("body", "object", "Event body"), ("expected_head", "string", "Full head digest last read")], vec!["kind", "body"])),
+        tool("acr_modules", "Discover module IDs, versions and Specification digests plus the workspace's recorded selection. Use for commissioning. Listing selects nothing.", schema(vec![reg], vec![])),
+        tool("acr_clause", "Read an exact Specification provision, or list headings. Does not adopt ACR.",
+             schema(vec![("module", "string", "Module key from acr_modules, e.g. core"), ("section", "string", "Section or requirement number, or Appendix A")], vec!["module"])),
+        tool("acr_artifact", "Server computes SHA-256 and size from exactly one of path or text. Recording text keeps its exact bytes beside the register.",
+             schema(vec![reg, ("path", "string", "File under served directory"), ("text", "string", "Verbatim conversation text"), ("origin", "string", "SUPPLIED (default) or PRODUCED"), ("name", "string", "Artifact label"), ("record", "boolean", "False returns digest and size without writing")], vec![])),
+        tool("acr_check", "Run the shell command during the review first. Record its host-observed exit and output digests. Without a matching observation there is no check and a dependent claim stays UNRESOLVED. Assess whether the command tests the criterion.",
+             schema(vec![reg, ("command", "string", "Exact shell tool command text"), ("expect_exit", "integer", "Expected exit status (default 0)"), ("name", "string", "Check label")], vec!["command"])),
+        tool("acr_instrument", "Host computes one property without a shell. See the module's Instruments section for limits. An open review can record the result as a check. Explain how it tests the criterion.",
+             schema(vec![reg, ("instrument", "string", "Use list to discover instrument names"), ("input", "object", "Instrument arguments"), ("name", "string", "Check label"), ("record", "boolean", "False computes without writing")], vec!["instrument"])),
+        tool("acr_kernel", "Read the full method kernel and SHA-256 before the first review step and after context reset. Includes the operating floor and findings table. Does not adopt ACR.", schema(vec![], vec![])),
+        tool("acr_events", "Look up examples before submitting an unfamiliar event kind. Omit kind for the full guide in review order. Does not adopt ACR.",
+             schema(vec![("kind", "string", "Exact uppercase event kind")], vec![])),
+        tool("acr_machine", "Read all state/event transitions. A dash means refused.",
+             schema(vec![("name", "string", "SYSTEM, USE, REVIEW, OBJECTION, OBLIGATION, TASK, DELIVERY or LINK")], vec!["name"])),
     ])
 }
 
-fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
+fn call(se: &Session, name: &str, args: &Value, last_status: &mut Option<(String, String)>) -> Result<String, String> {
     let arg = |k: &str| args.get(k).and_then(Value::as_str).ok_or(format!("argument {k} is required and is text"));
     let text_arg = |k: &str| match args.get(k) {
         None | Some(Value::Null) => Ok(None),
@@ -1469,8 +1537,16 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
         "acr_events" => {
             let dir = se.plugin.as_deref().ok_or("this program was not started from a packaged folder, so it has no list of event bodies; acr_offer answers what the guards would accept")?;
             let raw = fs::read(dir.join("skills").join("review").join("events.md")).map_err(|e| format!("the list of event bodies cannot be read: {e}. acr_offer answers what the guards would accept"))?;
-            let text = String::from_utf8(raw.clone()).map_err(|_| "the list of event bodies is not UTF-8".to_string())?;
-            Ok(format!("events.md | SHA-256 {} | {} bytes\n\n{}", sha256_hex(&raw), raw.len(), clip_long(&text, 80_000)))
+            let text = std::str::from_utf8(&raw).map_err(|_| "the list of event bodies is not UTF-8")?;
+            match args.get("kind") {
+                None => Ok(format!("events.md | SHA-256 {} | {} bytes\n\n{}", sha256_hex(&raw), raw.len(), clip_long(text, 80_000))),
+                Some(Value::Str(kind)) => {
+                    let recipes = event_recipes(text, kind)?;
+                    Ok(format!("Full events.md SHA-256 {} | {} recipe(s) for {kind}. Use your own values. Omit kind for the sequence, shared rules and guard refusals.\n\n{}",
+                               sha256_hex(&raw), recipes.len(), recipes.concat()))
+                }
+                Some(_) => Err("argument kind must be a string".into()),
+            }
         }
         "acr_modules" => Ok(modules_text(se, open(&se.root, &reg)?.as_ref())),
         "acr_clause" => clause_text(se, arg("module")?, text_arg("section")?),
@@ -1667,7 +1743,21 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
                 }
             }
         }
-        "acr_status" => Ok(status(&reg, &open(&se.root, &reg)?.ok_or_else(none)?)),
+        "acr_status" => {
+            let if_head = match args.get("if_head") {
+                None => None,
+                Some(Value::Str(head)) if head.len() == 64 && head.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) => Some(head.as_str()),
+                Some(_) => return Err("if_head must be a full lowercase SHA-256 digest".to_string()),
+            };
+            // Always lock, verify and replay the current bytes before comparing the client's basis.
+            let o = open(&se.root, &reg)?.ok_or_else(none)?;
+            if if_head == Some(o.head.as_str()) && last_status.as_ref().is_some_and(|(label, head)| label == &reg && head == &o.head) {
+                return Ok("UNCHANGED".to_string());
+            }
+            let full = status(&reg, &o, true);
+            *last_status = Some((reg, o.head));
+            Ok(full)
+        }
         "acr_verify" => Ok(verify_text(&open(&se.root, &reg)?.ok_or_else(none)?, 20)),
         "acr_begin" => {
             let mut tx = Tx::begin(&se.root, &reg, true)?.ok_or("the register could not be created")?;
@@ -1777,6 +1867,7 @@ fn serve(se: &Session) {
     let mut input = stdin.lock();
     let mut out = std::io::stdout();
     let empty = Value::Map(BTreeMap::new());
+    let mut last_status = None;
     let error = |id: Value, code: i64, m: &str| obj(vec![("jsonrpc", s("2.0")), ("id", id), ("error", obj(vec![("code", Value::Int(code)), ("message", s(m))]))]);
     let mut line: Vec<u8> = Vec::new();
     loop {
@@ -1812,12 +1903,7 @@ fn serve(se: &Session) {
                 Some(id) => error(id, -32600, "the message holds a fraction, an exponent or a repeated key; this server accepts whole numbers and distinct keys only"),
                 None => error(Value::Null, -32700, "the message is not JSON this server accepts"),
             }),
-            Ok(Value::Map(_)) => None,
-            Ok(_) => Some(error(Value::Null, -32600, "one message is one JSON object; batches are not accepted")),
-        };
-        let reply = match (reply, Value::parse(&line)) {
-            (Some(r), _) => Some(r),
-            (None, Ok(msg)) => {
+            Ok(msg @ Value::Map(_)) => {
                 let id = msg.get("id").cloned();
                 let method = msg.get("method").and_then(Value::as_str).unwrap_or("");
                 let params = msg.get("params").unwrap_or(&empty);
@@ -1834,7 +1920,7 @@ fn serve(se: &Session) {
                     "tools/call" => {
                         let name = params.get("name").and_then(Value::as_str).unwrap_or("");
                         let args = params.get("arguments").unwrap_or(&empty);
-                        match call(se, name, args) {
+                        match call(se, name, args, &mut last_status) {
                             Err(e) if e.starts_with(NO_TOOL) => Some(Err((-32602, e))),
                             r => {
                                 let (text, is_error) = match r {
@@ -1853,7 +1939,7 @@ fn serve(se: &Session) {
                     _ => None,
                 }
             }
-            (None, Err(_)) => None,
+            Ok(_) => Some(error(Value::Null, -32600, "one message is one JSON object; batches are not accepted")),
         };
         if let Some(r) = reply {
             let mut bytes = r.canonical_json();
@@ -2602,7 +2688,7 @@ fn main() {
                 Ok(o) => {
                     if cmd == "status" {
                         let colour = std::io::stdout().is_terminal() && env::var_os("NO_COLOR").map(|v| v.is_empty()).unwrap_or(true) && env::var("TERM").map(|t| t != "dumb").unwrap_or(true);
-                        print!("{}{}", banner(&o, colour), status(&args[1], &o));
+                        print!("{}{}", banner(&o, colour), status(&args[1], &o, false));
                     } else {
                         print!("{}", verify_text(&o, usize::MAX));
                         let n = attention(&o).len();
