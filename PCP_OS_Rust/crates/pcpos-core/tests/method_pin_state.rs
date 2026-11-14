@@ -43,4 +43,14 @@ fn method_verified_flag_follows_latest_pin_and_survives_replay() {
     let (reopened, problems) = Record::open(replayed.ledger().bytes()).expect("reopen new method pin");
     assert!(problems.is_empty());
     assert!(!reopened.state().method_verified_at_pin());
+
+    // Tx can reuse a previously checked state and only apply the appended
+    // suffix. That incremental path must not retain a stale verified flag.
+    let (mut incremental, problems) = Record::open(&copied).expect("start at verified prefix");
+    assert!(problems.is_empty());
+    let suffix = &replayed.ledger().bytes()[copied.len()..];
+    let new_problems = incremental.extend(suffix).expect("extend from verified head");
+    assert!(new_problems.is_empty());
+    assert!(incremental.state().method_pinned());
+    assert!(!incremental.state().method_verified_at_pin());
 }
