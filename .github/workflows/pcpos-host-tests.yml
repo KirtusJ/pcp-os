@@ -34,3 +34,22 @@ jobs:
         run: cargo test --locked --workspace
       - name: Compile release host binary
         run: cargo build --locked --release --bin pcpos
+      - name: Checkout pinned build 22 Commercial method (checkout-byte repair)
+        uses: actions/checkout@v4
+        with:
+          repository: KirtusJ/pcp-os-claude
+          ref: 2197e6f12e24af8651abdeceb93c17f0e19b9ec6
+          path: released-plugin
+          persist-credentials: false
+      - name: Checkout pinned independent method-inventory regression
+        uses: actions/checkout@v4
+        with:
+          repository: KirtusJ/pcp-os-claude
+          ref: e06d58ecd384e13c0257b58c130804615728bc38
+          path: regression-tests
+          persist-credentials: false
+      - name: Check rebuilt host against real plugin method and mutations
+        run: |
+          python3 "$GITHUB_WORKSPACE/regression-tests/tests/method_inventory_regression.py" \
+            --binary "$GITHUB_WORKSPACE/PCP_OS_Rust/target/release/pcpos" \
+            --method "$GITHUB_WORKSPACE/released-plugin/method"
