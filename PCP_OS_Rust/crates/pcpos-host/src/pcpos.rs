@@ -28,7 +28,7 @@ use pcpos_core::authority::{Edition, Method, ModelFindings, Standard};
 use pcpos_core::machine::{self, Delivery, Link, Review, System, Use};
 use pcpos_core::value::Value;
 use pcpos_core::{ledger, sha256_hex};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io::{BufRead, IsTerminal, Read, Seek, SeekFrom, Write};
@@ -206,6 +206,8 @@ mod lenient {
 const O_NOFOLLOW: i32 = 0o100000;
 #[cfg(all(target_os = "linux", not(any(target_arch = "aarch64", target_arch = "arm"))))]
 const O_NOFOLLOW: i32 = 0o400000;
+#[cfg(target_os = "linux")]
+const O_NONBLOCK: i32 = 0o4000;
 #[cfg(any(target_os = "macos", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]
 const O_NOFOLLOW: i32 = 0x0100;
 #[cfg(all(unix, not(any(target_os = "linux", target_os = "macos", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))))]
@@ -860,6 +862,8 @@ struct MethodCheck {
     /// Files absent that are not among the packet's programs and probes.
     absent_text: usize,
     differing: Vec<String>,
+    /// Entries present in the tree but not named by the release manifest.
+    unexpected: Vec<String>,
 }
 
 impl MethodCheck {
@@ -868,14 +872,20 @@ impl MethodCheck {
     }
 
     fn complete(&self) -> bool {
-        self.is_native() && self.differing.is_empty() && self.absent_text == 0 && self.equal > 0
+        self.is_native() && self.differing.is_empty() && self.unexpected.is_empty()
+            && self.absent_text == 0 && self.equal > 0
     }
 
     fn text(&self) -> String {
-        format!("manifest {} ({} the release this core implements); {} file(s) listed: {} present and equal, {} absent{}, {} differing{}",
+        format!("manifest {} ({} the release this core implements); {} file(s) listed: {} present and equal, {} absent{}, {} differing{}; {} unlisted entries{}",
                 self.fingerprint, if self.is_native() { "is" } else { "IS NOT" }, self.listed, self.equal, self.absent,
-                if self.absent > 0 && self.absent_text == 0 { " (all of them the packet's programs and probes, which a plugin does not carry)" } else { "" }, self.differing.len(),
-                if self.differing.is_empty() { String::new() } else { format!(" [{}]", self.differing.join(" ")) })
+                if self.absent > 0 && self.absent_text == 0 { " (all of them the packet's programs and probes, which a plugin does not carry)" } else { "" },
+                self.differing.len(),
+                if self.differing.is_empty() { String::new() } else { format!(" [{}]", self.differing.join(" ")) },
+                self.unexpected.len(),
+                if self.unexpected.is_empty() { String::new() } else {
+                    format!(" [{}]", self.unexpected.iter().take(8).map(|p| format!("{p:?}")).collect::<Vec<_>>().join(" "))
+                })
     }
 }
 
@@ -2530,7 +2540,7 @@ fn main() {
         Some("method") if args.len() == 2 => match method_check(Path::new(&args[1])) {
             Ok(c) => {
                 println!("{}", c.text());
-                exit(if c.complete() { 0 } else if c.is_native() && c.differing.is_empty() { 1 } else { 6 })
+                exit(if c.complete() { 0 } else if c.is_native() && c.differing.is_empty() && c.unexpected.is_empty() { 1 } else { 6 })
             }
             Err(e) => {
                 eprintln!("pcpos: {e}");
