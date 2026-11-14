@@ -2347,19 +2347,34 @@ fn module_command(args: &[String]) -> Result<i32, String> {
             if core.as_deref().map(|c| c != acr::CORE_DESCRIPTOR).unwrap_or(false) {
                 return Err(format!("{id} says it was written for another Core than this program implements ({})", acr::CORE_DESCRIPTOR));
             }
-            if modules_in(&se).iter().any(|m| m.key == key) || modules_and_oddities(&se).1.iter().any(|o| o.contains(&format!(".{key} ")) || o.contains(&format!(".{key};"))) {
-                return Err(format!("{key} is already the name of a module here. Remove it first (pcpos module remove), or give the new one its own identifier"));
-            }
+            // The name check and publication are one critical section: without
+            // the register lock, two installers can both see an unused name and
+            // append distinct, individually valid MODULE_ADDED events.
             let mut tx = Tx::begin(&se.root, &name, true)?.ok_or("the register could not be created")?;
             if !tx.problems.is_empty() {
                 return Err("the register does not verify; nothing was added".to_string());
             }
-            begin(&mut tx, &se, None, false)?;
-            let dest = home.join(&key).join("SOURCE");
+            if modules_in(&se).iter().any(|m| m.key == key)
+                || modules_and_oddities(&se).1.iter().any(|o| o.contains(&format!(".{key} ")) || o.contains(&format!(".{key};"))) {
+                return Err(format!("{key} is already the name of a module here. Remove it first (pcpos module remove), or give the new one its own identifier"));
+            }
+            let slot = home.join(&key);
+            let dest = slot.join("SOURCE");
             if fs::symlink_metadata(&home).map(|m| m.file_type().is_symlink()).unwrap_or(false) {
                 return Err("the modules folder beside the register is a link; nothing was added".to_string());
             }
-            fs::create_dir_all(&dest).and_then(|_| fs::write(dest.join("Specification.md"), &bytes)).map_err(|e| format!("the module could not be stored: {e}"))?;
+            // create_dir refuses an existing directory *or symlink*, including
+            // a malformed module occupying a path not returned by discovery.
+            // This is an exclusive slot claim, not a transactional filesystem
+            // commit and not protection against same-user parent swaps.
+            fs::create_dir_all(&home).and_then(|_| fs::create_dir(&slot))
+                .and_then(|_| fs::create_dir(&dest))
+                .map_err(|e| format!("the module path is not a new directory: {e}"))?;
+            let mut spec = OpenOptions::new().write(true).create_new(true)
+                .open(dest.join("Specification.md"))
+                .map_err(|e| format!("the module Specification could not be created exclusively: {e}"))?;
+            spec.write_all(&bytes).and_then(|_| spec.sync_all())
+                .map_err(|e| format!("the module Specification could not be stored: {e}"))?;
             if let Some(over) = file.parent().map(|p| p.join("Overview.md")).filter(|p| p.is_file() && fs::metadata(p).map(|m| m.len() <= MAX_SPECIFICATION).unwrap_or(false)) {
                 let _ = fs::copy(over, dest.join("Overview.md"));
             }
