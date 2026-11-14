@@ -53,3 +53,10 @@ jobs:
           python3 "$GITHUB_WORKSPACE/regression-tests/tests/method_inventory_regression.py" \
             --binary "$GITHUB_WORKSPACE/PCP_OS_Rust/target/release/pcpos" \
             --method "$GITHUB_WORKSPACE/released-plugin/method"
+
+      - name: Refuse unlisted modules after a verified method loses its manifest
+        run: |
+          python3 "$GITHUB_WORKSPACE/audit/build22-method-pinning/method_pin_manifest_removal.py" \
+            --pcpos "$GITHUB_WORKSPACE/PCP_OS_Rust/target/release/pcpos" \
+            --method "$GITHUB_WORKSPACE/released-plugin/method" \
+            --expect-fixed
