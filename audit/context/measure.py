@@ -4,8 +4,10 @@ Usage: python3 audit/context/measure.py OLD_PCPOS NEW_PCPOS BUILT_PLUGIN [--toke
 
 The default register is the published scenario vector. Both programs read the
 same private copy and use the same packaged events.md. Counts cover UTF-8 tool
-result text or compact, key-sorted tools/list schema JSON. A separate poll row
-adds encoded argument JSON and result text as independent fields. All rows omit
+result text or compact, key-sorted tools/list schema JSON. Poll and transition rows
+count argument JSON and result text as independent fields. Transition lookup is
+measured only when the candidate advertises both selectors. The discovery
+comparison adds one full catalog to one lookup in each arm. All rows omit
 protocol wrappers, prompt caching, and other provider-side costs.
 The crossover uses first-use order in the cookbook and one call per distinct kind.
 --tokens adds the o200k_base and cl100k_base counts from an installed tiktoken
@@ -22,6 +24,8 @@ import subprocess
 import tempfile
 
 
+TASK_TABLE = {"name": "TASK"}
+TASK_ROW = {**TASK_TABLE, "state": "RUNNING", "event": "STOP_REQUEST"}
 RECIPE_HEADING = re.compile(r"^## [0-9]+\. [^\r\n]+\r?\n\r?\n`([A-Z_]+)`\r?$", re.M)
 
 
@@ -29,8 +33,8 @@ def canonical(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
-def call(name, **arguments):
-    return "tools/call", {"name": name, "arguments": arguments}
+def call(tool, **arguments):
+    return "tools/call", {"name": tool, "arguments": arguments}
 
 
 def session(binary, requests, env, root):
@@ -88,6 +92,15 @@ def measure(args):
             raise ValueError("baseline did not return a valid stable register with zero replay problems")
         new_tools, new_guide, new_status, new_poll, *recipes = session(args.candidate.resolve(), [
             *shared, call("acr_status", if_head=head[1]), *(call("acr_events", kind=k) for k in kinds)], env, root)
+        transition = None
+        machine = next((t for t in json.loads(new_tools) if t["name"] == "acr_machine"), {})
+        if {"state", "event"} <= machine.get("inputSchema", {}).get("properties", {}).keys():
+            table_call = call("acr_machine", **TASK_TABLE)
+            old_table, = session(args.baseline.resolve(), [table_call], env, root)
+            new_table, row = session(args.candidate.resolve(), [table_call, call("acr_machine", **TASK_ROW)], env, root)
+            if new_table != old_table or row != "TASK\tRUNNING\tSTOP_REQUEST\tSTOPPING\n" or row not in old_table.splitlines(keepends=True):
+                raise ValueError("machine lookup differs from the published TASK transition or the tables differ")
+            transition = (old_table, row)
         if path.read_bytes() != register:
             raise ValueError("the register copy changed during context measurement")
     if old_guide != new_guide or old_guide.partition("\n\n")[2] != guide or hashlib.sha256(guide_bytes).hexdigest() not in old_guide.partition("\n")[0]:
@@ -98,7 +111,7 @@ def measure(args):
         if RECIPE_HEADING.findall(recipe) != [kind] * kind_sequence.count(kind):
             raise ValueError(f"candidate returned an incomplete or overbroad result for {kind}")
     return [("tools/list", old_tools, new_tools), ("acr_events full", old_guide, new_guide),
-            ("acr_status full", old_status, new_status), ("acr_status repeat", old_poll, new_poll)], kinds, recipes, head[1]
+            ("acr_status full", old_status, new_status), ("acr_status repeat", old_poll, new_poll)], kinds, recipes, head[1], transition
 
 
 def counters(tokens):
@@ -124,7 +137,7 @@ def main():
     args = parser.parse_args()
     try:
         measures = counters(args.tokens)
-        rows, kinds, recipes, head = measure(args)
+        rows, kinds, recipes, head, transition = measure(args)
     except (OSError, ValueError, ImportError, subprocess.SubprocessError) as error:
         parser.exit(1, f"measure: {error}\n")
     print("payload", *(f"{build}_{unit}" for unit in measures for build in ("baseline", "candidate")), sep="\t")
@@ -134,6 +147,17 @@ def main():
     _, old_poll, new_poll = rows[-1]
     print("acr_status repeat incl. arguments", *(count(params) + count(payload) for count in measures.values()
           for params, payload in [("{}", old_poll), (canonical({"if_head": head}), new_poll)]), sep="\t")
+    if transition is None:
+        print("# transition lookup skipped: candidate does not advertise paired state and event selectors")
+    else:
+        # Add a full catalog once in each arm to expose the new selectors' discovery cost.
+        for include_catalog in (False, True):
+            label = "TASK RUNNING STOP_REQUEST incl. arguments" + (" and discovery" if include_catalog else "")
+            costs = []
+            for count in measures.values():
+                for arguments, result, catalog in zip((TASK_TABLE, TASK_ROW), transition, rows[0][1:]):
+                    costs.append(count(canonical(arguments)) + count(result) + (count(catalog) if include_catalog else 0))
+            print(label, *costs, sep="\t")
     print("all distinct kinds vs full once", *(v for count in measures.values() for v in (count(guide), sum(map(count, recipes)))), sep="\t")
     for unit, count in measures.items():
         total = 0

@@ -521,24 +521,40 @@ pub fn cascade_of_system(event: SystemEvent) -> Option<TaskEvent> {
 /// for byte.
 pub fn export<W: core::fmt::Write>(w: &mut W) -> core::fmt::Result {
     writeln!(w, "# machine\tstate\tevent\tnext    ('-' = not accepted)    initial and final states are marked in the 'state' rows")?;
-    for m in ALL.iter() {
-        write!(w, "{}\tINITIAL\t{}\tFINAL\t", m.name, m.states[m.initial as usize])?;
+    for m in ALL {
+        m.export(w)?;
+    }
+    Ok(())
+}
+
+impl Spec {
+    /// Write this machine's initial/final marker and its transition rows, without a file header.
+    pub fn export<W: core::fmt::Write>(&self, w: &mut W) -> core::fmt::Result {
+        write!(w, "{}\tINITIAL\t{}\tFINAL\t", self.name, self.states[self.initial as usize])?;
         let mut first = true;
-        for (i, s) in m.states.iter().enumerate() {
-            if m.finals & (1 << i) != 0 {
+        for (i, s) in self.states.iter().enumerate() {
+            if self.finals & (1 << i) != 0 {
                 write!(w, "{}{}", if first { "" } else { "," }, s)?;
                 first = false;
             }
         }
         writeln!(w, "{}", if first { "-" } else { "" })?;
-        for (i, s) in m.states.iter().enumerate() {
-            for (j, e) in m.events.iter().enumerate() {
-                match m.step(i as u8, j as u8) {
-                    Step::To(n) => writeln!(w, "{}\t{}\t{}\t{}", m.name, s, e, m.states[n as usize])?,
-                    Step::No => writeln!(w, "{}\t{}\t{}\t-", m.name, s, e)?,
-                }
+        for state in 0..self.states.len() {
+            for event in 0..self.events.len() {
+                self.export_transition(w, state, event)?;
             }
         }
+        Ok(())
     }
-    Ok(())
+
+    /// Write exactly one TSV transition row. Unknown indices return an error without writing.
+    pub fn export_transition<W: core::fmt::Write>(&self, w: &mut W, state: usize, event: usize) -> core::fmt::Result {
+        let state_name = self.states.get(state).ok_or(core::fmt::Error)?;
+        let event_name = self.events.get(event).ok_or(core::fmt::Error)?;
+        let next = match self.step(state as u8, event as u8) {
+            Step::To(n) => self.states[n as usize],
+            Step::No => "-",
+        };
+        writeln!(w, "{}\t{}\t{}\t{}", self.name, state_name, event_name, next)
+    }
 }

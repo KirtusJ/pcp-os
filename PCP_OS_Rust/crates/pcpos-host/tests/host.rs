@@ -85,6 +85,48 @@ fn mcp_tool_discovery_fits_its_wire_budget() {
     assert!(bytes <= 7 * 1024, "MCP tool catalog is {bytes} bytes; review the discovery cost before raising the 7 KiB budget");
 }
 
+#[test]
+fn machine_lookups_match_the_published_tables_without_a_register() {
+    let root = dir("machine-lookup");
+    let published = include_str!("../../../vectors/machines.tsv");
+    let cli = |args: &[&str]| {
+        let mut command = pcpos(&root);
+        command.arg("machine").args(args);
+        feed(command, b"")
+    };
+    assert_eq!(cli(&[]), (published.to_string(), 0));
+    for m in pcpos_core::machine::ALL {
+        let rows: Vec<&str> = published.lines().filter(|line| line.split('\t').next() == Some(m.name)).collect();
+        let table = rows.join("\n") + "\n";
+        let name = m.name.to_ascii_lowercase();
+        assert_eq!(cli(&[&name]), (table.clone(), 0));
+        assert_eq!(tool(&root, "acr_machine", &format!(r#"{{"name":"{name}"}}"#)), (table, false));
+        // Skip the initial/final marker. Every remaining row is a defined (also possibly refused) transition.
+        for batch in rows[1..].chunks(8) {
+            let mut calls = Vec::new();
+            for line in batch {
+                let fields: Vec<_> = line.split('\t').collect();
+                assert_eq!(fields.len(), 4);
+                let (state, event) = (fields[1].to_ascii_lowercase(), fields[2].to_ascii_lowercase());
+                calls.push(("acr_machine", format!(r#"{{"name":"{name}","state":"{state}","event":"{event}"}}"#)));
+                assert_eq!(cli(&[&name, &state, &event]), (format!("{line}\n"), 0));
+            }
+            let expected: Vec<_> = batch.iter().map(|line| (format!("{line}\n"), false)).collect();
+            assert_eq!(tools(&root, &calls), expected);
+        }
+    }
+    for selectors in [r#""state":"ACTIVE""#, r#""event":"PAUSE""#, r#""state":null,"event":null"#,
+                      r#""state":"UNKNOWN","event":"PAUSE""#, r#""state":"ACTIVE","event":"UNKNOWN""#] {
+        let (_, error) = tool(&root, "acr_machine", &format!(r#"{{"name":"REVIEW",{selectors}}}"#));
+        assert!(error, "{selectors}");
+    }
+    for fields in [&["REVIEW", "ACTIVE"][..], &["UNKNOWN", "ACTIVE", "PAUSE"], &["REVIEW", "ACTIVE", "UNKNOWN"],
+                   &["REVIEW", "ACTIVE", "PAUSE", "extra"]] {
+        assert_eq!(cli(fields), (String::new(), 2));
+    }
+    assert!(!root.join(".pcp").exists());
+}
+
 fn events(root: &Path) -> Vec<Value> {
     ledger::verify(&fs::read(root.join(REG)).unwrap()).unwrap().0
 }

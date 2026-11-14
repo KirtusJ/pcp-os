@@ -764,7 +764,7 @@ PCP OS is in early development. Say what exists, and no more. Describing the sys
 
 ## State machines
 
-`acr_machine` prints the whole table of one machine: SYSTEM, USE, REVIEW, OBJECTION, OBLIGATION, TASK, DELIVERY, LINK. For each state and event it gives the next state, or `-` for not accepted. A table entry says what would follow. It does not show that a transition happened: that is in the register.
+`acr_machine` takes a machine name: SYSTEM, USE, REVIEW, OBJECTION, OBLIGATION, TASK, DELIVERY or LINK. When you know the state and event, supply both for a single TSV row (machine, state, event, next state). A dash in the last column means refused. Omit both for the full table. To determine what actually happened, read the register.
 
 ## Starting the kernel
 

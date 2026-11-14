@@ -2,7 +2,7 @@
 //!
 //!     pcpos status <register>                 what is running, what needs a response, what a halt would stop
 //!     pcpos verify <register>                 check the chain and replay every guard
-//!     pcpos machine [name]                    print a state machine's whole table
+//!     pcpos machine [name [state event]]      print state-machine tables or one transition row
 //!     pcpos method <directory>                check a method packet against the release this core implements
 //!     pcpos init <register> --principal L     begin a register (a person, at a terminal)
 //!     pcpos adopt <register> --by L --basis W put ACR in use (a person, acting as themselves)
@@ -692,17 +692,23 @@ fn verify_text(o: &Opened, limit: usize) -> String {
     t
 }
 
-fn machine_text(name: Option<&str>) -> Result<String, String> {
-    let mut all = String::new();
-    machine::export(&mut all).map_err(|_| "export failed".to_string())?;
-    match name {
-        None => Ok(all),
-        Some(n) => {
-            let n = n.to_ascii_uppercase();
-            let t: String = all.lines().filter(|l| l.split('\t').next() == Some(n.as_str())).map(|l| format!("{l}\n")).collect();
-            if t.is_empty() { Err(format!("no machine named {n}; the machines are SYSTEM USE REVIEW OBJECTION OBLIGATION TASK DELIVERY LINK")) } else { Ok(t) }
+fn machine_text(name: Option<&str>, transition: Option<(&str, &str)>) -> Result<String, String> {
+    let mut out = String::new();
+    let result = if let Some(name) = name {
+        let m = machine::ALL.iter().find(|m| m.name.eq_ignore_ascii_case(name)).ok_or_else(||
+            format!("no machine named {}; the machines are SYSTEM USE REVIEW OBJECTION OBLIGATION TASK DELIVERY LINK", name.to_ascii_uppercase()))?;
+        if let Some((state, event)) = transition {
+            let i = m.states.iter().position(|s| s.eq_ignore_ascii_case(state)).ok_or_else(|| format!("no state named {state} in {}", m.name))?;
+            let j = m.events.iter().position(|e| e.eq_ignore_ascii_case(event)).ok_or_else(|| format!("no event named {event} in {}", m.name))?;
+            m.export_transition(&mut out, i, j)
+        } else {
+            m.export(&mut out)
         }
-    }
+    } else {
+        machine::export(&mut out)
+    };
+    result.map_err(|_| "export failed".to_string())?;
+    Ok(out)
 }
 
 // ---- time, for events appended here --------------------------------------------------------------------
@@ -1507,8 +1513,8 @@ fn tools() -> Value {
         tool("acr_kernel", "Read the full method kernel and SHA-256 before the first review step and after context reset. Includes the operating floor and findings table. Does not adopt ACR.", schema(vec![], vec![])),
         tool("acr_events", "Look up examples before submitting an unfamiliar event kind. Omit kind for the full guide in review order. Does not adopt ACR.",
              schema(vec![("kind", "string", "Exact uppercase event kind")], vec![])),
-        tool("acr_machine", "Read all state/event transitions. A dash means refused.",
-             schema(vec![("name", "string", "SYSTEM, USE, REVIEW, OBJECTION, OBLIGATION, TASK, DELIVERY or LINK")], vec!["name"])),
+        tool("acr_machine", "Static transition table. Supply state and event together for one TSV row. A dash means refused.",
+             schema(vec![("name", "string", "SYSTEM, USE, REVIEW, OBJECTION, OBLIGATION, TASK, DELIVERY or LINK"), ("state", "string", "Current state"), ("event", "string", "Offered event")], vec!["name"])),
     ])
 }
 
@@ -1525,7 +1531,14 @@ fn call(se: &Session, name: &str, args: &Value, last_status: &mut Option<(String
     let reg = text_arg("register")?.unwrap_or(&se.register).to_string();
     let none = || format!("there is no register at {reg}. ACR is not in use here and nothing is recorded. Begin one with acr_begin when the person directing the work asks for ACR");
     match name {
-        "acr_machine" => machine_text(Some(arg("name")?)),
+        "acr_machine" => {
+            let transition = match (args.get("state"), args.get("event")) {
+                (None, None) => None,
+                (Some(_), Some(_)) => Some((arg("state")?, arg("event")?)),
+                _ => return Err("give both state and event for one transition, or omit both for the table".into()),
+            };
+            machine_text(Some(arg("name")?), transition)
+        }
         "acr_kernel" => {
             // The same bytes a file tool would read, served by the program that sits beside them: a session whose
             // file tools cannot reach the packaged folder still holds the operating floor.
@@ -2551,7 +2564,7 @@ fn person(args: &[String]) -> Result<i32, String> {
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
     let usage = || -> ! {
-        eprintln!("usage: pcpos status|verify <register> | machine [name] | method <directory> | repair <register> | modules <method directory> | clause <method directory> <module> [section] | instrument list | instrument <name> <input as JSON> [register] | workspace <register> --by <label> [--method <directory>] [module ...] | module list <register> | module add <register> <folder or Specification.md> --by <label> [--method <directory>] | module remove <register> <name> --by <label> | init <register> --principal <label> [--name <name>] | adopt <register> --by <label> --basis <words> | halt <register> --by <label> [--words <words>] | standard <register> --by <label> [--second <label>] BASELINE|CRITICAL|key=value... | mcp | hook <event>");
+        eprintln!("usage: pcpos status|verify <register> | machine [name [state event]] | method <directory> | repair <register> | modules <method directory> | clause <method directory> <module> [section] | instrument list | instrument <name> <input as JSON> [register] | workspace <register> --by <label> [--method <directory>] [module ...] | module list <register> | module add <register> <folder or Specification.md> --by <label> [--method <directory>] | module remove <register> <name> --by <label> | init <register> --principal <label> [--name <name>] | adopt <register> --by <label> --basis <words> | halt <register> --by <label> [--words <words>] | standard <register> --by <label> [--second <label>] BASELINE|CRITICAL|key=value... | mcp | hook <event>");
         exit(2)
     };
     match args.first().map(String::as_str) {
@@ -2580,13 +2593,21 @@ fn main() {
             }
             exit(0) // a hook of this program never stops the host's work by failing
         }
-        Some("machine") => match machine_text(args.get(1).map(String::as_str)) {
-            Ok(t) => print!("{t}"),
-            Err(e) => {
-                eprintln!("pcpos: {e}");
-                exit(2)
+        Some("machine") => {
+            let table = match &args[1..] {
+                [] => machine_text(None, None),
+                [name] => machine_text(Some(name), None),
+                [name, state, event] => machine_text(Some(name), Some((state, event))),
+                _ => usage(),
+            };
+            match table {
+                Ok(t) => print!("{t}"),
+                Err(e) => {
+                    eprintln!("pcpos: {e}");
+                    exit(2)
+                }
             }
-        },
+        }
         Some("instrument") if args.len() >= 2 => {
             // An instrument at a terminal: computed and printed, never recorded. `pcpos instrument list`, or a name and its input as JSON.
             if args[1] == "list" {
