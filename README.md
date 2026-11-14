@@ -2,6 +2,8 @@
 
 The rights holder's own files. Not part of any edition.
 
+**PCP OS is primarily Rust. Rust holds primacy for security reasons.** Before contributing, read the [permanent Rust policy](RUST_PRIMACY.md). It identifies the reference implementation, where host security fixes and instruments belong, and how the Python implementation is checked against the Rust vectors.
+
 | Folder | What it is |
 | --- | --- |
 | `PCP_OS_Rust/` | The native core, the host program `pcpos`, the kernel, the published vectors. `cargo run --release --bin pcpos-vectors -- vectors` first (it writes the 6.3 MB case file, which is generated and not kept here), then `cargo test`; `crates/pcpos-kernel/run.sh` (it compiles the kernel in one fixed folder, so the image is the same file wherever this archive is unpacked); `crates/pcpos-kernel/programs/probe/build.sh` and `programs/doom/build.sh` for the programs the kernel's tests load. The programs supplied are built for the targets `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`, as `build/release.sh` does. Without that first step three of the Python tests are skipped, and say why |
