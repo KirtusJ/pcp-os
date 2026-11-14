@@ -9,7 +9,7 @@ from pathlib import Path
 from . import VERSION, BUNDLE_PROFILE, WORKSPACE_PROFILE
 from .base import PcposError, INTEGRITY, REFUSED, USAGE, ZERO, canon, strict_loads, sha_bytes, sha_file, name_issues, atomic_write
 from . import model
-from .store import EVENT_KEYS, TS, AUTH
+from .store import EVENT_KEYS, TS, AUTH, check_register_line_size
 
 MAX_TOTAL = 4 * 1024 * 1024 * 1024
 MAX_MEMBERS = 500000
@@ -22,6 +22,7 @@ def parse_register(raw: bytes):
         raise PcposError(INTEGRITY, "the register ends in an incomplete line")
     events, prev = [], ZERO
     for n, line in enumerate(raw.split(b"\n")[:-1] if raw else []):
+        check_register_line_size(line, n + 1)
         try:
             ev = strict_loads(line)
         except ValueError as e:

@@ -108,6 +108,38 @@ fn an_appended_event_is_checked_before_it_is_written() {
 }
 
 #[test]
+fn received_events_obey_the_writer_size_limit() {
+    let prefix = vectors("register_reference.jsonl");
+    let body = Value::Map(BTreeMap::new());
+    let ts = "2026-11-12T00:00:00Z";
+    let mut sample = Ledger::from_bytes(&prefix).unwrap();
+    sample.append(ts, "", "DECLARED", "NOTE", body.clone()).unwrap();
+    let overhead = sample.bytes().len() - prefix.len() - 1; // LF is outside the event.
+    let actor = "a".repeat(ledger::MAX_EVENT_BYTES - overhead);
+
+    let mut writer = Ledger::from_bytes(&prefix).unwrap();
+    writer.append(ts, &actor, "DECLARED", "NOTE", body.clone()).unwrap();
+    let tail = &writer.bytes()[prefix.len()..];
+    assert_eq!(tail.len(), ledger::MAX_EVENT_BYTES + 1);
+    assert_eq!(Ledger::from_bytes(writer.bytes()).unwrap().head(), writer.head());
+    let mut receiver = Ledger::from_bytes(&prefix).unwrap();
+    receiver.extend(tail).unwrap();
+    assert_eq!(receiver.head(), writer.head());
+
+    let mut receiver = Ledger::from_bytes(&prefix).unwrap();
+    assert!(receiver.append(ts, &(actor + "a"), "DECLARED", "NOTE", body).is_err());
+    let mut oversized = tail.to_vec();
+    let actor_start = br#"{"actor":""#;
+    assert!(oversized.starts_with(actor_start));
+    oversized.insert(actor_start.len(), b'a');
+    let number = receiver.len() as usize + 1;
+    let whole = [prefix.as_slice(), &oversized].concat();
+    assert!(matches!(ledger::verify(&whole), Err(LedgerError::Malformed(n, _)) if n == number));
+    assert!(matches!(receiver.extend(&oversized), Err(LedgerError::Malformed(n, _)) if n == number));
+    assert_eq!(receiver.bytes(), prefix);
+}
+
+#[test]
 fn capabilities_narrow_and_never_widen() {
     let mut t = CapTable::new(8);
     let root = t.install(7, Rights::READ.with(Rights::APPEND).with(Rights::GRANT)).unwrap();

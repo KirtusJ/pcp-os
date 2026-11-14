@@ -43,6 +43,9 @@ fn is_ts(s: &str) -> bool {
 }
 
 fn check_event(n: usize, line: &[u8], prev: &str) -> Result<Value, LedgerError> {
+    if line.len() > MAX_EVENT_BYTES {
+        return Err(LedgerError::Malformed(n + 1, "the event exceeds the size limit"));
+    }
     let ev = Value::parse(line).map_err(|e| LedgerError::Parse(n + 1, e))?;
     let m = match &ev {
         Value::Map(m) => m,
