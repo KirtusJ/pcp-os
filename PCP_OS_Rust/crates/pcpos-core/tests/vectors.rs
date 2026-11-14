@@ -210,3 +210,32 @@ fn continuing_a_checked_record_gives_what_checking_the_whole_gives_at_every_spli
     let (mut part, _) = Record::open(&raw[..ends[10]]).unwrap();
     assert!(part.extend(&raw[ends[10]..ends[11] - 1]).is_err(), "an unfinished line is refused");
 }
+
+#[test]
+fn appended_events_respect_the_depth_of_the_complete_record() {
+    use pcpos_core::value::MAX_DEPTH;
+
+    for leaf in ["null", "[]", "{}"] {
+        for depth in [MAX_DEPTH - 1, MAX_DEPTH, MAX_DEPTH + 1] {
+            // The event itself is at depth 0. Its body map is at depth 1.
+            let mut json = leaf.to_owned();
+            for level in 2..depth {
+                json = if level % 2 == 0 { format!("[{json}]") } else { format!(r#"{{"k":{json}}}"#) };
+            }
+            let body = Value::parse(format!(r#"{{"v":{json}}}"#).as_bytes()).unwrap();
+            let prefix = vectors("register_reference.jsonl");
+            let mut ledger = Ledger::from_bytes(&prefix).unwrap();
+            let (old_len, old_head) = (ledger.len(), ledger.head().to_owned());
+            let result = ledger.append("2026-11-12T00:00:00Z", "a", "DECLARED", "NOTE", body);
+            if depth <= MAX_DEPTH {
+                result.unwrap();
+                assert_eq!(Ledger::from_bytes(ledger.bytes()).unwrap().head(), ledger.head());
+            } else {
+                assert!(matches!(result, Err(LedgerError::Refused(_))), "accepted leaf {leaf} at depth {depth}");
+                assert_eq!(ledger.bytes(), prefix);
+                assert_eq!(ledger.head(), old_head);
+                assert_eq!(ledger.len(), old_len);
+            }
+        }
+    }
+}

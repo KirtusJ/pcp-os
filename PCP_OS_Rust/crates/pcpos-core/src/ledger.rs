@@ -126,6 +126,10 @@ impl Ledger {
         if !matches!(body, Value::Map(_)) {
             return Err(LedgerError::Refused("the body of an event is an object"));
         }
+        // The event is the root at depth zero. Its body may fit alone but exceed the limit here.
+        if !body.fits_depth(1) {
+            return Err(LedgerError::Refused("the event exceeds the nesting depth limit"));
+        }
         let mut m = BTreeMap::new();
         m.insert("seq".to_string(), Value::Int(self.count as i64));
         m.insert("prev".to_string(), Value::Str(self.head().to_string()));
