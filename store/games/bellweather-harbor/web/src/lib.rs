@@ -3,13 +3,15 @@
 mod manifest;
 mod market;
 mod quay;
+mod tea;
 
 use bellweather::art::{
-    draw_harbor, draw_harbor_watch, draw_home_fleet, draw_quay_room, ART_H, ART_W,
+    draw_harbor, draw_harbor_watch, draw_home_fleet, draw_quay_room, draw_tea_committee, ART_H,
+    ART_W,
 };
 use bellweather::economy::{
     Bulk, Economy, Shop, LEGACY_SAVE_LEN, SAVE_LEN, V2_SAVE_LEN, V3_SAVE_LEN, V4_SAVE_LEN,
-    V5_INITIAL_SAVE_LEN, V5_SAVE_LEN, V6_SAVE_LEN,
+    V5_INITIAL_SAVE_LEN, V5_SAVE_LEN, V6_SAVE_LEN, V7_SAVE_LEN, V8_INITIAL_SAVE_LEN,
 };
 use bellweather::freight::TIDE_MS;
 use bellweather::yard::PLANS;
@@ -424,6 +426,13 @@ fn render_waterfront(tick: u32, selected: usize, elapsed: u32) -> *const u32 {
         elapsed,
         game().neighbors.lanterns_unlocked(),
     );
+    let committee = game().committee.stage as u8;
+    let scene = if committee == 0 {
+        u8::from(game().committee_invited())
+    } else {
+        committee + 1
+    };
+    draw_tea_committee(frame, tick, scene);
     frame.as_ptr()
 }
 
@@ -448,6 +457,8 @@ pub extern "C" fn valid_save_size(len: usize) -> u32 {
             | V5_INITIAL_SAVE_LEN
             | V5_SAVE_LEN
             | V6_SAVE_LEN
+            | V7_SAVE_LEN
+            | V8_INITIAL_SAVE_LEN
             | SAVE_LEN
     ))
 }

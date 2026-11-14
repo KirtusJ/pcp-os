@@ -102,7 +102,7 @@ function initWorks() {
     const option=document.createElement('option');option.value=g;option.textContent=name;flowGood.appendChild(option);
   });
   flowGood.onchange=renderLedger;
-  ['Opening stock','Landed at berth','Bought at market','Made in workshop','Sold at market','Used at works or shipyard','Delivered to orders and neighbors'].forEach((label,k)=>{
+  ['Opening stock','Landed or recovered','Bought at market','Made in workshop','Sold at market','Used at works or shipyard','Delivered or bartered'].forEach((label,k)=>{
     const row=document.createElement('tr');
     row.innerHTML='<th scope="row">'+label+'</th><td id="ledger-flow-'+k+'"></td>';
     flowRows.appendChild(row);

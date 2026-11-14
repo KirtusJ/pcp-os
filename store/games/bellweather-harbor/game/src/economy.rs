@@ -1,6 +1,7 @@
 //! Bellweather Harbor's deterministic economy. Time is supplied by its host.
 //! Prices and payouts are whole coins. Every port handles the same save bytes.
 
+use crate::committee::{Barter, Committee, Stage};
 use crate::factory::{Factory, PLANS as WORKS};
 use crate::freight::{Freight, TIDE_MS};
 use crate::manifest::{Ending, Manifest};
@@ -22,7 +23,9 @@ pub const V4_SAVE_LEN: usize = 96;
 pub const V5_INITIAL_SAVE_LEN: usize = 507;
 pub const V5_SAVE_LEN: usize = 526;
 pub const V6_SAVE_LEN: usize = 532;
-pub const SAVE_LEN: usize = 545;
+pub const V7_SAVE_LEN: usize = 545;
+pub const V8_INITIAL_SAVE_LEN: usize = 564;
+pub const SAVE_LEN: usize = 565;
 const VALID_POSTMARKS: u8 = (1 << SHOP_NAMES.len()) - 1;
 
 const BASE_COST: [u64; 5] = [12, 140, 2_200, 34_000, 480_000];
@@ -189,6 +192,7 @@ pub struct Economy {
     pub ticket: Ticket,
     pub manifest: Manifest,
     pub neighbors: Neighbors,
+    pub committee: Committee,
     pub shops: [Shop; 5],
     // A clock correction must not turn hours already settled into new earnings.
     settled_through_s: Cell<u64>,
@@ -221,6 +225,7 @@ impl Economy {
             ticket: Ticket::new(),
             manifest: Manifest::new(),
             neighbors: Neighbors::new(),
+            committee: Committee::new(),
             shops,
             settled_through_s: Cell::new(0),
         }
@@ -356,6 +361,15 @@ impl Economy {
         }
     }
 
+    /// Space for delivered cargo. A prepaid batch already owns its output slot.
+    pub fn cargo_room(&self, good: usize) -> u16 {
+        if good >= 5 {
+            return 0;
+        }
+        let reserved = good >= 3 && self.factories[good - 3].running;
+        self.freight.capacity() - self.inventory(good) - u16::from(reserved)
+    }
+
     pub fn quote_trade(&self, good: usize, buy: bool, all: bool) -> Quote {
         self.quote_lot(good, buy, if all { u16::MAX } else { 1 })
     }
@@ -364,7 +378,7 @@ impl Economy {
             if good >= 3 {
                 return Quote::default();
             }
-            let space = self.freight.capacity() - self.freight.stock[good];
+            let space = self.cargo_room(good);
             let limit = space.min(requested);
             self.freight
                 .market
@@ -549,6 +563,117 @@ impl Economy {
 
     pub fn lanterns_sailing(&self) -> bool {
         self.neighbors.lanterns_unlocked() && neighbors::watch(self.freight.tide) == 2
+    }
+
+    pub fn committee_invited(&self) -> bool {
+        self.committee.stage == Stage::Dormant
+            && self.yard.completed & 4 != 0
+            && self.neighbors.lanterns_unlocked()
+    }
+
+    pub fn sign_order_thirteen(&mut self) -> bool {
+        if !self.committee_invited() {
+            return false;
+        }
+        self.committee.stage = Stage::TeaService;
+        true
+    }
+
+    pub fn can_submit_motion(&self) -> bool {
+        self.committee
+            .motion_good()
+            .is_some_and(|g| self.inventory(g) > 0)
+    }
+
+    /// Revalidate the numbered item the player saw before taking one crate.
+    pub fn submit_motion(&mut self, expected_total: u8) -> bool {
+        if self.committee.motions != expected_total || !self.can_submit_motion() {
+            return false;
+        }
+        let Some(g) = self.committee.motion_good() else {
+            return false;
+        };
+        if g < 3 {
+            self.freight.stock[g] -= 1;
+        } else {
+            self.factories[g - 3].output -= 1;
+        }
+        let flow = &mut self.ledger.flows[g];
+        flow.delivered = flow.delivered.saturating_add(1);
+        self.committee.motions += 1;
+        self.committee.stage = match self.committee.motions {
+            0..=2 => Stage::TeaService,
+            3..=5 => Stage::Quorum,
+            _ => Stage::HighTea,
+        };
+        self.retry_works();
+        true
+    }
+
+    pub fn sea_offer(&self) -> Option<Barter> {
+        (self.committee.stage == Stage::HighTea).then(|| Barter::at(self.freight.tide))
+    }
+
+    pub fn can_barter(&self) -> bool {
+        let Some(deal) = self.sea_offer() else {
+            return false;
+        };
+        !self.committee.bartered
+            && self.inventory(deal.give) >= deal.give_qty
+            && self.cargo_room(deal.take) >= deal.take_qty
+    }
+
+    /// One voluntary exchange at the table. The sea brings recovered cargo;
+    /// none of the terms are a sale, a factory receipt or a monetary reward.
+    pub fn barter(&mut self, expected_tide: u64) -> bool {
+        let Some(deal) = self.sea_offer() else {
+            return false;
+        };
+        if deal.tide != expected_tide || !self.can_barter() {
+            return false;
+        }
+        if deal.give < 3 {
+            self.freight.stock[deal.give] -= deal.give_qty;
+        } else {
+            self.factories[deal.give - 3].output -= deal.give_qty;
+        }
+        if deal.take < 3 {
+            self.freight.stock[deal.take] += deal.take_qty;
+        } else {
+            self.factories[deal.take - 3].output += deal.take_qty;
+        }
+        let given = &mut self.ledger.flows[deal.give];
+        given.delivered = given.delivered.saturating_add(u64::from(deal.give_qty));
+        let found = &mut self.ledger.flows[deal.take];
+        found.landed = found.landed.saturating_add(u64::from(deal.take_qty));
+        self.committee.bartered = true;
+        self.retry_works();
+        true
+    }
+
+    /// Transfer already-earned fare coins. No further gross or charter income
+    /// is booked, including for money held across a previous charter.
+    pub fn claim_tea_tin(&mut self) -> u64 {
+        if !self.committee.active() {
+            return 0;
+        }
+        let amount = core::mem::take(&mut self.committee.tin);
+        self.cash = self.cash.saturating_add(amount);
+        self.retry_works();
+        amount
+    }
+
+    pub fn adjourn_committee(&mut self) -> bool {
+        if self.committee.stage != Stage::HighTea {
+            return false;
+        }
+        self.claim_tea_tin();
+        self.committee.stage = Stage::Adjourned;
+        self.committee.bartered = false;
+        self.committee.carry = 0;
+        self.credit(13);
+        self.retry_works();
+        true
     }
 
     pub fn can_start_batch(&self, i: usize) -> bool {
@@ -774,10 +899,12 @@ impl Economy {
         let order = self.freight.advance(ms);
         if self.freight.tide != before_tide {
             self.neighbors.served = false;
+            self.committee.bartered = false;
         }
         self.ledger.orders = self.ledger.orders.saturating_add(order);
         self.trade_receipt(order);
         let mut income = 0u64;
+        let mut gross = 0u64;
         for i in 0..self.shops.len() {
             if !self.shops[i].running {
                 continue;
@@ -791,17 +918,19 @@ impl Economy {
             let partial = (fraction % period) as u32;
             if shop.manager || completed == 0 {
                 shop.elapsed_ms = partial;
-                income = income.saturating_add(completed.saturating_mul(payout));
             } else {
                 shop.running = false;
                 shop.elapsed_ms = 0;
-                income = income.saturating_add(payout);
             }
             let cycles = if shop.manager {
                 completed
             } else {
                 completed.min(1)
             };
+            let fares = u128::from(cycles) * u128::from(payout);
+            let available = self.committee.apportion(fares);
+            income = income.saturating_add(available.min(u128::from(u64::MAX)) as u64);
+            gross = gross.saturating_add(fares.min(u128::from(u64::MAX)) as u64);
             let landed = self.freight.unload(i, cycles);
             if landed > 0 {
                 self.manifest.unlocked = true;
@@ -810,7 +939,9 @@ impl Economy {
                 .landed
                 .saturating_add(u64::from(landed));
         }
-        self.credit(income);
+        self.cash = self.cash.saturating_add(income);
+        self.earned = self.earned.saturating_add(gross);
+        self.ledger.eligible = self.ledger.eligible.saturating_add(gross);
         income.saturating_add(order)
     }
 
@@ -848,6 +979,10 @@ impl Economy {
                 yard: self.yard,
                 manifest: self.manifest,
                 neighbors: self.neighbors,
+                committee: Committee {
+                    brought_forward: self.committee.tin,
+                    ..self.committee
+                },
                 // The port calendar and appointment at the quay carry through
                 // a new charter; businesses, cargo, market stock and orders reset.
                 freight: Freight {
@@ -862,11 +997,11 @@ impl Economy {
         award
     }
 
-    /// BWH7 appends lifetime neighbor counts and this tide's service lock to BWH6.
+    /// BWH8 appends committee minutes, fare escrow and the opening escrow balance to BWH7.
     /// All integers are little-endian, with a trailing CRC-32.
     pub fn encode(&self, now_s: u64) -> [u8; SAVE_LEN] {
         let mut bytes = [0; SAVE_LEN];
-        bytes[..4].copy_from_slice(b"BWH7");
+        bytes[..4].copy_from_slice(b"BWH8");
         let settled_s = now_s.max(self.settled_through_s.get());
         self.settled_through_s.set(settled_s);
         bytes[4..12].copy_from_slice(&settled_s.to_le_bytes());
@@ -958,6 +1093,14 @@ impl Economy {
             write(&count.to_le_bytes());
         }
         write(&[u8::from(self.neighbors.served)]);
+        write(&[
+            self.committee.stage as u8,
+            self.committee.motions,
+            self.committee.carry,
+        ]);
+        write(&self.committee.tin.to_le_bytes());
+        write(&self.committee.brought_forward.to_le_bytes());
+        write(&[u8::from(self.committee.bartered)]);
         debug_assert_eq!(offset, SAVE_LEN - 4);
         let checksum = crc32(&bytes[..offset]);
         bytes[offset..].copy_from_slice(&checksum.to_le_bytes());
@@ -975,7 +1118,9 @@ impl Economy {
             | (b"BWH5", V5_INITIAL_SAVE_LEN)
             | (b"BWH5", V5_SAVE_LEN)
             | (b"BWH6", V6_SAVE_LEN)
-            | (b"BWH7", SAVE_LEN)
+            | (b"BWH7", V7_SAVE_LEN)
+            | (b"BWH8", V8_INITIAL_SAVE_LEN)
+            | (b"BWH8", SAVE_LEN)
                 if bytes[67] & !VALID_POSTMARKS == 0 =>
             {
                 bytes[67]
@@ -1043,7 +1188,6 @@ impl Economy {
             }
         }
         if game.shops[0].owned == 0
-            || game.cash > game.earned
             || game
                 .shops
                 .iter()
@@ -1076,7 +1220,16 @@ impl Economy {
                 works.running = flags & 4 != 0;
                 works.elapsed_ms = u32::from_le_bytes(take(&mut fields)?);
                 works.output = u16::from_le_bytes(take(&mut fields)?);
-                if !works.valid(plan, game.freight.capacity()) {
+                // Recovered crates can be warehoused before the corresponding
+                // works is built. Older formats could only hold factory output.
+                let mut machinery = *works;
+                if bytes.len() == SAVE_LEN && !works.built {
+                    if works.output > game.freight.capacity() {
+                        return None;
+                    }
+                    machinery.output = 0;
+                }
+                if !machinery.valid(plan, game.freight.capacity()) {
                     return None;
                 }
             }
@@ -1152,7 +1305,7 @@ impl Economy {
                     return None;
                 }
             }
-            if bytes.len() == SAVE_LEN {
+            if bytes.len() >= V7_SAVE_LEN {
                 for count in &mut game.neighbors.helped {
                     *count = u32::from_le_bytes(take(&mut fields)?);
                 }
@@ -1163,6 +1316,35 @@ impl Economy {
                 };
                 if game.neighbors.served
                     && game.neighbors.helped[neighbors::visitor(game.freight.tide)] == 0
+                {
+                    return None;
+                }
+            }
+            if bytes.len() >= V8_INITIAL_SAVE_LEN {
+                let [stage, motions, carry] = take(&mut fields)?;
+                game.committee.stage = match stage {
+                    0 => Stage::Dormant,
+                    1 => Stage::TeaService,
+                    2 => Stage::Quorum,
+                    3 => Stage::HighTea,
+                    4 => Stage::Adjourned,
+                    _ => return None,
+                };
+                game.committee.motions = motions;
+                game.committee.carry = carry;
+                game.committee.tin = u64::from_le_bytes(take(&mut fields)?);
+                game.committee.brought_forward = u64::from_le_bytes(take(&mut fields)?);
+                if bytes.len() == SAVE_LEN {
+                    game.committee.bartered = match take::<1>(&mut fields)?[0] {
+                        0 => false,
+                        1 => true,
+                        _ => return None,
+                    };
+                }
+                if !game.committee.valid()
+                    || (game.committee.stage != Stage::Dormant
+                        && (game.yard.completed & 4 == 0 || !game.neighbors.lanterns_unlocked()))
+                    || (game.committee.brought_forward > 0 && game.charters == 0)
                 {
                     return None;
                 }
@@ -1193,6 +1375,14 @@ impl Economy {
             for (flow, stock) in game.ledger.flows.iter_mut().zip(game.freight.stock) {
                 flow.opening = stock;
             }
+        }
+        // Once a balance saturates it represents a lower bound. Below that
+        // ceiling the current till and the tin cannot exceed total receipts.
+        if game.earned < u64::MAX
+            && u128::from(game.cash) + u128::from(game.committee.tin)
+                > u128::from(game.earned) + u128::from(game.committee.brought_forward)
+        {
+            return None;
         }
         if bytes.len() < V6_SAVE_LEN {
             // Pre-casebook editions did not always record landings. Material
@@ -1410,7 +1600,7 @@ mod tests {
         assert_eq!(game.freight.stock, [1, 0, 0]);
         assert!(game.shops[0].manager);
         assert_eq!(game.shops[0].elapsed_ms, 0);
-        assert_eq!(&game.encode(1_001)[..4], b"BWH7");
+        assert_eq!(&game.encode(1_001)[..4], b"BWH8");
     }
 
     #[test]
@@ -1435,7 +1625,7 @@ mod tests {
     }
 
     #[test]
-    fn v7_save_round_trip_and_single_bit_damage_detection() {
+    fn v8_save_round_trip_and_single_bit_damage_detection() {
         let mut game = funded(100_000);
         game.hire(0);
         game.buy(2, Bulk::Ten);
@@ -1443,7 +1633,7 @@ mod tests {
         game.advance(333);
         assert!(game.mark_berth(2));
         let save = game.encode(160);
-        assert_eq!(&save[..4], b"BWH7");
+        assert_eq!(&save[..4], b"BWH8");
         assert_eq!(save[67], 0b100);
         let (restored, paid) = Economy::decode(&save, 160).unwrap();
         assert_eq!(paid, 0);
@@ -2195,10 +2385,330 @@ mod tests {
         assert_eq!(migrated.ticket, port.ticket);
         for flag in [1, 2] {
             let mut corrupt = latest;
-            corrupt[SAVE_LEN - 5] = flag;
+            corrupt[V7_SAVE_LEN - 5] = flag;
             let crc = crc32(&corrupt[..SAVE_LEN - 4]);
             corrupt[SAVE_LEN - 4..].copy_from_slice(&crc.to_le_bytes());
             assert!(Economy::decode(&corrupt, 9).is_none());
         }
+    }
+    fn invited_port() -> Economy {
+        let mut port = funded(10_000);
+        port.yard.completed = 7;
+        port.neighbors.helped = [1, 1, 1];
+        port
+    }
+
+    #[test]
+    fn invitation_requires_both_milestones_in_either_order_and_never_auto_signs() {
+        let mut port = Economy::new();
+        assert!(!port.committee_invited());
+        assert!(!port.sign_order_thirteen());
+        port.yard.completed = 3;
+        port.neighbors.helped = [1, 1, 1];
+        assert!(!port.committee_invited());
+        port.yard.completed = 7;
+        assert!(port.committee_invited());
+        port.neighbors.helped = [1, 0, 1];
+        assert!(!port.sign_order_thirteen());
+        port.neighbors.helped[1] = 1;
+        assert!(port.committee_invited());
+        port.advance(u64::MAX);
+        assert_eq!(port.committee, Committee::new());
+        assert!(port.sign_order_thirteen());
+        assert!(!port.sign_order_thirteen());
+        assert!(!port.committee_invited());
+        assert!(!port.adjourn_committee());
+        assert_eq!(port.claim_tea_tin(), 0);
+    }
+
+    #[test]
+    fn six_personal_motions_take_exactly_three_salt_and_three_provisions() {
+        let mut port = invited_port();
+        port.open_factory(0);
+        port.trade_lot(0, true, 6);
+        port.trade_lot(1, true, 6);
+        assert!(!port.submit_motion(0));
+        port.sign_order_thirteen();
+        for i in 0..3 {
+            assert_eq!(port.committee.motion_good(), Some(0));
+            assert!(port.submit_motion(i));
+            assert!(!port.submit_motion(i));
+        }
+        assert_eq!(port.committee.stage, Stage::Quorum);
+        assert!(!port.can_submit_motion());
+        assert!(!port.submit_motion(3));
+        assert!(!port.adjourn_committee());
+        for i in 3..6 {
+            assert_eq!(port.committee.motion_good(), Some(3));
+            assert!(port.start_batch(0));
+            port.advance(8_000);
+            assert!(port.submit_motion(i));
+        }
+        assert_eq!(port.committee.stage, Stage::HighTea);
+        assert!(!port.submit_motion(6));
+        assert!(port.committee.active());
+        assert_eq!(port.ledger.flows[0].delivered, 3);
+        assert_eq!(port.ledger.flows[3].delivered, 3);
+        assert_eq!(port.ledger.flows[0].used, 3);
+        assert_eq!(port.inventory(0), 0);
+        assert_eq!(port.inventory(3), 0);
+        port.dispatch(0);
+        port.advance(2_000);
+        let tin = port.committee.tin;
+        assert!(tin > 0);
+        let (cash, gross, eligible) = (port.cash, port.earned, port.charter_earned());
+        assert!(port.adjourn_committee());
+        assert_eq!(
+            (port.cash, port.earned, port.charter_earned()),
+            (cash + tin + 13, gross + 13, eligible + 13)
+        );
+        assert!(!port.adjourn_committee());
+        assert!(!port.sign_order_thirteen());
+        assert!(port.committee.souvenir());
+        assert_eq!(port.claim_tea_tin(), 0);
+        port.dispatch(0);
+        assert_eq!(port.advance(2_000), port.payout(0));
+        assert!(Economy::decode(&port.encode(0), 0).is_some());
+    }
+
+    #[test]
+    fn pending_escrow_survives_charter_and_reclaim_never_rebooks_fares() {
+        let mut port = invited_port();
+        port.credit(CHARTER_UNIT);
+        port.hire(0);
+        port.sign_order_thirteen();
+        let gross = port.payout(0) * 20;
+        assert_eq!(port.advance(40_000), gross - gross / 8);
+        let (held, remainder) = (port.committee.tin, port.committee.carry);
+        assert_eq!((held, remainder), (gross / 8, (gross % 8) as u8));
+        assert!(port.charter() > 0);
+        assert_eq!(port.earned, 0);
+        assert_eq!(port.charter_earned(), 0);
+        assert_eq!(port.committee.stage, Stage::TeaService);
+        assert_eq!(
+            (port.committee.tin, port.committee.carry),
+            (held, remainder)
+        );
+        assert_eq!(port.claim_tea_tin(), held);
+        assert_eq!(port.cash, held);
+        assert_eq!(port.earned, 0);
+        assert_eq!(port.charter_earned(), 0);
+        let (reopened, _) = Economy::decode(&port.encode(100), 100).unwrap();
+        assert_eq!(reopened, port);
+        assert_eq!(port.claim_tea_tin(), 0);
+    }
+
+    #[test]
+    fn fares_only_withholding_is_partition_invariant_offline_and_at_numeric_limits() {
+        let mut port = invited_port();
+        port.hire(0);
+        port.buy(1, Bulk::One);
+        port.hire(1);
+        port.sign_order_thirteen();
+        let before = (port.cash, port.earned, port.charter_earned());
+        assert_eq!(port.ring(), 1);
+        port.trade_lot(0, true, 7);
+        let sale = port.sell(0, false);
+        assert!(sale > 0);
+        assert_eq!(port.committee.tin, 0);
+        assert!(port.reserve_order());
+        let snapshot = port.encode(100);
+        let (offline, available) = Economy::decode(&snapshot, 100 + 43_200).unwrap();
+        let mut fragmented = port.clone();
+        let mut reported = 0u64;
+        for _ in 0..43_200 {
+            reported += fragmented.advance(1_000);
+        }
+        assert_eq!(fragmented.encode(43_300), offline.encode(43_300));
+        let fares = 21_600 * port.payout(0) + 7_200 * port.payout(1);
+        assert_eq!(available, fares - fares / 8 + 42);
+        assert_eq!(available, reported);
+        assert_eq!(offline.earned - before.1, fares + 1 + sale + 42);
+        assert_eq!(offline.committee.tin, fares / 8);
+        assert_eq!(offline.committee.motions, 0);
+        let mut single = port.clone();
+        let mut split = port;
+        single.advance(u64::MAX);
+        split.advance(u64::MAX / 3 * 2);
+        split.advance(u64::MAX - u64::MAX / 3 * 2);
+        assert_eq!(single, split);
+    }
+
+    #[test]
+    fn bwh7_migrates_an_unopened_invitation_and_rejects_corrupt_minutes() {
+        let eligible = invited_port();
+        let snapshot = eligible.encode(0);
+        let cut = V7_SAVE_LEN - 4;
+        let mut old = [0; V7_SAVE_LEN];
+        old[..cut].copy_from_slice(&snapshot[..cut]);
+        old[..4].copy_from_slice(b"BWH7");
+        let crc = crc32(&old[..cut]);
+        old[cut..].copy_from_slice(&crc.to_le_bytes());
+        let (migrated, _) = Economy::decode(&old, 0).unwrap();
+        assert!(migrated.committee_invited());
+        assert_eq!(migrated.committee, Committee::new());
+        assert_eq!(migrated.neighbors, eligible.neighbors);
+        let mut signed = migrated;
+        signed.sign_order_thirteen();
+        let valid = signed.encode(0);
+        for (byte, val) in [(cut, 7), (cut + 1, 4), (cut + 2, 8), (cut + 11, 10)] {
+            let mut invalid = valid;
+            invalid[byte] = val;
+            let crc = crc32(&invalid[..SAVE_LEN - 4]);
+            invalid[SAVE_LEN - 4..].copy_from_slice(&crc.to_le_bytes());
+            assert!(Economy::decode(&invalid, 0).is_none());
+        }
+        signed.neighbors.helped = [0; 3];
+        assert!(Economy::decode(&signed.encode(0), 0).is_none());
+    }
+    fn high_tea_port() -> Economy {
+        let mut port = invited_port();
+        port.committee.stage = Stage::HighTea;
+        port.committee.motions = 6;
+        port
+    }
+
+    #[test]
+    fn six_pocket_deals_are_explicit_cashless_and_reconcile_through_closed_works() {
+        let mut port = high_tea_port();
+        for (g, n) in [(0, 3), (1, 2), (2, 2)] {
+            assert_eq!(port.trade_lot(g, true, n).qty, n);
+        }
+        let (cash, gross, eligible, purchases, sales, orders) = (
+            port.cash,
+            port.earned,
+            port.charter_earned(),
+            port.ledger.purchases,
+            port.ledger.sales,
+            port.ledger.orders,
+        );
+        let terms = [
+            (0, 3, 2, 1),
+            (1, 2, 4, 1),
+            (2, 1, 3, 1),
+            (4, 1, 1, 2),
+            (3, 1, 2, 2),
+            (2, 1, 0, 3),
+        ];
+        for (tide, (give, give_qty, take, take_qty)) in terms.into_iter().enumerate() {
+            let tide = tide as u64;
+            assert_eq!(
+                port.sea_offer(),
+                Some(Barter {
+                    tide,
+                    give,
+                    give_qty,
+                    take,
+                    take_qty
+                })
+            );
+            let before = port.clone();
+            assert!(!port.barter(tide + 6));
+            assert_eq!(port, before);
+            assert!(port.barter(tide));
+            assert!(!port.barter(tide));
+            assert_eq!(port.inventory(give), before.inventory(give) - give_qty);
+            assert_eq!(port.inventory(take), before.inventory(take) + take_qty);
+            assert_eq!(
+                port.ledger.flows[give].delivered,
+                before.ledger.flows[give].delivered + u64::from(give_qty)
+            );
+            assert_eq!(
+                port.ledger.flows[take].landed,
+                before.ledger.flows[take].landed + u64::from(take_qty)
+            );
+            let (mut restored, paid) = Economy::decode(&port.encode(100), 100).unwrap();
+            assert_eq!(paid, 0);
+            assert!(!restored.barter(tide));
+            assert_eq!(restored, port);
+            assert_eq!(port.advance(30_000), 0);
+        }
+        assert_eq!(
+            (
+                port.cash,
+                port.earned,
+                port.charter_earned(),
+                port.ledger.purchases,
+                port.ledger.sales,
+                port.ledger.orders
+            ),
+            (cash, gross, eligible, purchases, sales, orders)
+        );
+        assert!(!port.factories[0].built && !port.factories[1].built);
+    }
+
+    #[test]
+    fn pending_production_and_a_partial_raw_hold_can_block_the_entire_exchange() {
+        let mut port = high_tea_port();
+        port.freight.tide = 2;
+        port.trade_lot(2, true, 1);
+        port.open_factory(0);
+        port.factories[0].output = 23;
+        port.ledger.flows[3].made = 23;
+        port.trade_lot(0, true, 1);
+        port.trade_lot(1, true, 2);
+        port.start_batch(0);
+        assert_eq!(port.cargo_room(3), 0);
+        let before = port.clone();
+        assert!(!port.barter(2));
+        assert_eq!(port, before);
+        port.sell(3, false);
+        assert_eq!(port.cargo_room(3), 1);
+        assert!(port.barter(2));
+        port.advance(8_000);
+        assert_eq!(port.inventory(3), 24);
+        port.advance(82_000);
+        assert_eq!(port.freight.tide, 5);
+        port.trade_lot(2, true, 1);
+        port.trade_lot(0, true, 22);
+        assert_eq!(port.cargo_room(0), 2);
+        assert!(!port.barter(5));
+        port.sell(0, false);
+        assert!(port.barter(5));
+        assert_eq!(port.freight.stock[0], 24);
+        assert!(Economy::decode(&port.encode(0), 0).is_some());
+    }
+
+    #[test]
+    fn pocket_lock_is_per_live_tide_across_charters_offline_and_adjournment() {
+        let mut port = high_tea_port();
+        port.credit(CHARTER_UNIT);
+        port.trade_lot(0, true, 6);
+        assert!(port.barter(0));
+        port.advance(29_999);
+        assert!(!port.barter(0));
+        assert!(port.charter() > 0);
+        assert!(port.committee.bartered);
+        assert!(!port.barter(0));
+        let flows = port.ledger.flows;
+        let (massive, paid) = Economy::decode(&port.encode(100), u64::MAX).unwrap();
+        assert_eq!(paid, 0);
+        assert_eq!(massive.ledger.flows, flows);
+        assert!(!massive.committee.bartered);
+        port.advance(1);
+        assert!(!port.committee.bartered);
+        assert!(port.adjourn_committee());
+        assert!(port.sea_offer().is_none());
+        assert!(!port.barter(port.freight.tide));
+        assert!(Economy::decode(&port.encode(100), 100).is_some());
+    }
+
+    #[test]
+    fn initial_bwh8_gains_an_unused_pocket_offer_and_invalid_locks_fail() {
+        let game = high_tea_port();
+        let latest = game.encode(88);
+        let mut old = [0; V8_INITIAL_SAVE_LEN];
+        let cut = V8_INITIAL_SAVE_LEN - 4;
+        old[..cut].copy_from_slice(&latest[..cut]);
+        let crc = crc32(&old[..cut]);
+        old[cut..].copy_from_slice(&crc.to_le_bytes());
+        let (loaded, _) = Economy::decode(&old, 88).unwrap();
+        assert_eq!(loaded, game);
+        assert_eq!(loaded.sea_offer(), game.sea_offer());
+        let mut pre = invited_port();
+        assert!(pre.sign_order_thirteen());
+        assert!(pre.sea_offer().is_none());
+        pre.committee.bartered = true;
+        assert!(Economy::decode(&pre.encode(88), 88).is_none());
     }
 }

@@ -15,3 +15,5 @@ pub mod wire;
 
 pub mod neighbor_art;
 pub mod quay_text;
+pub mod committee;
+pub mod tea_text;

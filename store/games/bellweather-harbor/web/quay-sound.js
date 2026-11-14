@@ -117,3 +117,15 @@ function playHarborReply(person) {
     quayNote(ac, at + 0.27, 1052, 990, 0.48, 0.059);
   }
 }
+
+function playSeaReply(){
+  const ac=audioContext;
+  if(!sounding||!ac||ac.state!=='running'||document.hidden||wireTones.length)return;
+  stopHarborAmbience();
+  const at=ac.currentTime+0.015;
+  quayAudio.running=true;quayAudio.next=at+5;
+  quayNote(ac,at,121,109,0.95,0.065,'triangle');
+  quayNote(ac,at+0.035,242,220,0.70,0.022);
+  quayNote(ac,at+0.56,1394,1350,0.18,0.035);
+  quayNote(ac,at+0.59,2073,2010,0.10,0.012);
+}

@@ -156,18 +156,20 @@ body{background:#f5efdc}
 /*__BELLWEATHER_YARD_CSS__*/
 /*__BELLWEATHER_MANIFEST_CSS__*/
 /*__BELLWEATHER_QUAY_CSS__*/
+/*__BELLWEATHER_TEA_CSS__*/
 </style>
 </head>
 <body>
 <header class="mast"><div class="mast-inner"><div class="imprint"><span class="burgee" aria-hidden="true"></span>NIGHT POST GAMES</div><nav class="tools" aria-label="Game tools"><button type="button" id="sound" aria-pressed="false">Sound off</button><button type="button" id="log">Logbook</button></nav></div></header>
 <main>
-<div class="banner"><h1>Bellweather <em>Harbor</em></h1><div class="hero-ledger"><div class="stat"><span class="label">Cash on hand</span><strong><i class="coin" aria-hidden="true"></i><span id="cash">0</span></strong></div><div class="stat"><span class="label">Automatic income</span><strong id="auto-rate">0/s</strong></div></div></div>
+<div class="banner"><h1>Bellweather <em>Harbor</em></h1><div class="hero-ledger"><div class="stat"><span class="label">Cash on hand</span><strong><i class="coin" aria-hidden="true"></i><span id="cash">0</span></strong></div><div class="stat"><span id="income-label" class="label">Automatic income</span><strong id="auto-rate">0/s</strong></div></div></div>
 <div class="workspace">
 <section class="port" aria-label="Working waterfront">
 <div class="art-panel"><div class="dockline"><span class="quay-watch-face"><i class="signal"></i><b id="quay-clock">06:00</b> · <span id="quay-watch">Dawn</span></span><span id="quay-weather">Harbor weather</span></div><div class="quay-scene"><canvas id="harbor" width="480" height="192" role="img" aria-label="Animated pixel-art harbor. Your businesses add boats and activity to the water."></canvas><button type="button" id="quay-contact" aria-label="Visit the neighbor on the pier"><span aria-hidden="true">Visit ↗</span></button></div><div class="art-caption"><b id="port-class">The little landing</b><span id="business-count">1 of 5 businesses open</span></div>
 <button type="button" id="quay-open" class="quay-invite"><canvas width="80" height="64" id="quay-mini" aria-hidden="true"></canvas><span class="quay-preview"><small>On the quay</small><strong id="quay-present">The first visitor</strong></span><span class="quay-visit">Visit <i aria-hidden="true">↗</i></span></button></div>
 <div class="bellbox"><div class="bellcopy"><h2>The harbor bell</h2><p id="bell-pay">Earn 1 coin and send the rowboat out.</p></div><button type="button" id="bell" disabled><canvas id="bell-mark" width="40" height="32" aria-hidden="true"></canvas>Ring the bell</button><div id="spray" aria-hidden="true"></div></div>
 <div class="port-notice"><strong>Dock notes</strong><div class="quay-note"><span id="hint">Ring the bell. Your first rowboat brings back 8 coins in 2 seconds.</span><span id="quay-bell-answer" role="status"></span></div></div>
+<button type="button" id="tea-open" class="tea-invitation" hidden><span class="tea-wax" aria-hidden="true">XIII</span><span id="tea-entry">An envelope under the sugar bowl</span><span id="tea-entry-action">Read ↗</span></button>
 <button type="button" id="manifest-open" class="odd-slip" hidden><span class="receipt-mark" aria-hidden="true">≋</span><span id="manifest-entry">An odd receipt</span><span class="receipt-action" id="manifest-entry-action">Examine ↗</span></button>
 </section>
 <section class="holdings" aria-labelledby="ledger-title"><div class="section-head"><h2 class="section-title" id="ledger-title">Business ledger</h2><div class="buygroup"><span class="label">Buy</span><div class="seg" role="group" aria-label="Purchase quantity"><button id="bulk-1" aria-pressed="true" class="active">×1</button><button id="bulk-10" aria-pressed="false">×10</button><button id="bulk-max" aria-pressed="false">Max</button></div></div></div><div id="shops"></div></section>
@@ -178,8 +180,29 @@ body{background:#f5efdc}
 </div>
 <noscript>Enable JavaScript to play Bellweather Harbor.</noscript>
 </main>
-<footer><span id="save-status">Opening harbor…</span><span>Bellweather Port Authority · 1.1.0</span></footer>
+<footer><span id="save-status">Opening harbor…</span><span>Bellweather Port Authority · 1.2.0</span></footer>
 <dialog id="book" aria-labelledby="book-title"><div class="book-head"><span class="book-meta">Bellweather Port Authority</span><button id="close-book" title="Close" aria-label="Close">×</button></div><div class="book-page"><h2 id="book-title">Logbook</h2><div id="book-body"></div><div class="book-actions" id="book-actions"></div></div></dialog>
+<dialog id="tea-book" aria-labelledby="tea-title">
+  <header class="tea-mast"><span aria-hidden="true" class="tea-order">XIII</span><div><p>Port circular · No. 13</p><h2 id="tea-title">Emergency Tea Committee</h2></div><button type="button" id="tea-close" aria-label="Close committee book">Close ×</button></header>
+  <div class="tea-page">
+    <figure class="tea-window"><canvas id="tea-view" width="320" height="96" role="img" aria-label="The waterfront outside the committee room"></canvas><figcaption><span id="tea-stage"></span><span id="tea-count"></span></figcaption></figure>
+    <section class="tea-paper" id="tea-invitation"><p class="tea-kicker">For the harbormaster</p><h3 id="tea-treaty"></h3><p id="tea-programme"></p><p id="tea-chair-quote"></p>
+      <p class="tea-fineprint">Signing puts one coin of every eight earned from business fares in the tea tin. You may collect the tin at any time. To reach adjournment, file six motions by hand with three salt and three provisions in all.</p>
+      <button type="button" id="tea-sign" class="tea-primary">Sign Order Thirteen</button></section>
+    <div id="tea-active" hidden>
+      <section class="tea-money" aria-label="Tea tin balance"><div><span class="tea-kicker">Tea tin</span><strong><span id="tea-tin">0</span> coins</strong></div><button type="button" id="tea-claim">Collect tin</button><p>One eighth of business fares goes in the tin during this sitting.</p></section>
+      <section id="tea-agenda" class="tea-paper" aria-labelledby="tea-proposal-title"><p id="tea-agenda-label" class="tea-kicker"></p><h3 id="tea-proposal-title"></h3><p id="tea-proposal"></p>
+        <p id="tea-budget" class="tea-fineprint"></p><button type="button" id="tea-motion" class="tea-primary">File motion</button></section>
+      <section id="tea-barter" class="tea-paper" aria-labelledby="tea-barter-title" hidden><p class="tea-kicker">Dockside barter · <span id="tea-barter-tide"></span></p><h3 id="tea-barter-title">The sea empties its pockets</h3><p id="tea-barter-terms"></p><p id="tea-barter-hold" class="tea-fineprint"></p><button type="button" id="tea-barter-trade" class="tea-primary">Trade cargo</button><p id="tea-barter-status" class="tea-fineprint"></p><p id="tea-barter-result" role="status"></p></section>
+      <section id="tea-decision" class="tea-paper" hidden><p class="tea-kicker">Final business</p><h3>Shall we adjourn?</h3><p id="tea-keep-text"></p><p>Keep the sitting open to hear the sea answer the harbor bell, or enter the final adjournment.</p><p class="tea-fineprint">Adjournment releases the tin and pays 13 attendance coins once. Afterward, all new fares go straight to your till.</p>
+        <div class="tea-choice"><button type="button" id="tea-keep">Keep High Tea</button><button type="button" id="tea-adjourn" class="tea-primary">Adjourn &amp; collect</button></div></section>
+    </div>
+    <section id="tea-souvenir" class="tea-paper" hidden><p class="tea-kicker">Filed in perpetuity</p><h3 id="tea-souvenir-title"></h3><p id="tea-adjourn-text"></p><p id="tea-souvenir-text">Your attendance is recorded. The committee has adjourned.</p></section>
+    <p id="tea-receipt" role="status"></p>
+    <details id="tea-committee"><summary>Roll call</summary><div id="tea-grannies"></div></details>
+    <details id="tea-record"><summary>Minutes of the sitting</summary><p id="tea-minute"></p><ol id="tea-filed"></ol></details>
+  </div>
+</dialog>
 <dialog id="quay-book" aria-labelledby="quay-title">
   <header class="quay-mast"><h2 id="quay-title">On the quay</h2><button id="quay-close" type="button" aria-label="Close On the quay">Close ×</button></header>
   <nav id="quay-roster" aria-label="Harbor neighbors"></nav>
@@ -396,17 +419,18 @@ function renderUI(){
   setText($('charter'),offer?'Sign charter ↗':'Visit office ↗');
   $('charter-fill').style.width=Math.min(100,earned/target*100)+'%';
   const nextHint=hint(cash,open);if(nextHint!==lastHint){lastHint=nextHint;setText($('hint'),nextHint)}
-  albumStatus();renderFreight();renderYard();renderManifest();renderQuay();if(bookMode==='charter')updateCharter();
+  albumStatus();renderFreight();renderYard();renderManifest();renderQuay();renderTea();if(bookMode==='charter')updateCharter();
 }
 function draw(t,force=false){
   if(reduced.matches){
-    const still=[wasm.freight_tide(),wasm.quay_lanterns(),wasm.yard_bonus(),wasm.manifest_ending()].join('/');
+    const still=[wasm.freight_tide(),wasm.quay_lanterns(),wasm.yard_bonus(),wasm.manifest_ending(),wasm.tea_invited(),wasm.tea_stage()].join('/');
     if(!force&&still===quayStill)return;
     quayStill=still;
   }else if(!force&&t-lastDraw<90)return;
   lastDraw=t;
   const ptr=reduced.matches?wasm.render_still(selected):wasm.render(Math.floor(artTick*.03),selected);
   blitRgb(new Uint32Array(wasm.memory.buffer,ptr,480*192),frame,ctx);
+  paintTeaWindow();
 }
 function blitRgb(src,frame,ctx){
   const dest=frame.data;
@@ -646,7 +670,7 @@ window.addEventListener('pagehide',park);window.addEventListener('pageshow',wake
 window.addEventListener('storage',e=>{if(wasm&&!parked&&e.key===storeKey&&e.newValue&&e.newValue!==lastRead){readLatest();renderUI();draw(time(),true)}});
 async function start(){
   try{
-    makeRows();initWorks();initBroker();initExchange();initYard();initManifest();initQuay();const result=await WebAssembly.instantiate(un64(WASM_BYTES));wasm=result.instance.exports;
+    makeRows();initWorks();initBroker();initExchange();initYard();initManifest();initQuay();initTea();const result=await WebAssembly.instantiate(un64(WASM_BYTES));wasm=result.instance.exports;
     try{sounding=localStorage.getItem('bellweather.sound')==='on'}catch(_){}
     syncSound();clock=time();readLatest(true);persist();$('bell').disabled=false;
     renderUI();draw(time(),true);timer=setInterval(step,72);
@@ -665,6 +689,7 @@ async function start(){
 /*__BELLWEATHER_MANIFEST__*/
 /*__BELLWEATHER_QUAY_SOUND__*/
 /*__BELLWEATHER_QUAY__*/
+/*__BELLWEATHER_TEA__*/
 start();
 </script>
 </body>

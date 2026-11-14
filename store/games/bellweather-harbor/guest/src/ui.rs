@@ -2,6 +2,7 @@ mod freight;
 mod journal;
 mod order;
 mod quay;
+mod tea;
 mod wire;
 mod works;
 mod yard;
@@ -50,6 +51,7 @@ pub enum Notice {
 }
 pub enum Book {
     Harbor,
+    Tea(crate::tea::Meeting),
     Quay(crate::quay::QuayDesk),
     Charter,
     Journal(crate::journal::Journal),
@@ -67,6 +69,8 @@ pub struct Desk {
     pub store_ok: bool,
     pub bell_reply: bellweather::neighbors::BellReply,
     pub answer: Option<(usize, u64)>,
+    pub sea_echo: bellweather::committee::SeaEcho,
+    pub sea_caption_until: u64,
 }
 
 pub struct Money(pub u64);
@@ -152,19 +156,20 @@ impl Canvas<'_> {
 
 pub fn render(out: &mut Screen, scene: &mut Harbor, game: &Economy, desk: &mut Desk, now: u64) {
     render_desk(out, scene, game, desk, now);
-    if let Some((person, until)) = desk.answer {
-        if now < until {
-            let mut c = Canvas(out);
-            c.rect(8, 361, 624, 23, INK);
-            c.rect(8, 361, 3, 23, BRASS);
-            c.label(
-                18,
-                369,
-                1,
-                PAPER,
-                format_args!("{}", bellweather::quay_text::ANSWERS[person]),
-            );
-        }
+    let caption = if now < desk.sea_caption_until
+        && game.committee.stage == bellweather::committee::Stage::HighTea
+    {
+        Some("The sea votes for sugar.")
+    } else {
+        desk.answer
+            .filter(|&(_, until)| now < until)
+            .map(|(person, _)| bellweather::quay_text::ANSWERS[person])
+    };
+    if let Some(text) = caption {
+        let mut c = Canvas(out);
+        c.rect(8, 361, 624, 23, INK);
+        c.rect(8, 361, 3, 23, BRASS);
+        c.label(18, 369, 1, PAPER, format_args!("{text}"));
     }
 }
 
@@ -225,7 +230,18 @@ fn render_desk(out: &mut Screen, scene: &mut Harbor, game: &Economy, desk: &mut 
         u32::from(game.freight.elapsed_ms),
         game.neighbors.lanterns_unlocked(),
     );
+    let stage = game.committee.stage as u8;
+    let art_stage = if stage == 0 {
+        u8::from(game.committee_invited())
+    } else {
+        stage + 1
+    };
+    art::draw_tea_committee(scene, (now.saturating_mul(30) / 1000) as u32, art_stage);
     let mut c = Canvas(out);
+    if let Book::Tea(meeting) = &desk.book {
+        tea::draw(&mut c, scene, game, meeting);
+        return;
+    }
     c.rect(0, 0, W, H, NIGHT);
     c.rect(0, 0, W, 2, BRASS);
     c.rect(12, 8, 2, 22, BRASS);
@@ -233,6 +249,10 @@ fn render_desk(out: &mut Screen, scene: &mut Harbor, game: &Economy, desk: &mut 
         c.rect(14, 9 + k, 13 - k, 1, BUOY);
     }
     c.label(34, 12, 2, PAPER, format_args!("Bellweather Harbor"));
+    if art_stage != 0 {
+        c.rect(251, 9, 45, 22, TEAL);
+        c.label(255, 17, 1, BRASS, format_args!("T Tea"));
+    }
     if game.manifest.unlocked {
         c.rect(301, 9, 160, 23, TEAL);
         c.rect(308, 12, 11, 15, PALE);

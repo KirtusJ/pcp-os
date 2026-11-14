@@ -20,6 +20,7 @@ extern "C" {
 pub enum Cue {
     Bell,
     Answer(usize),
+    Sea,
     CastOff,
     Purchase,
     Manager,
@@ -55,6 +56,11 @@ const CHARTER: &[Tone] = &[
     tone(659, 150, 4300),
     tone(784, 220, 4700),
 ];
+const SEA: &[Tone] = &[
+    tone(143, 0, 4500),
+    tone(292, 0, 1600),
+    tone(1732, 360, 1700),
+];
 impl Cue {
     fn score(self) -> (u32, &'static [Tone]) {
         match self {
@@ -63,6 +69,7 @@ impl Cue {
             Self::Bell => (1700, BELL),
             // A full silent DMA ring after the reply also clears its last note.
             Self::Answer(_) => (1000, &[]),
+            Self::Sea => (1200, SEA),
             Self::CastOff => (180, CAST_OFF),
             Self::Purchase => (180, PURCHASE),
             Self::Manager => (270, MANAGER),
@@ -180,7 +187,7 @@ impl Speaker {
         Some(info)
     }
     pub fn play(&mut self, cue: Cue) {
-        if matches!(cue, Cue::Answer(_)) && matches!(self.playing, Some(Cue::Wire(_))) {
+        if matches!(cue, Cue::Answer(_) | Cue::Sea) && matches!(self.playing, Some(Cue::Wire(_))) {
             return;
         }
         if self.fd >= 0 {
@@ -225,6 +232,8 @@ impl Speaker {
                 Cue::Bell => 0,
                 Cue::Wire(good) => wire_sample(good, at),
                 Cue::Answer(person) => answer_sample(person, at),
+                Cue::Sea if at < 630 * 48 => sample(SEA, at, 630 * 48),
+                Cue::Sea => 0,
                 _ => sample(tones, at, duration),
             });
         }

@@ -101,6 +101,7 @@ pub extern "C" fn quay_portrait(person: usize) -> *const u32 {
 
 #[no_mangle]
 pub extern "C" fn quay_bell_strike(now_ms: f64) -> u32 {
+    super::tea::strike(now_ms as u64);
     let visitor = quay_visitor();
     unsafe { u32::from((&mut *(&raw mut BELL)).ring(now_ms as u64, visitor)) }
 }
@@ -116,6 +117,7 @@ pub extern "C" fn quay_bell_poll(now_ms: f64) -> usize {
 
 #[no_mangle]
 pub extern "C" fn quay_bell_clear() {
+    super::tea::clear_echo();
     unsafe { (&mut *(&raw mut BELL)).clear() }
 }
 

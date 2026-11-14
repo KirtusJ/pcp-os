@@ -20,6 +20,8 @@ replacements = {"__BELLWEATHER_WASM_BASE64__": base64.b64encode(wasm).decode("as
 for marker, filename in [
     ("/*__BELLWEATHER_MARKS__*/", "marks.js"),
     ("/*__BELLWEATHER_QUAY__*/", "quay.js"),
+    ("/*__BELLWEATHER_TEA__*/", "tea.js"),
+    ("/*__BELLWEATHER_TEA_CSS__*/", "tea.css"),
     ("/*__BELLWEATHER_QUAY_CSS__*/", "quay.css"),
     ("/*__BELLWEATHER_QUAY_SOUND__*/", "quay-sound.js"),
     ("/*__BELLWEATHER_FREIGHT_ART__*/", "freight-art.js"),

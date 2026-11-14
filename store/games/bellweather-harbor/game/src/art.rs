@@ -1173,3 +1173,6 @@ pub fn draw_quay_room(buf: &mut [u32; ART_W * ART_H], tick: u32, ending: crate::
 
 mod watch;
 pub use watch::{draw_harbor_watch, quay_contact};
+
+mod tea;
+pub use tea::draw_tea_committee;

@@ -7,6 +7,7 @@ mod mail;
 mod order;
 mod quay;
 mod sound;
+mod tea;
 mod ui;
 mod works;
 mod yard;
@@ -46,6 +47,13 @@ enum Outcome {
 
 fn handle(key: usize, game: &mut Economy, desk: &mut Desk, now: u64) -> Outcome {
     let i = desk.selected;
+    if let Book::Tea(meeting) = &mut desk.book {
+        if key == 20 || (key == 1 && meeting.page == tea::Page::Business) {
+            desk.book = Book::Harbor;
+            return Outcome::None;
+        }
+        return meeting.handle(key, game);
+    }
     if matches!(
         desk.book,
         Book::Harbor | Book::Yard(_) | Book::Freight(_) | Book::Works(_) | Book::Quay(_)
@@ -56,6 +64,9 @@ fn handle(key: usize, game: &mut Economy, desk: &mut Desk, now: u64) -> Outcome 
             }
         }
         let next = match (&desk.book, key) {
+            (Book::Harbor, 20) if tea::Meeting::visible(game) => {
+                Some(Book::Tea(tea::Meeting::open(game)))
+            }
             (Book::Quay(quay), 1) if quay.in_letters() => None,
             (Book::Quay(_), 16 | 1) => Some(Book::Harbor),
             (Book::Freight(_), 33 | 1) | (Book::Yard(_), 21 | 1) | (Book::Works(_), 17 | 1) => {
@@ -133,8 +144,12 @@ fn handle(key: usize, game: &mut Economy, desk: &mut Desk, now: u64) -> Outcome 
         25 => desk.book = Book::Mail(mail::MailRun::open(game, i, now)),
         19 => {
             game.ring();
-            desk.bell_reply
-                .ring(now, bellweather::neighbors::visitor(game.freight.tide));
+            if desk
+                .bell_reply
+                .ring(now, bellweather::neighbors::visitor(game.freight.tide))
+            {
+                desk.sea_echo.ring(now, game.committee.stage);
+            }
             set_notice(desk, Notice::Bell, now);
             return Outcome::Changed(Cue::Bell);
         }
@@ -224,6 +239,8 @@ pub extern "C" fn main() -> i32 {
         store_ok: device::save(&game),
         bell_reply: bellweather::neighbors::BellReply::new(),
         answer: None,
+        sea_echo: bellweather::committee::SeaEcho::new(),
+        sea_caption_until: 0,
     };
     let mut speaker = sound::Speaker::open();
     let mut failed_exit = false;
@@ -296,6 +313,10 @@ pub extern "C" fn main() -> i32 {
         if let Some(person) = desk.bell_reply.poll(now) {
             desk.answer = Some((person, now + 2800));
             speaker.play(Cue::Answer(person));
+        }
+        if desk.sea_echo.poll(now, game.committee.stage) {
+            desk.sea_caption_until = now + 2600;
+            speaker.play(Cue::Sea);
         }
         speaker.pump();
         // The small audio DMA queue is serviced more frequently than the display.

@@ -185,6 +185,11 @@ function pollQuayBell(now){
     $('hint').style.visibility='hidden';
     quayAnswerUntil=now+4200;
     playHarborReply(person);
+  }
+  if(wasm.tea_echo_poll(now)){
+    setText($('quay-bell-answer'),'The sea votes for sugar.');
+    $('hint').style.visibility='hidden';quayAnswerUntil=now+4200;
+    playSeaReply();
   }else if(quayAnswerUntil&&now>=quayAnswerUntil){
     quayAnswerUntil=0;$('hint').style.visibility='';
     setText($('quay-bell-answer'),'');
