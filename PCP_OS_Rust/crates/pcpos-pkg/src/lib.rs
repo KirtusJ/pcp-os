@@ -6,7 +6,8 @@
 //! brings it bytes and takes its answers. It is not the Store: it knows nothing of reviews, editions or
 //! prices, and it works with any source that holds entries in this form.
 //!
-//! What it is not yet: there is no signature check here, no install transaction and no record in a register.
+//! What it is not yet: there is no signature check here and no record in a register. The install transaction
+//! ([`txn`]) is a state that changes by whole steps; it does not yet touch a file.
 //! An entry that passes [`verify`] is a statement that the supplied bytes are the bytes the entry names,
 //! and nothing about who wrote the entry.
 //!
@@ -16,6 +17,8 @@
 #![deny(missing_docs)]
 
 extern crate alloc;
+
+pub mod txn;
 
 use alloc::collections::BTreeMap;
 use alloc::format;
