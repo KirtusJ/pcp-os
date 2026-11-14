@@ -376,15 +376,17 @@ fn parse(raw: Vec<u8>) -> Result<Opened, String> {
     Ok(Opened { events, head, state, problems, raw })
 }
 
+/// Open a register for reading and hold its shared lock until the handle is dropped.
+fn locked_reader(root: &Path, given: &str) -> Result<Option<Handle>, String> {
+    let Some(h) = confined(root, given, false, false)? else { return Ok(None); };
+    lock(&h, false)?;
+    Ok(Some(h))
+}
+
 /// Read a register under a shared lock. `Ok(None)`: no such file.
 fn open(root: &Path, given: &str) -> Result<Option<Opened>, String> {
-    match confined(root, given, false, false)? {
-        None => Ok(None),
-        Some(mut h) => {
-            lock(&h, false)?;
-            parse(read_all(&mut h)?).map(Some)
-        }
-    }
+    let Some(mut h) = locked_reader(root, given)? else { return Ok(None); };
+    parse(read_all(&mut h)?).map(Some)
 }
 
 /// What became of one offered event.
@@ -559,14 +561,25 @@ fn attention(o: &Opened) -> Vec<(&'static str, String, &'static str)> {
     a
 }
 
-fn status(label: &str, o: &Opened, full_head: bool) -> String {
-    let mut s = String::new();
-    let st = &o.state;
+fn status_header(label: &str, o: &Opened, full_head: bool) -> String {
     if full_head {
-        let _ = writeln!(s, "REGISTER  {}  |  {} events  |  head {}", label, o.events.len(), o.head);
+        format!("REGISTER  {}  |  {} events  |  head {}\n", label, o.events.len(), o.head)
     } else {
-        let _ = writeln!(s, "REGISTER  {}  |  {} events  |  head {} (prefix; verify prints it in full)", label, o.events.len(), &o.head[..16]);
+        format!("REGISTER  {}  |  {} events  |  head {} (prefix; verify prints it in full)\n", label, o.events.len(), &o.head[..16])
     }
+}
+
+fn write_attention(s: &mut String, o: &Opened) {
+    let att = attention(o);
+    let _ = writeln!(s, "ATTENTION {}", if att.is_empty() { "nothing needs a response".to_string() } else { format!("{} item(s)", att.len()) });
+    for (p, what, response) in att {
+        let _ = writeln!(s, "  {:<6} {}\n         -> {}", p, what, response);
+    }
+}
+
+fn status(label: &str, o: &Opened, full_head: bool) -> String {
+    let mut s = status_header(label, o, full_head);
+    let st = &o.state;
     let std = st.standard();
     let _ = writeln!(s, "SYSTEM    {}   USE {}   LINK {}{}", st.system().map(|x| x.name()).unwrap_or("not recorded (kept on another system)"), st.in_use().name(),
                      st.link().name(), if st.link() == Link::Offline { " (nothing new can be retrieved)" } else { "" });
@@ -587,11 +600,7 @@ fn status(label: &str, o: &Opened, full_head: bool) -> String {
         let d: Vec<String> = st.delivery.iter().map(|(a, d)| format!("{} {}", a, d.name())).collect();
         let _ = writeln!(s, "DELIVERY  {}", d.join(", "));
     }
-    let att = attention(o);
-    let _ = writeln!(s, "ATTENTION {}", if att.is_empty() { "nothing needs a response".to_string() } else { format!("{} item(s)", att.len()) });
-    for (p, what, response) in &att {
-        let _ = writeln!(s, "  {:<6} {}\n         -> {}", p, what, response);
-    }
+    write_attention(&mut s, o);
     let _ = writeln!(s, "REVIEWS   {:<12} {:<9} {:<17} {:>3} {:>6} {:>8} {:>10}", "LABEL", "PROCEDURE", "STATE", "SES", "GATES", "NO-FIND", "OBJECTIONS");
     for r in st.reviews.values() {
         let _ = writeln!(s, "          {:<12} {:<9} {:<17} {:>3} {:>6} {:>8} {:>10}", r.label, r.procedure, r.lifecycle.name(), r.session,
@@ -1483,7 +1492,8 @@ fn tools() -> Value {
     let tool = |name: &str, d: &str, sc: Value| obj(vec![("name", s(name)), ("description", s(d)), ("inputSchema", sc)]);
     Value::List(vec![
         tool("acr_status", "Read register state, attention, reviews, tasks and halt scope. Omit if_head after context reset.",
-             schema(vec![reg, ("if_head", "string", "Full lowercase digest of the last full status you still hold. A match may return UNCHANGED.")], vec![])),
+             schema(vec![reg, ("view", "string", "full (default) or attention for alerts and responses only. if_head requires full."),
+                          ("if_head", "string", "Full lowercase digest of the last full status you still hold. A match may return UNCHANGED.")], vec![])),
         tool("acr_verify", "Check the hash chain and replay all guards. Report the full head, total replay problems and up to 20 details.", schema(vec![reg], vec![])),
         tool("acr_begin", "Create the register and add this participant as needed. Does not adopt ACR.", schema(vec![reg], vec![])),
         tool("acr_adopt", "Relay the person's request for ACR. An exact host match records the prompt digest, otherwise confirmation is pending. Only their typed command records direct adoption.",
@@ -1511,7 +1521,28 @@ fn tools() -> Value {
     ])
 }
 
-fn call(se: &Session, name: &str, args: &Value, last_status: &mut Option<(String, String)>) -> Result<String, String> {
+/// The last full status sent by this server. Larger registers retain only the basis for a verified poll.
+struct LastStatus {
+    register: String,
+    head: String,
+    bytes: Option<Box<[u8]>>,
+}
+
+const MAX_STATUS_CACHE_BYTES: usize = 1024 * 1024;
+
+fn retained_status_bytes(raw: Vec<u8>) -> Option<Box<[u8]>> {
+    (raw.len() <= MAX_STATUS_CACHE_BYTES).then(|| raw.into_boxed_slice())
+}
+
+#[test]
+fn status_cache_retains_exactly_one_mib_or_less() {
+    assert_eq!(retained_status_bytes(Vec::new()).as_deref(), Some(&[][..]));
+    let at_limit = vec![7; MAX_STATUS_CACHE_BYTES];
+    assert_eq!(retained_status_bytes(at_limit.clone()).as_deref(), Some(at_limit.as_slice()));
+    assert!(retained_status_bytes(vec![7; MAX_STATUS_CACHE_BYTES + 1]).is_none());
+}
+
+fn call(se: &Session, name: &str, args: &Value, last_status: &mut Option<LastStatus>) -> Result<String, String> {
     let arg = |k: &str| args.get(k).and_then(Value::as_str).ok_or(format!("argument {k} is required and is text"));
     let text_arg = |k: &str| match args.get(k) {
         None | Some(Value::Null) => Ok(None),
@@ -1750,18 +1781,40 @@ fn call(se: &Session, name: &str, args: &Value, last_status: &mut Option<(String
             }
         }
         "acr_status" => {
+            match args.get("view") {
+                None => {}
+                Some(Value::Str(view)) if view == "full" => {}
+                Some(Value::Str(view)) if view == "attention" => {
+                    if args.get("if_head").is_some() {
+                        return Err("if_head requires the full status view".to_string());
+                    }
+                    let o = open(&se.root, &reg)?.ok_or_else(none)?;
+                    let mut text = status_header(&reg, &o, true);
+                    write_attention(&mut text, &o);
+                    return Ok(text);
+                }
+                Some(_) => return Err("view must be either full or attention".to_string()),
+            }
             let if_head = match args.get("if_head") {
                 None => None,
                 Some(Value::Str(head)) if head.len() == 64 && head.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) => Some(head.as_str()),
                 Some(_) => return Err("if_head must be a full lowercase SHA-256 digest".to_string()),
             };
-            // Always lock, verify and replay the current bytes before comparing the client's basis.
-            let o = open(&se.root, &reg)?.ok_or_else(none)?;
-            if if_head == Some(o.head.as_str()) && last_status.as_ref().is_some_and(|(label, head)| label == &reg && head == &o.head) {
+            let basis = last_status.as_ref().filter(|view| view.register == reg && Some(view.head.as_str()) == if_head);
+            let mut h = locked_reader(&se.root, &reg)?.ok_or_else(none)?;
+            let raw = read_all(&mut h)?;
+            // An exact match reuses the verification and replay that produced the full view.
+            if basis.and_then(|view| view.bytes.as_deref()) == Some(raw.as_slice()) {
+                return Ok("UNCHANGED".to_string());
+            }
+            let o = parse(raw)?;
+            drop(h);
+            // Larger registers are compared by head only after the current bytes have been verified and replayed.
+            if basis.is_some_and(|view| view.bytes.is_none() && view.head == o.head) {
                 return Ok("UNCHANGED".to_string());
             }
             let full = status(&reg, &o, true);
-            *last_status = Some((reg, o.head));
+            *last_status = Some(LastStatus { register: reg, head: o.head, bytes: retained_status_bytes(o.raw) });
             Ok(full)
         }
         "acr_verify" => Ok(verify_text(&open(&se.root, &reg)?.ok_or_else(none)?, 20)),
