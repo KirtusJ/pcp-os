@@ -528,6 +528,18 @@ fn asynchronous(failed: &mut u32) {
         (if drained { result.0 } else { Err("the key script did not finish") }, free0, user::frames_free(), result.1)
     };
 
+    // Independent rollback controls: an admitted earlier group member never enters user mode.
+    for (label, group) in [("single-unknown", alloc::vec!["absent-test-member"]),
+                            ("valid-then-unknown", alloc::vec!["hog", "absent-test-member"]),
+                            ("capacity-plus-one", alloc::vec!["hog"; 17])] {
+        let specifications: alloc::vec::Vec<_> = group.iter().map(|&name| Start { name, console: true, budget: 2 }).collect();
+        let before = user::frames_free();
+        let rejected = user::run(&specifications).is_none();
+        let after = user::frames_free();
+        say!("  note refused group {}: refused {}, free frames {} before and {} after", label, rejected, before, after);
+        check("rejected batch returns the frames of every member", rejected && before == after, failed);
+    }
+
     // 1. The stop key while a program runs. The program never yields and never ends; its budget is far away.
     dev::keyboard_script(arch::ticks() + 5, &STOP_KEYS);
     let t0 = arch::ticks();
@@ -598,6 +610,34 @@ fn asynchronous(failed: &mut u32) {
     let refused = matches!(r, Err("the program could not be admitted as a task"));
     check("a program under a name of 33 bytes is refused admission as a task", refused, failed);
     check("a program that cannot be admitted as a task leaves no memory behind: as many frames are free after as before", free0 == free1, failed);
+}
+
+/// Opt-in allocation-boundary test. Reserving the pool touches every free frame.
+fn check_space_cutoffs(failed: &mut u32) {
+    // Leave each possible number of frames below one built-in address space's requirement.
+    // Restore the fixture before checking the total so any leak remains visible.
+    let before = user::frames_free();
+    let mut reserved = alloc::vec::Vec::with_capacity(before);
+    while let Some(frame) = mem::take() {
+        reserved.push(frame);
+    }
+    let mut restored = true;
+    for available in 0..=7 {
+        if available > 0 {
+            restored &= reserved.pop().map(mem::give) == Some(true);
+        }
+        let space = arch::Space::new(&[0xc3]);
+        restored &= space.is_some() == (available == 7);
+        if let Some(space) = space {
+            restored &= space.release() == 7;
+        }
+        restored &= user::frames_free() == available;
+    }
+    for frame in reserved {
+        restored &= mem::give(frame);
+    }
+    check("a built-in address space gives its frames back at every allocation cutoff and after a successful construction",
+          restored && user::frames_free() == before, failed);
 }
 
 /// The kernel proper, entered from `arch` in 64-bit mode with interrupts off.
@@ -730,6 +770,9 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     // The asynchronous side needs the keyboard's interrupt, so it is tested here, and only by a kernel that verified itself.
     if failed == 0 && keyboard {
         asynchronous(&mut failed);
+        if boot.command_line.split_whitespace().any(|word| word == "test=frame-cutoffs") {
+            check_space_cutoffs(&mut failed);
+        }
     } else {
         say!("the asynchronous self-tests were not run: {}", if keyboard { "the kernel did not verify itself" } else { "there is no keyboard controller" });
     }
