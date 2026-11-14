@@ -54,7 +54,7 @@ def boot(args, name, image, enabled, nic, mac="02:00:00:00:00:01"):
             port = peer.getsockname()[1]
             opts.extend(["-netdev", f"socket,id=lab,udp=127.0.0.1:{port},localaddr=127.0.0.1:0",
                          "-device", "virtio-net-pci,netdev=lab,id=probe_nic,addr=0x06,"
-                         "disable-modern=on,vectors=0,mac=" + mac,
+                         "disable-modern=on,vectors=0,tx_queue_size=256,mac=" + mac,
                          "-object", "filter-dump,id=wire,netdev=lab,file=frame.pcap"])
         with (directory / "serial.txt").open("wb") as serial, (directory / "stderr.txt").open("wb") as errors:
             proc = subprocess.run([args.qemu, *opts], cwd=directory, stdout=serial, stderr=errors,
@@ -79,6 +79,11 @@ def boot(args, name, image, enabled, nic, mac="02:00:00:00:00:01"):
                 pcap=[packet.hex() for packet in capture], observed=[packet.hex() for packet in seen])
 
 
+def check(arm, field, actual, expected):
+    if actual != expected:
+        raise SystemExit(f"{arm}: {field} mismatch\nexpected {expected!r}\nobserved {actual!r}")
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("enabled_image", type=Path)
@@ -97,17 +102,30 @@ def main():
             boot(args, "wrong-fixture-mac", enabled, True, True, "02:00:00:00:00:03")]
     (args.output / "receipt.json").write_text(json.dumps(runs, indent=2) + "\n", encoding="utf-8")
     baseline = runs[2]["tests"]
-    assert baseline and PASS not in baseline
+    if not baseline or PASS in baseline:
+        raise SystemExit("build-feature-off: missing or contaminated baseline self-tests")
+    diagnostics = {
+        "transmit": ["virtio TX fixture: Ok(256)"],
+        "boot-flag-off": [],
+        "build-feature-off": [],
+        "device-absent": ['virtio TX fixture: Err("no legacy virtio-net PCI function")'],
+        "wrong-fixture-mac": ['virtio TX fixture: Err("fixture MAC mismatch")'],
+    }
+    device = "device on the bus: 00:06.0 maker 1af4 device 1000 class 02.00"
     for run in runs:
-        positive = run["name"] == "transmit"
-        refused = run["name"] in ("device-absent", "wrong-fixture-mac")
+        arm = run["name"]
+        positive = arm == "transmit"
+        refused = arm in ("device-absent", "wrong-fixture-mac")
         expected = [FRAME.hex()] if positive else []
-        assert run["pcap"] == expected and run["observed"] == expected, run["name"]
-        assert run["exit"] == (35 if refused else 33), run["name"]
-        assert run["failures"] == ([PASS] if refused else []), run["name"]
-        assert [t for t in run["tests"] if t != PASS] == baseline, run["name"]
-        assert (PASS in run["tests"]) == positive, run["name"]
-        assert bool(run["guest_pci"]) == (run["name"] != "device-absent"), run["name"]
+        check(arm, "guest diagnostic", run["device_result"], diagnostics[arm])
+        check(arm, "Ethernet capture", run["pcap"], expected)
+        check(arm, "loopback peer", run["observed"], expected)
+        check(arm, "guest exit", run["exit"], 35 if refused else 33)
+        check(arm, "failed tests", run["failures"], [PASS] if refused else [])
+        check(arm, "other passed tests", [t for t in run["tests"] if t != PASS], baseline)
+        check(arm, "TX test pass count", run["tests"].count(PASS), int(positive))
+        pci = [line.partition(" line ")[0] for line in run["guest_pci"]]
+        check(arm, "enumerated Ethernet devices", pci, [] if arm == "device-absent" else [device])
         print(f"{run['name']}: {len(run['tests'])} passed, {len(run['failures'])} failed, "
               f"{len(run['observed'])} frames, guest exit {run['exit']}")
     print("One 60-byte frame matched the capture and peer exactly.")

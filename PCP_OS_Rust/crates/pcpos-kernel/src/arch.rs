@@ -482,6 +482,18 @@ pub fn frame_write(frame: usize, offset: usize, data: &[u8]) -> bool {
     true
 }
 
+/// Publish one aligned little-endian halfword in an exclusively reserved DMA frame.
+#[cfg(feature = "virtio-tx-probe")]
+pub fn frame_publish_u16(frame: usize, offset: usize, value: u16) -> bool {
+    if !in_pool(frame) || offset > 4094 || offset % 2 != 0 {
+        return false;
+    }
+    // Safety: the halfword is aligned, lies inside a mapped writable pool frame,
+    // and the transmitter retains the frame until the device confirms reset.
+    unsafe { core::ptr::write_volatile((frame + offset) as *mut u16, value.to_le()) };
+    true
+}
+
 /// The bytes of a file the loader placed in memory, if the kernel mapped it. They stay mapped, read-only, for the life of the kernel.
 pub fn module_bytes(m: &Module) -> Option<&'static [u8]> {
     if !m.usable {

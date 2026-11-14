@@ -101,4 +101,10 @@ python3 tools/virtio_tx_probe.py target/pcpos-kernel.elf32 target/default.elf32 
 
 The replay uses QEMU's legacy virtio-net PCI interface with MSI-X disabled and a loopback UDP peer. Both UDP endpoints bind to `127.0.0.1`. The guest sends one fixed Ethernet frame, with EtherType `0x88b5`, from `02:00:00:00:00:01` to `02:00:00:00:00:02`. The host independently checks the receiving peer's bytes, QEMU's Ethernet capture and the guest's completion report. The output directory contains all serial logs, captures and the five-arm receipt. The two disabled controls must emit zero frames. A missing NIC or mismatched source MAC must fail the requested probe and emit zero frames.
 
+To check the verifier itself, supply the default image for both inputs under optimized Python. All five arms are recorded. The command must exit with a failure naming the missing transmit diagnostic.
+
+```sh
+python3 -O tools/virtio_tx_probe.py target/default.elf32 target/default.elf32 tx-wrong-images
+```
+
 The kernel selects exactly one legacy PCI network device with an I/O BAR, checks the fixture MAC, negotiates the MAC feature and configures transmit queue 1. It accepts a power-of-two queue size from 2 to 256. At most four zeroed pool frames hold the rings, header and packet. Both packet descriptors are device-readable. The device writes the used ring, which the guest polls with a fixed upper bound. After reset and confirmed clearance of PCI bus mastering, the guest releases the reserved frames. If it cannot confirm a stop, the frames stay reserved. This fixture assumes a conforming QEMU device. PCI bus mastering has no IOMMU containment in this kernel. There is no receive path, IP stack or network service. [VIRTIO 1.2 sections 2.7, 4.1 and 5.1](https://docs.oasis-open.org/virtio/virtio/v1.2/virtio-v1.2.html)

@@ -63,6 +63,8 @@ fn send(
         return Err("ring initialization");
     }
     // avail.ring[0] names descriptor 0 (zero-filled), flags=NO_INTERRUPT.
+    // Order every ring and payload write before the port I/O exposes the queue PFN.
+    fence(Ordering::SeqCst);
     out32(io + 8, (first >> 12) as u32);
     if in32(io + 8) != (first >> 12) as u32 {
         return Err("queue address readback");
@@ -72,7 +74,7 @@ fn send(
         return Err("driver status readback");
     }
     fence(Ordering::SeqCst);
-    if !arch::frame_write(apage, offset + 2, &1u16.to_le_bytes()) {
+    if !arch::frame_publish_u16(apage, offset + 2, 1) {
         return Err("available index");
     }
     fence(Ordering::SeqCst);
