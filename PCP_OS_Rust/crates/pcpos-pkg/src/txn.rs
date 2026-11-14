@@ -288,7 +288,11 @@ mod tests {
         let mut forged = s.plan_remove("x-2", "kirtusj", "acoustics").unwrap();
         forged.change = Change::Add { package: "kirtusj/optics".to_string(), digest: a1.digest().to_string() };
         assert!(s.commit(&forged).unwrap_err().contains("does not fit"));
-        assert_eq!(s.active(), 3);
+        // A replacement that states the wrong entry as the one installed: refused, whatever it would put in.
+        let mut forged = s.plan_remove("x-3", "kirtusj", "acoustics").unwrap();
+        forged.change = Change::Replace { package: "kirtusj/optics".to_string(), from: a1.digest().to_string(), to: b1.digest().to_string() };
+        assert!(s.commit(&forged).unwrap_err().contains("does not fit"));
+        assert_eq!((s.active(), s.installed("kirtusj", "optics")), (3, Some(a2.digest())));
     }
 
     #[test]
