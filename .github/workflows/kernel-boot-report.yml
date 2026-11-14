@@ -36,9 +36,10 @@ jobs:
           cargo build --locked --release --bin pcpos
           cargo test --locked -p pcpos-host --test boot_report --test boot_report_wire
           cargo test --locked -p pcpos-host --test host boot_report
-      - name: Boot the kernel and compare both serial encodings with the receiver
+      - name: Boot the kernel and compare all report encodings and console modes with the receiver
         working-directory: PCP_OS_Rust/crates/pcpos-kernel
         run: |
           sh run.sh build
           /usr/bin/python3 tests/boot_report.py target/pcpos-kernel.elf32 \
             --host "$GITHUB_WORKSPACE/PCP_OS_Rust/target/release/pcpos"
+          /usr/bin/python3 tests/quiet_console.py target/pcpos-kernel.elf32

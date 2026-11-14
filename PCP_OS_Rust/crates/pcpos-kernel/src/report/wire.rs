@@ -1,11 +1,12 @@
-//! The three COM2 v1 records in canonical JSON Lines and R1 map order.
+//! Write COM2 observations directly as JSON Lines, v1 CBOR maps or v2 CBOR arrays.
 use core::fmt::{self, Write};
-use pcpos_core::{machine::System, r1};
+use pcpos_core::{boot_report::{BOOT, SESSION, STOP}, machine::System, r1};
 
 #[derive(Clone, Copy)]
 pub enum Format {
     Json,
     Cbor,
+    Cbor2,
 }
 
 pub enum Message<'a> {
@@ -31,6 +32,17 @@ impl<F: FnMut(&[u8])> Write for Json<F> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         (self.0)(s.as_bytes());
         Ok(())
+    }
+}
+
+fn boolean(value: bool) -> u8 {
+    if value { 0xf5 } else { 0xf4 }
+}
+
+fn emit_system(system: Option<System>, emit: &mut impl FnMut(&[u8])) {
+    match system {
+        Some(s) => r1::emit_text(s.name(), emit),
+        None => emit(&[0xf6]),
     }
 }
 
@@ -61,7 +73,6 @@ impl Message<'_> {
             Format::Cbor => {
                 // The R1 key for "event" is 70 (0x18 0x46). The other keys are
                 // short text, ordered by encoded bytes. No runtime key sort.
-                let boolean = |value| if value { 0xf5 } else { 0xf4 };
                 match self {
                     Self::Boot { image, matches_expected } => {
                         emit(b"\xa4\x18\x46\x64boot\x61v\x01\x65image");
@@ -77,10 +88,7 @@ impl Message<'_> {
                         emit(b"\x65admit");
                         emit(&[boolean(*failed == 0)]);
                         emit(b"\x66system");
-                        match system {
-                            Some(s) => r1::emit_text(s.name(), &mut emit),
-                            None => emit(&[0xf6]),
-                        }
+                        emit_system(*system, &mut emit);
                     }
                     Self::Stop { passed, failed, replay, events, head } => {
                         emit(b"\xa7\x18\x46\x64stop\x61v\x01\x64fail");
@@ -96,6 +104,28 @@ impl Message<'_> {
                     }
                 }
             }
+            Format::Cbor2 => match self {
+                Self::Boot { image, matches_expected } => {
+                    emit(&BOOT.prefix());
+                    r1::emit_text(image, &mut emit);
+                    emit(&[matches_expected.map(boolean).unwrap_or(0xf6)]);
+                }
+                Self::Session { passed, failed, system } => {
+                    emit(&SESSION.prefix());
+                    r1::emit_uint(u64::from(*passed), &mut emit);
+                    r1::emit_uint(u64::from(*failed), &mut emit);
+                    emit_system(*system, &mut emit);
+                    emit(&[boolean(*failed == 0)]);
+                }
+                Self::Stop { passed, failed, replay, events, head } => {
+                    emit(&STOP.prefix());
+                    r1::emit_uint(u64::from(*passed), &mut emit);
+                    r1::emit_uint(u64::from(*failed), &mut emit);
+                    emit(&[boolean(*replay)]);
+                    r1::emit_uint(*events, &mut emit);
+                    r1::emit_text(head, &mut emit);
+                }
+            },
         }
     }
 }

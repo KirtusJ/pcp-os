@@ -1,8 +1,8 @@
-//! Compare the actual kernel encoder with the generic encoders the v1 producer originally used.
+//! Compare the actual kernel encoder with independent named and positional reference values.
 #[path = "../../pcpos-kernel/src/report/wire.rs"]
 mod wire;
 
-use pcpos_core::{machine::System, r1, value::Value};
+use pcpos_core::{boot_report::expand_positional, machine::System, r1, value::Value};
 use wire::{Format, Message};
 
 fn text(s: &str) -> Value {
@@ -13,10 +13,23 @@ fn compare(message: Message<'_>, fields: &[(&str, Value)]) {
     let row = Value::Map(fields.iter().map(|(key, value)| ((*key).into(), value.clone())).collect());
     let mut json = row.canonical_json();
     json.push(b'\n');
-    for (format, expected) in [(Format::Json, json), (Format::Cbor, r1::encode(&row))] {
+    // Spell the protocol independently of both the direct writer and the host layout.
+    let (tag, keys): (i64, &[&str]) = match row.get("event").unwrap().as_str().unwrap() {
+        "boot" => (0, &["image", "match"]),
+        "session" => (1, &["pass", "fail", "system", "admit"]),
+        "stop" => (2, &["pass", "fail", "replay", "events", "head"]),
+        _ => unreachable!(),
+    };
+    let mut items = vec![Value::Int(2), Value::Int(tag)];
+    items.extend(keys.iter().map(|key| row.get(key).unwrap().clone()));
+    let positional = r1::encode(&Value::List(items));
+    for (format, expected) in [(Format::Json, json), (Format::Cbor, r1::encode(&row)), (Format::Cbor2, positional)] {
         let mut raw = Vec::new();
         message.write(format, |bytes| raw.extend_from_slice(bytes));
         assert_eq!(raw, expected);
+        if matches!(format, Format::Cbor2) {
+            assert_eq!(expand_positional(r1::decode(&raw).unwrap()).as_ref(), Some(&row));
+        }
     }
 }
 

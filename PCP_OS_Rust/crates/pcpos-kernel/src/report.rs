@@ -13,6 +13,7 @@ impl Report {
         let report = match option {
             "json" => Self(Format::Json),
             "cbor" => Self(Format::Cbor),
+            "cbor2" => Self(Format::Cbor2),
             _ => return None,
         };
         if !arch::report_port_init() {
