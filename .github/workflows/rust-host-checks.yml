@@ -78,3 +78,62 @@ jobs:
           path: PCP_OS_Rust/target/release/pcpos
           retention-days: 1
           if-no-files-found: error
+
+  static-targets:
+    needs: host
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: PCP_OS_Rust
+    steps:
+      - name: Check out Rust source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install the documented Rust release toolchain and targets
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal
+          rustup default 1.97.0
+          rustup target add --toolchain 1.97.0 x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+          rustc --version
+      - name: Build static x86_64 and aarch64 Linux host programs
+        run: |
+          set -euo pipefail
+          cargo build --locked --release --bin pcpos --target x86_64-unknown-linux-musl
+          HOST_TRIPLE="$(rustc -vV | sed -n 's/^host: //p')"
+          LLD="$(rustc --print sysroot)/lib/rustlib/$HOST_TRIPLE/bin/rust-lld"
+          test -x "$LLD"
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER="$LLD" \
+            cargo build --locked --release --bin pcpos --target aarch64-unknown-linux-musl
+          file target/x86_64-unknown-linux-musl/release/pcpos target/aarch64-unknown-linux-musl/release/pcpos
+          sha256sum target/x86_64-unknown-linux-musl/release/pcpos target/aarch64-unknown-linux-musl/release/pcpos
+      - name: Check out byte-faithful build 22 plugin method
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: KirtusJ/pcp-os-claude
+          ref: 2197e6f12e24af8651abdeceb93c17f0e19b9ec6
+          path: released-plugin
+          persist-credentials: false
+      - name: Test the x86_64 static host against the pinned plugin method
+        run: |
+          set -euo pipefail
+          target/x86_64-unknown-linux-musl/release/pcpos method "$GITHUB_WORKSPACE/released-plugin/method"
+          target/x86_64-unknown-linux-musl/release/pcpos clause "$GITHUB_WORKSPACE/released-plugin/method" core 15.2 > /dev/null
+      - name: Install QEMU user emulation
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends qemu-user
+          qemu-aarch64 --version
+      - name: Test the aarch64 static host under QEMU user mode
+        run: |
+          set -euo pipefail
+          qemu-aarch64 target/aarch64-unknown-linux-musl/release/pcpos method "$GITHUB_WORKSPACE/released-plugin/method"
+          qemu-aarch64 target/aarch64-unknown-linux-musl/release/pcpos clause "$GITHUB_WORKSPACE/released-plugin/method" core 15.2 > /dev/null
+      - name: Retain test-only static host binaries
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pcpos-ci-static-linux-targets
+          path: |
+            PCP_OS_Rust/target/x86_64-unknown-linux-musl/release/pcpos
+            PCP_OS_Rust/target/aarch64-unknown-linux-musl/release/pcpos
+          retention-days: 1
+          if-no-files-found: error
