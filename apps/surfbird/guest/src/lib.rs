@@ -2,6 +2,8 @@
 
 //! An explicitly small HTTP/HTML fixture profile for a preconnected byte stream.
 //! The hosted reader remains the reference for general HTML and URL semantics.
+#[cfg(any(test, all(feature = "dns", target_os = "none")))]
+pub mod dns_answer;
 pub const CAPACITY: usize = 2048;
 pub const START: &str = "/harbour";
 

@@ -1,12 +1,12 @@
 # Surfbird guest HTTP experiment
 
-A bare-metal Rust ELF sends HTTP/1.1 requests and displays the pages it receives. There are two transport builds. The [guest TCP/IP build and packet capture](TCP.md) use virtio Ethernet with COM2 disconnected. The cable build below uses a preconnected serial stream. Both use the same page parser, keyboard controls and two-slot history. Keys **1** and **2** follow links, **B** restores the previous page from guest memory and **Esc** returns to the PCP menu.
+A bare-metal Rust ELF sends HTTP/1.1 requests and displays the pages it receives. The Ethernet guest can [resolve a hostname over DNS](DNS.md) or [connect to a fixed address](TCP.md). Both run TCP inside the guest with COM2 disconnected. The cable build below uses a preconnected serial stream. Both use the same page parser, keyboard controls and two-slot history. Keys **1** and **2** follow links, **B** restores the previous page from guest memory and **Esc** returns to the PCP menu.
 
 ## Serial cable
 
 The guest writes HTTP bytes to COM2. QEMU connects its serial backend to a loopback HTTP fixture running on the host. The fixture only learns which link was chosen when it receives the next request. The replay uses `-nic none` and a fixed HTTP Host of `fixture.test`. QEMU owns the TCP connection. [QEMU character device backends](https://www.qemu.org/docs/master/system/invocation.html#character-device-options)
 
-The loader must grant the ELF digest before the process can open the serial device. The Ethernet build uses a separate raw-frame device and runs its own TCP state machine. DNS and TLS remain open for native HTTPS browsing. [Guest device open and I/O](../../../PCP_OS_Rust/crates/pcpos-kernel/src/sys.rs) · [Loader grant](../../../PCP_OS_Rust/crates/pcpos-kernel/src/session.rs)
+The loader must grant the ELF digest before the process can open the serial device. The Ethernet build uses a separate raw-frame device and runs its own TCP state machine. The DNS build resolves a direct IPv4 address for the local HTTP fixture. Native HTTPS still requires TLS. [Guest device open and I/O](../../../PCP_OS_Rust/crates/pcpos-kernel/src/sys.rs) · [Loader grant](../../../PCP_OS_Rust/crates/pcpos-kernel/src/session.rs)
 
 ## Document and protocol limits
 

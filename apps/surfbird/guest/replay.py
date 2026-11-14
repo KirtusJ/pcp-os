@@ -240,6 +240,10 @@ def run_arm(args, work, arm, dns):
     if dns:
         from dns_trace import verify_dns
         ethernet = verify_dns(work/"guest.pcap", resolver_port, destination, arm, expected, pages)
+        case = dict(arm=arm, address=destination, resolver_port=resolver_port, paths=expected,
+                    pages=pages, pcap_sha256=ethernet["pcap_sha256"], guest_sha256=digest,
+                    kernel_measurement=measure)
+        (work / "fixture.json").write_text(json.dumps(case, indent=2) + "\n", encoding="utf-8")
     else:
         ethernet = verify_trace(work/"guest.pcap", port, expected, scenario, pages) if args.tcp else None
     if scenario == "refused":
@@ -268,6 +272,8 @@ def main():
     args = parser.parse_args()
     if args.dns:
         args.tcp = True
+    if not 0 <= args.dns_port <= 65535 or (args.dns_port and not args.dns):
+        parser.error("--dns-port requires DNS mode and a port in 0..65535")
     root = Path(tempfile.mkdtemp(prefix="surfbird-", dir=args.output))
     if args.arm == "refused" and not args.tcp:
         parser.error("the closed-port arm requires --tcp")

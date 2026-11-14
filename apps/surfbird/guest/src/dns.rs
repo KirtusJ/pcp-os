@@ -5,62 +5,13 @@ use smoltcp::{
     iface::{Interface, SocketSet, SocketStorage},
     socket::udp,
     wire::{
-        DnsFlags, DnsOpcode, DnsPacket, DnsQueryType, DnsQuestion, DnsRcode, DnsRecord,
-        DnsRecordData, DnsRepr, IpEndpoint, Ipv4Address,
+        DnsFlags, DnsOpcode, DnsPacket, DnsQueryType, DnsQuestion, DnsRepr, IpEndpoint, Ipv4Address,
     },
 };
 
 type Failure = &'static str;
 
-fn name_matches(packet: &DnsPacket<&[u8]>, encoded: &[u8], host: &str) -> bool {
-    let mut labels = packet.parse_name(encoded);
-    for wanted in host.as_bytes().split(|&b| b == b'.') {
-        if !matches!(labels.next(), Some(Ok(label)) if label.eq_ignore_ascii_case(wanted)) {
-            return false;
-        }
-    }
-    labels.next().is_none()
-}
-
-fn answer(bytes: &[u8], id: u16, host: &str) -> Result<Option<Ipv4Address>, Failure> {
-    let Ok(packet) = DnsPacket::new_checked(bytes) else {
-        return Ok(None);
-    };
-    if packet.transaction_id() != id
-        || packet.opcode() != DnsOpcode::Query
-        || !packet.flags().contains(DnsFlags::RESPONSE)
-        || packet.question_count() != 1
-    {
-        return Ok(None);
-    }
-    let Ok((records, question)) = DnsQuestion::parse(packet.payload()) else {
-        return Ok(None);
-    };
-    if question.type_ != DnsQueryType::A || !name_matches(&packet, question.name, host) {
-        return Ok(None);
-    }
-    if packet.flags().contains(DnsFlags::TRUNCATED) {
-        return Err("DNS truncated response");
-    }
-    match packet.rcode() {
-        DnsRcode::NXDomain => return Err("DNS name does not exist"),
-        DnsRcode::NoError => (),
-        _ => return Err("DNS resolver error"),
-    }
-    if packet.answer_record_count() != 1 {
-        return Err("DNS expected one address");
-    }
-    let Ok((_, record)) = DnsRecord::parse(records) else {
-        return Ok(None);
-    };
-    if !name_matches(&packet, record.name, host) {
-        return Ok(None);
-    }
-    match record.data {
-        DnsRecordData::A(ip) => Ok(Some(ip)),
-        _ => Err("DNS expected an A record"),
-    }
-}
+use surfbird_cable::dns_answer::answer;
 
 pub(super) fn resolve(
     host: &str,

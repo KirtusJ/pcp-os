@@ -1,0 +1,18 @@
+{
+  "arm": "retry",
+  "address": "10.0.2.43",
+  "resolver_port": 53,
+  "paths": [
+    "/harbour",
+    "/jetty-35c009784485",
+    "/bar-35c009784485"
+  ],
+  "pages": {
+    "/harbour": "<title>Harbour</title><p>Tide 35c009784485</p><a href=\"/bar-35c009784485\">Bar</a><a href=\"/jetty-35c009784485\">Jetty</a>",
+    "/bar-35c009784485": "<title>Bar</title><p>Report 35c009784485 Bar</p>",
+    "/jetty-35c009784485": "<title>Jetty</title><p>Report 35c009784485 Jetty</p>"
+  },
+  "pcap_sha256": "190aebc4e208308bf91ea13d12263e58033f01f74dbc6167e552d0f6c0ca2d71",
+  "guest_sha256": "73c282a5dee74cf0dc569a868cad5ba70681a3b86e4923774ebb3c6339882d0e",
+  "kernel_measurement": "0232c02a8946d66216da0ac65953a246ce3d41d7a966ae31aa83c3335b3259e3"
+}

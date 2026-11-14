@@ -63,6 +63,7 @@ fn fetch(
     wire: &mut [u8; CAPACITY],
 ) -> Result<usize, &'static str> {
     let deadline = time_us() + 8_000_000;
+    let mut request_len = 0;
     for bytes in [
         b"GET ".as_slice(),
         path.as_bytes(),
@@ -70,8 +71,13 @@ fn fetch(
         ORIGIN_HOST.as_bytes(),
         b"\r\nAccept: text/html\r\n\r\n",
     ] {
-        send(stream, bytes, deadline)?;
+        let end = request_len + bytes.len();
+        wire.get_mut(request_len..end)
+            .ok_or("request too large")?
+            .copy_from_slice(bytes);
+        request_len = end;
     }
+    send(stream, &wire[..request_len], deadline)?;
     let mut used = 0;
     let mut body = None;
     loop {

@@ -1,0 +1,10 @@
+{
+  "arm": "mismatch",
+  "address": "10.0.2.62",
+  "resolver_port": 53,
+  "paths": [],
+  "pages": {},
+  "pcap_sha256": "ae03281d7c358c7a10102625499054553e8300f2fd80c3cf56a94d62721d81a4",
+  "guest_sha256": "73c282a5dee74cf0dc569a868cad5ba70681a3b86e4923774ebb3c6339882d0e",
+  "kernel_measurement": "0232c02a8946d66216da0ac65953a246ce3d41d7a966ae31aa83c3335b3259e3"
+}

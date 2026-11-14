@@ -1,6 +1,7 @@
 """Independently verify the DNS exchange and its ordering relative to the HTTP socket."""
 
 import hashlib
+import json
 import socket
 import struct
 from pathlib import Path
@@ -18,18 +19,23 @@ def verify_dns(capture, resolver_port, destination, arm, paths, pages):
     replies = []
     answered = False
     guest_tcp = 0
-    for frame in frames(raw):
+    packets = list(frames(raw))
+    for frame in packets:
         if frame[12:14] != b"\x08\x00":
             continue
         ip = frame[14:]
         src, dst = ip[12:16], ip[16:20]
         payload = ip[4 * (ip[0] & 15) : int.from_bytes(ip[2:4], "big")]
-        if ip[9] == 6 and src == GUEST_IP:
-            check(
-                answered and dst == address and payload[2:4] == b"\0P",
-                "TCP traffic preceded a matching DNS answer or used a different destination",
-            )
-            guest_tcp += 1
+        if ip[9] == 6:
+            check(answered, "TCP traffic preceded a matching DNS answer")
+            if (src, dst) == (GUEST_IP, address):
+                check(payload[2:4] == b"\0P", "unexpected HTTP destination port")
+                guest_tcp += 1
+            else:
+                check(
+                    (src, dst) == (address, GUEST_IP) and payload[:2] == b"\0P",
+                    "unexpected TCP flow on the isolated link",
+                )
         if ip[9] != 17:
             continue
         sport, dport, size, _ = struct.unpack_from("!4H", payload)
@@ -74,6 +80,7 @@ def verify_dns(capture, resolver_port, destination, arm, paths, pages):
 
     check(queries > 0, "guest emitted no DNS query")
     report = {
+        "frames": len(packets),
         "resolver_port": resolver_port,
         "queries": queries,
         "replies": replies,
@@ -94,3 +101,23 @@ def verify_dns(capture, resolver_port, destination, arm, paths, pages):
             not guest_tcp and not answered and set(replies) == wanted, "negative DNS case differs"
         )
     return report
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("capture", type=Path)
+    parser.add_argument("fixture", type=Path)
+    args = parser.parse_args()
+    case = json.loads(args.fixture.read_text(encoding="utf-8"))
+    report = verify_dns(
+        args.capture,
+        case["resolver_port"],
+        case["address"],
+        case["arm"],
+        case["paths"],
+        case["pages"],
+    )
+    check(report["pcap_sha256"] == case["pcap_sha256"], "capture digest differs from fixture")
+    print(json.dumps(report, indent=2))

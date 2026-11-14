@@ -10,7 +10,7 @@ This preview reads HTTP(S) HTML and plain text through the host operating system
 
 ## Run
 
-A separate [native guest experiment](guest/) renders a small document and follows numbered links from a local HTTP fixture. Its Ethernet build opens a guest TCP socket; its serial build uses a preconnected cable. The hosted reader below uses the operating system’s network stack.
+A separate [native guest experiment](guest/) renders a small document and follows numbered links from a local HTTP fixture. The Ethernet guest can [resolve the fixture hostname](guest/DNS.md) and open its own TCP socket. The serial build uses a preconnected cable. The hosted reader below uses the operating system’s network stack.
 
 From this directory with Rust 1.91 or newer, run:
 
