@@ -528,6 +528,18 @@ fn asynchronous(failed: &mut u32) {
         (if drained { result.0 } else { Err("the key script did not finish") }, free0, user::frames_free(), result.1)
     };
 
+    // Independent rollback controls: an admitted earlier group member never enters user mode.
+    for (label, group) in [("single-unknown", alloc::vec!["absent-test-member"]),
+                            ("valid-then-unknown", alloc::vec!["hog", "absent-test-member"]),
+                            ("capacity-plus-one", alloc::vec!["hog"; 17])] {
+        let specifications: alloc::vec::Vec<_> = group.iter().map(|&name| Start { name, console: true, budget: 2 }).collect();
+        let before = user::frames_free();
+        let rejected = user::run(&specifications).is_none();
+        let after = user::frames_free();
+        say!("  REVIEW group={} denied={} frames_before={} frames_after={} difference={}", label, rejected, before, after, before.saturating_sub(after));
+        check("rejected batch returns the frames of every member", rejected && before == after, failed);
+    }
+
     // 1. The stop key while a program runs. The program never yields and never ends; its budget is far away.
     dev::keyboard_script(arch::ticks() + 5, &STOP_KEYS);
     let t0 = arch::ticks();
