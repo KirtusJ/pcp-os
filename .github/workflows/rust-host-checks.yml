@@ -155,6 +155,11 @@ jobs:
             qemu-aarch64 target/aarch64-unknown-linux-musl/release/pcpos mcp |
             python3 -c 'import json,sys; r=json.loads(sys.stdin.readline())["result"]; t=r["content"][0]["text"]; assert not r.get("isError") and "### 15.2 Halt" in t and "Specification SHA-256 649211ff2d765e06b5d5eb31dc80af6f97aedea242f2dcb5b77b3fa270ef34d6" in t'
           test ! -e "$ROOT/.pcp/register.jsonl"
+      - name: Check ARM linked-module ancestry through QEMU CLI and MCP
+        run: |
+          python3 "$GITHUB_WORKSPACE/PCP_OS_Rust/crates/pcpos-host/tests/linked_module_ancestors_arm.py" \
+            --binary "$GITHUB_WORKSPACE/PCP_OS_Rust/target/aarch64-unknown-linux-musl/release/pcpos" \
+            --runner qemu-aarch64
       - name: Retain test-only static host binaries
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
