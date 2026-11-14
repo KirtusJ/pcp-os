@@ -1,0 +1,36 @@
+name: PCP OS Rust host verification
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/pcpos-host-tests.yml"
+      - "PCP_OS_Rust/Cargo.toml"
+      - "PCP_OS_Rust/Cargo.lock"
+      - "PCP_OS_Rust/crates/pcpos-core/**"
+      - "PCP_OS_Rust/crates/pcpos-host/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust-host:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: PCP_OS_Rust
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install documented Rust toolchain
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal
+          rustup default 1.97.0
+          rustc --version
+          cargo --version
+      - name: Generate native guard vectors
+        run: cargo run --locked --release --bin pcpos-vectors -- vectors
+      - name: Run host and core tests
+        run: cargo test --locked --workspace
+      - name: Compile release host binary
+        run: cargo build --locked --release --bin pcpos
