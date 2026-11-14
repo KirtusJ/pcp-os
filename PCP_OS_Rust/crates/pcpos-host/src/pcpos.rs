@@ -2653,7 +2653,7 @@ mod method_inventory_tests {
 
     fn fixture() -> PathBuf {
         let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let dir = env::temp_dir().join(format!("pcpos-inventory-{}-{nonce}", process::id()));
+        let dir = env::temp_dir().join(format!("pcpos-inventory-{}-{nonce}", std::process::id()));
         let spec = dir.join("MODULES/01_Core/SOURCE/Specification.md");
         fs::create_dir_all(spec.parent().unwrap()).unwrap();
         fs::write(&spec, b"source bytes").unwrap();
