@@ -17,7 +17,7 @@ pub struct Outcome {
 /// The instruments this program offers, with the module each belongs to and what it computes.
 pub const LIST: [(&str, &str); 9] = [
     ("mathematics.exact", "the value of an expression in whole numbers and fractions, exactly; input: expression"),
-    ("mathematics.statement", "whether a Lean theorem's statement is the one that was pinned, and whether it is trivially true; input: source (Lean text), theorem (name), pinned (optional SHA-256)"),
+    ("mathematics.statement", "whether a Lean theorem's statement is the one that was pinned, and whether it is trivially true; it holds only against a pin, and without one it returns the digest to pin and does not hold; input: source (Lean text), theorem (name), pinned (SHA-256 of the statement)"),
     ("statistics.grim", "whether a reported mean of whole-number observations can arise from the stated count; input: mean (text, as reported), n"),
     ("statistics.percent", "whether a reported percentage can arise from a whole count out of the stated total; input: percent (text, as reported), total"),
     ("engineering.units", "whether a quantity in one unit equals a quantity in another, exactly; input: from, to (each a number and a unit, such as \"25 psi\")"),
@@ -36,7 +36,7 @@ pub fn run(name: &str, input: &Value, events: &[Value]) -> Result<Outcome, Strin
         "mathematics.statement" => {
             let pinned = match input.get("pinned") {
                 None | Some(Value::Null) => None,
-                Some(Value::Str(p)) => Some(p.as_str()),
+                Some(Value::Str(p)) if p.trim().len() == 64 && p.trim().chars().all(|ch| ch.is_ascii_hexdigit()) => Some(p.as_str()),
                 Some(_) => return Err("pinned was supplied and is not a string of 64 hexadecimal digits; a pin that cannot be read is not the same as no pin, and nothing was compared".to_string()),
             };
             statement(text("source")?, text("theorem")?, pinned)
@@ -752,7 +752,7 @@ fn statement(source: &str, name: &str, pinned: Option<&str>) -> Result<Outcome, 
         (from..end.saturating_sub(want.len() - 1)).find(|&j| {
             k[j] == 0 && j > 0 && c[j - 1] == '.' && k[j - 1] == 0
                 && c[j..j + want.len()] == want[..] && k[j..j + want.len()].iter().all(|m| *m == 0)
-                && c.get(j + want.len()).map_or(true, |ch| !lean_wordy(*ch) || k[j + want.len()] != 0)
+                && !c.get(j + want.len()).is_some_and(|ch| lean_wordy(*ch) && k[j + want.len()] == 0)
         }).map(|_| "sorryAx (qualified)".to_string())
     });
     let mut lines = probe("(a), a proof left open", gap.map(|w| format!("{w} stands in the statement or proof of {full}")), "no sorry and no admit between the name and the next declaration".to_string());
@@ -791,7 +791,8 @@ fn statement(source: &str, name: &str, pinned: Option<&str>) -> Result<Outcome, 
             let m = p.trim().eq_ignore_ascii_case(&got);
             (m, format!("{}: the digest pinned is {}", if m { "THE PINNED STATEMENT" } else { "NOT THE PINNED STATEMENT" }, p.trim()))
         }
-        None => (true, format!("NOT PINNED: the digest to pin for this statement is {got}")),
+        // No pin: the statement was read and probed, and its identity was compared with nothing. That is not a check that passed.
+        None => (false, format!("NOT PINNED: no digest was given, so the statement was compared with nothing and this result does not hold; the digest to pin for this statement is {got}")),
     };
     Ok(Outcome { holds: matches && fired == 0, text: format!("{full}\nstatement: {}\nSHA-256 of the statement, comments removed and white space collapsed: {got}\n{pin}{lines}\nThis instrument read text. It did not run Lean: whether the proof is accepted, and whether the statement says what is meant, it does not know.", lean_text(&stated)) })
 }
@@ -1158,14 +1159,51 @@ mod tests {
             assert!(e.contains("local binding"), "{e}");
         }
         // A let inside brackets does not own the separator and is read.
-        assert!(run(r#"{"source":"theorem t (n : Nat) : (let m := n + 1; n < m) := Nat.lt_succ_self n","theorem":"t"}"#).unwrap().holds);
+        let o = run(r#"{"source":"theorem t (n : Nat) : (let m := n + 1; n < m) := Nat.lt_succ_self n","theorem":"t"}"#).unwrap();
+        assert!(o.text.contains("statement: (n : Nat) : (let m := n + 1; n < m)\n") && o.text.matches("clear:").count() == 3, "{}", o.text);
         // 2. The reserved axiom with a qualifier fires probe (a); a field that merely ends in other letters does not.
         let o = run(r#"{"source":"theorem t (n : Nat) : n < n+1 := _root_.sorryAx _ false","theorem":"t"}"#).unwrap();
         assert!(!o.holds && o.text.contains("probe (a), a proof left open: FIRES"), "{}", o.text);
-        assert!(run(r#"{"source":"theorem t (n : Nat) : n < n+1 := x.sorryAxis n","theorem":"t"}"#).unwrap().holds);
+        let o = run(r#"{"source":"theorem t (n : Nat) : n < n+1 := x.sorryAxis n","theorem":"t"}"#).unwrap();
+        assert!(o.text.matches("clear:").count() == 3, "{}", o.text);
         // 3. A pinned that is supplied and is not a string is an error; null and absence are no pin.
         assert!(run(r#"{"source":"theorem t (n : Nat) : n < n+1 := Nat.lt_succ_self n","theorem":"t","pinned":1234}"#).is_err());
-        assert!(run(r#"{"source":"theorem t (n : Nat) : n < n+1 := Nat.lt_succ_self n","theorem":"t","pinned":null}"#).unwrap().holds);
+        let o = run(r#"{"source":"theorem t (n : Nat) : n < n+1 := Nat.lt_succ_self n","theorem":"t","pinned":null}"#).unwrap();
+        assert!(!o.holds && o.text.contains("NOT PINNED"), "{}", o.text);
+    }
+
+    #[test]
+    fn a_lean_statement_holds_only_against_a_pin() {
+        // What each case measures is said beside it. Lean is never run here.
+        let src = "theorem t (a b : Nat) : a + b = b + a := by omega";
+        let call = |extra: &str| run("mathematics.statement", &v(&format!(r#"{{"source":"{src}","theorem":"t"{extra}}}"#)), &[]);
+        let pin = sha256_hex("(a b : Nat) : a + b = b + a".as_bytes());
+        // No pin: the statement is read and probed, nothing is compared, and the result does not hold. The digest to pin is returned.
+        let o = call("").unwrap();
+        assert!(!o.holds && o.text.contains("NOT PINNED") && o.text.contains(&pin) && o.text.matches("clear:").count() == 3, "{}", o.text);
+        // The matching pin: identity compared and equal, no probe fires. This and nothing else holds.
+        let o = call(&format!(r#","pinned":"{pin}""#)).unwrap();
+        assert!(o.holds && o.text.contains("\nTHE PINNED STATEMENT"), "{}", o.text);
+        // A well-formed pin of another statement: identity compared and different.
+        let other = sha256_hex(b"(a b : Nat) : a + b = a + b");
+        let o = call(&format!(r#","pinned":"{other}""#)).unwrap();
+        assert!(!o.holds && o.text.contains("NOT THE PINNED STATEMENT"), "{}", o.text);
+        // A pin that is not a digest is refused, whatever it is: too short, too long, not hexadecimal, not text.
+        let long = format!("{pin}0");
+        for bad in [r#""""#, r#""00""#, &format!(r#""{}""#, &pin[..63]), &format!(r#""{long}""#), &format!(r#""{}""#, pin.replace(|ch: char| ch.is_ascii_digit(), "g")), "1234", "true", "[]"] {
+            let e = call(&format!(r#","pinned":{bad}"#)).err().unwrap_or_else(|| panic!("{bad} must be refused"));
+            assert!(e.contains("64 hexadecimal digits") && e.contains("nothing was compared"), "{bad}: {e}");
+        }
+        // With the right pin, a probe that fires still makes it not hold: an open proof, and a conclusion true by its form.
+        let open = "theorem t (a b : Nat) : a + b = b + a := by sorry";
+        let o = run("mathematics.statement", &v(&format!(r#"{{"source":"{open}","theorem":"t","pinned":"{pin}"}}"#)), &[]).unwrap();
+        assert!(!o.holds && o.text.contains("THE PINNED STATEMENT") && o.text.contains("probe (a), a proof left open: FIRES"), "{}", o.text);
+        let trivial = "theorem t (a b : Nat) : a + b = a + b := rfl";
+        let o = run("mathematics.statement", &v(&format!(r#"{{"source":"{trivial}","theorem":"t","pinned":"{other}"}}"#)), &[]).unwrap();
+        assert!(!o.holds && o.text.contains("\nTHE PINNED STATEMENT") && o.text.contains("probe (b)") && o.text.contains("FIRES"), "{}", o.text);
+        // A statement that needs a real proof: with its pin it holds, and the text says Lean was not run.
+        let o = call(&format!(r#","pinned":"{}""#, pin.to_uppercase())).unwrap();
+        assert!(o.holds && o.text.contains("It did not run Lean"), "{}", o.text);
     }
 
     #[test]
@@ -1173,7 +1211,7 @@ mod tests {
         let pin = sha256_hex(STATED.as_bytes());
         // Not pinned: the statement and the digest to pin. A := in a default argument does not end it; the statement is not ASCII.
         let o = statement(LEAN, "foo", None).unwrap();
-        assert!(o.holds && o.text.starts_with("Chain.foo\n") && o.text.contains(&format!("statement: {STATED}\n")) && o.text.contains(&format!("NOT PINNED: the digest to pin for this statement is {pin}")), "{}", o.text);
+        assert!(!o.holds && o.text.starts_with("Chain.foo\n") && o.text.contains(&format!("statement: {STATED}\n")) && o.text.contains("NOT PINNED: no digest was given") && o.text.contains(&format!("the digest to pin for this statement is {pin}")), "{}", o.text);
         assert_eq!(o.text.matches("clear:").count(), 3, "{}", o.text);
         // Pinned and matching, the digest in either case, the name with or without its namespace.
         let o = statement(LEAN, "Chain.foo", Some(&pin.to_uppercase())).unwrap();
@@ -1189,14 +1227,14 @@ mod tests {
         assert_eq!(o.text.matches("clear:").count(), 3, "only the pin fails: {}", o.text);
         // A name that begins another name: each is found, and only itself.
         let o = statement(LEAN, "foo_bar", None).unwrap();
-        assert!(o.holds && o.text.contains("statement: (n : Nat) : n + 0 = n\n"), "{}", o.text);
+        assert!(!o.holds && o.text.contains("statement: (n : Nat) : n + 0 = n\n") && o.text.matches("clear:").count() == 3, "{}", o.text);
         // White space inside a string is the statement's own, and a string may hold anything.
         let (one, two) = ("theorem s (h : t = \"a :=  -- b\") : t ≠ \"\" := by simp [h]", "theorem s (h : t = \"a := -- b\") : t ≠ \"\" := by simp [h]");
         let (a, b) = (statement(one, "s", None).unwrap(), statement(two, "s", None).unwrap());
-        assert!(a.holds && b.holds && a.text.contains("statement: (h : t = \"a :=  -- b\") : t ≠ \"\"\n") && a.text.lines().nth(2) != b.text.lines().nth(2), "{}", a.text);
+        assert!(!a.holds && !b.holds && a.text.contains("statement: (h : t = \"a :=  -- b\") : t ≠ \"\"\n") && a.text.lines().nth(2) != b.text.lines().nth(2), "{}", a.text);
         // Through the list, as a caller reaches it.
         let o = go("mathematics.statement", r#"{"source":"theorem t (a b : Nat) :\n  a + b = b + a := by\n  omega","theorem":"t"}"#);
-        assert!(o.holds && o.text.contains("statement: (a b : Nat) : a + b = b + a\n"), "{}", o.text);
+        assert!(!o.holds && o.text.contains("statement: (a b : Nat) : a + b = b + a\n") && o.text.contains("NOT PINNED"), "{}", o.text);
         assert!(!go("mathematics.statement", &format!(r#"{{"source":"theorem t (a b : Nat) : a + b = b + a := by omega","theorem":"t","pinned":"{pin}"}}"#)).holds);
     }
 
@@ -1214,12 +1252,14 @@ mod tests {
         fires("theorem foo (n : Nat) (h : 0 < n) : True := trivial", "b");
         // What only looks like it: the two sides are not the sides.
         for honest in ["theorem foo (a b : Nat) : a = b ∧ b = a ∧ b := by omega", "theorem foo (a b : Nat) (h : a = b) : b = a := h.symm", "theorem foo (a : Nat) : a + 1 ≥ a := by omega"] {
-            assert!(statement(honest, "foo", None).unwrap().holds, "{honest}");
+            let o = statement(honest, "foo", None).unwrap();
+            assert!(o.text.matches("clear:").count() == 3 && !o.text.contains("FIRES"), "{honest}: {}", o.text);
         }
         // A proof left open, and what is not one: the word in a comment, in a longer name, in the next declaration.
         fires("theorem foo (a b : Nat) : a + b = b + a := by\n  sorry", "a");
         fires("lemma foo (a b : Nat) : a + b = b + a := by\n  cases a\n  · admit\n  · omega", "a");
-        assert!(statement("theorem foo (a b : Nat) : a + b = b + a := by\n  -- sorry, not yet /- sorry -/\n  exact sorry_free a b\n\ntheorem next : 1 = 2 := sorry", "foo", None).unwrap().holds);
+        let o = statement("theorem foo (a b : Nat) : a + b = b + a := by\n  -- sorry, not yet /- sorry -/\n  exact sorry_free a b\n\ntheorem next : 1 = 2 := sorry", "foo", None).unwrap();
+        assert!(o.text.matches("clear:").count() == 3 && !o.text.contains("FIRES"), "{}", o.text);
         // A hypothesis nothing satisfies.
         fires("theorem foo (a b : Nat) (h : False) : a + b = 7 := h.elim", "c");
         fires("theorem foo (a b : Nat) : False → a + b = 7 := False.elim", "c");
