@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Game Store · PCP OS</title>
+  <style>
+    :root {
+      --ink: #172c30; --slate: #455554; --paper: #f7efda; --line: #9a947e;
+      --navy: #16393e; --red: #823b2c; --mono: "Courier Prime", "Courier New", monospace;
+      --serif: "Baskervville", Georgia, "Times New Roman", serif;
+      --sans: "Source Sans 3", "Trebuchet MS", Arial, sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box }
+    html { background: #d9d3bf; color: var(--ink); font-family: var(--sans) }
+    body { margin: 0 }
+    .sheet { max-width: 74rem; margin: 0 auto; min-height: 100vh; background: var(--paper); border-inline: 1px solid #b4ae99 }
+    .masthead { border-block-start: .55rem solid var(--ink); padding: 1.15rem clamp(1rem, 4vw, 3.8rem); display: flex; align-items: center; gap: .75rem; border-block-end: 1px solid var(--line) }
+    .brand { display: inline-flex; align-items: center; gap: .65rem; font: 700 1.3rem var(--mono); letter-spacing: -.055em }
+    .brand i { position: relative; width: 1.6rem; height: 1.38rem; background: var(--ink); display: inline-block; border-radius: 2px }
+    .brand i::before { content: ""; position: absolute; inset: .22rem .21rem .41rem; border: 1px solid var(--paper) }
+    .brand i::after { content: ""; position: absolute; width: .39rem; height: .1rem; right: .23rem; bottom: .16rem; background: var(--paper) }
+    .masthead > a { margin-inline-start: auto; color: var(--ink); text-underline-offset: .2em; font-size: .9rem; padding: .5rem 0 }
+    main { padding: 0 clamp(1rem, 4vw, 3.8rem) }
+    .intro { padding: clamp(1.6rem, 4vw, 3.4rem) 0 1.4rem; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; column-gap: 1.5rem; border-bottom: 4px double var(--ink) }
+    h1, h2, h3, p { margin: 0 }
+    h1 { font: 700 clamp(3.1rem, 7.2vw, 6.1rem)/.96 var(--serif); letter-spacing: -.065em }
+    .intro p { font: .96rem/1.5 var(--sans); color: var(--slate); margin-block-start: .7rem }
+    .shelf { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: clamp(1.5rem, 3.5vw, 3rem); padding: 1.7rem 0 2rem }
+    article { min-width: 0; display: flex; flex-direction: column; --accent: var(--navy) }
+    article.harbor { --accent: var(--red) }
+    .picture { margin: 0; border: 1px solid var(--ink); padding: .27rem; background: #fffaed }
+    .picture img { width: 100%; height: auto; aspect-ratio: 7 / 3; display: block; object-fit: cover; image-rendering: pixelated }
+    .type { margin: 1.25rem 0 .45rem; font: 700 .78rem/1.3 var(--mono); color: var(--accent); letter-spacing: .08em; text-transform: uppercase }
+    h2 { font: 700 clamp(2rem, 3.6vw, 3.15rem)/1.02 var(--serif); letter-spacing: -.055em; margin-bottom: .7rem }
+    .blurb { font: 1.07rem/1.5 var(--sans); max-width: 41ch; margin-bottom: 1.15rem }
+    .controls { margin: auto 0 1rem; padding-top: .8rem; border-top: 1px dashed var(--line); color: var(--slate); font: .9rem/1.5 var(--sans) }
+    .controls strong { color: var(--ink) }
+    .play { display: flex; align-items: center; justify-content: space-between; gap: 1rem; color: #fff9e8; background: var(--accent); border: 2px solid var(--accent); text-decoration: none; padding: .72rem 1rem; font: 700 1rem/1.3 var(--sans) }
+    .play span { font-family: var(--mono); font-weight: 400 }
+    .play:hover { text-decoration: underline; text-underline-offset: .22em }
+    a:focus { outline: 3px solid #005ec2; outline-offset: 3px }
+    footer { padding: 1.1rem 0 2.5rem; border-top: 4px double var(--ink); color: var(--slate); font-size: .92rem; line-height: 1.5 }
+    footer strong { color: var(--ink) }
+    @media (max-width: 43rem) {
+      .shelf { grid-template-columns: 1fr; padding-top: 1.25rem; row-gap: 1.7rem }
+      article + article { padding-top: 1.7rem; border-top: 1px solid var(--line) }
+      .intro { display: block }
+      .blurb { max-width: none }
+    }
+    @media (forced-colors: active) { .play { border: 2px solid LinkText } }
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <header class="masthead">
+      <span class="brand"><i aria-hidden="true"></i>PCP OS</span>
+      <a href="README.md">Store catalog and native play guide</a>
+    </header>
+    <main>
+      <div class="intro">
+        <h1>Game Store</h1>
+        <p>Two Rust games for your browser or PCP OS.</p>
+      </div>
+      <div class="shelf">
+        <article aria-labelledby="night">
+          <figure class="picture"><img src="art/night-post.png" width="384" height="164" alt="A kingfisher flies toward an airship under ribbons of green aurora."></figure>
+          <p class="type">Airmail arcade</p>
+          <h2 id="night">Night Post</h2>
+          <p class="blurb">Pilot a kingfisher with a satchel of letters. Drop the mail into moving nets and see who writes back from the last ferry.</p>
+          <p class="controls"><strong>Fly</strong> with the arrow keys, brake with X, and drop with Space. On a phone, use the flight controls below the sky.</p>
+          <a class="play" href="games/night-post/dist/Night_Post.html">Play Night Post <span aria-hidden="true">&rarr;</span></a>
+        </article>
+        <article class="harbor" aria-labelledby="bell">
+          <figure class="picture"><img src="art/bellweather-harbor.png" width="448" height="192" alt="Boats cross the sunlit harbor between a lighthouse and a tall dock crane."></figure>
+          <p class="type">Idle harbor tycoon</p>
+          <h2 id="bell">Bellweather Harbor</h2>
+          <p class="blurb">Start with a rowboat and a brass bell. Hire a captain, trade the catch, and keep an eye on the paperwork coming off the quay.</p>
+          <p class="controls"><strong>Ring the bell</strong> to send out your first boat. Click or tap the ledger to buy another, or use Tab and Enter.</p>
+          <a class="play" href="games/bellweather-harbor/dist/Bellweather_Harbor.html">Play Bellweather Harbor <span aria-hidden="true">&rarr;</span></a>
+        </article>
+      </div>
+      <footer><p><strong>Playing offline?</strong> Extract the store folder, then open this index in your browser. Both games run from their own HTML files.</p></footer>
+    </main>
+  </div>
+</body>
+</html>

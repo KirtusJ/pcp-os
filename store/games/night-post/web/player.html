@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Night Post</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#171931;color:#ffeac8;font-family:system-ui,sans-serif}
+body{min-height:100svh;display:grid;place-content:center;background:radial-gradient(ellipse at center,#333248,#171931 72%)}
+main{width:min(100vw,1024px);padding:12px}canvas{display:block;width:100%;aspect-ratio:16/9;image-rendering:pixelated;background:#22233e;outline:none;box-shadow:0 10px 60px #0c0c2080}
+nav{display:flex;gap:7px;margin-top:12px;align-items:center;justify-content:center}
+button{touch-action:none;user-select:none;-webkit-user-select:none;border:1px solid #62596e;border-radius:5px;background:#262640;color:#ffeac8;padding:9px 13px;font:600 14px system-ui;min-height:42px;cursor:pointer}
+button:active,button[aria-pressed=true]{background:#49465a}button:focus-visible{outline:2px solid #ffb46e}
+@media(pointer:fine){.touch{display:none}nav{justify-content:flex-end}}@media(max-width:520px){main{padding:4px}button{padding:6px 9px}nav{gap:4px;flex-wrap:wrap}}
+
+[hidden]{display:none!important}
+#letter{max-width:42em;margin:12px auto 0;padding:10px 16px;background:#22233e;border-radius:4px}
+#letter summary{cursor:pointer}
+#letter p{white-space:pre-line;line-height:1.55;color:#f4e5c5}
+#status:empty{display:none}
+</style>
+<main><canvas id="game" width="512" height="288" tabindex="0" aria-label="Night Post. Choose a route with Left or Right. Steer with WASD or arrows. Hold X for the airbrake and drop sight. Space to take flight or release a letter. P to pause. M for return mail. Space flips a postcard."></canvas>
+<nav aria-label="Flight controls">
+<button class="touch" data-bit="4" aria-label="Fly left">◀</button><button class="touch" data-bit="1" aria-label="Fly up">▲</button>
+<button class="touch" data-bit="2" aria-label="Fly down">▼</button><button class="touch" data-bit="8" aria-label="Fly right">▶</button>
+<button class="touch" data-bit="64">Brake</button><button class="touch" data-bit="16">Fly / drop</button><button id="mail" data-bit="128" aria-pressed="false">Mail</button><button id="keep" hidden>Save postcard</button><button data-bit="32">Pause</button><button id="sound" aria-pressed="true">Sound on</button></nav>
+<details id="letter" hidden><summary>Read postcard text</summary><p id="words"></p></details>
+<p id="status" role="status"></p></main>
+<script>
+(async()=>{
+ const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d',{alpha:false});
+ const bytes=Uint8Array.from(atob('__WASM__'), c=>c.charCodeAt(0));
+ const {instance}=await WebAssembly.instantiate(bytes,{}), rust=instance.exports;
+ const frame=new ImageData(new Uint8ClampedArray(rust.memory.buffer,rust.frame(),512*288*4),512,288);
+ const bookKey='nightpost.album.v2';
+ let book=0;
+ try { const value=Number(localStorage.getItem(bookKey));
+   if(Number.isInteger(value) && value>=0 && value<=262143)rust.restore_album(value);
+   book=rust.album();
+ } catch {}
+ function storeBook(){
+   const next=rust.album();if(next===book)return;book=next;
+   try {const saved=Number(localStorage.getItem(bookKey));
+     if(Number.isInteger(saved)&&saved>=0&&saved<=262143){rust.restore_album(book|saved);book=rust.album();}
+     localStorage.setItem(bookKey,String(book));
+   } catch {}
+ }
+ const physical=new Map(), pointers=new Map(), keymap={ArrowUp:1,KeyW:1,ArrowDown:2,KeyS:2,ArrowLeft:4,KeyA:4,ArrowRight:8,KeyD:8,Space:16,Enter:16,KeyP:32,KeyM:128,KeyX:64,ShiftLeft:64,ShiftRight:64};
+ let taps=0, audio, enabled=true;
+ function unlock(){if(!enabled)return;try{if(!audio)audio=new AudioContext();if(audio.state==='suspended')audio.resume().catch(()=>{});}catch{}}
+ function notes(n){if(!n||!enabled||!audio||audio.state!=='running')return;
+  const data=new Int16Array(rust.memory.buffer,rust.pcm(),n),buffer=audio.createBuffer(1,n,48000),out=buffer.getChannelData(0);
+  for(let i=0;i<n;i++)out[i]=data[i]/32768;
+  const src=audio.createBufferSource();src.buffer=buffer;src.connect(audio.destination);src.start();}
+ document.addEventListener('keydown',e=>{const bit=keymap[e.code];if(!bit||e.altKey||e.ctrlKey||e.metaKey)return;
+  if(e.target.closest && e.target.closest('button,summary') && (e.code==='Space'||e.code==='Enter'))return;
+  e.preventDefault();unlock();if(!physical.has(e.code))taps|=bit;physical.set(e.code,bit);});
+ document.addEventListener('keyup',e=>{physical.delete(e.code)});
+ window.addEventListener('blur',()=>{physical.clear();pointers.clear();taps=0;});
+ canvas.addEventListener('pointerdown',()=>{unlock();canvas.focus()});
+ for(const b of document.querySelectorAll('[data-bit]')){
+  const bit=Number(b.dataset.bit);
+  b.addEventListener('pointerdown',e=>{e.preventDefault();unlock();b.setPointerCapture(e.pointerId);pointers.set(e.pointerId,bit);taps|=bit;});
+  for(const event of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(event,e=>pointers.delete(e.pointerId));
+  b.addEventListener('click',e=>{if(e.detail===0){unlock();taps|=bit;}});
+ }
+ const sound=document.querySelector('#sound');sound.onclick=()=>{enabled=!enabled;if(enabled)unlock();sound.textContent=enabled?'Sound on':'Sound off';sound.setAttribute('aria-pressed',String(enabled));canvas.focus();};
+ let last=performance.now(),acc=0;
+ const mail=document.querySelector('#mail'), keep=document.querySelector('#keep'), transcript=document.querySelector('#letter');
+ const decoder=new TextDecoder(), oldCanvasLabel=canvas.getAttribute('aria-label');
+ let lastMail=-1,cardTitle='';
+ function mailLine(i){
+   const ptr=rust.mail_line_ptr(i);
+   if(!ptr)return null;
+   return decoder.decode(new Uint8Array(rust.memory.buffer,ptr,rust.mail_line_len(i)));
+ }
+ function syncMailbox(){
+   const view=rust.mail_view();if(lastMail===view)return;lastMail=view;
+   const inside=view!==0,back=inside && view%2===0;
+   if(!inside && mail.getAttribute('aria-pressed')==='true')canvas.focus();
+   keep.hidden=!inside;transcript.hidden=!back;
+   mail.textContent=inside?'Back':'Mail';mail.setAttribute('aria-pressed',String(inside));
+   const action=document.querySelector('[data-bit="16"]');action.textContent=inside?'Flip':'Fly / drop';
+   for(const b of document.querySelectorAll('[data-bit]')){
+     const bit=Number(b.dataset.bit);
+     if([1,2,32,64].includes(bit))b.hidden=inside;
+     if(bit===4||bit===8)b.setAttribute('aria-label',inside?(bit===4?'Previous postcard':'Next postcard'):(bit===4?'Fly left':'Fly right'));
+   }
+   transcript.open=false;document.querySelector('#words').textContent='';
+   if(!inside){canvas.setAttribute('aria-label',oldCanvasLabel);return;}
+   cardTitle=mailLine(0);
+   canvas.setAttribute('aria-label',cardTitle+' from '+mailLine(1)+'. '+(back?'Message side.':'Picture side.')+' Space to flip, arrows to browse, M to return.');
+   if(back){
+     const lines=[cardTitle,mailLine(1),''];let line;
+     for(let i=3;(line=mailLine(i))!==null;i++)lines.push(line);
+     lines.push('',mailLine(2));document.querySelector('#words').textContent=lines.join('\n');
+   }
+ }
+ keep.onclick=()=>{
+   if(!rust.mail_view())return;
+   const sheet=document.createElement('canvas');sheet.width=916;sheet.height=440;
+   const pen=sheet.getContext('2d');pen.imageSmoothingEnabled=false;
+   pen.drawImage(canvas,26,26,458,220,0,0,916,440);
+   const link=document.createElement('a');
+   link.download=cardTitle.toLowerCase().replace(/[^a-z0-9]+/g,'-')+(lastMail%2===0?'-message':'-picture')+'.png';
+   link.href=sheet.toDataURL('image/png');document.body.appendChild(link);link.click();link.remove();canvas.focus();
+ };
+ function draw(){rust.render();ctx.putImageData(frame,0,0);syncMailbox();}
+ function animate(){
+  const now=performance.now(),elapsed=Math.max(0,Math.min(100,now-last));last=now;
+  if(document.hidden){acc=0;return;}
+  acc+=elapsed;
+  if(acc<25)return;
+  while(acc>=25){let mask=taps;for(const bit of physical.values())mask|=bit;for(const bit of pointers.values())mask|=bit;
+   notes(rust.step(mask));storeBook();taps=0;acc-=25;}
+  draw();
+ }
+ draw();canvas.focus();setInterval(animate,25);
+})().catch(e=>{document.querySelector('#status').textContent='Could not start Night Post: '+e.message;});
+</script></html>

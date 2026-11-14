@@ -49,7 +49,14 @@ pub fn run(name: &str, input: &Value, events: &[Value]) -> Result<Outcome, Strin
         "statistics.grim" => granularity(text("mean")?, whole("n")?, 1, "mean"),
         "statistics.percent" => granularity(text("percent")?, whole("total")?, 100, "percentage"),
         "engineering.units" => units(text("from")?, text("to")?),
-        "cryptography.digest" => digest(text("text")?, input.get("claimed").and_then(Value::as_str)),
+        "cryptography.digest" => {
+            let claimed = match input.get("claimed") {
+                None => None,
+                Some(Value::Str(s)) => Some(s.as_str()),
+                Some(_) => return Err("claimed must be text when supplied; no digest comparison was made".to_string()),
+            };
+            digest(text("text")?, claimed)
+        }
         "science.order" => order(text("earlier")?, text("later")?, events),
         "science.incident_bounds" => incident_bounds(input),
         "quality.coverage" => coverage(text("review")?, events),
