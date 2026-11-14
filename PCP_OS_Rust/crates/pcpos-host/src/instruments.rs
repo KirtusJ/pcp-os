@@ -17,7 +17,7 @@ pub struct Outcome {
 }
 
 /// The instruments this program offers, with the module each belongs to and what it computes.
-pub const LIST: [(&str, &str); 10] = [
+pub const LIST: &[(&str, &str)] = &[
     ("mathematics.exact", "the value of an expression in whole numbers and fractions, exactly; input: expression"),
     ("mathematics.protected_bins", "compare signed integer columns at a common scale: both squared totals must equal 2^scale_exponent (0..127); corresponding bins must have equal squared norms and odd gcds. Input: scale_exponent, source, target (ordered lists of bins of signed 64-bit integers; at most 64 bins and 4096 entries per column; squared totals must fit u128)"),
     ("mathematics.statement", "whether a Lean theorem's statement is the one that was pinned, and whether it is trivially true; it holds only against a pin, and without one it returns the digest to pin and does not hold; input: source (Lean text), theorem (name), pinned (SHA-256 of the statement)"),
@@ -921,6 +921,11 @@ fn digest(text: &str, claimed: Option<&str>) -> Result<Outcome, String> {
 /// Extremal completions of a submitted binary experiment on its full incident denominator.
 /// Products of two nonnegative i64 inputs fit i128. The sum of the three counts fits as well.
 fn incident_bounds(input: &Value) -> Result<Outcome, String> {
+    const FIELDS: [&str; 7] = ["incidents", "hits", "misses", "unread", "lower_numerator", "upper_numerator", "denominator"];
+    let Value::Map(fields) = input else { return Err("incident bounds need a table of counts and a closed band".into()); };
+    if let Some(extra) = fields.keys().find(|key| !FIELDS.contains(&key.as_str())) {
+        return Err(format!("unknown incident_bounds field {extra}"));
+    }
     let count = |key: &str| {
         input.get(key).and_then(Value::as_int).filter(|n| *n >= 0).map(i128::from)
             .ok_or_else(|| format!("{key} must be a nonnegative integer"))
@@ -1185,7 +1190,7 @@ mod tests {
             ("\"hits\":66", "\"hits\":65"), ("\"unread\":3", "\"unread\":-1"),
             ("\"misses\":59", "\"misses\":true"), ("\"unread\":3,", ""),
             ("\"denominator\":128", "\"denominator\":0"), ("\"upper_numerator\":69", "\"upper_numerator\":65"),
-            ("\"upper_numerator\":69", "\"upper_numerator\":129"),
+            ("\"upper_numerator\":69", "\"upper_numerator\":129"), ("\"hits\":66", "\"hits\":66,\"lost\":3"),
         ] {
             assert!(super::incident_bounds(&v(&base.replace(from,to))).is_err());
         }
@@ -1506,7 +1511,8 @@ mod tests {
     #[test]
     fn an_instrument_that_does_not_exist_is_not_invented() {
         assert!(run("mathematics.prove", &v("{}"), &[]).is_err());
-        assert_eq!(LIST.len(), 10);
+        let unique: std::collections::BTreeSet<_> = LIST.iter().map(|(name, _)| name).collect();
+        assert_eq!(unique.len(), LIST.len());
         for (name, _) in LIST {
             assert!(!matches!(run(name, &v("{}"), &[]), Err(e) if e.starts_with("there is no instrument")), "{name} is listed and must exist");
         }
