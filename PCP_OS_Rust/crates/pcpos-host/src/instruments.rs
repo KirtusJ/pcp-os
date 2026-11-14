@@ -17,7 +17,7 @@ pub struct Outcome {
 }
 
 /// The instruments this program offers, with the module each belongs to and what it computes.
-pub const LIST: [(&str, &str); 10] = [
+pub const LIST: &[(&str, &str)] = &[
     ("mathematics.exact", "the value of an expression in whole numbers and fractions, exactly; input: expression"),
     ("mathematics.protected_bins", "compare signed integer columns at a common scale: both squared totals must equal 2^scale_exponent (0..127); corresponding bins must have equal squared norms and odd gcds. Input: scale_exponent, source, target (ordered lists of bins of signed 64-bit integers; at most 64 bins and 4096 entries per column; squared totals must fit u128)"),
     ("mathematics.statement", "whether a Lean theorem's statement is the one that was pinned, and whether it is trivially true; it holds only against a pin, and without one it returns the digest to pin and does not hold; input: source (Lean text), theorem (name), pinned (SHA-256 of the statement)"),
@@ -26,6 +26,7 @@ pub const LIST: [(&str, &str); 10] = [
     ("engineering.units", "whether a quantity in one unit equals a quantity in another, exactly; input: from, to (each a number and a unit, such as \"25 psi\")"),
     ("cryptography.digest", "the SHA-256 digest of given text, after reproducing published known answers; input: text, claimed (optional)"),
     ("science.order", "from the register: whether one artifact entered the record before another; input: earlier, later (SHA-256 digests)"),
+    ("science.incident_bounds", "whether every completion of unread binary outcomes in a finite incident table has its hit fraction inside the supplied closed band. Input integers: incidents, hits, misses, unread, lower_numerator, upper_numerator, denominator"),
     ("quality.coverage", "from the register: for each claim of a review, whether a finding is recorded and how it was executed; input: review"),
     ("core.calibration", "whether a Calibration Record's counts agree with each other and its thresholds and claim say no more than its counts; input: record"),
 ];
@@ -57,6 +58,7 @@ pub fn run(name: &str, input: &Value, events: &[Value]) -> Result<Outcome, Strin
             digest(text("text")?, claimed)
         }
         "science.order" => order(text("earlier")?, text("later")?, events),
+        "science.incident_bounds" => incident_bounds(input),
         "quality.coverage" => coverage(text("review")?, events),
         "core.calibration" => calibration(input.get("record").ok_or("this instrument needs record, the Calibration Record")?),
         _ => Err(format!("there is no instrument named {name}. Those offered: {}", LIST.iter().map(|i| i.0).collect::<Vec<_>>().join(", "))),
@@ -921,6 +923,43 @@ fn digest(text: &str, claimed: Option<&str>) -> Result<Outcome, String> {
     })
 }
 
+// ---- science.incident_bounds ------------------------------------------------------------------------------------
+
+/// Extremal completions of a submitted binary experiment on its full incident denominator.
+/// Products of two nonnegative i64 inputs fit i128. The sum of the three counts fits as well.
+fn incident_bounds(input: &Value) -> Result<Outcome, String> {
+    const FIELDS: [&str; 7] = ["incidents", "hits", "misses", "unread", "lower_numerator", "upper_numerator", "denominator"];
+    let Value::Map(fields) = input else { return Err("incident bounds need a table of counts and a closed band".into()); };
+    if let Some(extra) = fields.keys().find(|key| !FIELDS.contains(&key.as_str())) {
+        return Err(format!("unknown incident_bounds field {extra}"));
+    }
+    let count = |key: &str| {
+        input.get(key).and_then(Value::as_int).filter(|n| *n >= 0).map(i128::from)
+            .ok_or_else(|| format!("{key} must be a nonnegative integer"))
+    };
+    let incidents = count("incidents")?;
+    let hits = count("hits")?;
+    let misses = count("misses")?;
+    let unread = count("unread")?;
+    let lower = count("lower_numerator")?;
+    let upper = count("upper_numerator")?;
+    let denom = count("denominator")?;
+    if incidents == 0 || hits + misses + unread != incidents {
+        return Err("incidents must be positive and equal hits + misses + unread".into());
+    }
+    if denom == 0 || lower > upper || upper > denom {
+        return Err("the closed band requires 0 <= lower_numerator <= upper_numerator <= denominator and denominator > 0".into());
+    }
+    let max_hits = hits + unread;
+    let holds = lower * incidents <= hits * denom && max_hits * denom <= upper * incidents;
+    let verdict = if holds { "EVERY completion is inside" } else { "AT LEAST ONE completion is outside" };
+    Ok(Outcome { holds, text: format!(
+        "{hits} hits, {misses} misses, {unread} unread in {incidents} reported incidents\n\
+         attainable hit counts: {hits} through {max_hits} inclusive, each over {incidents}\n\
+         {verdict} the closed band [{lower}/{denom}, {upper}/{denom}]. This compares finite records. A population interval requires a sampling model."
+    ) })
+}
+
 // ---- science.order, quality.coverage: what the register holds ---------------------------------------------------
 
 fn field<'a>(e: &'a Value, k: &str) -> Option<&'a str> {
@@ -1129,6 +1168,44 @@ fn calibration(record: &Value) -> Result<Outcome, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn incident_bounds_agree_with_enumerating_all_unread_completions() {
+        for incidents in 1..=6 {
+            for hits in 0..=incidents {
+                for unread in 0..=incidents-hits {
+                    let misses = incidents-hits-unread;
+                    for lower in 0..=4 {
+                        for upper in lower..=4 {
+                            let input = v(&format!(r#"{{"incidents":{incidents},"hits":{hits},"misses":{misses},"unread":{unread},"lower_numerator":{lower},"upper_numerator":{upper},"denominator":4}}"#));
+                            let expected = (0..(1u32<<unread)).all(|mask| {
+                                let scaled = 4 * (hits + mask.count_ones());
+                                lower * incidents <= scaled && scaled <= upper * incidents
+                            });
+                            assert_eq!(super::run("science.incident_bounds", &input, &[]).unwrap().holds, expected);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn incident_bounds_refuse_invalid_tables_and_handle_large_counts() {
+        let base = r#"{"incidents":128,"hits":66,"misses":59,"unread":3,"lower_numerator":66,"upper_numerator":69,"denominator":128}"#;
+        assert!(super::incident_bounds(&v(base)).unwrap().holds);
+        for (from, to) in [
+            ("\"hits\":66", "\"hits\":65"), ("\"unread\":3", "\"unread\":-1"),
+            ("\"misses\":59", "\"misses\":true"), ("\"unread\":3,", ""),
+            ("\"denominator\":128", "\"denominator\":0"), ("\"upper_numerator\":69", "\"upper_numerator\":65"),
+            ("\"upper_numerator\":69", "\"upper_numerator\":129"), ("\"hits\":66", "\"hits\":66,\"lost\":3"),
+        ] {
+            assert!(super::incident_bounds(&v(&base.replace(from,to))).is_err());
+        }
+        let max = i64::MAX;
+        let large = format!(r#"{{"incidents":{max},"hits":{max},"misses":0,"unread":0,"lower_numerator":{max},"upper_numerator":{max},"denominator":{max}}}"#);
+        assert!(super::incident_bounds(&v(&large)).unwrap().holds);
+        assert!(super::incident_bounds(&v(&large.replace("\"unread\":0", "\"unread\":1"))).is_err());
+    }
     use super::*;
     fn v(json: &str) -> Value {
         Value::parse(json.as_bytes()).unwrap()
@@ -1441,7 +1518,8 @@ mod tests {
     #[test]
     fn an_instrument_that_does_not_exist_is_not_invented() {
         assert!(run("mathematics.prove", &v("{}"), &[]).is_err());
-        assert_eq!(LIST.len(), 10);
+        let unique: std::collections::BTreeSet<_> = LIST.iter().map(|(name, _)| name).collect();
+        assert_eq!(unique.len(), LIST.len());
         for (name, _) in LIST {
             assert!(!matches!(run(name, &v("{}"), &[]), Err(e) if e.starts_with("there is no instrument")), "{name} is listed and must exist");
         }

@@ -32,6 +32,16 @@ The example reports squared norms 10 and 6 and odd gcd 1 in both bins. Protectin
 
 The CLI exits with 0 for agreement, 1 for a computed mismatch and 2 for invalid or out-of-range input. From MCP, call `acr_instrument` with the same instrument name and input object. Its usual review and recording rules apply. Supply 1–64 bins and at most 4,096 signed 64-bit JSON integers per column. The exponent ranges from 0 through 127. Every bin sum and column sum must fit an unsigned 128-bit integer. The instrument refuses overflow. It ships with a host built from this source.
 
+## Bounding a binary read with missing outcomes
+
+`science.incident_bounds` answers whether every possible completion of the submitted finite table lies within a closed band. Give it the incident denominator, observed hits and misses, and every unread binary flag. The three counts must exhaust the stated denominator. Give the band as two numerators with a common positive denominator. In this example the possible hit counts are 66, 67, 68 and 69.
+
+```sh
+pcpos instrument science.incident_bounds '{"incidents":128,"hits":66,"misses":59,"unread":3,"lower_numerator":66,"upper_numerator":69,"denominator":128}'
+```
+
+MCP workers call `acr_instrument` with the same instrument name and input object. A narrower upper bound of 68 gives a computed failure. A missing category, inconsistent total, invalid band or extra input field gives a refusal. Zero unread is valid. Each count and band component must fit a nonnegative signed 64-bit integer. Every integer hit count between the endpoints is attainable. Making an inference about the incident population additionally requires a sampling model and a justified denominator. A paper reporting only a rounded mean cannot supply this input. For the statistical background see [Horowitz and Manski on experiments with missing outcomes](https://doi.org/10.1080/01621459.2000.10473902).
+
 ## What does not exist
 
 Storage that survives a stop, a file system on a disk, a network stack, a mouse, threads, signals, a second processor, messages between processes, a shell, a driver for any real device, a graphics processor driver, start from UEFI. The kernel's files are the ones the loader handed it plus what a program writes while it runs, kept in memory and gone at the stop. The system-call interface is the subset that the programs run so far needed: a program that needs more is told the call does not exist. Two programs have been run on it, Doom and a probe written for the tests. The authority model beyond device capabilities is still data structures with tests.

@@ -27,6 +27,7 @@ These instruments ship in the Rust host. Run `pcpos instrument list` to see what
 | Mathematics | `mathematics.protected_bins` | Compares squared norms and odd coordinate gcds of signed columns in corresponding bins. |
 | Mathematics | `mathematics.statement` | Checks a Lean statement against a pinned digest and screens for trivial forms. |
 | Science | `science.order` | Determines which of two artifacts entered a given register first. |
+| Science | `science.incident_bounds` | Checks whether every possible completion of an incident table’s unread binary outcomes stays within a stated fraction range. |
 | Statistics | `statistics.grim` | Tests whether an integer sample of the stated size could yield a reported rounded mean. |
 | Statistics | `statistics.percent` | Tests whether a reported percentage could arise from a whole count out of the stated total. |
 | Engineering | `engineering.units` | Compares physical quantities after conversion to compatible units. |

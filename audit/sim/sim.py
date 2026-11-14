@@ -1191,7 +1191,7 @@ def _(ck):
     ck("seven refusals, each saying why, and the register untouched", s.bytes() == b0 and all(not x.startswith("WRITTEN") for x in r) and "division by zero" in r[0] and "no instrument named" in r[3], [x[:120] for x in r[:7]])
     ck("record false computes and writes nothing", "TRUE" in r[7] and "Nothing was written" in r[7], r[7][:200])
     expected = {"mathematics.exact", "mathematics.protected_bins", "mathematics.statement", "statistics.grim", "statistics.percent",
-                "engineering.units", "cryptography.digest", "science.order", "quality.coverage", "core.calibration"}
+                "engineering.units", "cryptography.digest", "science.order", "science.incident_bounds", "quality.coverage", "core.calibration"}
     names = [line.strip().split(":", 1)[0] for line in r[8].splitlines() if line.startswith("  ")]
     ck("each supported instrument is listed once", sorted(names) == sorted(expected), names)
     s.close(); s = S(); s.begin_adopted(); b0 = s.bytes()
