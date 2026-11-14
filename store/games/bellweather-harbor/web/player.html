@@ -1,0 +1,643 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#143c40">
+<title>Bellweather Harbor · Night Post Games</title>
+<style>
+:root{--ink:#163b3e;--deep:#12353a;--paper:#f5eedc;--sheet:#fff9e9;--gold:#f7bd54;--brass:#9d7334;--orange:#ac442c;--rule:#c6baa0;--sea:#287575;--body:"DM Sans","Trebuchet MS",Arial,sans-serif;--display:"DM Serif Text",Georgia,"Times New Roman",serif;--mono:"IBM Plex Mono",Consolas,"Liberation Mono",monospace}
+*{box-sizing:border-box}
+html{background:var(--paper);color:var(--ink)}
+body{margin:0;font:16px/1.4 var(--body);min-height:100vh;background:radial-gradient(ellipse at top left,rgba(255,255,242,.76),transparent 62%),var(--paper)}
+button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation}
+button:disabled{cursor:default}
+button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:3px solid #cb672c;outline-offset:3px}
+button,a{-webkit-tap-highlight-color:transparent}
+button{border:0}
+[hidden]{display:none!important}
+.mono,.label,.number,.tiny,.seg,.tools,.state,.rowinfo,.dockline,.book-meta{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.label,.tiny,.book-meta,.dockline{text-transform:uppercase;font-size:10px;font-weight:bold;letter-spacing:1.45px}
+.mast{background:var(--deep);color:#faf1d8;border-bottom:3px solid #ae7651}
+.mast-inner,main,footer{max-width:1320px;padding-left:clamp(16px,4.1vw,66px);padding-right:clamp(16px,4.1vw,66px);margin:auto}
+.mast-inner{display:flex;align-items:center;justify-content:space-between;height:48px;gap:12px}
+.imprint{display:flex;align-items:center;gap:10px;font:700 11px var(--mono);letter-spacing:2.1px}
+.burgee{display:inline-block;width:31px;height:18px;background:linear-gradient(148deg,transparent 43%,#fff2c8 44%,#fff2c8 53%,transparent 54%),#e87952;clip-path:polygon(0 0,100% 10%,73% 54%,100% 84%,0 100%)}
+.tools{display:flex;align-items:center;gap:20px;font-size:12px}.tools button{background:none;color:#fffaed;padding:5px 0}.tools button:hover{text-decoration:underline}
+.banner{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:26px 0 23px}
+h1,h2,p{margin:0}
+h1{font:700 clamp(40px,4.5vw,76px)/.98 var(--display);letter-spacing:-.062em}
+h1 em{color:var(--orange);font-weight:normal;white-space:nowrap}
+.hero-ledger{display:flex;align-items:center;gap:clamp(14px,2.6vw,48px)}
+.stat{display:grid;gap:2px;padding-left:17px;border-left:1px solid var(--rule);white-space:nowrap}
+.stat .label{color:#526764;font-size:9px}
+.stat strong{font:700 clamp(21px,2.4vw,36px)/1.12 var(--display);letter-spacing:-1.2px}
+.coin{display:inline-block;vertical-align:.08em;border-radius:100%;background:#efba50;box-shadow:inset 0 0 0 .105em #945e2c,inset 0 0 0 .21em #f9d579;width:.72em;height:.72em;margin-right:.19em}
+#auto-rate{color:#236460}
+.workspace{display:grid;grid-template-columns:minmax(0,1.16fr) minmax(0,1fr);gap:clamp(17px,2.1vw,34px);align-items:start}
+.port,.holdings{min-width:0}
+.port{grid-column:1;grid-row:1}
+.holdings{grid-column:2;grid-row:1 / span 2}
+.art-panel{background:var(--deep);border:2px solid var(--deep);border-radius:7px;overflow:hidden;position:relative;box-shadow:0 4px 0 #b5a98c}
+.dockline{display:flex;color:#f6edcb;align-items:center;justify-content:space-between;padding:8px 13px;font-size:10px}
+.signal{display:inline-block;width:7px;height:7px;background:#e8a454;box-shadow:0 0 0 2px #5a5844;border-radius:50%;margin-right:9px}
+#waters{font-size:9px;color:#c5d5bc;letter-spacing:1px}
+#harbor{display:block;width:100%;height:auto;image-rendering:pixelated;background:#b4c9bc;border-block:1px solid var(--deep)}
+.art-caption{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 13px;color:#f6edcc}
+.art-caption b{font:italic 16px var(--display);color:#ffdfae}
+.art-caption span{font:10px var(--mono);color:#cedbcf}
+.bellbox{margin-top:16px;background:#fffaed;border:1px solid var(--rule);border-radius:6px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;position:relative}
+.bellcopy{min-width:0}
+.bellcopy h2,.section-title{font:700 clamp(23px,2.1vw,34px)/1.06 var(--display);letter-spacing:-1.2px}
+.bellcopy p{margin-top:4px;color:#48615f;font-size:13px;line-height:1.4}
+#bell{display:flex;align-items:center;justify-content:center;white-space:nowrap;gap:6px;min-height:52px;padding:6px 13px 6px 8px;background:var(--gold);border:2px solid #644923;box-shadow:0 3px 0 #644923;border-radius:6px;color:#322a20;font-weight:800;position:relative}
+#bell:hover{background:#ffcd71}#bell:active{transform:translateY(2px);box-shadow:0 1px 0 #644923}
+#bell canvas{width:40px;height:32px;image-rendering:pixelated}
+#spray{pointer-events:none;position:absolute;right:23px;top:0;z-index:2}
+.tip{position:absolute;right:0;white-space:nowrap;font:bold 16px var(--mono);color:#8f441e;text-shadow:1px 1px #fff3d5;animation:rise .62s ease-out forwards}
+@keyframes rise{from{opacity:1;transform:translateY(8px)}to{opacity:0;transform:translateY(-32px)}}
+.port-notice{display:flex;gap:10px;align-items:baseline;margin:14px 2px 0;font-size:13px;color:#4d615a;min-height:37px}
+.port-notice strong{white-space:nowrap;font:700 10px var(--mono);letter-spacing:.6px;text-transform:uppercase;color:var(--orange);border-bottom:1px solid #cdb090}
+.charterbox{grid-column:1;grid-row:2;align-self:start;border-top:3px double #867c63;padding:14px 2px 0;display:grid;grid-template-columns:1fr auto;gap:5px 10px;margin-top:0}
+.charterbox h2{font:700 22px var(--display);letter-spacing:-.7px}
+.charterbox p{font:12px var(--body);color:#51635e;margin-top:3px}
+.charterbox .office{align-self:center;background:transparent;border:1px solid #8a896e;border-radius:4px;padding:7px 10px;font-weight:bold;font-size:12px}
+.office:hover{background:#f7e5c4}
+.progress-track{overflow:hidden;background:#ddd5be;height:5px;border-radius:3px}
+.progress-track i{display:block;height:100%;background:var(--sea);width:0}
+.charterbar{grid-column:1/-1;margin-top:5px}.charterbar i{background:#bb7045}
+.holdings{border-top:3px solid var(--ink)}
+.section-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 0 11px}
+.buygroup{display:flex;align-items:center;gap:7px}
+.buygroup .label{font-size:9px;letter-spacing:.7px}
+.seg{display:flex;padding:2px;background:#e5ddc6;border:1px solid #c7bda2;border-radius:5px}
+.seg button{font:700 11px var(--mono);padding:5px 7px;background:transparent;border-radius:3px}
+.seg .active{color:#fff7dc;background:var(--ink)}
+.shop{border-top:1px solid #b9af95;padding:11px 2px 10px;display:grid;grid-template-columns:60px minmax(0,1fr) auto;gap:5px 12px;align-items:center}
+.stamp{width:60px;height:58px;display:grid;place-items:center;border-radius:6px;border:1px solid #c6bd9d;background:var(--tile,#dbdfc6);grid-row:1/3}
+.stamp canvas{width:58px;height:auto;image-rendering:pixelated}
+.shop:nth-child(2){--tile:#e9ceb0}.shop:nth-child(3){--tile:#c6d9cd}.shop:nth-child(4){--tile:#d9c5b0}.shop:nth-child(5){--tile:#c7d4dc}
+.shop-head{min-width:0}
+.shop h3{display:inline;font:700 clamp(19px,1.66vw,25px)/1.03 var(--display);letter-spacing:-.7px;margin:0}
+.qty{font:700 10px var(--mono);border:1px solid #bcb49a;padding:1px 4px;border-radius:3px;vertical-align:.25em;white-space:nowrap;color:#53615a}
+.rowinfo{font-size:11px;line-height:1.35;color:#485f5d;margin-top:3px}
+.buy{align-self:center;grid-column:3;grid-row:1/3;display:grid;justify-items:center;align-content:center;min-width:84px;min-height:51px;border:1px solid var(--ink);border-radius:5px;background:var(--ink);color:#fffbec;padding:5px 8px}
+.buy:hover:enabled{background:#225759}
+.buy:disabled{background:#e8e2ce;border-color:#b9b096;color:#5b6154}
+.buy b{font:700 13px var(--body)}
+.buy small{font:11px var(--mono);margin-top:1px}
+.row-actions{display:flex;align-items:center;flex-wrap:wrap;column-gap:9px;row-gap:4px;grid-column:2}
+.row-actions button{background:transparent;font:700 11px var(--body);padding:2px 0;line-height:1.3;text-align:left;color:#285b56}
+.row-actions button:enabled{text-decoration:underline;text-decoration-color:#99a798;text-underline-offset:3px}
+.row-actions button:disabled{color:#676b5b}
+.row-actions button[data-action=dispatch]:enabled{color:#964327}
+.row-actions .running{color:#266b65!important}
+.shop-track{grid-column:1/-1;height:3px;background:#ded8c4;overflow:hidden;margin-top:1px}
+.shop-track i{display:block;height:100%;background:#318078;width:0}
+.shop:last-child{border-bottom:1px solid #b9af95}
+footer{margin-top:23px;padding-bottom:16px;color:#626c60;display:flex;justify-content:space-between;gap:10px;font:10px var(--mono)}
+dialog{border:2px solid var(--ink);padding:0;border-radius:7px;background:var(--sheet);color:var(--ink);width:min(440px,calc(100vw - 24px));box-shadow:0 8px 0 #102e3140;max-height:88vh;overflow:auto}
+dialog::backdrop{background:rgba(10,32,33,.66)}
+.book-head{display:flex;align-items:center;justify-content:space-between;background:var(--deep);color:var(--sheet);padding:10px 15px}
+#close-book{background:none;color:#fff4d5;font-size:20px;line-height:1;padding:2px 6px}
+.book-page{padding:22px}
+.book-page h2{font:700 31px/1.1 var(--display);letter-spacing:-1.2px;margin-bottom:10px}
+.book-page h3{font:700 17px var(--display);margin:16px 0 3px}
+.book-page p,.book-page li{font-size:14px;line-height:1.52}
+.book-page ul{padding-left:20px;margin:8px 0}
+.book-actions{display:flex;gap:8px;margin-top:15px;flex-wrap:wrap}
+.book-actions button,.file-label{display:inline-block;color:var(--ink);font:700 13px var(--body);padding:9px 12px;border-radius:4px;background:#e6ddc4;border:1px solid #aea68a;cursor:pointer}
+.book-actions .primary{background:var(--deep);color:var(--sheet);border-color:var(--ink)}
+.book-actions button:disabled{color:#707568;background:#e5ddc7;border-color:#c1baa2}
+#notice{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);max-width:calc(100vw - 28px);padding:10px 15px;background:#153c40;color:#fff8df;box-shadow:0 2px 6px #0004;border-radius:5px;font-size:13px;z-index:10}
+@media(min-width:981px){.workspace{row-gap:16px;grid-template-rows:auto 1fr}}
+@media(max-width:980px) and (min-width:731px){.workspace{grid-template-columns:minmax(0,.98fr) minmax(0,1fr);gap:15px}.shop{grid-template-columns:48px minmax(0,1fr) auto;column-gap:8px}.stamp{width:48px;height:51px}.stamp canvas{width:47px}.bellbox{flex-wrap:wrap}.bellcopy h2{font-size:23px}.buy{min-width:73px}}
+@media(max-width:730px){.mast-inner{height:42px}.tools{gap:13px;font-size:11px}.imprint{font-size:10px;letter-spacing:1.2px}.banner{align-items:stretch;flex-direction:column;gap:13px;padding:18px 0 13px}h1{font-size:clamp(39px,9vw,62px)}.hero-ledger{gap:20px}.stat{display:flex;align-items:baseline;gap:7px;padding:0;border:0}.stat strong{font-size:22px}.stat .label{font-size:9px;letter-spacing:.6px}.workspace{display:flex;flex-direction:column;align-items:stretch;gap:13px}.holdings{order:1}.charterbox{order:2;align-self:stretch;margin-top:2px}.dockline{padding:6px 10px;font-size:9px}.art-caption{padding:6px 10px}.art-caption b{font-size:14px}.art-caption span{font-size:9px}.bellbox{margin-top:10px;padding:9px 11px;gap:7px}.bellcopy h2{font-size:22px}.bellcopy p{font-size:12px}#bell{min-height:43px;padding:4px 9px 4px 4px;font-size:14px}#bell canvas{width:31px;height:auto}.port-notice{font-size:12px;margin-top:9px;min-height:0}.section-head{padding:9px 0}.shop{padding:9px 0;grid-template-columns:49px minmax(0,1fr) auto;column-gap:9px}.stamp{width:49px;height:49px}.stamp canvas{width:48px}.row-actions button{padding:5px 0}.buy{min-width:75px;min-height:48px}.shop h3{font-size:22px}footer{margin-top:16px;text-align:left;flex-wrap:wrap}}
+@media(max-width:370px){.art-caption span{display:none}.tools{gap:9px}.banner{gap:9px}.hero-ledger{gap:13px}.stat{gap:4px}.bellcopy h2{font-size:20px}.buygroup{gap:3px}.buygroup .label{display:none}.shop{column-gap:6px}.row-actions{column-gap:6px}.section-title{font-size:25px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;animation:none!important}.tip{display:none}}
+/* Explicit flex spacing also works in older WebAssembly-capable browsers. */
+.tools,.imprint,.hero-ledger,.buygroup,.row-actions,.port-notice,.book-actions,#bell{gap:0}
+.imprint .burgee{margin-right:9px}.tools button+button{margin-left:17px}
+.stat+.stat{margin-left:24px}.buygroup .label{margin-right:7px}.row-actions button+button{margin-left:12px}
+.port-notice strong{margin-right:9px}.book-actions button{margin:0 8px 7px 0}#bell canvas{margin-right:6px}
+body{background:#f5efdc}
+.office-stack{grid-column:1;grid-row:2;display:grid;gap:16px;width:100%}
+.postbox{border:1px solid #aca78a;background:#ebe9d2;border-radius:5px;display:grid;grid-template-columns:43px 1fr auto;align-items:center;gap:11px;padding:12px}
+.postbox .postseal{width:43px;height:auto;image-rendering:pixelated;transform:rotate(-7deg)}
+.postbox h2{font:700 21px/1.1 var(--display);letter-spacing:-.6px}
+.postbox p{font-size:12px;color:#485e58;margin-top:2px}
+.postbox button,.mini-button{background:var(--sheet);border:1px solid #9b9f83;border-radius:4px;padding:7px 10px;font:700 12px var(--body)}
+.postbox button:hover,.mini-button:hover{background:#fff9dc}
+.mail-album{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;margin:17px 0 12px}
+.album-cell{background:#eae3ca;min-width:0;border:1px solid #c9c0a1;border-radius:4px;padding:5px 2px 4px;color:var(--ink)}
+.album-cell[aria-pressed=true]{background:#ffdda0;border-color:#8c6231;box-shadow:inset 0 -2px #c6934d}
+.album-cell.sealed canvas{filter:grayscale(1);opacity:.35}
+.album-cell:disabled{opacity:.63}
+.album-cell canvas{display:block;width:100%;max-width:65px;height:auto;margin:auto;image-rendering:pixelated}
+.album-cell span{font:700 10px/1.12 var(--body);display:block}
+.mail-meter{position:relative;height:41px;border:2px solid var(--ink);background:repeating-linear-gradient(90deg,#cedfcb 0,#cedfcb 9%,#a8bfb0 9%,#a8bfb0 10%);margin:12px 0 10px;border-radius:4px;overflow:hidden}
+.mail-zone{position:absolute;left:40%;width:20%;top:0;bottom:0;background:#f5c471;border-inline:2px dashed #a36032;display:grid;place-items:end center;color:#654020;font:700 9px var(--mono);letter-spacing:.4px;padding-bottom:1px}
+.mail-runner{position:absolute;display:block;top:2px;left:0;width:20px;text-align:center;margin-left:-10px;font-size:19px;line-height:23px;color:#123e42;text-shadow:1px 1px #fff6db}
+.mail-controls{display:flex;align-items:center;flex-wrap:wrap;justify-content:space-between;margin-top:7px}
+.mail-controls span{font:11px var(--mono);color:#4e665d}
+.mail-letter{margin:12px 0;border-left:3px solid #b67b43;padding-left:11px;font:italic 18px/1.42 var(--display)}
+.mail-controls button{margin-left:4px}.office-stack .charterbox{grid-row:auto;grid-column:auto}
+@media(max-width:730px){
+  .banner{gap:0}.hero-ledger{margin-top:10px}.stat+.stat{margin-left:20px}.stat strong{margin-left:5px}
+  .tools button+button{margin-left:13px}.row-actions button+button{margin-left:11px}.workspace{gap:0}
+  .holdings{margin-top:15px}.office-stack{order:2;margin-top:18px}.stat{gap:0}
+  .charterbox{order:0}.section-head{gap:6px}.postbox{grid-template-columns:36px 1fr auto;padding:9px;gap:7px}
+  .postbox .postseal{width:36px}
+}
+@media(max-width:370px){.stat+.stat{margin-left:10px}.stat strong{margin-left:3px}.postbox button{padding:6px}.hero-ledger{flex-wrap:wrap}}
+@media(min-width:731px) and (max-width:980px){.bellbox{display:grid;grid-template-columns:1fr auto}.bellbox #bell{padding:5px 7px}.bellbox #bell canvas{display:none}.banner{gap:10px}.stat+.stat{margin-left:15px}.hero-ledger{align-items:center}}
+/*__BELLWEATHER_EXCHANGE_CSS__*/
+/*__BELLWEATHER_WORKS_CSS__*/
+/*__BELLWEATHER_TICKET_CSS__*/
+/*__BELLWEATHER_YARD_CSS__*/
+/*__BELLWEATHER_MANIFEST_CSS__*/
+</style>
+</head>
+<body>
+<header class="mast"><div class="mast-inner"><div class="imprint"><span class="burgee" aria-hidden="true"></span>NIGHT POST GAMES</div><nav class="tools" aria-label="Game tools"><button type="button" id="sound" aria-pressed="false">Sound off</button><button type="button" id="log">Logbook</button></nav></div></header>
+<main>
+<div class="banner"><h1>Bellweather <em>Harbor</em></h1><div class="hero-ledger"><div class="stat"><span class="label">Cash on hand</span><strong><i class="coin" aria-hidden="true"></i><span id="cash">0</span></strong></div><div class="stat"><span class="label">Automatic income</span><strong id="auto-rate">0/s</strong></div></div></div>
+<div class="workspace">
+<section class="port" aria-label="Working waterfront">
+<div class="art-panel"><div class="dockline"><span><i class="signal"></i>Harbor view</span><span id="waters">LIVE TIDE</span></div><canvas id="harbor" width="480" height="192" role="img" aria-label="Animated pixel-art harbor. Your businesses add boats and activity to the water."></canvas><div class="art-caption"><b id="port-class">The little landing</b><span id="business-count">1 of 5 businesses open</span></div></div>
+<div class="bellbox"><div class="bellcopy"><h2>The harbor bell</h2><p id="bell-pay">Earn 1 coin and send the rowboat out.</p></div><button type="button" id="bell" disabled><canvas id="bell-mark" width="40" height="32" aria-hidden="true"></canvas>Ring the bell</button><div id="spray" aria-hidden="true"></div></div>
+<div class="port-notice"><strong>Dock notes</strong><span id="hint">Ring the bell. Your first rowboat brings back 8 coins in 2 seconds.</span></div>
+<button type="button" id="manifest-open" class="odd-slip" hidden><span class="receipt-mark" aria-hidden="true">≋</span><span id="manifest-entry">An odd receipt</span><span class="receipt-action" id="manifest-entry-action">Examine ↗</span></button>
+</section>
+<section class="holdings" aria-labelledby="ledger-title"><div class="section-head"><h2 class="section-title" id="ledger-title">Business ledger</h2><div class="buygroup"><span class="label">Buy</span><div class="seg" role="group" aria-label="Purchase quantity"><button id="bulk-1" aria-pressed="true" class="active">×1</button><button id="bulk-10" aria-pressed="false">×10</button><button id="bulk-max" aria-pressed="false">Max</button></div></div></div><div id="shops"></div></section>
+<div class="office-stack"><section class="postbox yard-entry" aria-label="Shipyard"><canvas class="postseal" id="yard-seal" aria-hidden="true"></canvas><div><h2>Shipyard</h2><p id="yard-summary">Lay the keel of your first pilot cutter.</p></div><button type="button" id="shipyard">Visit slipway ↗</button></section>
+<section class="postbox exchange-entry" aria-labelledby="freight-entry-title"><canvas class="postseal" id="exchange-seal" aria-hidden="true"></canvas><div><h2 id="freight-entry-title">Freight exchange</h2><p id="freight-summary">Sell cargo or fill a ship’s order.</p></div><button id="exchange" type="button">Trade freight ↗</button></section>
+<section class="postbox" aria-label="Pilot stamp album"><canvas class="postseal" id="post-seal" aria-hidden="true"></canvas><div><h2>Harbor mail</h2><p id="post-count">0 / 5 pilot stamps collected</p></div><button id="mail">Catch the mail ↗</button></section>
+<section class="charterbox" aria-label="Charter progress"><div><h2>Charter office</h2><p><span id="charter-count">0</span> charters · <span id="charter-progress">0 / 500K qualifying</span></p></div><button class="office" type="button" id="charter">Visit office ↗</button><div class="progress-track charterbar"><i id="charter-fill"></i></div></section></div>
+</div>
+<noscript>Enable JavaScript to play Bellweather Harbor.</noscript>
+</main>
+<footer><span id="save-status">Opening harbor…</span><span>Bellweather Port Authority</span></footer>
+<dialog id="book" aria-labelledby="book-title"><div class="book-head"><span class="book-meta">Bellweather Port Authority</span><button id="close-book" title="Close" aria-label="Close">×</button></div><div class="book-page"><h2 id="book-title">Logbook</h2><div id="book-body"></div><div class="book-actions" id="book-actions"></div></div></dialog>
+<dialog id="manifest-book" aria-labelledby="manifest-title">
+  <header class="case-mast"><span class="case-file-mark" aria-hidden="true">≋</span><h2 id="manifest-title">The Second <em>Manifest</em></h2><button type="button" id="manifest-close" aria-label="Close case file">Close ×</button></header>
+  <nav class="case-tabs" id="manifest-chapters" aria-label="Case register"></nav>
+  <div class="case-content" id="manifest-content">
+    <header class="case-opening"><div class="file-label-line" id="manifest-folio"></div><h3 id="manifest-heading"></h3><p id="manifest-scene"></p></header>
+    <div class="case-desk" id="manifest-desk">
+      <nav class="case-index" aria-label="Documents"><h4>Documents</h4><div id="manifest-leads"></div></nav>
+      <article class="case-document" aria-labelledby="manifest-doc-title"><canvas id="manifest-art" width="320" height="112" role="img" aria-label="Harbor scene from the case file"></canvas><div class="case-paper"><div class="doc-source" id="manifest-source"></div><h4 id="manifest-doc-title"></h4><p id="manifest-body"></p><button type="button" id="manifest-pin"></button></div></article>
+    </div>
+    <section class="case-findings" id="manifest-findings" aria-labelledby="manifest-question"><h4 id="manifest-question"></h4><p class="pin-help" id="manifest-instructions">Pin two documents that answer the question.</p><div id="manifest-pins" class="pin-list"></div><button type="button" id="manifest-submit">File this pair</button><p id="manifest-feedback" role="status"></p></section>
+    <section class="case-verdict" id="manifest-verdict" hidden><h4>Finding entered</h4><p id="manifest-reveal"></p><p id="manifest-citation"></p><button type="button" id="manifest-next"></button></section>
+    <section id="manifest-decision" hidden><canvas id="manifest-ending-art" width="320" height="112" role="img" aria-label="The harbor at the close of the case"></canvas><div class="decision-choices" id="manifest-choices"></div><div id="manifest-confirmation" hidden><h4 id="manifest-decision-title"></h4><p id="manifest-decision-description"></p><button id="manifest-confirm" type="button">Enter final decision</button><button id="manifest-ending-cancel" type="button">Go back</button></div><div id="manifest-epilogue" hidden><h4 id="manifest-epilogue-title"></h4><p id="manifest-epilogue-text"></p><p class="ending-effect" id="manifest-effect"></p></div>
+      <section id="wire-panel" class="wire-panel" aria-labelledby="wire-title" hidden>
+        <header class="wire-head"><div><div class="wire-band">Port telegraph</div><h4 id="wire-title">Circuit Eight</h4></div><span class="wire-clock" id="wire-tide"></span></header>
+        <div class="wire-main"><p class="wire-prompt">The night operator sends two groups of three pulses. Match both groups in the station directory, then select the cargo desk that sent the call.</p>
+        <div class="wire-strip"><span class="wire-band">Incoming call</span><output id="wire-groups" aria-live="off"></output><button id="wire-replay" type="button">Replay signal</button></div>
+        <h5>Station directory</h5><div id="wire-directory" class="wire-directory" role="group" aria-label="Select the cargo desk with the matching call"></div>
+        <p id="wire-feedback" role="status" aria-live="polite"></p>
+        <section id="wire-report" class="wire-report" aria-labelledby="wire-report-title" hidden><h5 id="wire-report-title"></h5><div id="wire-quotes"></div>
+        <p>Coins for one crate. Estimates include town trade and local workshops. They assume no intervening player or broker trades.</p></section></div>
+      </section></section>
+  </div>
+</dialog>
+<dialog id="exchange-book" aria-labelledby="exchange-title">
+<div class="exchange-top"><h2 id="exchange-title">Freight <em>Exchange</em></h2><button type="button" id="close-exchange" aria-label="Close freight exchange">Close ×</button></div>
+<nav class="exchange-nav" aria-label="Exchange departments"><button type="button" id="tab-market" aria-pressed="true">Trading floor</button><button type="button" id="tab-works" aria-pressed="false">Processing works</button><button type="button" id="tab-broker" aria-pressed="false">Broker</button><button type="button" id="tab-accounts" aria-pressed="false">Accounts</button></nav>
+<div class="market-scene" id="market-scene"><canvas id="market-art" width="360" height="96" role="img" aria-label="The wharfside market with its clerk, cargo and open doors facing the water"></canvas></div>
+<div class="ticker"><span>Tide <b id="market-tide">01</b></span><span>Next quote <b id="tide-time">0:30</b></span><span>Cash <b id="exchange-cash">0</b></span></div>
+<div class="market-floor" id="market-panel">
+<section class="market-side" aria-labelledby="spot-title"><h3 id="spot-title">Spot market</h3>
+<div class="good-picker" role="group" aria-label="Choose freight"><button type="button" id="good-0" aria-pressed="true"><canvas></canvas><b>Salt</b></button><button type="button" id="good-1" aria-pressed="false"><canvas></canvas><b>Crab</b></button><button type="button" id="good-2" aria-pressed="false"><canvas></canvas><b>Timber</b></button></div>
+<div class="market-prices"><div class="quote-pair"><div><span class="market-eyebrow">Merchant pays</span><strong id="spot-price">6</strong></div><div><span class="market-eyebrow">Merchant asks</span><strong id="ask-price">8</strong></div></div><div class="chartbox"><canvas id="price-chart" width="184" height="48" role="img"></canvas><small id="chart-key">Live bid</small></div></div>
+<div class="market-condition"><span>Merchant stock <b id="merchant-stock">40</b></span><span title="Projected bid after the next tide if nobody trades.">Next tide estimate <b id="next-price">—</b></span></div>
+<div class="stockline"><span>Your hold</span><strong><span id="stock-now">0</span> / <span class="stock-limit">24</span></strong></div>
+<div class="hold-meter"><i id="cargo-fill"></i></div>
+<div class="freight-source-line"><p id="cargo-source" class="market-help"></p><button type="button" id="freight-dispatch">Dispatch</button></div>
+<div class="ticket-size"><label for="ticket-qty">Order size</label><button id="lot-less" type="button" aria-label="One fewer crate">−</button><input id="ticket-qty" type="number" min="1" max="96" step="1" inputmode="numeric" value="1" aria-label="Order size in crates"><button id="lot-more" type="button" aria-label="One more crate">+</button><small>crates</small></div>
+<div class="market-buttons" id="trade-tickets"><button type="button" class="trade-primary" id="sell-one">Sell one</button><button type="button" class="trade-primary" id="sell-all">Sell max</button><button type="button" id="buy-one">Buy one</button><button type="button" id="buy-max">Buy max</button></div>
+<details class="market-depth" id="book-depth"><summary>Market depth <small>whole-lot quotes</small></summary><table id="market-depth"><thead><tr><th>Crates</th><th>Sell for</th><th>Buy for</th></tr></thead><tbody></tbody></table><p>Totals include the price change as each crate trades. A dash means the merchant cannot fill that lot.</p></details>
+</section>
+<aside class="market-aside"><section class="order-slip" aria-labelledby="order-title"><div class="order-top"><span class="market-eyebrow" id="order-state">Freight order</span><span class="order-anchor" aria-hidden="true">⚓</span></div>
+<h3 id="order-title">Consignee</h3><p id="order-info"></p><p id="order-compare" class="order-sub"></p>
+<button type="button" class="order-button" id="reserve-order">Reserve cargo</button><p id="order-hint" class="market-help"></p>
+</section>
+<div class="market-outlook"><b>Town orders next tide</b><p id="rival-note"></p></div><div class="hold-upgrade"><div><b>Cargo hold</b><small><span id="hold-cap">24</span> crates per good</small></div><button type="button" id="upgrade-hold">Expand hold</button></div></aside>
+</div><section id="works-panel" hidden></section><section id="broker-panel" hidden></section><section id="ledger-panel" hidden></section><div class="exchange-receipt" id="exchange-receipt" role="status"></div>
+</dialog>
+<dialog id="yard-book" aria-labelledby="yard-title">
+  <header class="yard-head">
+    <div><span class="yard-label">Bellweather Shipyard</span><h2 id="yard-title">The slipway</h2></div>
+    <button type="button" id="close-yard" aria-label="Close the shipyard">Close ×</button>
+  </header>
+  <div class="yard-picture"><canvas id="yard-view" width="360" height="112" role="img" aria-label="The Bellweather slipway"></canvas></div>
+  <div class="yard-tally"><span>Fleet register <b id="yard-total">0 / 3</b></span><span>Fleet bonus <b id="yard-bonus">+0%</b></span></div>
+  <div class="yard-body">
+    <div class="yard-plans" role="group" aria-label="Ship plans">
+      <button type="button" id="yard-plan-0" aria-pressed="true"><canvas aria-hidden="true"></canvas><strong>Pilgrim</strong><small>Pilot cutter</small></button>
+      <button type="button" id="yard-plan-1" aria-pressed="false"><canvas aria-hidden="true"></canvas><strong>Juniper</strong><small>Packet boat</small></button>
+      <button type="button" id="yard-plan-2" aria-pressed="false"><canvas aria-hidden="true"></canvas><strong>Northstar</strong><small>Lightship</small></button>
+    </div>
+    <div class="yard-details"><section>
+      <div class="yard-nameplate"><h3 id="hull-name">Pilgrim</h3><span id="yard-status">On the drawing board</span></div>
+      <p id="hull-purpose"></p>
+      <div class="yard-spec"><span><b id="hull-seconds">12s</b> fitting time</span><span><b id="hull-bonus">+15%</b> business payouts</span></div>
+      <div id="yard-work" hidden><div class="yard-work-label"><strong id="yard-phase">Laying keel</strong><b id="yard-eta"></b></div><progress id="yard-progress" max="1000" value="0" aria-label="Construction progress"></progress></div>
+      <p id="yard-inscription" hidden></p><button type="button" id="yard-certificate" hidden>Save ship’s certificate ↓</button>
+    </section><section id="yard-materials">
+      <h4>Builder’s requisition</h4><div id="yard-bill"></div>
+      <button type="button" id="yard-build">Lay the keel</button>
+      <p id="yard-help"></p>
+    </section></div>
+    <div class="yard-bottom"><span id="yard-receipt" role="status"></span><button type="button" id="yard-provisions">Open freight exchange ↗</button></div>
+  </div>
+</dialog>
+<input type="file" id="import-file" accept=".sav,.bwh,application/octet-stream" hidden>
+<div id="notice" hidden role="status"></div>
+<script>
+"use strict";
+/*__BELLWEATHER_MARKS__*/
+/*__BELLWEATHER_FREIGHT_ART__*/
+const WASM_BYTES='__BELLWEATHER_WASM_BASE64__';
+const $=id=>document.getElementById(id);
+const names=['Rowboat','Crab Pots','Ferry','Dry Dock','Ocean Liner'];
+const depart=['Row out','Set pots','Sail ferry','Start repair','Cast off'];
+const busy=['On the water','Soaking','Crossing','Repairing','At sea'];
+const portNames=['The little landing','The fishing quay','The ferry crossing','The shipwright’s port','The ocean terminal'];
+const storeKey='bellweather.harbor.v1';
+const rows=[], bulkButtons=[$('bulk-1'),$('bulk-10'),$('bulk-max')];
+const ctx=$('harbor').getContext('2d',{alpha:false});
+const frame=ctx.createImageData(480,192);
+const reduced=window.matchMedia('(prefers-reduced-motion: reduce)');
+let wasm, bulk=0, lastRead=null, clock=0, lastWrite=0, artTick=0, lastDraw=-1000, lastUi=-1000;
+let selected=-1, parked=false, storageOK=true, timer, noticeTimer, audioContext, sounding=false, lastTone=0, lastHint='';
+let parkTime=0,parkWallTime=0,parkedSave=null;
+let freshHint='', freshHintUntil=0, importBytes=null, bookMode='';
+const nowSeconds=()=>Math.floor(Date.now()/1000);
+const time=()=>Math.floor(performance.now());
+const bin64=bytes=>btoa(String.fromCharCode.apply(null,bytes));
+const un64=encoded=>Uint8Array.from(atob(encoded),c=>c.charCodeAt(0));
+function num(v,rate=false){
+  if(v<1000)return rate&&v%1?String(Math.round(v*10)/10):String(Math.floor(v));
+  const suffix=['K','M','B','T','Q','Qi'];
+  let i=-1;while(v>=1000&&i<suffix.length-1){v/=1000;i++}
+  let n=Math.floor(v*(v<10?100:10))/(v<10?100:10);
+  return n+suffix[i];
+}
+function setText(el,v){v=String(v);if(el.textContent!==v)el.textContent=v}
+function notice(message){
+  setText($('notice'),message);$('notice').hidden=false;clearTimeout(noticeTimer);
+  noticeTimer=setTimeout(()=>{$('notice').hidden=true},4500);
+}
+function note(message){freshHint=message;freshHintUntil=time()+6500}
+function sound(frequencies){
+  if(!sounding)return;
+  try{
+    const C=window.AudioContext||window.webkitAudioContext;
+    if(!C)return;
+    if(!audioContext)audioContext=new C();
+    const ac=audioContext;
+    if(ac.state==='suspended')ac.resume().catch(()=>{});
+    if(time()-lastTone<65)return;
+    lastTone=time();
+    frequencies.forEach((hz,i)=>{
+      const o=ac.createOscillator(),g=ac.createGain(),at=ac.currentTime+i*.045;
+      o.type='sine';o.frequency.value=hz;g.gain.setValueAtTime(.0001,at);
+      g.gain.exponentialRampToValueAtTime(i?.055:.09,at+.008);
+      g.gain.exponentialRampToValueAtTime(.0001,at+.54);
+      o.connect(g);g.connect(ac.destination);o.start(at);o.stop(at+.56);
+      o.onended=()=>{o.disconnect();g.disconnect()};
+    });
+  }catch(_){}
+}
+function syncSound(){
+  setText($('sound'),sounding?'Sound on':'Sound off');
+  $('sound').setAttribute('aria-pressed',String(sounding));
+}
+$('sound').onclick=()=>{
+  sounding=!sounding;syncSound();sound([587,880]);
+  try{localStorage.setItem('bellweather.sound',sounding?'on':'off')}catch(_){}
+};
+function makeRows(){
+  names.forEach((name,i)=>{
+    const node=document.createElement('article');node.className='shop';node.id='shop-'+i;
+    node.innerHTML='<div class="stamp"><canvas width="40" height="32" aria-hidden="true"></canvas></div><div class="shop-head"><h3></h3> <span class="qty"></span><div class="rowinfo"></div></div><button class="buy" type="button" data-action="buy"><b></b><small></small></button><div class="row-actions"><button type="button" data-action="dispatch"></button><button type="button" data-action="hire"></button></div><div class="shop-track"><i></i></div>';
+    const get=s=>node.querySelector(s);
+    $('shops').appendChild(node);get('h3').textContent=name;paintMark(get('canvas'),i);
+    const row={node,qty:get('.qty'),info:get('.rowinfo'),buy:get('.buy'),buyLabel:get('.buy b'),price:get('.buy small'),dispatch:get('[data-action=dispatch]'),hire:get('[data-action=hire]'),bar:get('.shop-track i')};
+    row.dispatch.onclick=()=>action('dispatch',i);
+    row.buy.onclick=()=>action('buy',i);
+    row.hire.onclick=()=>action('hire',i);
+    rows.push(row);
+  });
+  paintMark($('bell-mark'),5);paintPostmark($('post-seal'),0);
+}
+function hint(cash,open){
+  if(time()<freshHintUntil)return freshHint;
+  if(wasm.charter_offer())return 'The charter office has an offer. You can sign now or keep growing this harbor.';
+  if(open===1&&wasm.shop_owned(0)===1&&cash<wasm.shop_cost(0,0))return 'Ring the bell. Your rowboat brings back '+num(wasm.shop_payout(0))+' coins in '+(wasm.shop_duration(0)/1000)+' seconds.';
+  if(!wasm.shop_managed(0))return 'A rowboat captain costs 96 coins and keeps trips running while you’re away.';
+  if(open<5){
+    const next=names.findIndex((v,i)=>!wasm.shop_owned(i));
+    return names[next]+' opens for '+num(wasm.shop_cost(next,0))+' coins. Or buy up to 10 of one business to double its payout.';
+  }
+  return 'Every business doubles its payout at 10, 25, 50, 100, 150 and 200 units.';
+}
+function renderUI(){
+  const cash=wasm.cash(),earned=wasm.charter_earned();let open=0,highest=0;
+  setText($('cash'),num(cash));$('cash').title=Math.floor(cash).toLocaleString()+' coins';
+  setText($('auto-rate'),num(wasm.automated_rate(),true)+'/s');
+  rows.forEach((r,i)=>{
+    const owned=wasm.shop_owned(i),managed=wasm.shop_managed(i),running=wasm.shop_running(i);
+    const period=wasm.shop_duration(i),elapsed=wasm.shop_elapsed(i),count=wasm.shop_count(i,bulk);
+    const price=wasm.shop_cost(i,bulk),mgr=wasm.manager_cost(i),next=wasm.next_milestone(i);
+    const seconds=period/1000,base=owned?wasm.shop_payout(i):wasm.shop_first_payout(i);
+    if(owned){open++;highest=i}
+    setText(r.qty,'×'+owned);r.qty.setAttribute('aria-label',owned+' owned');
+    const detail=num(base)+' coins / '+seconds+'s';
+    setText(r.info,detail);
+    r.info.title=next?'At '+next+' units the payout doubles.':'All milestones reached.';
+    setText(r.buyLabel,owned>=200?'Fleet full':!owned&&count<=1?'Open':count?'Buy ×'+count:'Buy');
+    setText(r.price,owned>=200?'200 units':num(count?price:wasm.shop_cost(i,0))+' coins');
+    r.buy.disabled=!count||price>cash;
+    r.buy.setAttribute('aria-label',(owned?'Buy':'Open')+' '+names[i]+', '+(count||1)+' unit'+(count===1?'':'s')+', '+(count?price:wasm.shop_cost(i,0))+' coins');
+    setText(r.dispatch,managed?'↻ Automatic':running?busy[i]+' · '+((period-elapsed)/1000).toFixed(1)+'s':'▷ '+depart[i]);
+    r.dispatch.disabled=!owned||!!running;r.dispatch.classList.toggle('running',!!running);
+    r.dispatch.setAttribute('aria-label',names[i]+' · '+(managed?'Automatic dispatch':running?busy[i]:depart[i]));
+    setText(r.hire,managed?'Captain hired':'Hire · '+num(mgr));
+    r.hire.title=managed?'This crew runs continuously.':'Hire a captain for '+mgr.toLocaleString()+' coins to run this business automatically.';
+    r.hire.disabled=!!managed||!owned||cash<mgr;r.hire.setAttribute('aria-label',names[i]+' · '+r.hire.title);
+    r.bar.style.width=(running?elapsed/period*100:0).toFixed(2)+'%';
+  });
+  setText($('port-class'),portNames[highest]);setText($('business-count'),open+' of 5 businesses open');
+  const offer=wasm.charter_offer(),target=wasm.charter_target();
+  setText($('charter-count'),wasm.charters());setText($('charter-progress'),offer?'Ready to sign for '+offer:num(earned)+' / '+num(target)+' qualifying');
+  setText($('charter'),offer?'Sign charter ↗':'Visit office ↗');
+  $('charter-fill').style.width=Math.min(100,earned/target*100)+'%';
+  const nextHint=hint(cash,open);if(nextHint!==lastHint){lastHint=nextHint;setText($('hint'),nextHint)}
+  albumStatus();renderFreight();renderYard();renderManifest();if(bookMode==='charter')updateCharter();
+}
+function draw(t,force=false){
+  if(!force&&(reduced.matches||t-lastDraw<90))return;
+  lastDraw=t;
+  const ptr=wasm.render(reduced.matches?0:Math.floor(artTick*.03),selected);
+  blitRgb(new Uint32Array(wasm.memory.buffer,ptr,480*192),frame,ctx);
+}
+function blitRgb(src,frame,ctx){
+  const dest=frame.data;
+  for(let p=0,j=0;p<src.length;p++,j+=4){const c=src[p];dest[j]=c>>>16;dest[j+1]=(c>>>8)&255;dest[j+2]=c&255;dest[j+3]=255}
+  ctx.putImageData(frame,0,0);
+}
+function snapshot(){
+  wasm.snapshot(nowSeconds());
+  return new Uint8Array(wasm.memory.buffer,wasm.save_ptr(),wasm.save_size()).slice();
+}
+function restore(bytes){
+  if(!wasm.valid_save_size(bytes.length))return -1;
+  new Uint8Array(wasm.memory.buffer,wasm.save_ptr(),wasm.save_size()).set(bytes);
+  return wasm.restore_sized(nowSeconds(),bytes.length);
+}
+function welcomeBack(income,launch){
+  const events=[];
+  if(launch < hullPlans.length)events.push(hullPlans[launch].name+' launched while you were away.');
+  if(income>0)events.push('Your harbor earned '+num(income)+' coins.');
+  if(events.length)notice('Welcome back. '+events.join(' '));
+}
+function storageFailed(){
+  storageOK=false;setText($('save-status'),'Saving unavailable · Export your save in the logbook');
+}
+function readLatest(report=false){
+  if(!storageOK)return false;
+  try{
+    const s=localStorage.getItem(storeKey);
+    if(!s||s===lastRead)return false;
+    let gain=-1;
+    try{gain=restore(un64(s))}catch(_){}
+    if(gain<0){
+      localStorage.setItem(storeKey+'.damaged',s);
+      notice('The saved ledger could not be read. Its bytes were backed up.');
+      lastRead=s;return false;
+    }
+    lastRead=s;clock=time();
+    if(report)welcomeBack(gain,wasm.restored_launch());
+    return true;
+  }catch(_){storageFailed();return false}
+}
+function settle(){
+  if(!wasm||parked)return;
+  const t=time(),delta=Math.max(0,Math.min(43200000,t-clock));
+  clock=t;artTick+=delta;if(delta)wasm.advance(delta);
+}
+function persist(){
+  if(!wasm||!storageOK||parked)return;
+  // A background copy must pick up another window’s newer ledger before writing.
+  readLatest();
+  try{
+    const s=bin64(snapshot());
+    if(s!==lastRead)localStorage.setItem(storeKey,s);
+    lastRead=s;lastWrite=time();setText($('save-status'),'Ledger saved on this device');
+  }catch(_){storageFailed()}
+}
+function actStart(){readLatest();settle()}
+function finishAction(){persist();renderUI();draw(time(),true)}
+function action(kind,i){
+  if(!wasm)return;
+  actStart();const before=wasm.shop_owned(i),milestone=wasm.next_milestone(i);
+  selected=i;
+  if(kind==='dispatch'){if(wasm.dispatch(i)){sound([330]);note(names[i]+' is under way.')}}
+  if(kind==='hire'&&wasm.hire(i)){sound([440,554,659]);note('Captain hired. '+names[i]+' now runs continuously, including while you’re away.')}
+  if(kind==='buy'){
+    const qty=wasm.buy(i,bulk);
+    if(qty){
+      sound(before?[440,587]:[392,494,659]);
+      if(!before)note(names[i]+' is open. Use “'+depart[i]+'” to start the first shift.');
+      else if(milestone&&wasm.shop_owned(i)>=milestone)note(names[i]+' reached '+milestone+' units. Its payout just doubled.');
+      else note(names[i]+' gained '+qty+' unit'+(qty===1?'':'s')+'. Next payout: '+num(wasm.shop_payout(i))+' coins.');
+    }
+  }
+  finishAction();
+}
+$('bell').onclick=()=>{
+  if(!wasm)return;
+  actStart();const tip=wasm.ring(0);selected=0;sound([659.25,1318.5]);
+  if(!reduced.matches){
+    const e=document.createElement('span');e.className='tip';e.textContent='+'+tip;
+    e.style.marginRight=Math.round(Math.random()*28)+'px';$('spray').appendChild(e);setTimeout(()=>e.remove(),690);
+  }
+  finishAction();
+};
+bulkButtons.forEach((b,i)=>b.onclick=()=>{
+  bulk=i;bulkButtons.forEach((v,j)=>{v.classList.toggle('active',i===j);v.setAttribute('aria-pressed',String(i===j))});
+  if(wasm)renderUI();
+});
+const book=$('book');
+function showBook(mode,title,body,actions){
+  bookMode=mode;setText($('book-title'),title);$('book-body').innerHTML=body;$('book-actions').innerHTML=actions;
+  if(!book.open)book.showModal();
+}
+function closeBook(){book.close();bookMode='';importBytes=null}
+$('close-book').onclick=closeBook;
+book.addEventListener('close',()=>{bookMode='';importBytes=null});
+book.addEventListener('click',ev=>{if(ev.target===book){const r=book.getBoundingClientRect();if(ev.clientX<r.left||ev.clientX>r.right||ev.clientY<r.top||ev.clientY>r.bottom)closeBook()}});
+$('log').onclick=()=>{
+  showBook('log','Harbormaster’s logbook','<p>Ring the bell for a tip and a rowboat departure. Run other businesses from the ledger. A captain keeps a business working for up to 12 hours while the harbor is closed.</p><h3>Growing the fleet</h3><p>At 10, 25, 50, 100, 150 and 200 units, that business doubles its payout. At 25, 100 and 200, trips also take half the time. Use ×10 for a bundle or Max to spend what you can afford.</p><h3>Freight exchange</h3><p>Buy and sell raw cargo at the merchant’s counter. Selling fills the merchant’s warehouse and puts pressure on bids. Buying draws stock down and raises the price of later crates. Each tide brings outside traders and a new order. Market depth shows the full price of a lot. At Processing works, turn salt and crab into provisions, or salt and timber into fittings. The broker can sell future stock at your price for up to twelve tides. Accounts records money and crate movements through the exchange.</p><h3>The shipyard</h3><p>Take coins and landed freight to the slipway to build three ships. A launched vessel permanently increases business payouts. Your fleet and the work on the ways carry over when you sign a charter.</p><h3>Your save</h3><p>Your ledger saves in this browser. Export a copy to move it to another browser, device, or the PCP OS edition.</p>','<button id="export-save" class="primary">Export save</button><button id="import-save">Import save</button>');
+  $('export-save').disabled=!wasm;$('import-save').disabled=!wasm;
+  $('export-save').onclick=()=>{
+    actStart();const blob=new Blob([snapshot()],{type:'application/octet-stream'}),url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download='bellweather.sav';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
+  };
+  $('import-save').onclick=()=>{$('import-file').value='';$('import-file').click()};
+};
+$('import-file').onchange=async e=>{
+  const f=e.target.files[0];if(!f||!wasm)return;
+  try{
+    if(!wasm.valid_save_size(f.size))throw Error();
+    importBytes=new Uint8Array(await f.arrayBuffer());
+    showBook('import','Open this ledger?','<p>Importing will replace the harbor on this device. You can export your current ledger first.</p>','<button class="primary" id="import-confirm">Import ledger</button><button id="import-cancel">Keep current harbor</button>');
+    $('import-cancel').onclick=closeBook;$('import-confirm').onclick=()=>{
+      actStart();const gain=restore(importBytes);
+      if(gain<0){closeBook();notice('This save could not be read. Your harbor is still open.');return}
+      clock=time();selected=-1;resetWire();closeBook();finishAction();notice('Ledger imported.'+(gain?' Away earnings: '+num(gain)+' coins.':''));
+    };
+  }catch(_){closeBook();notice('Choose a Bellweather Harbor .sav file.')}
+};
+function updateCharter(){
+  const offer=wasm.charter_offer(),total=wasm.charters(),target=wasm.charter_target();
+  setText($('charter-offer'),offer?'Sign for '+offer+' charter'+(offer===1?'':'s')+' and begin a new harbor with a permanent '+((total+offer)*25+wasm.yard_bonus())+'% payout bonus.':'Earn '+num(target)+' qualifying coins this run to receive your first available charter.');
+  setText($('charter-tally'),num(wasm.charter_earned())+' qualifying coins · '+num(target)+' for '+(offer+1)+' charter'+(offer?'s':''));
+  const b=$('charter-confirm');b.disabled=!offer;setText(b,offer?'Sign and restart':'Charter unavailable');
+}
+$('charter').onclick=()=>{
+  if(!wasm)return;
+  actStart();showBook('charter','Charter office','<p id="charter-offer"></p><h3>Terms of the charter</h3><p>Signing returns you to one rowboat. Your cash, businesses, captains, stored freight, hold upgrades and pending order reset. Your processing works, merchant inventory, standing sale instructions and trading accounts also reset. Fares and tips qualify in full. Sales and contracts qualify after you recover raw purchases and batch fees. Each charter permanently adds 25% to business payouts. You keep your charters, mail album, launched ships and any vessel under construction.</p><p id="charter-tally" style="margin-top:14px"></p>','<button class="primary" id="charter-confirm"></button><button id="charter-cancel">Keep sailing</button>');
+  updateCharter();$('charter-cancel').onclick=closeBook;
+  $('charter-confirm').onclick=()=>{
+    actStart();const count=wasm.charter();if(!count){updateCharter();return}
+    selected=-1;resetWire();closeBook();note('A new harbor, under charter. Your permanent payout bonus is now '+(wasm.charters()*25+wasm.yard_bonus())+'%.');sound([392,494,587,784]);finishAction();
+  };
+};
+const letters=[
+ ['Oarsman’s Sunrise','“Caught the bag in the bow. First time today the fare has rowed all the way here on its own.” — Mara, rowboat landing'],
+ ['Red Claw','“The crab took issue with its portrait. Please keep all future proofs above the high-water mark.” — Fin, pot tender'],
+ ['Crossing Light','“A little girl asked if birds pay the crossing fare. I told her ours brings the mail.” — Inez, ferry pilot'],
+ ['Shipwright’s Hook','“The new pulley arrived. The bird who brought the invoice has claimed the old one as a perch.” — Bo, dry dock'],
+ ['Twin Stacks','“We sighted your lighthouse at dusk. Six days from land, half the passengers already had their postcards written.” — Nell, purser']
+];
+let mailIndex=0,mailStart=0,manualPos=null,mailResult='';
+function countMarks(){let n=0;for(let i=0;i<5;i++)if(wasm.postmarks()&(1<<i))n++;return n}
+function albumStatus(){
+  const n=countMarks();setText($('post-count'),n===5?'Album complete · All five pilot stamps':n+' / 5 pilot stamps collected');
+}
+function mailPosition(){
+  if(manualPos!==null)return manualPos;
+  const f=((time()-mailStart)%2400)/1200;
+  return f<=1?f:2-f;
+}
+function paintMeter(){
+  const marker=$('mail-runner');
+  if(marker)marker.style.left=(mailPosition()*100).toFixed(1)+'%';
+}
+function steer(d){
+  if(manualPos===null)manualPos=Math.round(mailPosition()*10)/10;
+  manualPos=Math.min(1,Math.max(0,manualPos+d));paintMeter();
+  setText($('mail-guidance'),'Hand-guided · '+Math.round(manualPos*100)+'%');
+}
+function catchBag(){
+  if(!wasm||bookMode!=='mail'||!$('catch-bag'))return;
+  actStart();if(!wasm.shop_owned(mailIndex)){mailResult='Open this business to receive its mail.';mailPage();return}
+  const p=mailPosition();
+  if(p<.399999||p>.600001){
+    mailResult=p<.4?'The bag fell short. Give it another pass.':'Just past the berth! The pilot is circling back.';
+    setText($('mail-result'),mailResult);sound([247]);return;
+  }
+  if(wasm.mark_berth(mailIndex)){
+    sound([523,659,784]);note('A letter arrived at '+names[mailIndex]+'. The '+letters[mailIndex][0]+' postmark is yours.');
+    mailResult=countMarks()===5?'All five pilot stamps collected. The harbor mail route is complete.':'Postmark collected!';
+  }
+  finishAction();mailPage();
+}
+function blankMail(){mailResult='';manualPos=reduced.matches?0:null;mailStart=time()}
+function mailPage(){
+  const owned=wasm.shop_owned(mailIndex),marked=wasm.postmarks()&(1<<mailIndex);
+  let content='<p>Catch the Night Post pilot’s mailbag at each open business to collect its stamp.</p><div class="mail-album" role="group" aria-label="Choose a berth">';
+  for(let i=0;i<5;i++){
+    const has=!!(wasm.postmarks()&(1<<i));
+    content+='<button class="album-cell '+(has?'':'sealed')+'" data-mail="'+i+'" aria-label="'+names[i]+(has?', stamp collected':wasm.shop_owned(i)?', open for mail':', unopened')+'" aria-pressed="'+(i===mailIndex)+'"><canvas></canvas><span>'+names[i]+'</span></button>';
+  }
+  content+='</div><h3>'+letters[mailIndex][0]+'</h3>';
+  if(marked)content+='<div class="mail-letter">'+letters[mailIndex][1]+'</div>';
+  else if(!owned)content+='<p>Open '+names[mailIndex]+' in the business ledger to bring the mail pilot to this berth.</p>';
+  else content+='<p>Catch the envelope inside the gold landing strip. Use the arrows to guide it by hand whenever you like.</p><div class="mail-meter" aria-hidden="true"><span class="mail-zone">BERTH</span><b class="mail-runner" id="mail-runner">✉</b></div><div class="mail-controls"><span id="mail-guidance">'+(manualPos===null?'Pilot on approach':'Hand-guided · '+Math.round(manualPos*100)+'%')+'</span><div><button class="mini-button" id="mail-left" aria-label="Guide mail left">←</button><button class="mini-button" id="mail-right" aria-label="Guide mail right">→</button></div></div>';
+  content+='<p id="mail-result" role="status" style="min-height:1.45em;margin-top:9px"></p>';
+  showBook('mail','Harbor mail',content,(!marked&&owned?'<button id="catch-bag" class="primary">Catch mailbag</button>':'')+'<button id="mail-done">Back to harbor</button>');
+  for(const b of document.querySelectorAll('[data-mail]')){
+    const index=+b.dataset.mail;paintPostmark(b.querySelector('canvas'),index);
+    b.onclick=()=>{mailIndex=index;blankMail();mailPage();const active=$('catch-bag')||document.querySelector('[data-mail="'+index+'"]');active.focus()};
+  }
+  $('mail-done').onclick=closeBook;
+  if($('catch-bag')){
+    $('catch-bag').onclick=catchBag;$('mail-left').onclick=()=>steer(-.1);$('mail-right').onclick=()=>steer(.1);paintMeter();
+  }
+  setText($('mail-result'),mailResult);
+}
+$('mail').onclick=()=>{
+  if(!wasm)return;
+  actStart();const next=names.findIndex((v,i)=>wasm.shop_owned(i)&&!(wasm.postmarks()&(1<<i)));
+  mailIndex=next<0?0:next;blankMail();mailPage();if($('catch-bag'))$('catch-bag').focus();
+};
+book.addEventListener('keydown',e=>{
+  if(bookMode!=='mail'||!$('catch-bag'))return;
+  if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();steer(e.key==='ArrowLeft'?-.1:.1)}
+});
+
+function step(){
+  if(!wasm||parked)return;
+  settle();const t=time();draw(t);if(bookMode==='mail')paintMeter();
+  if(t-lastUi>=100){lastUi=t;renderUI()}
+  if(t-lastWrite>4000)persist();
+}
+function park(){if(!wasm||parked)return;settle();persist();parkTime=time();parkWallTime=Date.now();parkedSave=lastRead;parked=true}
+function wake(){
+  if(!wasm||!parked)return;
+  parked=false;let gained=0;const activeBefore=wasm.yard_active();
+  // In this window the live ledger already carries fractional-trip progress.
+  // A changed disk copy belongs to another window: settle it using its own timestamp.
+  let resumed=false;
+  if(storageOK){
+    try{
+      const saved=localStorage.getItem(storeKey);
+      if(saved&&saved!==parkedSave){gained=restore(un64(saved));if(gained>=0){lastRead=saved;resumed=true}}
+    }catch(_){storageFailed()}
+  }
+  if(!resumed)gained=wasm.advance(Math.max(0,Math.min(43200000,Math.max(time()-parkTime,Date.now()-parkWallTime))));
+  clock=time();persist();renderUI();draw(time(),true);
+  const launch=resumed?wasm.restored_launch():(activeBefore<3&&wasm.yard_count(activeBefore)?activeBefore:3);
+  welcomeBack(gained,launch);
+}
+document.addEventListener('visibilitychange',()=>{if(document.hidden)park();else wake()});
+window.addEventListener('pagehide',park);window.addEventListener('pageshow',wake);
+window.addEventListener('storage',e=>{if(wasm&&!parked&&e.key===storeKey&&e.newValue&&e.newValue!==lastRead){readLatest();renderUI();draw(time(),true)}});
+async function start(){
+  try{
+    makeRows();initWorks();initBroker();initExchange();initYard();initManifest();const result=await WebAssembly.instantiate(un64(WASM_BYTES));wasm=result.instance.exports;
+    try{sounding=localStorage.getItem('bellweather.sound')==='on'}catch(_){}
+    syncSound();clock=time();readLatest(true);persist();$('bell').disabled=false;setText($('waters'),reduced.matches?'STILL WATER':'LIVE TIDE');
+    renderUI();draw(time(),true);timer=setInterval(step,72);
+  }catch(err){
+    setText($('save-status'),'The harbor could not open. Download this HTML and open it in a browser with WebAssembly enabled.');
+    setText($('hint'),'The game could not start in this viewer. Open the downloaded HTML in your browser.');
+    console.error(err);
+  }
+}
+/*__BELLWEATHER_WORKS_ART__*/
+/*__BELLWEATHER_WORKS__*/
+/*__BELLWEATHER_TICKET__*/
+/*__BELLWEATHER_EXCHANGE__*/
+/*__BELLWEATHER_YARD__*/
+/*__BELLWEATHER_MANIFEST_ART__*/
+/*__BELLWEATHER_MANIFEST__*/
+start();
+</script>
+</body>
+</html>
