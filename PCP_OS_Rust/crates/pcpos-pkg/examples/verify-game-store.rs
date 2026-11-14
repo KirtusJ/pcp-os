@@ -9,19 +9,23 @@ use std::{
 };
 
 const OWNER: &str = "kirtusj";
-const GAMES: [(&str, [&str; 2]); 2] = [
-    ("night-post", ["Night_Post.html", "nightpost.elf"]),
+const PACKAGES: &[(&str, &str, &[&str])] = &[
+    ("games", "night-post", &["Night_Post.html", "nightpost.elf"]),
     (
+        "games",
         "bellweather-harbor",
-        ["Bellweather_Harbor.html", "bellweather.elf"],
+        &["Bellweather_Harbor.html", "bellweather.elf"],
     ),
+    ("games", "sunspur-rally", &["sunspur.elf"]),
+    ("games", "flux-rink", &["fluxrink.elf"]),
+    ("engines", "heliograph", &["heliograph.elf"]),
 ];
 
 fn read(path: &Path) -> Result<Vec<u8>, String> {
     fs::read(path).map_err(|error| format!("cannot read {}: {error}", path.display()))
 }
 
-fn check_game(root: &Path, name: &str, required: [&str; 2]) -> Result<(), String> {
+fn check_package(root: &Path, category: &str, name: &str, required: &[&str]) -> Result<(), String> {
     let shard = index_path(OWNER, name)?;
     let listing = root.join("store/index").join(&shard);
     let entry = Entry::parse(&read(&listing)?)
@@ -42,7 +46,7 @@ fn check_game(root: &Path, name: &str, required: [&str; 2]) -> Result<(), String
         ));
     }
     for filename in required {
-        let path = format!("store/games/{name}/dist/{filename}");
+        let path = format!("store/{category}/{name}/dist/{filename}");
         if !entry.files().iter().any(|file| file.path() == path) {
             return Err(format!("{} omits required artifact {path}", entry.id()));
         }
@@ -70,8 +74,8 @@ fn run() -> Result<(), String> {
     if args.next().is_some() {
         return Err("usage: verify-game-store [REPOSITORY_ROOT]".into());
     }
-    for (name, required) in GAMES {
-        check_game(&root, name, required)?;
+    for &(category, name, required) in PACKAGES {
+        check_package(&root, category, name, required)?;
     }
     Ok(())
 }

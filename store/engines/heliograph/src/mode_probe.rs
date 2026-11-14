@@ -97,4 +97,3 @@ fn resolution_probe(fb: isize, cache: &mut [Cached]) {
     }
     log(b"HELIOGRAPH resolution ladder done\n");
 }
-

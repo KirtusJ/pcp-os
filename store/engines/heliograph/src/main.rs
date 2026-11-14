@@ -238,4 +238,3 @@ pub extern "C" fn lab_entry() -> ! {
         }
     }
 }
-

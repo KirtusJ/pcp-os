@@ -41,4 +41,3 @@ cp target/x86_64-unknown-none/release/heliograph dist/heliograph.elf
 ```
 
 Use the Store launcher from the repository root. Press B or R with serial redirected to a file to reproduce guest counters. A two-byte frame marker is sent after each page flip during measurement. Each batch emits its detailed counters after its last frame. [Measured results](evidence/TESTING.md) · [PCP OS kernel provenance](https://github.com/KirtusJ/pcp-os/tree/21ef0955eb8828739c1b95bf85f3d880cdaf4eb6/PCP_OS_Rust/crates/pcpos-kernel) · [Kernel notice](../../../PCP_OS_Rust/NOTICE.md)
-

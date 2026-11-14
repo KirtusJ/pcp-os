@@ -5,11 +5,11 @@
 | Run a Science, Mathematics, Statistics, Engineering or review instrument | [Host instrument catalog and CLI/MCP examples](instruments/README.md) |
 | Get a packaged application or verify its files | [Package index](#package-index) |
 | Choose a review module or read its specification | [Released method modules](../README.md#method-modules) |
-| Play a game | [Offline browser shelf](index.html) or [native PCP OS launcher](#play-both-on-pcp-os) |
+| Play a game | [Offline browser shelf](index.html) or [native-only games and engine](#native-only-store) |
 
 ## PCP OS game store
 
-Download or clone the repository and open [the game shelf](index.html) in your browser. Each game also fits in a single HTML file. If you are browsing on GitHub, open the player link below, use **Download raw file**, then open that file locally. Both games run offline with WebAssembly enabled.
+Download or clone the repository and open [the game shelf](index.html) in your browser. The two browser games below each fit in a single HTML file. If you are browsing on GitHub, open the player link below, use **Download raw file**, then open that file locally. Both games run offline with WebAssembly enabled.
 
 | Game | First move | Browser player | Native guest |
 | --- | --- | --- | --- |
@@ -17,6 +17,16 @@ Download or clone the repository and open [the game shelf](index.html) in your b
 | **Bellweather Harbor · The Second Manifest** | Ring the bell. Your first trip lands a crate of salt. Sell it, save it for a contract, or investigate the odd receipt. | [Bellweather_Harbor.html](games/bellweather-harbor/dist/Bellweather_Harbor.html) | [bellweather.elf](games/bellweather-harbor/dist/bellweather.elf) |
 
 The [Night Post flight manual](games/night-post/README.md) covers routes, airbrakes and postmarks. The [Bellweather Harbor guide](games/bellweather-harbor/README.md) covers chartering, trade, manufacturing, and the casebook. Each game directory includes its Rust source, Cargo lockfile and build scripts. Browser saves are local to the browser and file location. Bellweather's logbook can export and import a save when moving between copies.
+
+## Native-only Store
+
+| Shelf | Title | Runtime and contents | Listing |
+| --- | --- | --- | --- |
+| Games · racing | [Sunspur Rally](games/sunspur-rally/) | Single-player time trial, x86-64 PCP OS guest. | [Package](index/kirtusj/su/ns/sunspur-rally) |
+| Games · multiplayer sports | [Flux Rink](games/flux-rink/) | Two-player 3D prototype. Stock kernel for shared keyboard; optional cable kernel for linked guests. | [Package](index/kirtusj/fl/ux/flux-rink) |
+| Engines · 3D rendering | [Heliograph](engines/heliograph/) | Reusable Rust renderer and a native material and performance lab. | [Package](index/kirtusj/he/li/heliograph) |
+
+Use the [native Store launcher](native/README.md) for these entries. The engine's installable artifact is its lab ELF; the renderer crate lives alongside it in the pinned source tree.
 
 ## Play both on PCP OS
 
@@ -32,12 +42,15 @@ Use Up or Down to highlight a game and Enter to launch. Escape returns to the la
 
 The [game build and replay report](../audit/games/README.md) records the tested versions, hashes of the supplied artifacts and limits of the playback checks.
 
-The Store uses the repository's `pcpos-pkg` application entry format. Files in an entry use paths from the repository root and can be fetched from the entry's immutable payload commit. Each listing pins the two files players need, the standalone HTML player and its x86-64 native executable. The full source is in the same commit alongside them.
+The Store uses the repository's `pcpos-pkg` application entry format. Files in an entry use paths from the repository root and can be fetched from the entry's immutable payload commit. Listings pin the artifacts supplied for each runtime. Native-only packages pin their x86-64 guest executable. The full source is in the same commit alongside them.
 
 | Application | Listing |
 | --- | --- |
 | `kirtusj/night-post` | [Package entry](index/kirtusj/ni/gh/night-post) |
 | `kirtusj/bellweather-harbor` | [Package entry](index/kirtusj/be/ll/bellweather-harbor) |
+| `kirtusj/sunspur-rally` | [Native racing game](index/kirtusj/su/ns/sunspur-rally) |
+| `kirtusj/flux-rink` | [Native multiplayer game](index/kirtusj/fl/ux/flux-rink) |
+| `kirtusj/heliograph` | [Native engine lab](index/kirtusj/he/li/heliograph) |
 
 For a separately downloaded player, open its package entry above and compare the SHA-256 for the matching `.html` path with the downloaded file. For example, run `Get-FileHash -Algorithm SHA256 ./Night_Post.html` in PowerShell or `sha256sum ./Night_Post.html` on Linux in the download directory.
 
