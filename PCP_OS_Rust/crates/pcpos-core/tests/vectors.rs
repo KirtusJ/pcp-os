@@ -224,3 +224,33 @@ fn positional_decoder_checks_types_bounds_and_exact_frame_ends() {
         assert_eq!(r1::decode_event(&r1::encode_event(&original).unwrap()), Ok((original, &[][..])));
     }
 }
+
+#[test]
+fn checkpoint_loaders_agree_with_full_verification_and_keep_the_owned_buffer() {
+    let raw = vectors("register_scenario.jsonl");
+    let mut prefix = Vec::new();
+    for line in raw.split_inclusive(|&b| b == b'\n') {
+        let mut l = Ledger::from_owned_bytes(prefix.clone()).unwrap();
+        l.extend(line).unwrap();
+        prefix.extend_from_slice(line);
+        let owned = prefix.clone();
+        let allocation = owned.as_ptr();
+        let loaded = Ledger::from_owned_bytes(owned).unwrap();
+        let borrowed = Ledger::from_bytes(&prefix).unwrap();
+        let (events, head) = ledger::verify(&prefix).unwrap();
+        assert_eq!(loaded.bytes().as_ptr(), allocation);
+        for register in [&loaded, &borrowed, &l] {
+            assert_eq!(register.bytes(), &prefix);
+            assert_eq!(register.len(), events.len() as u64);
+            assert_eq!(register.head(), head);
+        }
+    }
+    let mut bad_link = raw.clone();
+    let i = bad_link.windows(8).position(|w| w == b"\"prev\":\"").unwrap() + 8;
+    bad_link[i] = b'f';
+    for malformed in [&b"\n"[..], &b"{}\n"[..], &raw[..raw.len()-1], &bad_link, &b"bad\nincomplete"[..]] {
+        let expected = ledger::verify(malformed).unwrap_err();
+        assert_eq!(Ledger::from_owned_bytes(malformed.to_vec()).err(), Some(expected.clone()));
+        assert_eq!(Ledger::from_bytes(malformed).err(), Some(expected));
+    }
+}

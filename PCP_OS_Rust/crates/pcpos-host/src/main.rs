@@ -27,7 +27,7 @@ fn receive(input: &str, expected: &str, base: Option<&str>) -> Result<(), Error>
         None => ledger::Ledger::new(),
         Some(path) => {
             let bytes = fs::read(path).map_err(|e| (2, format!("cannot read {path}: {e}")))?;
-            ledger::Ledger::from_bytes(&bytes).map_err(|e| (6, format!("base register is not intact: {e:?}")))?
+            ledger::Ledger::from_owned_bytes(bytes).map_err(|e| (6, format!("base register is not intact: {e:?}")))?
         }
     };
     let wire = fs::read(input).map_err(|e| (2, format!("cannot read {input}: {e}")))?;

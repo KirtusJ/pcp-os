@@ -76,20 +76,27 @@ pub fn verify(raw: &[u8]) -> Result<(Vec<Value>, String), LedgerError> {
 /// Check the lines that follow a part already checked: `first` events came before, and the last of them
 /// has the digest `prev`. The same checks as [`verify`], which is this with nothing before.
 pub fn verify_tail(raw: &[u8], first: usize, prev: &str) -> Result<(Vec<Value>, String), LedgerError> {
+    let mut events = Vec::new();
+    let (_, head) = walk_tail(raw, first, prev, |ev| events.push(ev))?;
+    Ok((events, head))
+}
+
+// One pass for both callers: replay keeps the events, checkpoint loading drops each
+// decoded value after verifying it. The byte grammar and error precedence are shared.
+fn walk_tail(raw: &[u8], first: usize, prev: &str, mut visit: impl FnMut(Value)) -> Result<(usize, String), LedgerError> {
     if !raw.is_empty() && raw[raw.len() - 1] != b'\n' {
         return Err(LedgerError::IncompleteFinalLine);
     }
-    let mut events = Vec::new();
     let mut prev = prev.to_string();
-    if raw.is_empty() {
-        return Ok((events, prev));
+    let mut count = 0;
+    for line in raw.split_inclusive(|&b| b == b'\n') {
+        let content = &line[..line.len() - 1];
+        let ev = check_event(first + count, content, &prev)?;
+        prev = sha256_hex(content);
+        visit(ev);
+        count += 1;
     }
-    for (n, line) in raw[..raw.len() - 1].split(|&b| b == b'\n').enumerate() {
-        let ev = check_event(first + n, line, &prev)?;
-        prev = sha256_hex(line);
-        events.push(ev);
-    }
-    Ok((events, prev))
+    Ok((count, prev))
 }
 
 /// An append-only register held in memory. Its bytes are exactly what [`verify`] accepts.
@@ -108,8 +115,14 @@ impl Ledger {
 
     /// Adopt bytes received from elsewhere, after checking them in full.
     pub fn from_bytes(raw: &[u8]) -> Result<Self, LedgerError> {
-        let (events, head) = verify(raw)?;
-        Ok(Ledger { bytes: raw.to_vec(), count: events.len() as u64, head: Some(head) })
+        let (count, head) = walk_tail(raw, 0, ZERO, drop)?;
+        Ok(Ledger { bytes: raw.to_vec(), count: count as u64, head: Some(head) })
+    }
+
+    /// Verify an owned register buffer and retain its allocation as the ledger.
+    pub fn from_owned_bytes(raw: Vec<u8>) -> Result<Self, LedgerError> {
+        let (count, head) = walk_tail(&raw, 0, ZERO, drop)?;
+        Ok(Ledger { bytes: raw, count: count as u64, head: Some(head) })
     }
 
     /// Append one event. The sequence number and the link to the previous event are set here and nowhere else.
