@@ -144,3 +144,25 @@ The harness supplies `test=virtio-register` and a fresh 64-bit loader nonce. The
 Before each installation, the live replica must still have 12 events and head `3112244aad5d5015c2d9b86a0b96e2317adcc537bc2e641d221f0622b86cb56f`. The guest stages the resident prefix and received tail together through the native `Record::open` chain verifier and guard replay. It rejects replay problems and requires the independently pinned final head and count before swapping the live record. Each serial receipt reports the actual post-attempt head and count. The replica is discarded when the fixture ends. Peer identity, persistent storage, concurrent writers and a remote acknowledgment protocol are outside this fixture.
 
 The native replay retains all serial output and PCAP/peer bytes. Its 11 arms cover a semantically valid divergent continuation, a guard violation, a missing final LF, an incorrect sequence, a wrong nonce, a duplicate after successful installation, replay of the first envelope during attempt two, an unsigned length mismatch, silence and both disabled gates. Several arms reject an update and accept the authentic tail on the next attempt in the same boot. The two-refusal arm finishes with the original head and an explicit failure.
+
+## Delegate a computation to another guest
+
+Two Rust PCP kernels exchange a job on a direct, isolated QEMU Ethernet link. The director chooses an input from a fresh 64-bit challenge. The receiver matches job 1 to a single local boot module named `pcp-fib`, checks its SHA-256 against the receiver's loader-supplied pin, and starts it with the existing ELF loader and user-mode scheduler. No bytes on the wire are executed. A fresh session for a distinct challenge is a separate boot in this experiment.
+
+The freestanding Rust worker reads the decimal input from its process arguments, computes Fibonacci modulo 251 by iteration, and reports it through its exit system call. The kernel grants the worker no console, display, files, store, keyboard or sound access. The process has a 50-tick budget. Its parent inspects the exit, syscall count, page permissions, kernel isolation and released frames. The director independently checks the result by fast doubling. The test harness has a third implementation using full-precision integers and a single final reduction.
+
+Build the offline and probe kernels, keeping a copy of each, then run the pair from this directory. The user-mode build uses the Rust `x86_64-unknown-none` target.
+
+```sh
+sh run.sh build
+cp target/pcpos-kernel.elf32 target/default.elf32
+PCPOS_KERNEL_FEATURES=virtio-worker-probe sh run.sh build
+sh programs/pcp-fib/build.sh target/pcp-fib
+python3 -O tools/virtio_worker_probe.py target/pcpos-kernel.elf32 target/default.elf32 target/pcp-fib worker-results
+```
+
+The receiver announces readiness, executes a valid request once, and sends its result. When the director repeats the identical request, the receiver returns the retained result with the duplicate bit set. Unknown jobs and a mismatched module pin yield explicit refusals. A changed second request is rejected before a second launch. The direct loopback UDP backends carry the frames between QEMU processes. Each guest has one legacy NIC; neither endpoint uses a host-generated answer or an external network. Serial logs record the child process and both endpoint outcomes. Both guest-side captures must contain the same ordered frames.
+
+Each session accepts one job and one identical retry. The duplicate result is stored in the boot's memory. A restart starts a new session and allows the same workload to run again. Trusted boot configuration supplies the local module pin. This fixture has no peer identity authentication, general network execution, LLM runtime or cross-machine scheduler.
+
+To challenge the director's independent arithmetic, build a second local `pcp-fib` in its own directory with its final `exit(a as u64)` changed to `exit(((a + 1) % 251) as u64)`. Run the same replay with `--only altered-result --challenge-child PATH/TO/ALTERNATE/pcp-fib` and a fresh output directory. The receiver pins that alternate artifact and can report its real exit code. The director must refuse the incorrect value.

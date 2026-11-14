@@ -14,6 +14,8 @@ mod dev;
 mod exec;
 mod font;
 mod mem;
+#[cfg(feature = "virtio-worker-probe")]
+mod worker_wire;
 #[cfg(feature = "virtio-register-probe")]
 mod register_wire;
 mod session;
@@ -795,6 +797,19 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
         let result = register_wire::fixture(&bus, &boot.command_line);
         say!("virtio register fixture: {:?}", result);
         check("the isolated peer supplied the verified register extension", result.is_ok(), &mut failed);
+    }
+    #[cfg(feature = "virtio-worker-probe")]
+    if failed == 0 {
+        let words = || boot.command_line.split_whitespace();
+        if words().any(|s| s == "test=worker-director") {
+            let result = worker_wire::director(&bus, &boot.command_line);
+            say!("virtio worker director: {:?}", result);
+            check("the native worker director verified two bound outcomes", result.is_ok(), &mut failed);
+        } else if words().any(|s| s == "test=worker-receiver") {
+            let result = worker_wire::receiver(&bus, &boot);
+            say!("virtio worker receiver: {:?}", result);
+            check("the native worker receiver finished its bounded dispatch", result.is_ok(), &mut failed);
+        }
     }
     let start = session::Start { boot: &boot, display, keyboard, sound: sound || music, passed: PASSED.load(core::sync::atomic::Ordering::Relaxed), failed, tasks: 14, version: env!("CARGO_PKG_VERSION") };
     let _tasks = session::run(&mut rec, &start, &mut failed);
