@@ -600,7 +600,7 @@ Here ACR runs over a register: an append-only, hash-chained record kept by a pro
 ## Before the first step
 
 1. Call `acr_kernel`, read what it returns in full and follow it. It is the operating floor, copied without change from the Core Specification; the tool serves the file `${CLAUDE_PLUGIN_ROOT}/method/KERNEL.md` whole, so no file tool is needed and a session that cannot open that folder loses nothing.
-2. Call `acr_status` for the full view. When you need to check again and still hold that view, pass its full head as `if_head`. `UNCHANGED` refers to that view. After a context reset or loss of the view, omit `if_head`.
+2. Call `acr_status` for the full view. When you need to check again and still hold that view, pass its full head as `if_head`. `UNCHANGED` refers to that view. To poll after appends, also pass `"view":"update"`. A JSON pair gives the new event count and full head. Update those two fields in the view you hold. After a context reset or loss of the view, omit `if_head`.
    - If it says there is no register, call `acr_begin`.
    - If ACR is not in use: when the person typed this command, the host records the adoption itself, as the person's own act, and tells you so; do not record it again. When they asked in their own words, call `acr_adopt` with their whole last message, copied exactly and unchanged. It is recorded as relayed by you: you are the one who read their message as a request. Never shorten it, quote part of it or compose a basis for them, and if their message does not clearly ask for a review, ask instead of adopting.
 3. Record that you hold the text: `acr_submit` kind `DELIVERY_STATE`, body `{"agent": "<your label, as acr_status shows it>", "event": "DELIVER", "text": "__KERNEL_SHA__"}`.
