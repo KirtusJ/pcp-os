@@ -48,7 +48,11 @@ pub enum Object {
     /// Files a program writes, which last until the machine is switched off.
     Store = 5,
     Sound = 6,
+    #[cfg(feature = "game-link")]
+    GameLink = 7,
 }
+
+const CAP_SLOTS: usize = Object::Sound as usize + 1 + cfg!(feature = "game-link") as usize;
 
 /// What a program is started with the right to use.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -59,6 +63,8 @@ pub struct Grants {
     pub files: bool,
     pub store: bool,
     pub sound: bool,
+    #[cfg(feature = "game-link")]
+    pub game_link: bool,
 }
 
 /// The most of a process's output that is kept.
@@ -88,7 +94,7 @@ pub struct Process {
     pub space: Option<Space>,
     fpu: Box<arch::FpuArea>,
     pub fs_base: u64,
-    caps: [Option<Handle>; 7],
+    caps: [Option<Handle>; CAP_SLOTS],
     pub task: u32,
     pub end: Option<End>,
     pub waiting: Waiting,
@@ -187,10 +193,11 @@ impl Table {
     fn admit(&mut self, name: &str, space: Space, frame: Frame, grants: Grants, budget: u64, linux: Option<sys::Linux>) -> Option<usize> {
         let pid = self.procs.len() as u32 + 1;
         let now = arch::ticks();
-        let mut caps = [None; 7];
+        let mut caps = [None; CAP_SLOTS];
         for (wanted, object, rights) in [(grants.console, Object::Console, Rights::APPEND), (grants.display, Object::Display, Rights::APPEND),
                                          (grants.keys, Object::Keys, Rights::READ), (grants.files, Object::Files, Rights::READ),
-                                         (grants.store, Object::Store, Rights::READ.with(Rights::APPEND)), (grants.sound, Object::Sound, Rights::APPEND)] {
+                                         (grants.store, Object::Store, Rights::READ.with(Rights::APPEND)), (grants.sound, Object::Sound, Rights::APPEND),
+                  #[cfg(feature = "game-link")] (grants.game_link, Object::GameLink, Rights::READ.with(Rights::APPEND))] {
             if wanted {
                 caps[object as usize] = self.caps.install(pid, object as u64, rights).ok();
             }

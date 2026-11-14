@@ -1,0 +1,3 @@
+# The guest self-test compares this published vector byte-for-byte.
+PCP_OS_Rust/vectors/machines.tsv text eol=lf
+store/**/*.elf binary
