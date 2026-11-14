@@ -73,6 +73,7 @@ dependencies = [
 name = "pcpos-host"
 version = "1.0.22"
 dependencies = [
+ "libc",
  "pcpos-core",
 ]
 

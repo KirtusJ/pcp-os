@@ -415,6 +415,77 @@ fn a_retried_start_and_a_stop_share_one_live_attempt_identity() {
 }
 
 #[test]
+fn a_stop_reads_a_bounded_regular_transcript_or_the_hosts_final_message() {
+    let root = in_use("stop-transcript");
+    fs::write(root.join("transcript"), b"recorded\0bytes").unwrap();
+    fs::write(root.join("empty"), b"").unwrap();
+    fs::File::create(root.join("oversized")).unwrap().set_len(64 * 1024 * 1024 + 1).unwrap();
+    for (id, path, message, expected) in [
+        ("regular", "transcript", "", Some(&b"recorded\0bytes"[..])),
+        ("message", "transcript", "final", Some(&b"final"[..])),
+        ("empty", "empty", "", None),
+        ("missing", "absent", "", None),
+        ("oversized", "oversized", "", None),
+    ] {
+        hook(&root, "subagent-start", &format!(r#"{{"agent_id":"{id}"}}"#));
+        let input = format!(r#"{{"agent_id":"{id}","agent_transcript_path":"{path}","last_assistant_message":"{message}"}}"#);
+        hook(&root, "subagent-stop", &input);
+        let all = events(&root);
+        let last = all.last().unwrap();
+        assert_eq!(last.get("kind").and_then(Value::as_str), Some("TASK_ENDED"));
+        let b = last.get("body").unwrap();
+        assert_eq!(b.get("outcome").and_then(Value::as_str), Some(if expected.is_some() { "DONE" } else { "FAILED" }), "{id}");
+        assert_eq!(b.get("result").and_then(Value::as_str), expected.map(sha256_hex).as_deref(), "{id}");
+    }
+    let before = kinds(&root);
+    hook(&root, "subagent-stop", r#"{"agent_id":"absent","agent_transcript_path":"transcript"}"#);
+    assert_eq!(kinds(&root), before);
+    let quiet = dir("stop-no-register");
+    hook(&quiet, "subagent-stop", r#"{"agent_id":"absent","agent_transcript_path":"anything"}"#);
+    assert!(!quiet.join(REG).exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_fifo_without_a_writer_cannot_hold_a_stop_and_a_link_is_not_read_as_evidence() {
+    use std::time::{Duration, Instant};
+    let root = in_use("stop-fifo");
+    assert!(Command::new("mkfifo").arg(root.join("fifo")).status().unwrap().success());
+    fs::write(root.join("target"), b"elsewhere").unwrap();
+    std::os::unix::fs::symlink("target", root.join("link")).unwrap();
+    for (id, path) in [("a", "fifo"), ("b", "link")] {
+        hook(&root, "subagent-start", &format!(r#"{{"agent_id":"{id}"}}"#));
+        let mut child = pcpos(&root).args(["hook", "subagent-stop"]).stdin(Stdio::piped()).spawn().unwrap();
+        write!(child.stdin.take().unwrap(), r#"{{"agent_id":"{id}","agent_transcript_path":"{path}"}}"#).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while child.try_wait().unwrap().is_none() {
+            if Instant::now() >= deadline {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                panic!("the stop blocked on {path}");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let all = events(&root);
+        assert_eq!(all.last().unwrap().get("body").unwrap().get("outcome").and_then(Value::as_str), Some("FAILED"));
+    }
+    hook(&root, "subagent-start", r#"{"agent_id":"race"}"#);
+    std::thread::scope(|s| {
+        for m in ["one", "two"] {
+            let root = &root;
+            s.spawn(move || hook(root, "subagent-stop", &format!(r#"{{"agent_id":"race","last_assistant_message":"{m}","agent_transcript_path":"fifo"}}"#)));
+        }
+    });
+    let all = events(&root);
+    for kind in ["ARTIFACT_ADDED", "TASK_ENDED"] {
+        assert_eq!(all.iter().filter(|e| e.get("kind").and_then(Value::as_str) == Some(kind) && {
+            let b = e.get("body").unwrap();
+            b.get("task").or_else(|| b.get("id")).and_then(Value::as_str) == Some("T3")
+        }).count(), 1, "{kind}");
+    }
+}
+
+#[test]
 fn only_unambiguous_host_observations_can_finish_legacy_attempts() {
     let root = in_use("legacy-hook-identities");
     let mut ledger = Ledger::from_bytes(&fs::read(root.join(REG)).unwrap()).unwrap();

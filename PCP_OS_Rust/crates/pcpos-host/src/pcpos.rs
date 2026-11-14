@@ -1919,6 +1919,78 @@ fn active_hook_identity(t: &acr::TaskState, key: &str, legacy_id: Option<&str>) 
     }
 }
 
+fn active_stop_id(state: &State, key: &str, legacy_id: Option<&str>) -> Option<String> {
+    let mut candidates = state.tasks.iter().filter(|(_, t)| t.outcome.is_none() &&
+        active_hook_identity(t, key, legacy_id));
+    let (id, _) = candidates.next()?;
+    if candidates.next().is_some() {
+        eprintln!("pcpos hook: several live tasks match this stop; no exit was assigned");
+        return None;
+    }
+    Some(id.clone())
+}
+
+/// Read through the same handle we classify. On Unix a raced FIFO cannot block
+/// even during open. On Windows explicitly exclude device namespaces and open
+/// the reparse point itself; sharing only for read prevents replacing the leaf.
+fn read_stop_transcript(path: &Path) -> Option<Vec<u8>> {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        use std::path::Prefix;
+        if let Some(Component::Prefix(p)) = path.components().next() {
+            match p.kind() {
+                Prefix::Disk(_) | Prefix::VerbatimDisk(_) => (),
+                Prefix::UNC(_, share) | Prefix::VerbatimUNC(_, share) => {
+                    let share = share.to_string_lossy();
+                    if share.eq_ignore_ascii_case("pipe") || share.eq_ignore_ascii_case("mailslot") { return None; }
+                }
+                _ => return None,
+            }
+        }
+        // Win32 also resolves these reserved device names inside ordinary directories.
+        for component in path.components() {
+            if let Component::Normal(name) = component {
+                let name = name.to_string_lossy();
+                let stem = name.split(['.', ':']).next()?.trim_end_matches(' ').to_ascii_uppercase();
+                if matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$") ||
+                    stem.strip_prefix("COM").or_else(|| stem.strip_prefix("LPT")).is_some_and(|n| matches!(n, "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³")) { return None; }
+            }
+        }
+        // FILE_FLAG_OPEN_REPARSE_POINT and FILE_SHARE_READ.
+        options.custom_flags(0x00200000).share_mode(1);
+    }
+    let before = fs::symlink_metadata(path).ok()?;
+    if !before.is_file() || before.len() == 0 || before.len() > MAX_ARTIFACT { return None; }
+    let mut file = options.open(path).ok()?;
+    let opened = file.metadata().ok()?;
+    if !opened.is_file() || opened.len() != before.len() || opened.modified().ok()? != before.modified().ok()? { return None; }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if (opened.dev(), opened.ino()) != (before.dev(), before.ino()) { return None; }
+    }
+    let mut data = Vec::new();
+    Read::by_ref(&mut file).take(opened.len() + 1).read_to_end(&mut data).ok()?;
+    let after = fs::symlink_metadata(path).ok()?;
+    if !after.is_file() || data.len() as u64 != opened.len() || after.len() != opened.len()
+        || opened.modified().ok()? != after.modified().ok()? { return None; }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if (opened.dev(), opened.ino(), opened.ctime(), opened.ctime_nsec()) !=
+            (after.dev(), after.ino(), after.ctime(), after.ctime_nsec()) { return None; }
+    }
+    Some(data)
+}
+
 /// Run one hook. Returns what to print on standard output (which the host adds to the model's context
 /// for the events that allow it). Nothing here stops the host's work: a failure is reported on standard
 /// error and the hook still ends normally, except the one hook whose purpose is to refuse a write.
@@ -2092,41 +2164,38 @@ fn hook(event: &str, input: &Value) -> Result<String, String> {
         }
         // A subagent stops: the exit is observed, and its final message is read back by the host.
         "subagent-stop" => {
-            let mut tx = match Tx::begin(&se.root, &reg, false)? {
-                Some(tx) if tx.problems.is_empty() => tx,
-                _ => return Ok(String::new()),
-            };
             let agent = field("agent_id");
             if agent.is_empty() { return Ok(String::new()); }
             let key = hook_attempt_key(input, agent);
             // Earlier versions may have clipped or trimmed this identifier.
             // Do not assign an exit to a legacy row from a lossy match.
             let legacy_id = (agent.chars().count() < 200 && clip(agent, 200) == agent).then_some(agent);
-            let mut candidates = tx.state().tasks.iter().filter(|(_, t)| t.outcome.is_none() &&
-                active_hook_identity(t, &key, legacy_id))
-                .map(|(id, t)| (id.clone(), t.stop_requested.is_some()));
-            let (id, stop_asked) = match candidates.next() {
-                Some(x) => x,
+            let id = match open(&se.root, &reg)?.filter(|r| r.problems.is_empty())
+                .and_then(|r| active_stop_id(&r.state, &key, legacy_id)) {
+                Some(id) => id,
                 None => return Ok(String::new()),
             };
-            if candidates.next().is_some() {
-                eprintln!("pcpos hook: several live tasks match this stop; no exit was assigned");
-                return Ok(String::new());
-            }
-            let (bytes, source): (Option<Vec<u8>>, &str) = match input.get("last_assistant_message").and_then(Value::as_str) {
-                Some(m) if !m.is_empty() => (Some(m.as_bytes().to_vec()), "the final message"),
-                _ => match fs::read(field("agent_transcript_path")) {
-                    Ok(b) if !b.is_empty() && !field("agent_transcript_path").is_empty() => (Some(b), "the transcript file"),
-                    _ => (None, "nothing"),
+            // The external read and hashing never hold the register lock. A
+            // halt, another stop, or a resumed attempt may be recorded meanwhile.
+            let (evidence, source) = match input.get("last_assistant_message").and_then(Value::as_str) {
+                Some(m) if !m.is_empty() => (Some((sha256_hex(m.as_bytes()), m.len())), "the final message"),
+                _ => match read_stop_transcript(Path::new(field("agent_transcript_path"))) {
+                    Some(bytes) => (Some((sha256_hex(&bytes), bytes.len())), "the transcript file"),
+                    None => (None, "nothing"),
                 },
             };
-            let digest = bytes.as_ref().map(|b| sha256_hex(b));
+            let mut tx = match Tx::begin(&se.root, &reg, false)? {
+                Some(tx) if tx.problems.is_empty() => tx,
+                _ => return Ok(String::new()),
+            };
+            if active_stop_id(tx.state(), &key, legacy_id).as_ref() != Some(&id) { return Ok(String::new()); }
+            let stop_asked = tx.state().tasks[&id].stop_requested.is_some();
+            let digest = evidence.as_ref().map(|(d, _)| d.clone());
             let end = |outcome: &str, note: String| obj(vec![("id", s(&id)), ("outcome", s(outcome)), ("result", opt(&digest)), ("read_back", opt(&digest)), ("spent", Value::Int(0)), ("note", s(&note)), ("observed", s("SUBAGENT_STOP"))]);
-            let body = match (&bytes, stop_asked) {
+            let body = match (&evidence, stop_asked) {
                 (_, true) => end("STOPPED", format!("exit observed after a stop was requested; the host read back {source}, which is not accepted as a result")),
-                (Some(b), false) => {
-                    let d = digest.clone().unwrap_or_default();
-                    match tx.put(&se.actor, "HOST", "ARTIFACT_ADDED", obj(vec![("sha256", s(&d)), ("size", Value::Int(b.len() as i64)), ("origin", s("PRODUCED")), ("stored", Value::Bool(false)), ("task", s(&id))]))? {
+                (Some((d, size)), false) => {
+                    match tx.put(&se.actor, "HOST", "ARTIFACT_ADDED", obj(vec![("sha256", s(d)), ("size", Value::Int(*size as i64)), ("origin", s("PRODUCED")), ("stored", Value::Bool(false)), ("task", s(&id))]))? {
                         Put::Written { .. } => end("DONE", format!("exit observed; the result is the SHA-256 of {source} as the host read it back. The worker's claim and the read-back are one observation here")),
                         Put::Refused(r) => end("FAILED", format!("exit observed; the result could not be recorded: {}", clip(&r.message, 300))),
                     }
