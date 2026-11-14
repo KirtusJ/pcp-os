@@ -910,6 +910,10 @@ fn a_shell_observation_belongs_to_its_register_and_history() {
     let peer = ".pcp/peer.jsonl";
     fs::copy(root.join(REG), root.join(peer)).unwrap();
     hook(&root, "post-tool", r#"{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_use_id":"t1","tool_input":{"command":"echo A"},"tool_response":{"stdout":"A","stderr":"","interrupted":false}}"#);
+    let cache = fs::read_to_string(root.join(".pcp/observed_tools.jsonl")).unwrap();
+    let observation = Value::parse(cache.trim_end().as_bytes()).unwrap();
+    assert!(observation.get("command").is_none(), "older readers must not match this observation");
+    assert_eq!(observation.get("scoped_command").and_then(Value::as_str), Some("echo A"));
     let before = fs::read(root.join(peer)).unwrap();
     let (out, _) = tool(&root, "acr_check", r#"{"register":".pcp/peer.jsonl","command":"echo A"}"#);
     assert!(out.starts_with("REFUSE"), "{out}");

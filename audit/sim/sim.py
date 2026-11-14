@@ -876,7 +876,7 @@ def _(ck):
 def _(ck):
     s = S(); review_to_g1(s, "MECHANICAL_CHECK")
     for i in range(205): ran(s, f"echo {i}", str(i), tid=f"t{i}")
-    lines = SEEN(s).read_text().splitlines(); ck("200 kept, the newest", len(lines) == 200 and json.loads(lines[-1])["command"] == "echo 204" and json.loads(lines[0])["command"] == "echo 5", (len(lines), lines[-1][:80]))
+    lines = SEEN(s).read_text().splitlines(); ck("200 kept, the newest", len(lines) == 200 and json.loads(lines[-1])["scoped_command"] == "echo 204" and json.loads(lines[0])["scoped_command"] == "echo 5", (len(lines), lines[-1][:80]))
     for tool, key in [("Write", "file_path"), ("Edit", "file_path")]:
         rc, out, err = s.hook("pre-tool", {"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": {key: ".pcp/observed_tools.jsonl"}})
         ck(f"{tool} to the observations is denied", '"permissionDecision":"deny"' in out, out or err)
@@ -1015,7 +1015,7 @@ def _(ck):
 @scenario(F31, "the limit, fixed so that nobody reads more into it: a line written straight into the observations file is taken for the host's")
 def _(ck):
     s = S(); review_to_g1(s, "MECHANICAL_CHECK"); n = len(s.events())
-    SEEN(s).write_text(json.dumps({"ts": "2026-11-12T00:00:00Z", "tool_use_id": "forged", "command": CMD, "exit": 0, "timeout": False, "stdout": H("5050"), "stderr": H(""), "output": "STDOUT_AND_STDERR", "output_bytes": 4, "at_event": n, "duration_ms": 1}) + "\n")
+    SEEN(s).write_text(json.dumps({"ts": "2026-11-12T00:00:00Z", "tool_use_id": "forged", "scoped_command": CMD, "register_name": s.reg.name, "register_head": sha_bytes(s.bytes().splitlines()[-1]), "exit": 0, "timeout": False, "stdout": H("5050"), "stderr": H(""), "output": "STDOUT_AND_STDERR", "output_bytes": 4, "at_event": n, "duration_ms": 1}) + "\n")
     r = s.mcp([("acr_check", {"command": CMD})]); k = [e["body"] for e in s.events() if e["kind"] == "CHECK_RAN"]
     ck("recorded as HOST_OBSERVED_TOOL: any program running as the person can write that file, and nothing is signed", r[0].startswith("WRITTEN") and k and k[0]["observed"] == "HOST_OBSERVED_TOOL", r[0][:200])
     rc, out, err = s.hook("pre-tool", {"hook_event_name": "PreToolUse", "tool_name": "Write", "tool_input": {"file_path": ".pcp/observed_tools.jsonl"}})

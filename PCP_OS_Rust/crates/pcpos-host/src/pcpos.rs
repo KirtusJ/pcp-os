@@ -1632,15 +1632,15 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
             };
             let all = observed_unrecorded(se, &reg, &opened, &used);
             // What the host saw before the open review was commissioned was not run for it, and is not offered.
-            let stale = all.iter().any(|v| v.get("command").and_then(Value::as_str) == Some(command) && v.get("at_event").and_then(Value::as_int).map(|n| n <= floor).unwrap_or(true));
+            let stale = all.iter().any(|v| v.get("scoped_command").and_then(Value::as_str) == Some(command) && v.get("at_event").and_then(Value::as_int).map(|n| n <= floor).unwrap_or(true));
             let unrecorded: Vec<Value> = all.into_iter().filter(|v| v.get("at_event").and_then(Value::as_int).map(|n| n > floor).unwrap_or(false)).collect();
-            let seen = match unrecorded.iter().rev().find(|v| v.get("command").and_then(Value::as_str) == Some(command)) {
+            let seen = match unrecorded.iter().rev().find(|v| v.get("scoped_command").and_then(Value::as_str) == Some(command)) {
                 Some(v) => v.clone(),
                 None => {
                     // The exact text matters, and a command is easily passed on with something added. What the host did see is the session's own commands: it is shown them.
                     let mut did = String::new();
                     for v in unrecorded.iter().rev().take(5) {
-                        let _ = writeln!(did, "  {}", clip(v.get("command").and_then(Value::as_str).unwrap_or(""), 400));
+                        let _ = writeln!(did, "  {}", clip(v.get("scoped_command").and_then(Value::as_str).unwrap_or(""), 400));
                     }
                     let did = if did.is_empty() { "The host has seen no shell command here that is not already recorded as a check.\n".to_string() }
                               else { format!("Shell commands the host did see and that are not yet recorded as checks, newest first, each exactly as it was given:\n{did}If one of these is the check you mean, call acr_check with that text.\n") };
@@ -2240,7 +2240,9 @@ fn hook(event: &str, input: &Value) -> Result<String, String> {
                 let part = |k: &str| r.and_then(|r| r.get(k)).and_then(Value::as_str).unwrap_or("").to_string();
                 (if interrupted { Value::Null } else { Value::Int(0) }, interrupted, part("stdout"), part("stderr"), "STDOUT_AND_STDERR")
             };
-            let line = obj(vec![("ts", s(&now_utc())), ("tool_use_id", s(&clip(field("tool_use_id"), 200))), ("command", s(command)), ("exit", exit), ("timeout", Value::Bool(timeout)),
+            // Older readers match the top-level "command" without checking register identity.
+            // Use a distinct field so only a reader that understands the binding can claim this row.
+            let line = obj(vec![("ts", s(&now_utc())), ("tool_use_id", s(&clip(field("tool_use_id"), 200))), ("scoped_command", s(command)), ("exit", exit), ("timeout", Value::Bool(timeout)),
                                 ("stdout", s(&sha256_hex(out.as_bytes()))), ("stderr", s(&sha256_hex(err.as_bytes()))), ("output", s(form)), ("output_bytes", Value::Int((out.len() + err.len()) as i64)), ("at_event", Value::Int(at_event)),
                                 ("register_name", s(Path::new(&reg).file_name().and_then(|n| n.to_str()).ok_or("no register name")?)), ("register_head", s(&register_head)),
                                 ("duration_ms", input.get("duration_ms").and_then(Value::as_int).map(Value::Int).unwrap_or(Value::Null))]).canonical_json();
