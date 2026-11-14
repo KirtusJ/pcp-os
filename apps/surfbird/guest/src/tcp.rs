@@ -1,5 +1,8 @@
 //! The guest process owns ARP, IPv4, the TCP state machine and its socket buffers.
 //! The kernel device only copies bounded Ethernet frames.
+#[cfg(feature = "dns")]
+#[path = "dns.rs"]
+mod dns;
 use super::{browse_pages, Stream};
 use pcp_game_guest::{call, load, open, sleep_us, time_us};
 use smoltcp::{
@@ -7,7 +10,7 @@ use smoltcp::{
     phy::{Device, DeviceCapabilities, RxToken, TxToken},
     socket::tcp,
     time::Instant,
-    wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address},
+    wire::{EthernetAddress, IpAddress, IpCidr},
 };
 
 const MTU: usize = 1514;
@@ -19,6 +22,18 @@ struct Ethernet {
     fd: usize,
     rx: [u8; MTU],
     failed: bool,
+}
+impl Ethernet {
+    fn poll(&mut self, iface: &mut Interface, sockets: &mut SocketSet) -> Result<(), &'static str> {
+        let timestamp = now();
+        iface.poll_maintenance(timestamp);
+        iface.poll_ingress_single(timestamp, self, sockets);
+        iface.poll_egress(timestamp, self, sockets);
+        if self.failed {
+            return Err("Ethernet I/O failed");
+        }
+        Ok(())
+    }
 }
 struct Rx<'a>(&'a [u8]);
 impl RxToken for Rx<'_> {
@@ -81,16 +96,7 @@ struct Connection<'a> {
 }
 impl Stream for Connection<'_> {
     fn poll(&mut self) -> Result<(), &'static str> {
-        let timestamp = now();
-        self.iface.poll_maintenance(timestamp);
-        self.iface
-            .poll_ingress_single(timestamp, &mut self.device, &mut self.sockets);
-        self.iface
-            .poll_egress(timestamp, &mut self.device, &mut self.sockets);
-        if self.device.failed {
-            return Err("Ethernet I/O failed");
-        }
-        Ok(())
+        self.device.poll(&mut self.iface, &mut self.sockets)
     }
     fn write(&mut self, bytes: &[u8]) -> Result<usize, &'static str> {
         self.sockets
@@ -139,6 +145,10 @@ pub(super) fn browse() -> Result<(), &'static str> {
         a.push(IpCidr::new(IpAddress::v4(10, 0, 2, 15), 24))
             .unwrap()
     });
+    #[cfg(feature = "dns")]
+    let destination = dns::resolve(super::ORIGIN_HOST, &mut device, &mut iface)?;
+    #[cfg(not(feature = "dns"))]
+    let destination = smoltcp::wire::Ipv4Address::new(10, 0, 2, 2);
     let mut rx = [0; 4096];
     let mut tx = [0; 1024];
     let mut socket = tcp::Socket::new(
@@ -149,7 +159,7 @@ pub(super) fn browse() -> Result<(), &'static str> {
     socket
         .connect(
             iface.context(),
-            (Ipv4Address::new(10, 0, 2, 2), port),
+            (destination, port),
             49152 + (port_random.wrapping_add(time_us() as u16) % 16384),
         )
         .map_err(|_| "TCP connect rejected")?;

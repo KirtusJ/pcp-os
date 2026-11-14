@@ -40,7 +40,7 @@ def stream_bytes(segments, initial_seq):
     return bytes(stream)
 
 
-def verify(capture, port, expected_paths, scenario, bodies):
+def verify(capture, port, expected_paths, scenario, bodies, host_ip=HOST_IP):
     raw = Path(capture).read_bytes()
     packets = list(frames(raw))
     arp = []
@@ -59,8 +59,8 @@ def verify(capture, port, expected_paths, scenario, bodies):
         s = ip[header:total]
         check(len(s) >= 20 and 20 <= 4 * (s[12] >> 4) <= len(s), "invalid TCP bounds")
         sp, dp, seq, ack = struct.unpack_from("!HHII", s)
-        outgoing = src == GUEST_MAC and ip[12:20] == GUEST_IP + HOST_IP and dp == port
-        incoming = frame[:6] == GUEST_MAC and ip[12:20] == HOST_IP + GUEST_IP and sp == port
+        outgoing = src == GUEST_MAC and ip[12:20] == GUEST_IP + host_ip and dp == port
+        incoming = frame[:6] == GUEST_MAC and ip[12:20] == host_ip + GUEST_IP and sp == port
         if outgoing or incoming:
             tcp.append((outgoing, sp if outgoing else dp, seq, ack, s[13], s[4 * (s[12] >> 4) :]))
     evidence = {"frames": len(packets), "pcap_sha256": hashlib.sha256(raw).hexdigest()}
@@ -69,14 +69,14 @@ def verify(capture, port, expected_paths, scenario, bodies):
         check(not packets, "expected an empty capture on the denied arm")
         return evidence
     check(
-        (GUEST_MAC, 1, GUEST_IP, HOST_IP) in arp
-        and any(op == 2 and sip == HOST_IP and tip == GUEST_IP for _, op, sip, tip in arp),
+        (GUEST_MAC, 1, GUEST_IP, host_ip) in arp
+        and any(op == 2 and sip == host_ip and tip == GUEST_IP for _, op, sip, tip in arp),
         "missing ARP exchange",
     )
     check(tcp and tcp[0][0] and tcp[0][4] & 0x17 == 2, "first TCP segment must be guest SYN")
     _, local, syn, _, _, _ = tcp[0]
     check(all(p[1] == local for p in tcp), "more than one client socket")
-    evidence.update({"guest": f"10.0.2.15:{local}", "destination": f"10.0.2.2:{port}"})
+    evidence.update({"guest": f"10.0.2.15:{local}", "destination": f"{socket.inet_ntoa(host_ip)}:{port}"})
     if scenario == "refused":
         reset = False
         for out, _, seq, ack, flags, _ in tcp:

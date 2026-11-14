@@ -4,6 +4,7 @@
 use pcp_game_guest::{exit, ink::Frame, log, sleep_us, time_us, Display};
 #[cfg(feature = "tcp-ip")]
 mod tcp;
+const ORIGIN_HOST: &str = "fixture.test";
 use surfbird_cable::{body_length, parse, Page, CAPACITY, START};
 
 const W: usize = 640;
@@ -65,7 +66,9 @@ fn fetch(
     for bytes in [
         b"GET ".as_slice(),
         path.as_bytes(),
-        b" HTTP/1.1\r\nHost: fixture.test\r\nAccept: text/html\r\n\r\n",
+        b" HTTP/1.1\r\nHost: ",
+        ORIGIN_HOST.as_bytes(),
+        b"\r\nAccept: text/html\r\n\r\n",
     ] {
         send(stream, bytes, deadline)?;
     }

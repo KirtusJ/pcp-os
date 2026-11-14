@@ -1,5 +1,6 @@
 """Replay Surfbird against a loopback HTTP fixture over guest Ethernet or a serial cable."""
 import argparse
+from contextlib import nullcontext
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -14,6 +15,7 @@ import threading
 import time
 from urllib.parse import urlsplit
 from packet_trace import verify as verify_trace
+from dns_fixture import DNS_ARMS, DNS_ERRORS, resolver
 
 
 def require(condition, message):
@@ -55,7 +57,8 @@ def hosted_check(binary, port, targets, tag):
                 browser.kill()
 
 
-def run_arm(args, work, scenario):
+def run_arm(args, work, arm, dns):
+    scenario = "allowed" if dns and arm not in DNS_ERRORS else arm
     work.mkdir()
     for source, name in [(args.kernel, "kernel.elf32"), (args.guest, "surf.elf")]:
         shutil.copyfile(source, work / name)
@@ -129,11 +132,19 @@ def run_arm(args, work, scenario):
                 "-serial", "file:serial.log", "-monitor", "stdio", "-kernel", "kernel.elf32"])
     if args.tcp:
         # Distinct boot entropy for smoltcp and ephemeral-port selection.
+        network = "user,id=fixture,ipv6=off"
+        files = "surf.elf,net.cfg"
+        if dns:
+            resolver_port, destination = dns
+            network += f",guestfwd=tcp:{destination}:80-tcp:127.0.0.1:{server.server_port}"
+            (work / "dns.cfg").write_bytes(resolver_port.to_bytes(2, "big") + secrets.token_bytes(4))
+            port = 80
+            files += ",dns.cfg"
         (work / "net.cfg").write_bytes(port.to_bytes(2, "big") + secrets.token_bytes(10))
-        cmd.extend(["-netdev", "user,id=fixture,ipv6=off",
+        cmd.extend(["-netdev", network,
                     "-device", "virtio-net-pci,netdev=fixture,disable-modern=on,vectors=0,mac=02:00:00:00:00:01",
                     "-object", "filter-dump,id=trace,netdev=fixture,file=guest.pcap",
-                    "-initrd", "surf.elf,net.cfg", "-append", f"image={measure} net_image={pin}"])
+                    "-initrd", files, "-append", f"image={measure} net_image={pin}"])
     else:
         cmd.extend(["-nic", "none", "-serial", f"tcp:127.0.0.1:{server.server_port}",
                     "-initrd", "surf.elf", "-append", f"image={measure} link_image={pin}"])
@@ -193,6 +204,9 @@ def run_arm(args, work, scenario):
                     elif scenario == "denied":
                         wait("SURFBIRD error Ethernet grant unavailable" if args.tcp else "SURFBIRD error cable grant unavailable")
                         expected = []
+                    elif dns and arm in DNS_ERRORS:
+                        wait("SURFBIRD error " + DNS_ERRORS[arm])
+                        expected = []
                     elif scenario == "refused":
                         wait("SURFBIRD error TCP connect")
                         require("SURFBIRD error TCP connection refused" in log.read_text() or
@@ -223,11 +237,15 @@ def run_arm(args, work, scenario):
             server.shutdown()
             server.server_close()
             worker.join()
-    ethernet = verify_trace(work/"guest.pcap", port, expected, scenario, pages) if args.tcp else None
+    if dns:
+        from dns_trace import verify_dns
+        ethernet = verify_dns(work/"guest.pcap", resolver_port, destination, arm, expected, pages)
+    else:
+        ethernet = verify_trace(work/"guest.pcap", port, expected, scenario, pages) if args.tcp else None
     if scenario == "refused":
         reason = "TCP connection refused" if ethernet["reset"] else "TCP connect timeout"
         require("SURFBIRD error " + reason in log.read_text(), "guest verdict differs from capture")
-    print(json.dumps({"arm": scenario, "kernel_measurement": measure, "guest_sha256": digest,
+    print(json.dumps({"arm": arm, "kernel_measurement": measure, "guest_sha256": digest,
                       "fixture_nonce": tag, "http_requests": requests, "serial": str(log),
                       "ethernet":ethernet}), flush=True)
 
@@ -239,20 +257,28 @@ def main():
     parser.add_argument("--qemu", default="qemu-system-x86_64")
     parser.add_argument("--qemu-data", type=Path)
     parser.add_argument("--tcp", action="store_true", help="use a guest-ethernet kernel, TCP-enabled guest and a virtual NIC instead of the COM2 cable")
-    parser.add_argument("--arm", choices=["allowed","denied","ambiguous","space-before-colon","folded","refused"],
+    parser.add_argument("--dns", action="store_true", help="boot the DNS-enabled guest against the local authoritative fixture")
+    parser.add_argument("--dns-port", type=int, default=0, help="UDP loopback port for the DNS fixture (default: ephemeral)")
+    parser.add_argument("--arm", choices=sorted(set(DNS_ARMS) | {"allowed","denied","ambiguous","space-before-colon","folded","refused"}),
                         help="run one arm and preserve its new logs separately")
     parser.add_argument("--extra-visits", type=int, default=0,
                         help="repeat Back and link 1 after the ordinary navigation for ring-reuse testing")
     parser.add_argument("--hosted", type=lambda s: Path(s).resolve(), help="cross-check the same pages with the hosted Surfbird executable")
     parser.add_argument("--output", type=Path, help="parent directory for unique run logs")
     args = parser.parse_args()
+    if args.dns:
+        args.tcp = True
     root = Path(tempfile.mkdtemp(prefix="surfbird-", dir=args.output))
     if args.arm == "refused" and not args.tcp:
         parser.error("the closed-port arm requires --tcp")
     if args.extra_visits < 0:
         parser.error("--extra-visits must be nonnegative")
-    for scenario in ([args.arm] if args.arm else ["allowed", "denied", "ambiguous", "space-before-colon", "folded"] + (["refused"] if args.tcp else [])):
-        run_arm(args, root / scenario, scenario)
+    arms = DNS_ARMS if args.dns else ["allowed", "denied", "ambiguous", "space-before-colon", "folded"] + (["refused"] if args.tcp else [])
+    if args.arm and args.arm not in arms:
+        parser.error("the selected arm does not apply to this transport")
+    for scenario in ([args.arm] if args.arm else arms):
+        with resolver(scenario, args.dns_port) if args.dns else nullcontext(None) as dns:
+            run_arm(args, root / scenario, scenario, dns)
 
 
 if __name__ == "__main__":
