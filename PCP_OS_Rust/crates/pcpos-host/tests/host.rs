@@ -353,6 +353,50 @@ fn a_write_names_the_head_it_extends_and_many_writers_leave_one_intact_chain() {
 }
 
 #[test]
+fn malformed_mcp_requests_do_not_begin_a_register() {
+    let root = dir("invalid-rpc");
+    let mut cases = Vec::new();
+    let begin = r#"{"name":"acr_begin"}"#;
+    for version in ["", r#""jsonrpc":"1.0","#, r#""jsonrpc":2,"#] {
+        cases.push((format!(r#"{{{version}"id":7,"method":"tools/call","params":{begin}}}"#), "7", -32600));
+    }
+    for id in ["null", "true", "[]", "{}", "1.5", "1e2", "9223372036854775808", r#"1,"id":2"#] {
+        cases.push((format!(r#"{{"jsonrpc":"2.0","id":{id},"method":"tools/call","params":{begin}}}"#), "null", -32600));
+    }
+    for args in ["null", r#""text""#, "true", "1", "[]"] {
+        cases.push((format!(r#"{{"jsonrpc":"2.0","id":"caller","method":"tools/call","params":{{"name":"acr_begin","arguments":{args}}}}}"#),
+                    r#""caller""#, -32602));
+    }
+    cases.push((r#"{"jsonrpc":"2.0","id":9,"method":"ping","params":[]}"#.into(), "9", -32602));
+    cases.push((r#"{"jsonrpc":"2.0","id":9,"method":42}"#.into(), "9", -32600));
+    cases.push((r#"{"jsonrpc":"2.0","id":9,"method":"ping","other":1.5}"#.into(), "9", -32600));
+    let mut input = String::new();
+    for (line, _, _) in &cases {
+        input.push_str(line);
+        input.push('\n');
+    }
+    for response in [r#"{"jsonrpc":"2.0","id":3,"result":{}}"#, r#"{"jsonrpc":"2.0","id":4,"error":{"code":-1,"message":"x"}}"#] {
+        input.push_str(response);
+        input.push('\n');
+    }
+    input.push_str(r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"acr_begin"}}"#);
+    input.push_str("\n{\"jsonrpc\":\"2.0\",\"id\":-4,\"method\":\"ping\"}\n");
+    let mut command = pcpos(&root);
+    command.arg("mcp");
+    let (out, code) = feed(command, input.as_bytes());
+    assert_eq!(code, 0);
+    assert!(!root.join(REG).exists(), "an invalid call created a register");
+    let replies: Vec<_> = out.lines().map(|l| Value::parse(l.as_bytes()).unwrap()).collect();
+    assert_eq!(replies.len(), cases.len() + 1);
+    for ((line, id, code), reply) in cases.iter().zip(&replies) {
+        assert_eq!(reply.get("id"), Some(&Value::parse(id.as_bytes()).unwrap()), "{line}");
+        assert_eq!(reply.get("error").and_then(|e| e.get("code")), Some(&Value::Int(*code)), "{line}");
+    }
+    assert!(replies.last().unwrap().get("result").is_some());
+    assert_eq!(replies.last().unwrap().get("id"), Some(&Value::Int(-4)));
+}
+
+#[test]
 fn a_register_holding_an_event_the_guards_refuse_accepts_a_halt_and_nothing_else() {
     let root = dir("invalid");
     tool(&root, "acr_begin", "{}");

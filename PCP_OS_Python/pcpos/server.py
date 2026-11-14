@@ -7,7 +7,7 @@ the work, made at the command line. What a tool returns is reference material, n
 """
 from __future__ import annotations
 import json, sys
-from .base import PcposError
+from .base import PcposError, strict_loads
 from .ops import Ops
 from . import model, view, VERSION
 
@@ -95,14 +95,21 @@ class Server:
         return {"jsonrpc": "2.0", "id": mid, "error": err}
 
     def handle(self, msg):
-        if not isinstance(msg, dict) or msg.get("jsonrpc") != "2.0" or not isinstance(msg.get("method"), str):
-            if isinstance(msg, dict) and "method" not in msg:
-                return None
-            return self.error(msg.get("id") if isinstance(msg, dict) else None, -32600, "Invalid Request")
-        method, mid = msg["method"], msg.get("id")
-        params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
+        if not isinstance(msg, dict):
+            return self.error(None, -32600, "Invalid Request")
+        if "method" not in msg and ("result" in msg or "error" in msg):
+            return None
+        mid = msg.get("id")
+        if "id" in msg and type(mid) not in (str, int):
+            return self.error(None, -32600, "A request ID must be a string or integer")
+        if msg.get("jsonrpc") != "2.0" or not isinstance(msg.get("method"), str):
+            return self.error(mid, -32600, "Invalid Request")
         if "id" not in msg:
             return None
+        method = msg["method"]
+        params = msg.get("params", {})
+        if not isinstance(params, dict):
+            return self.error(mid, -32602, "params must be an object when present")
         meta = params.get("_meta") if isinstance(params.get("_meta"), dict) else {}
         modern = META_VERSION in meta
         if method == "initialize":
@@ -126,8 +133,9 @@ class Server:
         if method == "tools/list":
             return {"jsonrpc": "2.0", "id": mid, "result": dict(extra, tools=TOOLS)}
         if method == "tools/call":
-            name, args = params.get("name"), params.get("arguments")
-            args = args if isinstance(args, dict) else {}
+            name, args = params.get("name"), params.get("arguments", {})
+            if not isinstance(args, dict):
+                return self.error(mid, -32602, "Tool arguments must be an object when present")
             if name not in [t["name"] for t in TOOLS]:
                 return self.error(mid, -32602, "Unknown tool: %s" % name)
             try:
@@ -148,9 +156,11 @@ def main(ws, actor=None, stdin=None, stdout=None):
         if not line:
             continue
         try:
-            msg = json.loads(line)
+            msg = strict_loads(line)
         except json.JSONDecodeError:
             reply = Server.error(None, -32700, "Parse error")
+        except (RecursionError, ValueError):
+            reply = Server.error(None, -32600, "Invalid Request")
         else:
             reply = Server.error(None, -32600, "Batches are not supported") if isinstance(msg, list) else server.handle(msg)
         if reply is not None:

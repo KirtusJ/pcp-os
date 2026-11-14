@@ -233,6 +233,27 @@ class ToolServer(Case):
         r = self.srv.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "pcpos_halt", "_meta": {server.META_VERSION: "2026-07-28"}}})
         self.assertEqual(r["error"]["code"], -32602)
 
+    def test_invalid_requests_cannot_dispatch_a_tool(self):
+        params = {"name": "pcpos_gate", "arguments": {"review": "R", "gate": "G5", "note": "n"},
+                  "_meta": {server.META_VERSION: "2026-07-28"}}
+        msg = {"jsonrpc": "2.0", "id": "caller", "method": "tools/call", "params": params}
+        before = self.ws.register_path.read_bytes()
+        for mid in (None, True, [1], {}, 1.5):
+            with self.subTest(mid=mid):
+                r = self.srv.handle(dict(msg, id=mid))
+                self.assertEqual((r.get("id"), r.get("error", {}).get("code")), (None, -32600))
+        for args in (None, [], False, 1, "text"):
+            with self.subTest(arguments=args):
+                r = self.srv.handle(dict(msg, params=dict(params, arguments=args)))
+                self.assertEqual((r["id"], r.get("error", {}).get("code")), ("caller", -32602))
+        # Duplicate IDs are ambiguous on the wire, even if their last value is valid.
+        wire = json.dumps(msg).replace('"id": "caller"', '"id": 1, "id": "caller"')
+        out = io.StringIO()
+        server.main(self.ws, "Z", io.StringIO(wire + "\n"), out)
+        response = json.loads(out.getvalue())
+        self.assertEqual((response["id"], response["error"]["code"]), (None, -32600))
+        self.assertEqual(self.ws.register_path.read_bytes(), before)
+
     def test_reading_and_recording_through_the_server(self):
         text, err = self.call("pcpos_clause", {"component": "core", "ref": "15.2"})
         self.assertFalse(err); self.assertIn("Halt", text)
