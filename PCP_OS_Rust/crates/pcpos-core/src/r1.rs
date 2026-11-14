@@ -223,7 +223,7 @@ impl<'a> Dec<'a> {
                 Value::Str(s)
             }
             3 => {
-                let raw = self.take(n as usize)?;
+                let raw = self.take(usize::try_from(n).map_err(|_| R1Error::BadContent(at))?)?;
                 let s = core::str::from_utf8(raw).map_err(|_| R1Error::BadContent(at))?;
                 if hex_digest(s).is_some() {
                     return Err(R1Error::NotInProfile(at)); // a digest has one form: bytes
@@ -244,9 +244,9 @@ impl<'a> Dec<'a> {
                     let kstart = self.i;
                     let (kmajor, kn) = self.head()?;
                     let key = match kmajor {
-                        0 => KEYS.get(kn as usize).ok_or(R1Error::BadContent(kstart))?.to_string(),
+                        0 => KEYS.get(usize::try_from(kn).map_err(|_| R1Error::BadContent(kstart))?).ok_or(R1Error::BadContent(kstart))?.to_string(),
                         3 => {
-                            let raw = self.take(kn as usize)?;
+                            let raw = self.take(usize::try_from(kn).map_err(|_| R1Error::BadContent(kstart))?)?;
                             let s = core::str::from_utf8(raw).map_err(|_| R1Error::BadContent(kstart))?;
                             if KEYS.contains(&s) {
                                 return Err(R1Error::NotInProfile(kstart)); // a tabled name has one form: its number
@@ -272,14 +272,20 @@ impl<'a> Dec<'a> {
     }
 }
 
+/// Decode the first R1 value and return the remaining bytes of the sequence.
+pub fn decode_prefix(input: &[u8]) -> Result<(Value, &[u8]), R1Error> {
+    let mut d = Dec { b: input, i: 0 };
+    let value = d.value(0)?;
+    Ok((value, &input[d.i..]))
+}
+
 /// Decode exactly one value from the whole input, refusing anything outside the profile.
 pub fn decode(input: &[u8]) -> Result<Value, R1Error> {
-    let mut d = Dec { b: input, i: 0 };
-    let v = d.value(0)?;
-    if d.i != input.len() {
-        return Err(R1Error::TrailingBytes(d.i));
+    let (value, rest) = decode_prefix(input)?;
+    if !rest.is_empty() {
+        return Err(R1Error::TrailingBytes(input.len() - rest.len()));
     }
-    Ok(v)
+    Ok(value)
 }
 
 /// Seconds since 1970-01-01T00:00:00Z for a time of the form YYYY-MM-DDTHH:MM:SSZ.
