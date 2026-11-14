@@ -1,0 +1,42 @@
+name: Kernel boot report
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/kernel-boot-report.yml"
+      - "PCP_OS_Rust/crates/pcpos-kernel/**"
+      - "PCP_OS_Rust/crates/pcpos-host/src/boot_report.rs"
+      - "PCP_OS_Rust/crates/pcpos-host/src/pcpos.rs"
+      - "PCP_OS_Rust/crates/pcpos-host/tests/boot_report.rs"
+      - "PCP_OS_Rust/crates/pcpos-core/**"
+      - "PCP_OS_Rust/Cargo.*"
+      - "PCP_OS_Rust/crates/pcpos-host/Cargo.toml"
+      - "PCP_OS_Rust/vectors/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  boot-report:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install the kernel toolchain, emulator and CBOR reader
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal --component rust-src
+          rustup default 1.97.0
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends lld qemu-system-x86 python3-cbor2
+      - name: Build and test the Rust receiver
+        working-directory: PCP_OS_Rust
+        run: |
+          cargo build --locked --release --bin pcpos
+          cargo test --locked -p pcpos-host --test boot_report
+      - name: Boot the kernel and compare both serial encodings with the receiver
+        working-directory: PCP_OS_Rust/crates/pcpos-kernel
+        run: |
+          sh run.sh build
+          /usr/bin/python3 tests/boot_report.py target/pcpos-kernel.elf32 \
+            --host "$GITHUB_WORKSPACE/PCP_OS_Rust/target/release/pcpos"

@@ -69,12 +69,25 @@ def validate(mode, wire, console, match, safe=False, session_error=False, brief=
     return image
 
 
+def validate_host(host, mode, wire, match, safe=False, session_error=False):
+    """Compare the installed receiver with the independently checked boot outcome."""
+    result = subprocess.run([host, "boot-report", mode], input=wire, capture_output=True, timeout=10)
+    failed = safe or session_error
+    expected = {"boot": "failed" if failed else "ok",
+                "image": {True: "matched", False: "mismatch", None: "unchecked"}[match]}
+    if failed:
+        expected.update(admit=not safe, fail=1, replay=True, system="SAFE" if safe else "OPERATIONAL")
+    assert result.returncode == int(failed) and json.loads(result.stdout) == expected, result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("kernel", type=Path)
     parser.add_argument("--qemu", default="qemu-system-x86_64")
+    parser.add_argument("--host", type=Path, help="also verify each report with this pcpos executable")
     args = parser.parse_args()
     kernel = args.kernel.resolve()
+    host = args.host.resolve() if args.host else None
     with TemporaryDirectory() as tmp:
         directory = Path(tmp)
         for case, option in (("default", ""), ("unknown", "report=other"), ("substring", "xreport=json")):
@@ -87,19 +100,25 @@ def main():
             def run(case, opts="", expected=33):
                 return boot(kernel, args.qemu, directory, mode + case,
                             "report=" + mode + " " + opts, expected=expected)
+            def check(wire, console, match, safe=False, session_error=False, brief=False):
+                image = validate(mode, wire, console, match, safe, session_error, brief)
+                if host:
+                    validate_host(host, mode, wire, match, safe, session_error)
+                return image
+
             console, wire = run("regular")
-            image = validate(mode, wire, console, None)
+            image = check(wire, console, None)
             assert image == measured
             console, wire = run("match", "image=" + measured)
-            validate(mode, wire, console, True)
+            check(wire, console, True)
             console, wire = run("mismatch", "image=" + "0" * 64, 35)
-            validate(mode, wire, console, False, safe=True)
+            check(wire, console, False, safe=True)
             console, wire = run("missing-program", "auto=missing", 35)
-            validate(mode, wire, console, None, session_error=True)
+            check(wire, console, None, session_error=True)
             console, wire = run("brief", "checks=brief")
-            validate(mode, wire, console, None, brief=True)
+            check(wire, console, None, brief=True)
             console, wire = run("brief-mismatch", "checks=brief image=" + "0" * 64, 35)
-            validate(mode, wire, console, False, safe=True, brief=True)
+            check(wire, console, False, safe=True, brief=True)
             assert b"  FAIL the running image measures as the value the loader named" in console
         console, _ = boot(kernel, args.qemu, directory, "no-port", "report=json", second=False)
         assert b"COM2 did not respond" in console and b"ALL SELF-TESTS PASS" in console

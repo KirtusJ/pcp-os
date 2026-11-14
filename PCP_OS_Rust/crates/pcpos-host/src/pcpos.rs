@@ -1,6 +1,7 @@
 //! pcpos: PCP OS tools on another operating system, over the same native core as the kernel.
 //!
 //!     pcpos status <register>                 what is running, what needs a response, what a halt would stop
+//!     pcpos boot-report json|cbor < capture    read the kernel report and summarize the boot
 //!     pcpos verify <register>                 check the chain and replay every guard
 //!     pcpos machine [name]                    print a state machine's whole table
 //!     pcpos method <directory>                check a method packet against the release this core implements
@@ -42,6 +43,7 @@ use std::{env, process::exit};
 /// on purpose and refuses floats and duplicate keys; a host's message may contain both. Here a float
 /// becomes its whole part, the last of duplicate keys wins, and nothing read this way is written to a
 /// register without passing the guards.
+mod boot_report;
 mod instruments;
 
 mod lenient {
@@ -2433,10 +2435,18 @@ fn person(args: &[String]) -> Result<i32, String> {
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
     let usage = || -> ! {
-        eprintln!("usage: pcpos status|verify <register> | machine [name] | method <directory> | repair <register> | modules <method directory> | clause <method directory> <module> [section] | instrument list | instrument <name> <input as JSON> [register] | workspace <register> --by <label> [--method <directory>] [module ...] | module list <register> | module add <register> <folder or Specification.md> --by <label> [--method <directory>] | module remove <register> <name> --by <label> | init <register> --principal <label> [--name <name>] | adopt <register> --by <label> --basis <words> | halt <register> --by <label> [--words <words>] | standard <register> --by <label> [--second <label>] BASELINE|CRITICAL|key=value... | mcp | hook <event>");
+        eprintln!("usage: pcpos status|verify <register> | boot-report json|cbor < CAPTURE | machine [name] | method <directory> | repair <register> | modules <method directory> | clause <method directory> <module> [section] | instrument list | instrument <name> <input as JSON> [register] | workspace <register> --by <label> [--method <directory>] [module ...] | module list <register> | module add <register> <folder or Specification.md> --by <label> [--method <directory>] | module remove <register> <name> --by <label> | init <register> --principal <label> [--name <name>] | adopt <register> --by <label> --basis <words> | halt <register> --by <label> [--words <words>] | standard <register> --by <label> [--second <label>] BASELINE|CRITICAL|key=value... | mcp | hook <event>");
         exit(2)
     };
     match args.first().map(String::as_str) {
+        Some("boot-report") => {
+            let format = match args.get(1).map(String::as_str) {
+                Some("json") if args.len() == 2 => boot_report::Format::Json,
+                Some("cbor") if args.len() == 2 => boot_report::Format::Cbor,
+                _ => usage(),
+            };
+            exit(boot_report::run(format, std::io::stdin().lock()))
+        }
         Some("mcp") => match session(None) {
             Ok(se) => {
                 // standard error: standard output carries protocol messages only

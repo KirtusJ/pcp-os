@@ -49,6 +49,19 @@ Each message carries integer `v=1` and a text `event`. For one boot, expect thes
 
 A complete successful run has a complete `stop` with `fail=0` and `replay=true`. A register can replay correctly after failed verification. Missing, truncated, out-of-order or unknown-version messages give an incomplete or unsupported result. An early halt, panic, or disconnected UART can leave the stream empty or partial. The first `report=` option selects the format; an unknown value disables the report. A missing reporting port is noted on the console. For unattended boots, add `checks=brief` to omit individual successful check descriptions on COM1. Every check still runs, individual failures print immediately, and the cumulative totals print at shutdown. This option also works without COM2. Detailed diagnostics and program output remain on COM1. Run `python3 tests/boot_report.py target/pcpos-kernel.elf32` with QEMU and Python's `cbor2` installed to exercise both forms.
 
+### Receiving a completed capture
+
+Run `pcpos boot-report json < health.jsonl` or `pcpos boot-report cbor < health.cbor` on the host. Supply one COM2 boot followed by EOF. The receiver accepts up to 4,096 bytes. It checks the three records in order, their fields, both full SHA-256 spellings, and consistency of admission, replay and cumulative counts. It writes one JSON line. Diagnostics go to stderr.
+
+| Exit | Example or meaning |
+|---|---|
+| 0 | `{"boot":"ok","image":"unchecked"}` means a successful reported boot with no expected image supplied. A successful comparison gives `"image":"matched"`. |
+| 1 | `"boot":"failed"` accompanies the recorded image comparison, admission, system state, failure count and replay result. |
+| 6 | `{"boot":"unknown"}` for an incomplete, unsupported, inconsistent, oversized or otherwise invalid capture. |
+| 2 | Command usage or local input/output error. |
+
+The short verdict describes the supplied capture. Keep the original bytes when later readers need the image digest, register head, counts or attribution. Match refers to the comparison reported by the kernel with the loader's expected value. A health verdict supplies neither origin authentication nor a fresh register verification. A live serial device can remain open after the kernel stops; capture one boot, close the stream, then run the receiver. Pass `--host /path/to/pcpos` to `tests/boot_report.py` to compare the receiver directly with both formats on the emulated kernel.
+
 ## Rules of this crate
 
 `unsafe` in two files only: `arch.rs` (processor, memory, the copy between kernel and user memory) and `dev.rs` (device registers and device memory). Each use states why it is sound. The crate denies it everywhere and those two files alone lift the denial, so the loader, the system calls, the process table, the session and the drawing code are checked by the compiler in full. A program's memory is read and written only through two functions in `arch.rs` that check the range against the process's own map. Arithmetic overflow stops the kernel in release builds.
