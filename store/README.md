@@ -30,6 +30,8 @@ Use Up or Down to highlight a game and Enter to launch. Escape returns to the la
 
 ## Package index
 
+The [game build and replay report](../audit/games/README.md) records the tested versions, hashes of the supplied artifacts and limits of the playback checks.
+
 The Store uses the repository's `pcpos-pkg` application entry format. Files in an entry use paths from the repository root and can be fetched from the entry's immutable payload commit. Each listing pins the two files players need, the standalone HTML player and its x86-64 native executable. The full source is in the same commit alongside them.
 
 | Application | Listing |
@@ -46,6 +48,8 @@ cargo run --locked --manifest-path PCP_OS_Rust/Cargo.toml -p pcpos-pkg --example
 ```
 
 The verifier checks the named applications against local files. The entries pin the upstream payload commit, file sizes and SHA-256 digests. To obtain an application, download its player or use the linked source checkout. The host currently offers no remote `pcpos install` command. [Package format and verification](../PCP_OS_Rust/crates/pcpos-pkg/src/lib.rs) · [Install and undo transaction model](../PCP_OS_Rust/crates/pcpos-pkg/src/txn.rs)
+
+The [install-source study](../os-docs/install-source/GROUNDING.md) and [Stage 2 design review](../os-docs/install-source/Stage_2_review.md) record the alternatives considered during package-manager design.
 
 ## Modules and assistant plugins
 
