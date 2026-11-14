@@ -1597,10 +1597,17 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
             if open_review_floor(&tx).is_none() {
                 return Ok(format!("{text}No review is open, so this was not recorded as a check: a check is run for a review.\nNothing was written.\n"));
             }
-            let canonical = String::from_utf8_lossy(&input.canonical_json()).to_string();
-            let mut body = vec![("argv", Value::List(vec![s("instrument"), s(which), s(&clip(&canonical, 4000))])), ("via", s("INSTRUMENT")), ("exit", Value::Int(if found.holds { 0 } else { 1 })), ("expect_exit", Value::Int(0)),
+            let canonical = input.canonical_json();
+            let preview = clip(&String::from_utf8_lossy(&canonical), 4000);
+            let preview_only = preview.as_bytes() != canonical.as_slice();
+            let mut body = vec![("argv", Value::List(vec![s("instrument"), s(which), Value::Str(preview)])), ("via", s("INSTRUMENT")), ("exit", Value::Int(if found.holds { 0 } else { 1 })), ("expect_exit", Value::Int(0)),
                                 ("timeout", Value::Bool(false)), ("stdout", s(&sha256_hex(found.text.as_bytes()))), ("stderr", s(&sha256_hex(b""))), ("output", s("INSTRUMENT_TEXT")), ("observed", s("RAN_BY_THIS_PROGRAM")),
                                 ("instrument", s(which)), ("result", s(&clip(&found.text, 1500)))];
+            if preview_only {
+                body.push(("argv_input_is_preview", Value::Bool(true)));
+                body.push(("input_sha256", s(&sha256_hex(&canonical))));
+                body.push(("input_bytes", Value::Int(canonical.len() as i64)));
+            }
             if let Some(n) = text_arg("name")? {
                 body.push(("name", s(n)));
             }

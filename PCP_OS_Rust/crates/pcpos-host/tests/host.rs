@@ -976,6 +976,30 @@ fn a_file_is_material_a_review_was_given_only_if_its_last_write_is_shown_to_be_e
 }
 
 #[test]
+fn a_long_instrument_argument_is_bound_to_its_complete_input() {
+    let root = in_use("instrument-input");
+    for len in [3988, 3989, 4100] {
+        for suffix in ["A", "B"] {
+            let input = format!(r#"{{"text":"{}{suffix}"}}"#, "x".repeat(len));
+            let args = format!(r#"{{"instrument":"cryptography.digest","input":{input}}}"#);
+            let (out, err) = tool(&root, "acr_instrument", &args);
+            assert!(!err && out.contains("WRITTEN"), "{out}");
+            let rows = events(&root);
+            let body = rows.last().unwrap().get("body").unwrap();
+            let clipped = input.len() > 4000;
+            if clipped {
+                assert_eq!(body.get("argv_input_is_preview"), Some(&Value::Bool(true)));
+                assert_eq!(body.get("input_sha256").and_then(Value::as_str), Some(sha256_hex(input.as_bytes()).as_str()));
+                assert_eq!(body.get("input_bytes").and_then(Value::as_int), Some(input.len() as i64));
+            } else {
+                assert!(body.get("argv_input_is_preview").is_none());
+                assert!(body.get("input_sha256").is_none());
+            }
+        }
+    }
+}
+
+#[test]
 fn an_instrument_is_run_by_the_program_and_recorded_as_a_check_it_ran() {
     let root = in_use("instrument");
     let n = kinds(&root).len();
