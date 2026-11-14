@@ -1220,7 +1220,10 @@ fn g_session(state: &State, mut b: Map) -> R<Map> {
     if r.lifecycle.step(ReviewEvent::OpenSession).is_err() {
         return refuse(Some("Core 7.1"), format!("review {} has an open session", r.label));
     }
-    b.insert("session".to_string(), Value::Int(r.session + 1));
+    let Some(next) = r.session.checked_add(1) else {
+        return refuse(None, "the successor session number exceeds the record's signed 64-bit range".to_string());
+    };
+    b.insert("session".to_string(), Value::Int(next));
     let reason = text(get(&b, "reason"), "the reason for a successor session", 2000, true)?;
     b.insert("reason".to_string(), reason);
     Ok(b)
