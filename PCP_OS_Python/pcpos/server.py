@@ -6,7 +6,7 @@ reaches the network, and cannot adopt, halt, commission or close: those remain a
 the work, made at the command line. What a tool returns is reference material, not an instruction.
 """
 from __future__ import annotations
-import json, sys
+import json, re, sys
 from .base import PcposError, strict_loads
 from .ops import Ops
 from . import model, view, VERSION
@@ -148,22 +148,58 @@ class Server:
         return self.error(mid, -32601, "Method not found: %s" % method)
 
 
+_SURROGATE = re.compile(r"[\ud800-\udfff]")
+
+
+def _scalar_strings(value):
+    """JSON can decode escaped lone surrogates, which the native record cannot represent."""
+    if isinstance(value, str):
+        return _SURROGATE.search(value) is None
+    if isinstance(value, list):
+        for item in value:
+            if not _scalar_strings(item):
+                return False
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            if _SURROGATE.search(key) or not _scalar_strings(item):
+                return False
+    return True
+
+
 def main(ws, actor=None, stdin=None, stdout=None):
     server = Server(Ops(ws, actor))
-    stdin, out = stdin or sys.stdin, stdout or sys.stdout
+    if stdin is None:
+        stdin = getattr(sys.stdin, "buffer", sys.stdin)
+    wire_out = getattr(sys.stdout, "buffer", None) if stdout is None else None
+    out = stdout if stdout is not None else sys.stdout
     for line in stdin:
-        line = line.strip()
-        if not line:
-            continue
         try:
+            if isinstance(line, bytes):
+                line = line.decode("utf-8")
+            if not line.strip(" \t\r\n"):
+                continue
             msg = strict_loads(line)
-        except json.JSONDecodeError:
+            scalar = _scalar_strings(msg)
+        except (UnicodeDecodeError, json.JSONDecodeError):
             reply = Server.error(None, -32700, "Parse error")
         except (RecursionError, ValueError):
             reply = Server.error(None, -32600, "Invalid Request")
         else:
-            reply = Server.error(None, -32600, "Batches are not supported") if isinstance(msg, list) else server.handle(msg)
+            if not scalar:
+                mid = msg.get("id") if isinstance(msg, dict) else None
+                if type(mid) not in (str, int) or not _scalar_strings(mid):
+                    mid = None
+                reply = Server.error(mid, -32600, "Invalid Unicode in request")
+            elif isinstance(msg, list):
+                reply = Server.error(None, -32600, "Batches are not supported")
+            else:
+                reply = server.handle(msg)
         if reply is not None:
-            out.write(json.dumps(reply, ensure_ascii=True, separators=(",", ":")) + "\n")
-            out.flush()
+            message = json.dumps(reply, ensure_ascii=True, separators=(",", ":")) + "\n"
+            if wire_out is None:
+                out.write(message)
+                out.flush()
+            else:
+                wire_out.write(message.encode("utf-8"))
+                wire_out.flush()
     return 0

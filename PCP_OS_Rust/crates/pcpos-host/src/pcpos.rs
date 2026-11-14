@@ -49,23 +49,33 @@ mod lenient {
     use std::ops::Range;
     use std::collections::BTreeMap;
 
+    pub enum Recovery {
+        OneWay,
+        Reject(Option<Value>),
+    }
+
     struct P<'a> {
         b: &'a [u8],
         i: usize,
         id: Option<Range<usize>>,
+        duplicate_envelope_field: bool,
     }
 
     pub fn parse(b: &[u8]) -> Option<Value> {
-        P { b, i: 0, id: None }.document()
+        P { b, i: 0, id: None, duplicate_envelope_field: false }.document()
     }
 
     // Use the original token for error correlation. The hook reader intentionally coerces some
     // values and keeps the last duplicate, so its projected value cannot identify a caller.
-    pub fn error_id(b: &[u8]) -> Result<Option<Value>, ()> {
-        let mut p = P { b, i: 0, id: None };
-        p.document().ok_or(())?;
-        Ok(p.id.and_then(|span| Value::parse(&b[span]).ok())
-            .filter(|id| matches!(id, Value::Str(_) | Value::Int(_))))
+    pub fn recover(b: &[u8]) -> Result<Recovery, ()> {
+        let mut p = P { b, i: 0, id: None, duplicate_envelope_field: false };
+        let msg = p.document().ok_or(())?;
+        if !p.duplicate_envelope_field && super::one_way(&msg) {
+            return Ok(Recovery::OneWay);
+        }
+        let id = p.id.and_then(|span| Value::parse(&b[span]).ok())
+            .filter(|id| matches!(id, Value::Str(_) | Value::Int(_)));
+        Ok(Recovery::Reject(id))
     }
 
     impl P<'_> {
@@ -144,8 +154,12 @@ mod lenient {
                         self.i += 1;
                         let start = self.i;
                         let v = self.value(depth + 1)?;
-                        if depth == 0 && k == "id" {
-                            self.id = if out.contains_key(&k) { None } else { Some(start..self.i) };
+                        if depth == 0 && matches!(k.as_str(), "jsonrpc" | "id" | "method" | "result" | "error") {
+                            let duplicate = out.contains_key(&k);
+                            self.duplicate_envelope_field |= duplicate;
+                            if k == "id" {
+                                self.id = (!duplicate).then_some(start..self.i);
+                            }
                         }
                         out.insert(k, v);
                     }
@@ -187,7 +201,9 @@ mod lenient {
         }
 
         fn hex4(&mut self) -> Option<u32> {
-            let t = core::str::from_utf8(self.b.get(self.i..self.i + 4)?).ok()?;
+            let digits = self.b.get(self.i..self.i + 4)?;
+            if !digits.iter().all(u8::is_ascii_hexdigit) { return None; }
+            let t = core::str::from_utf8(digits).ok()?;
             self.i += 4;
             u32::from_str_radix(t, 16).ok()
         }
@@ -1812,14 +1828,30 @@ fn rpc_error(id: Value, code: i64, message: &str) -> Value {
     obj(vec![("jsonrpc", s("2.0")), ("id", id), ("error", obj(vec![("code", Value::Int(code)), ("message", s(message))]))])
 }
 
+/// Only the envelope determines whether this peer message is one-way. In particular,
+/// parameters and result values may contain JSON outside the register's value profile.
+fn one_way(msg: &Value) -> bool {
+    if msg.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
+        return false;
+    }
+    match msg.get("method") {
+        Some(Value::Str(_)) => msg.get("id").is_none(),
+        None => msg.get("result").is_some() || msg.get("error").is_some(),
+        _ => false,
+    }
+}
+
 fn mcp_reply(se: &Session, line: &[u8]) -> Option<Value> {
     let msg = match Value::parse(line) {
         Ok(msg @ Value::Map(_)) => msg,
         Ok(_) => return Some(rpc_error(Value::Null, -32600, "one message is one JSON object; batches are not accepted")),
         Err(reason) => {
-            let recovered = lenient::error_id(line);
+            let (code, id) = match lenient::recover(line) {
+                Ok(lenient::Recovery::OneWay) => return None,
+                Ok(lenient::Recovery::Reject(id)) => (-32600, id.unwrap_or(Value::Null)),
+                Err(()) => (-32700, Value::Null),
+            };
             let depth = matches!(reason, ParseError::TooDeep(_));
-            let code = if recovered.is_ok() { -32600 } else { -32700 };
             let message = if depth {
                 format!("the message exceeds the maximum nesting depth of {MAX_DEPTH}")
             } else if code == -32600 {
@@ -1827,12 +1859,11 @@ fn mcp_reply(se: &Session, line: &[u8]) -> Option<Value> {
             } else {
                 "the message is not JSON this server accepts".to_string()
             };
-            return Some(rpc_error(recovered.ok().flatten().unwrap_or(Value::Null), code, &message));
+            return Some(rpc_error(id, code, &message));
         }
     };
-    if msg.get("jsonrpc").and_then(Value::as_str) == Some("2.0") && msg.get("method").is_none()
-        && (msg.get("result").is_some() || msg.get("error").is_some()) {
-        return None; // A response from the peer never starts a request.
+    if one_way(&msg) {
+        return None;
     }
     let id = match msg.get("id") {
         Some(id @ (Value::Str(_) | Value::Int(_))) => Some(id.clone()),

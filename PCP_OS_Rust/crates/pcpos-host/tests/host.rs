@@ -353,6 +353,45 @@ fn a_write_names_the_head_it_extends_and_many_writers_leave_one_intact_chain() {
 }
 
 #[test]
+fn a_notification_or_peer_response_never_dispatches_or_receives_a_reply_on_recovery() {
+    let root = dir("one-way");
+    tool(&root, "acr_begin", "{}");
+    let before = fs::read(root.join(REG)).unwrap();
+    let nested = format!("{}0{}", "[".repeat(38), "]".repeat(38));
+    let mut lines = Vec::new();
+    for extra in ["0", "0.5", "1e2", "9223372036854775808", &nested] {
+        lines.push(format!(r#"{{"jsonrpc":"2.0","method":"notifications/initialized","params":{{"_meta":{{"level":{extra}}}}}}}"#));
+        lines.push(format!(r#"{{"jsonrpc":"2.0","method":"tools/call","params":{{"name":"acr_halt","arguments":{{"x":{extra}}}}}}}"#));
+        lines.push(format!(r#"{{"jsonrpc":"2.0","id":"peer","result":{{"x":{extra}}}}}"#));
+        lines.push(format!(r#"{{"jsonrpc":"2.0","id":4,"error":{{"code":-1,"message":"error","data":{extra}}}}}"#));
+    }
+    let rejected = [
+        (r#"{"jsonrpc":"1.0","method":"ping","params":{"x":1.5}}"#, -32600, "null"),
+        (r#"{"jsonrpc":"2.0","id":null,"method":"ping","params":{"x":1.5}}"#, -32600, "null"),
+        (r#"{"jsonrpc":"2.0","id":5,"method":"ping","params":{"x":1.5}}"#, -32600, "5"),
+        (r#"{"jsonrpc":"1.0","jsonrpc":"2.0","method":"ping","params":{"x":1.5}}"#, -32600, "null"),
+        (r#"{"jsonrpc":"2.0","method":"ping","params":{"x":1.}}"#, -32700, "null"),
+        (r#"{"jsonrpc":"2.0","method":"ping","params":{"x":"\u+123"}}"#, -32700, "null"),
+    ];
+    for (line, _, _) in &rejected { lines.push((*line).to_string()); }
+    lines.push(r#"{"jsonrpc":"2.0","id":"ready","method":"ping"}"#.to_string());
+    lines.push(String::new());
+    let mut cmd = pcpos(&root);
+    cmd.arg("mcp");
+    let (out, code) = feed(cmd, lines.join("\n").as_bytes());
+    assert_eq!(code, 0);
+    assert_eq!(fs::read(root.join(REG)).unwrap(), before, "a one-way message changed the register");
+    let replies: Vec<_> = out.lines().map(|line| Value::parse(line.as_bytes()).unwrap()).collect();
+    assert_eq!(replies.len(), rejected.len() + 1, "{out}");
+    for ((_, code, id), reply) in rejected.iter().zip(&replies) {
+        assert_eq!(reply.get("error").and_then(|e| e.get("code")), Some(&Value::Int(*code)));
+        assert_eq!(reply.get("id"), Some(&Value::parse(id.as_bytes()).unwrap()));
+    }
+    assert_eq!(replies.last().unwrap().get("id"), Some(&Value::Str("ready".into())));
+    assert!(replies.last().unwrap().get("result").is_some());
+}
+
+#[test]
 fn malformed_mcp_requests_do_not_begin_a_register() {
     let root = dir("invalid-rpc");
     let mut cases = Vec::new();

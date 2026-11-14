@@ -271,6 +271,34 @@ class ToolServer(Case):
         text, err = self.call("pcpos_gate", {"review": "R", "gate": "G5", "note": "n"})
         self.assertTrue(err); self.assertIn("not in use", text)
 
+    def test_serve_decodes_each_line_as_utf8_before_it_can_write(self):
+        import subprocess
+        init = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25"}}
+        args = {"review": "R", "claim": "A", "text": "probe"}
+        msg = {"jsonrpc": "2.0", "id": "caller", "method": "tools/call",
+               "params": {"name": "pcpos_objection", "arguments": args}}
+        wire = json.dumps(msg).encode("ascii")
+        bad = [wire.replace(b"caller", b"\xff"), wire.replace(b"probe", b"\xe2\x82"),
+               b"\xc2\xa0" + wire, wire.replace(b"caller", br"\ud800"),
+               wire.replace(b"probe", br"\udc00"), wire.replace(b'"params":', br'"\ud800":0,"params":')]
+        good = wire.replace(b"caller", "€".encode()).replace(b"probe", br"\ud834\udd1e and \\ud800")
+        ping = {"jsonrpc": "2.0", "id": "after", "method": "ping"}
+        stream = b"\n".join([json.dumps(init).encode(), *bad, good, json.dumps(ping).encode()]) + b"\n"
+        for encoding in ["utf-8:surrogateescape", "utf-8:strict", "latin-1:strict", "utf-16"]:
+            with self.subTest(encoding=encoding):
+                before = self.ws.register_path.read_bytes()
+                run = subprocess.run([sys.executable, str(ROOT / "pcp_os.py"), "serve", "--ws", str(self.ws.root), "--as", "Z"],
+                                     input=stream, capture_output=True, timeout=15, env=dict(os.environ, PYTHONIOENCODING=encoding))
+                self.assertEqual(run.returncode, 0, run.stderr)
+                replies = [json.loads(line) for line in run.stdout.decode("utf-8").splitlines()]
+                self.assertEqual([r.get("error", {}).get("code") for r in replies],
+                                 [None, -32700, -32700, -32700, -32600, -32600, -32600, None, None])
+                self.assertEqual([r["id"] for r in replies], [1, None, None, None, None, "caller", "caller", "€", "after"])
+                after = self.ws.register_path.read_bytes()
+                self.assertTrue(after.startswith(before))
+                added = [json.loads(line) for line in after[len(before):].splitlines()]
+                self.assertEqual([(e["kind"], e["body"]["text"]) for e in added], [("OBJECTION_RAISED", r"𝄞 and \ud800")])
+
     def test_line_framing_and_malformed_input(self):
         inp = io.StringIO("\n".join(["not json", "[]", json.dumps({"jsonrpc": "2.0", "id": 9, "method": "ping", "params": {"_meta": {server.META_VERSION: "2026-07-28"}}}),
                                     json.dumps({"jsonrpc": "2.0", "id": 10, "method": "nope", "params": {"_meta": {server.META_VERSION: "2026-07-28"}}})]) + "\n")
