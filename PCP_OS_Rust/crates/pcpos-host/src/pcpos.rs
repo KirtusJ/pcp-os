@@ -359,6 +359,38 @@ fn read_all(h: &mut Handle) -> Result<Vec<u8>, String> {
     Ok(raw)
 }
 
+/// Preserve text under its digest name without following symlinks or writing to
+/// an inode with multiple names. Existing matching content is reusable; a
+/// corrupted existing object is an integrity error, never a truncation target.
+fn keep_text_artifact(root: &Path, relative: &str, bytes: &[u8]) -> Result<(), String> {
+    let existed = match fs::symlink_metadata(root.join(relative)) {
+        Ok(_) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(e) => return Err(format!("cannot inspect artifact name {relative}: {e}")),
+    };
+    // Use the same confined, no-follow descriptor opening as a register, with
+    // single_name=true so an existing hard link is refused before any write.
+    let mut h = confined_file(root, relative, true, true, true)?
+        .ok_or_else(|| format!("cannot create or open artifact {relative}"))?;
+    let size = h.file.metadata().map_err(|e| format!("{relative}: {e}"))?.len();
+    if size > bytes.len() as u64 {
+        return Err(format!("existing artifact {relative} is larger than the expected content"));
+    }
+    let current = read_all(&mut h)?;
+    if current == bytes {
+        return Ok(());
+    }
+    if existed || !current.is_empty() {
+        return Err(format!("existing artifact {relative} differs from the expected SHA-256 content"));
+    }
+    h.file.write_all(bytes).and_then(|_| h.file.sync_all())
+        .map_err(|e| format!("cannot durably write artifact {relative}: {e}"))?;
+    if read_all(&mut h)? != bytes {
+        return Err(format!("stored artifact {relative} did not read back as the expected bytes"));
+    }
+    Ok(())
+}
+
 struct Opened {
     events: Vec<Value>,
     head: String,
@@ -1511,13 +1543,11 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
                 return match tx.put(&se.actor, "HOST", "ARTIFACT_ADDED", obj(body))? {
                     Put::Refused(r) => Ok(refusal_text(&r)),
                     Put::Written { seq, head, prev } => {
-                        // Kept only once the event is accepted, and never through a link.
-                        let dir = se.root.join(&beside).join("artifacts");
-                        let safe = fs::create_dir_all(&dir).is_ok() && dir.canonicalize().map(|c| c.starts_with(&se.root)).unwrap_or(false)
-                            && !fs::symlink_metadata(se.root.join(&kept)).map(|m| m.file_type().is_symlink()).unwrap_or(false);
-                        if !safe || fs::write(se.root.join(&kept), text.as_bytes()).is_err() {
-                            return Err("the text could not be kept beside the register; nothing was recorded".to_string());
-                        }
+                        // Use an opened, root-confined single-link inode. In particular,
+                        // fs::write would truncate an existing hard-linked file outside
+                        // the register directory even when the link is not a symlink.
+                        keep_text_artifact(&se.root, &kept_name, text.as_bytes())
+                            .map_err(|e| format!("the text could not be kept beside the register; no event was committed: {e}"))?;
                         tx.commit()?;
                         Ok(format!("{}sha256 {digest}\nsize {}\nThe server computed the digest from the text it was handed and kept those bytes at {kept_name}. It did not read them from a file.\n{origin_note}", receipt(seq, &head, &prev, "ARTIFACT_ADDED", &se.actor, "HOST"), text.len()))
                     }
