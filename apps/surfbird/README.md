@@ -1,68 +1,31 @@
-# Surfbird
+# Surfbird on PCP-OS
 
-<img align="right" src="surfbird.svg" alt="Silver parrot riding a cyan surfboard" width="120">
+The [native guest](guest/) draws a page on the PCP-OS display. Use **1** or **2** to follow a numbered link, **B** to go back and **Esc** to return to the menu. PCP-OS owns the guest renderer, parser, kernel device interfaces and QEMU replays. The Ethernet guest can [resolve a fixture hostname over DNS](guest/DNS.md) or [connect to a fixed address over TCP](guest/TCP.md). The [serial build](guest/README.md#serial-cable) uses a preconnected HTTP fixture. These experiments exercise local HTTP.
 
-Surfbird is a hosted Rust reader browser for people and machines. Open a page in the terminal and an attached program can read it, follow its links or take you back. Both controls use one page, link list and history in memory.
+The [standalone Surfbird repository](https://github.com/KirtusJ/surfbird) owns the hosted Rust reader, its terminal controls and machine API. Submit hosted changes there. This directory includes a [pinned hosted copy and its matching manual](https://github.com/KirtusJ/surfbird/tree/28b863bbc1822f424a173a51e618b0c7d898c3ab) for comparisons with the guest.
 
-Hosted development takes place in [KirtusJ/surfbird](https://github.com/KirtusJ/surfbird). This checkout carries its [pinned hosted release](https://github.com/KirtusJ/surfbird/tree/28b863bbc1822f424a173a51e618b0c7d898c3ab) so the OS integration can build and test alongside it. The kernel, guest source and QEMU replay are maintained here. To update the snapshot, import `src`, `tests`, `Cargo.toml`, `Cargo.lock` and `surfbird.svg` together from a reviewed upstream commit, run both suites, and update the pin. The integration README and `guest/` belong to PCP-OS.
+## Build and test
 
-This preview reads HTTP(S) HTML and plain text through the host operating system. It extracts text and links from HTML5 markup. CSS layout, JavaScript, forms, graphical rendering, extensions and a native PCP kernel build are outside this version. Pages that depend on styling or scripting can show different or incomplete content. Fragment URLs are retained in history. The reader currently opens them at the top of the document.
-
-## Run
-
-A separate [native guest experiment](guest/) renders a small document and follows numbered links from a local HTTP fixture. The Ethernet guest can [resolve the fixture hostname](guest/DNS.md) and open its own TCP socket. The serial build uses a preconnected cable. The hosted reader below uses the operating system’s network stack.
-
-From this directory with Rust 1.91 or newer, run:
+From the PCP-OS repository root, build the hosted reader and run both host-side test suites. With the locked dependencies in Cargo's cache, these commands work offline. For a fresh cache, run `cargo fetch --locked --manifest-path` with each manifest path first.
 
 ```sh
-cargo run --locked -- https://doc.rust-lang.org/book/
+cargo build --frozen --manifest-path apps/surfbird/Cargo.toml
+cargo test --frozen --manifest-path apps/surfbird/Cargo.toml
+cargo test --frozen --manifest-path apps/surfbird/guest/Cargo.toml --lib
 ```
 
-Enter a link number to follow it, `links` to see every numbered destination, `more` to page through the text, or `open URL` to visit another address. Use `back`, `forward`, `reload`, `read` and `quit` to control the session. Enter `read` after another client navigates. A number typed against an outdated page is rejected. `NO_COLOR` turns off terminal colors.
+The hosted suite uses loopback fixtures and leaves its live HTTPS test opt-in. The guest library suite runs on the host. To boot the graphical guest, use the [QEMU instructions](guest/README.md#replay).
 
-## Share the session
+## Verify or update the hosted copy
 
-In the first terminal, start the browser with a loopback listener. Port zero asks the OS for a free port.
+The import at this pin contains eleven files across `src/`, `tests/`, `Cargo.toml`, `Cargo.lock` and `surfbird.svg`. This README and `guest/` are maintained in PCP-OS. From the repository root in a POSIX shell, compare the **committed** snapshot with its upstream Git tree. The fetch only runs if the upstream commit is absent locally.
 
 ```sh
-cargo run --locked -- --listen 127.0.0.1:0 https://doc.rust-lang.org/book/
+pin=28b863bbc1822f424a173a51e618b0c7d898c3ab
+git cat-file -e "$pin^{commit}" 2>/dev/null ||
+    git fetch --no-tags https://github.com/KirtusJ/surfbird.git "$pin"
+git diff --exit-code --no-ext-diff --no-textconv "$pin^{tree}" HEAD:apps/surfbird -- \
+    src tests Cargo.toml Cargo.lock surfbird.svg
 ```
 
-In a second terminal, replace `PORT` with the number printed after `Machine session`.
-
-```sh
-cargo run --locked -- --machine 127.0.0.1:PORT
-```
-
-Type one JSON command per line. For example, read the current page:
-
-```json
-{"op":"read"}
-```
-
-A successful response returns `ok: true` and a `state` containing the current revision, back/forward availability and page. The page contains its final URL, HTTP status, title, text lines, links and a truncation flag. A failed navigation returns `ok: false` and an error, and preserves the current page. To follow the third link from revision 1, enter:
-
-```json
-{"op":"follow","link":3,"revision":1}
-```
-
-Use the revision from your own read. A client can omit the revision to act on whichever page is current. Other operations are `open` (with a `url`), `back`, `forward` and `reload`. Any program can speak newline-delimited UTF-8 JSON directly over the same socket. Ordinary startup leaves the listener off. When enabled, other processes able to reach that loopback port can read and control the session. The protocol has no authentication. Exit the terminal browser to end the shared session.
-
-Surfbird keeps up to 24 history entries and follows up to six HTTP redirects per navigation. Its document reader accepts up to 2 MiB per response and reports clipping for display limits. Closing the browser discards session history.
-
-The machine client allows up to 16 MiB per reply, including its final newline, and 120 seconds from sending the command to receiving that newline. It exits with an error if a reply is incomplete, too large or late. A timeout can occur while the browser is still processing a command. Reconnect and read the current state before retrying a navigation.
-
-## Verify
-
-```sh
-cargo test --locked
-cargo test --locked --test shared_session rust_book_over_both_interfaces -- --ignored --nocapture
-```
-
-The offline suite starts the executable, serves a redirect and two linked pages, then exercises terminal navigation and the socket together. It covers relative links under an HTML base, stale link numbers, failed navigation, back/forward/reload and rejection of an HTTP request at the machine port.
-
-The opt-in HTTPS test opens the Rust Book and follows its Installation link, first through terminal input and then through a separate Surfbird machine-client process. On 14 November 2026 both visits returned the same destination, title, 57 text lines and 20 links. Back restored the book’s front page from each interface. The test compares the current pages and allows the upstream book to change. [Rust Book](https://doc.rust-lang.org/book/) · [Installation](https://doc.rust-lang.org/book/ch01-01-installation.html)
-
-## Implementation
-
-The Rust session owner serializes navigation and commits a fetched document only on success. The loopback service and terminal submit commands to that owner. HTML parsing uses `scraper` and `html5ever`; URL resolution uses the `url` crate. The reader processes visible HTML text in document order and does not evaluate scripts. HTTP and HTTPS transport uses `ureq` and its default rustls backend. [scraper](https://docs.rs/scraper/) · [URL Standard](https://url.spec.whatwg.org/) · [ureq](https://docs.rs/ureq/)
+An empty diff with exit code zero means all tracked paths, modes and contents in the five import roots match. It detects additions and deletions at any depth under `src/` and `tests/`. For an update, review the upstream commit, replace the imported trees and files as a unit, and update both the pin link and the command. If a new top-level file is needed for integration, add it explicitly to the import and check. Run both suites and verify the committed import before submitting the PCP-OS integration PR.
