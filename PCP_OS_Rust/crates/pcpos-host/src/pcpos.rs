@@ -1065,6 +1065,25 @@ fn provision_start(line: &str) -> Option<(String, u8)> {
     Some((number.to_string(), depth))
 }
 
+/// Return the selected Specification from a coherent byte snapshot.
+///
+/// Module discovery establishes Module.sha256 from the source it read. A later
+/// read must not serve changed bytes under that earlier digest. This checks one
+/// retrieval; it does not seal the method tree, authenticate the publisher,
+/// or make a mutable filesystem into an atomic snapshot.
+fn coherent_specification_text(m: &Module) -> Result<String, String> {
+    let bytes = fs::read(&m.file)
+        .map_err(|e| format!("the Specification of {} cannot be read: {e}", m.id))?;
+    if sha256_hex(&bytes) != m.sha256 {
+        return Err(format!(
+            "the Specification of {} changed during clause retrieval; retry with a stable source",
+            m.id
+        ));
+    }
+    String::from_utf8(bytes)
+        .map_err(|e| format!("the Specification of {} is not valid UTF-8: {e}", m.id))
+}
+
 /// The exact text of one provision of a module's Specification, or the list of its headings.
 fn clause_text(se: &Session, module: &str, section: Option<&str>) -> Result<String, String> {
     se.method.as_deref().ok_or("no method text is at hand")?;
@@ -1075,7 +1094,7 @@ fn clause_text(se: &Session, module: &str, section: Option<&str>) -> Result<Stri
         Some(o) => format!("{want} is ambiguous in the method text at hand and no text is served for it ({o}). Remove one of the folders"),
         None => format!("{} is not a module of the method text at hand. The modules are: {}", clip(module, 60), found.iter().map(|m| m.key.as_str()).collect::<Vec<_>>().join(", ")),
     })?;
-    let text = fs::read_to_string(&m.file).map_err(|e| format!("the Specification of {} cannot be read: {e}", m.id))?;
+    let text = coherent_specification_text(m)?;
     let lines: Vec<&str> = text.lines().collect();
     let marks: Vec<(usize, String, u8)> = lines.iter().enumerate().filter_map(|(i, l)| provision_start(l).map(|(n, d)| (i, n, d))).collect();
     let head = format!("{} {} | Specification SHA-256 {}", m.id, m.version, m.sha256);
@@ -2583,5 +2602,56 @@ fn main() {
             }
         }
         _ => usage(),
+    }
+}
+
+
+#[cfg(test)]
+mod coherent_specification_tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn fixture(bytes: &[u8]) -> (PathBuf, Module) {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let dir = env::temp_dir().join(format!(
+            "pcpos-clause-identity-{}-{nonce}", std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("Specification.md");
+        fs::write(&file, bytes).unwrap();
+        let module = Module {
+            key: "core".into(), id: "acr.core".into(), version: "1.0".into(),
+            sha256: sha256_hex(bytes), words: 1, core: None,
+            file, added: false,
+        };
+        (dir, module)
+    }
+
+    #[test]
+    fn coherent_source_is_served_with_its_discovered_digest() {
+        let (dir, module) = fixture(b"the first complete source");
+        assert_eq!(
+            coherent_specification_text(&module).unwrap(),
+            "the first complete source"
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn changed_source_is_not_labelled_with_an_earlier_digest() {
+        let (dir, module) = fixture(b"the first complete source");
+        fs::write(&module.file, b"another complete source").unwrap();
+        let error = coherent_specification_text(&module).unwrap_err();
+        assert!(error.contains("changed during clause retrieval"), "{error}");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn invalid_utf8_is_not_served_as_exact_specification_text() {
+        let (dir, module) = fixture(&[0xff, 0xfe]);
+        let error = coherent_specification_text(&module).unwrap_err();
+        assert!(error.contains("not valid UTF-8"), "{error}");
+        fs::remove_dir_all(dir).unwrap();
     }
 }
