@@ -3,6 +3,8 @@ use super::{bus_read, in16, in32, in8, out16, out32, out8, BusDevice};
 use crate::{arch, mem};
 use core::sync::atomic::{fence, Ordering};
 pub(crate) mod completion;
+#[cfg(feature = "virtio-worker-probe")]
+pub(crate) mod worker_link;
 
 const TX: u16 = 1;
 const MAC: u32 = 1 << 5;
@@ -233,6 +235,18 @@ fn run(
     request: &[u8; FRAME_BYTES],
     reply: Option<&mut [u8]>,
 ) -> Result<(usize, usize), &'static str> {
+    with_queues(bus, 1, reply.is_some(), 0, |io, first, tx, rx| {
+        exchange(io, first, tx, rx, request, reply).map(|n| (tx.size, n))
+    })
+}
+
+fn with_queues<T>(
+    bus: &[BusDevice],
+    mac_last: u8,
+    receive: bool,
+    extra_rx_pages: usize,
+    body: impl FnOnce(u16, usize, &Queue, Option<&Queue>) -> Result<T, &'static str>,
+) -> Result<T, &'static str> {
     let matches =
         |d: &&BusDevice| (d.vendor, d.device, d.class, d.subclass) == (0x1af4, 0x1000, 2, 0);
     let mut devices = bus.iter().filter(matches);
@@ -267,22 +281,22 @@ fn run(
         }
         // This fixture explicitly disables MSI-X, hence the config starts at 20.
         let mac: [u8; 6] = core::array::from_fn(|n| in8(io + 20 + n as u16));
-        if mac != [0x02, 0, 0, 0, 0, 1] {
+        if mac != [0x02, 0, 0, 0, 0, mac_last] {
             return Err("fixture MAC mismatch");
         }
         let tx = Queue::inspect(io, TX)?;
-        let rx = if reply.is_some() {
+        let rx = if receive {
             Some(Queue::inspect(io, RX)?)
         } else {
             None
         };
-        let pages = tx.pages + rx.as_ref().map_or(0, |q| q.pages);
+        let pages = tx.pages + rx.as_ref().map_or(0, |q| q.pages) + extra_rx_pages;
         let first = mem::take_run(pages).ok_or("no bounded contiguous frames")?;
         let answer = if (first >> 12) + pages - 1 > u32::MAX as usize {
             Err("physical queue address exceeds legacy PFN")
         } else {
             pci_command(d, command | 0x405);
-            exchange(io, first, &tx, rx.as_ref(), request, reply)
+            body(io, first, &tx, rx.as_ref())
         };
         let stopped = reset(io);
         pci_command(d, command | 0x401); // turn off bus mastering before release
@@ -294,7 +308,7 @@ fn run(
         for n in 0..pages {
             mem::give(first + 4096 * n);
         }
-        answer.map(|n| (tx.size, n))
+        answer
     })();
     // A failed pre-DMA negotiation may still have set the DRIVER status.
     reset(io);
