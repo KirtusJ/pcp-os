@@ -23,6 +23,16 @@ Storage that survives a stop, a file system on a disk, a network stack, a mouse,
 
 The game is not here either. `crates/pcpos-kernel/programs/doom/build.sh` fetches nothing by itself: it takes the paths of two source trees (doomgeneric at commit e257a095, Chocolate Doom at commit a2dfd51f, both under the GNU General Public License, version 2) and builds a separate program from them and from six small files in that folder. No part of either project and no game data is in this release, and nothing of them is linked into the kernel.
 
+## Look up one transition
+
+`pcpos machine TASK RUNNING STOP_REQUEST` prints one tab-separated row:
+
+```tsv
+TASK	RUNNING	STOP_REQUEST	STOPPING
+```
+
+The TASK table sends a running task to `STOPPING` when a stop is requested. Confirm termination from the task's recorded end. A dash in the fourth column means the table refuses that event in that state. `pcpos machine TASK` prints the full TASK table. The MCP tool `acr_machine` accepts the same `name`, `state`, and `event` selectors.
+
 ## Building
 
 Linux, with a Rust toolchain that has its own sources installed (1.97.0 was used for the build of 13 November 2026), `ld.lld`, `objcopy` and `qemu-system-x86_64`:

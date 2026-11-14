@@ -600,7 +600,7 @@ Here ACR runs over a register: an append-only, hash-chained record kept by a pro
 ## Before the first step
 
 1. Call `acr_kernel`, read what it returns in full and follow it. It is the operating floor, copied without change from the Core Specification; the tool serves the file `${CLAUDE_PLUGIN_ROOT}/method/KERNEL.md` whole, so no file tool is needed and a session that cannot open that folder loses nothing.
-2. Call `acr_status`. State comes from the record, never from memory.
+2. Call `acr_status` for the full view. When you need to check again and still hold that view, pass its full head as `if_head`. `UNCHANGED` refers to that view. After a context reset or loss of the view, omit `if_head`.
    - If it says there is no register, call `acr_begin`.
    - If ACR is not in use: when the person typed this command, the host records the adoption itself, as the person's own act, and tells you so; do not record it again. When they asked in their own words, call `acr_adopt` with their whole last message, copied exactly and unchanged. It is recorded as relayed by you: you are the one who read their message as a request. Never shorten it, quote part of it or compose a basis for them, and if their message does not clearly ask for a review, ask instead of adopting.
 3. Record that you hold the text: `acr_submit` kind `DELIVERY_STATE`, body `{"agent": "<your label, as acr_status shows it>", "event": "DELIVER", "text": "__KERNEL_SHA__"}`.
@@ -610,7 +610,7 @@ Here ACR runs over a register: an append-only, hash-chained record kept by a pro
 
 ## Recording the review
 
-`acr_events` gives the exact body of every event you will write, in the order a review uses them. Every body in it was accepted by the guards when this plugin was built. Call it and read what it returns before your first `acr_submit`. Do not guess a body or try kinds until one is accepted: the bodies are there. (The same text is the file `${CLAUDE_PLUGIN_ROOT}/skills/review/events.md`.)
+`acr_events` gives the exact body examples accepted by the guards at build time. Before submitting an unfamiliar event, pass its `kind` (e.g. `REVIEW_COMMISSIONED`) and read each matching example and its notes. Substitute this review's values. Reuse examples already in this context, including the delivery body above. For a review using many event kinds, call once without arguments for the complete sequence, shared rules and guard refusals. The same guide is `${CLAUDE_PLUGIN_ROOT}/skills/review/events.md`.
 
 - Use `acr_offer` when unsure. It answers exactly what would be written, or the clause refused under, and writes nothing.
 - A refusal is information. Read it, fix the cause, or record the weaker thing that is true. Never work around a refusal.
@@ -764,7 +764,7 @@ PCP OS is in early development. Say what exists, and no more. Describing the sys
 
 ## State machines
 
-`acr_machine` prints the whole table of one machine: SYSTEM, USE, REVIEW, OBJECTION, OBLIGATION, TASK, DELIVERY, LINK. For each state and event it gives the next state, or `-` for not accepted. A table entry says what would follow. It does not show that a transition happened: that is in the register.
+`acr_machine` takes a machine name: SYSTEM, USE, REVIEW, OBJECTION, OBLIGATION, TASK, DELIVERY or LINK. When you know the state and event, supply both for a single TSV row (machine, state, event, next state). A dash in the last column means refused. Omit both for the full table. To determine what actually happened, read the register.
 
 ## Starting the kernel
 
