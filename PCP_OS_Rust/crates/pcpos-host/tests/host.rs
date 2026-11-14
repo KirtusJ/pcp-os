@@ -926,3 +926,58 @@ fn an_instrument_is_run_by_the_program_and_recorded_as_a_check_it_ran() {
     let (out, _) = tool(&quiet, "acr_instrument", r#"{"instrument":"engineering.units","input":{"from":"1 in","to":"25.4 mm"}}"#);
     assert!(out.contains("EQUAL to the last digit given") && out.contains("No review is open") && kinds(&quiet).len() == k, "{out}");
 }
+
+
+/// If a method folder supplies a manifest, its unlisted folders must not
+/// become released acr.* modules merely because a Specification header parses.
+/// This fixture is deliberately not the official release, so no private packet
+/// or signing identity is required to exercise the selection boundary.
+#[test]
+fn a_manifested_method_does_not_select_unlisted_specialists() {
+    let root = dir("manifested-module-membership");
+    let m = small_method(&root);
+    let listed = [
+        "MODULES/01_Core/SOURCE/Specification.md",
+        "MODULES/03_Science/SOURCE/Specification.md",
+    ];
+    let files: Vec<String> = listed.iter().map(|path| {
+        let digest = sha256_hex(&fs::read(m.join(path)).unwrap());
+        format!(r#"{{"path":"{path}","sha256":"{digest}"}}"#)
+    }).collect();
+    fs::write(m.join("MANIFEST.json"), format!(r#"{{"files":[{}]}}"#, files.join(","))).unwrap();
+
+    // The manifest lists core and science, not the folklore fixture.
+    let mut list = pcpos(&root);
+    list.args(["modules", m.to_str().unwrap()]);
+    let (text, code) = feed(list, b"");
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("acr.core") && text.contains("acr.science"), "{text}");
+    assert!(!text.contains("acr.folklore") || text.contains("not listed in its manifest"),
+            "an unlisted acr.* module was presented as released: {text}");
+
+    let mut init = with_method(&root, &m);
+    init.args(["init", REG, "--principal", "principal"]);
+    assert_eq!(feed(init, b"").1, 0);
+    let before = fs::read(root.join(REG)).unwrap();
+    let mut select = with_method(&root, &m);
+    select.args(["workspace", REG, "--by", "principal", "folklore"]);
+    let (reply, code) = feed(select, b"");
+    assert_ne!(code, 0, "unlisted specialist was selectable: {reply}");
+    assert_eq!(fs::read(root.join(REG)).unwrap(), before, "rejected selection changed register");
+    let mut select = with_method(&root, &m);
+    select.args(["workspace", REG, "--by", "principal", "science"]);
+    assert_eq!(feed(select, b"").1, 0, "listed specialist should remain usable");
+
+    let mut clause = pcpos(&root);
+    clause.args(["clause", m.to_str().unwrap(), "folklore"]);
+    let (reply, code) = feed(clause, b"");
+    assert_ne!(code, 0, "an unlisted official-namespace clause was served: {reply}");
+
+    // A manifest-listed path whose bytes have changed also loses its
+    // released-module standing until its manifest/digest is updated.
+    fs::write(m.join(listed[1]), b"**Component:** `acr.science`, Version 1.0\n\nChanged bytes\n").unwrap();
+    let mut select = with_method(&root, &m);
+    select.args(["workspace", REG, "--by", "principal", "science"]);
+    let (reply, code) = feed(select, b"");
+    assert_ne!(code, 0, "changed source was still treated as a pinned specialist: {reply}");
+}
