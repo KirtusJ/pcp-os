@@ -1183,7 +1183,11 @@ def _(ck):
                INSTR("statistics.grim", {"mean": "about 3", "n": 25}), INSTR("engineering.units", {"from": "3 furlongs", "to": "3 m"}), INSTR("science.order", {"earlier": H("x"), "later": H("y")}),
                INSTR("mathematics.exact", {"expression": "2 + 2 = 4"}, record=False), INSTR("list", {})])
     ck("seven refusals, each saying why, and the register untouched", s.bytes() == b0 and all(not x.startswith("WRITTEN") for x in r) and "division by zero" in r[0] and "no instrument named" in r[3], [x[:120] for x in r[:7]])
-    ck("record false computes and writes nothing; list names eight", "TRUE" in r[7] and "Nothing was written" in r[7] and r[8].count("\n  ") == 8, (r[7][:200], r[8][:200]))
+    ck("record false computes and writes nothing", "TRUE" in r[7] and "Nothing was written" in r[7], r[7][:200])
+    expected = {"mathematics.exact", "mathematics.protected_bins", "mathematics.statement", "statistics.grim", "statistics.percent",
+                "engineering.units", "cryptography.digest", "science.order", "quality.coverage", "core.calibration"}
+    names = [line.strip().split(":", 1)[0] for line in r[8].splitlines() if line.startswith("  ")]
+    ck("each supported instrument is listed once", sorted(names) == sorted(expected), names)
     s.close(); s = S(); s.begin_adopted(); b0 = s.bytes()
     r = s.mcp([INSTR("mathematics.exact", {"expression": "2 + 2 = 4"})]); ck("with no review open it is computed and not recorded", "TRUE" in r[0] and "No review is open" in r[0] and s.bytes() == b0, r[0][:300])
     s.close()
