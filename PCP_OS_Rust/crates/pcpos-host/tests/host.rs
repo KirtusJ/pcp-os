@@ -225,7 +225,7 @@ fn conditional_status_rechecks_the_register_and_requires_a_full_view_from_this_s
     fs::copy(&path, root.join("copy.jsonl")).unwrap();
     let conditional = format!(r#"{{"if_head":"{head}"}}"#);
 
-    let mut child = pcpos(&root).arg("mcp").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+    let mut child = pcpos(&root).arg("mcp").env("PCPOS_LOCK_WAIT", "0").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
     let mut input = child.stdin.take().unwrap();
     let mut output = BufReader::new(child.stdout.take().unwrap());
     let mut request = |method: &str, params: &str| {
@@ -244,6 +244,24 @@ fn conditional_status_rechecks_the_register_and_requires_a_full_view_from_this_s
     let (full, error) = poll(&conditional);
     assert!(!error && full.lines().next().unwrap().ends_with(&head) && full.contains("ATTENTION"), "{full}");
     assert_eq!(poll(&conditional), ("UNCHANGED".into(), false));
+    let writer = fs::OpenOptions::new().read(true).write(true).open(&path).unwrap();
+    writer.try_lock().unwrap();
+    let (locked, error) = poll(&conditional);
+    assert!(error && locked.contains("locked by another program"), "{locked}");
+    writer.unlock().unwrap();
+    drop(writer);
+    assert_eq!(poll("{}"), (full.clone(), false));
+
+    // An earlier line can change while the entire last event, length, inode and modification time stay the same.
+    let mut rewritten = original.clone();
+    let first_actor = rewritten.windows(b"\"host\"".len()).position(|part| part == b"\"host\"").unwrap();
+    rewritten[first_actor + 1] = b'H';
+    let modified = fs::metadata(&path).unwrap().modified().unwrap();
+    fs::write(&path, &rewritten).unwrap();
+    fs::OpenOptions::new().write(true).open(&path).unwrap().set_modified(modified).unwrap();
+    let (broken, error) = poll(&conditional);
+    assert!(error && broken.contains("not intact"), "{broken}");
+    fs::write(&path, &original).unwrap();
     assert_eq!(poll("{}"), (full.clone(), false));
     assert_eq!(fs::read(&path).unwrap(), original);
     let (copied, error) = poll(&format!(r#"{{"register":"copy.jsonl","if_head":"{head}"}}"#));
@@ -263,14 +281,107 @@ fn conditional_status_rechecks_the_register_and_requires_a_full_view_from_this_s
     let next = format!(r#"{{"if_head":"{next_head}"}}"#);
     assert_eq!(poll(&next), ("UNCHANGED".into(), false));
     assert_eq!(tool(&root, "acr_status", &next), (changed, false), "a fresh server must send the full status");
-    let mut torn = bytes;
+    // A valid replacement of equal length must produce its own full view.
+    let mut alternate = bytes.clone();
+    let seconds = alternate.strip_suffix(b"Z\"}\n").unwrap().len() - 1;
+    alternate[seconds] = if alternate[seconds] == b'0' { b'1' } else { b'0' };
+    let alternate_head = ledger::verify(&alternate).unwrap().1;
+    assert_ne!(alternate_head, next_head);
+    fs::write(&path, &alternate).unwrap();
+    let (replaced, error) = poll(&next);
+    assert!(!error && replaced.lines().next().unwrap().ends_with(&alternate_head) && replaced.contains("ATTENTION"), "{replaced}");
+    let alternative_condition = format!(r#"{{"if_head":"{alternate_head}"}}"#);
+    assert_eq!(poll(&alternative_condition), ("UNCHANGED".into(), false));
+    let mut torn = alternate;
     torn.extend_from_slice(b"unfinished");
     fs::write(&path, &torn).unwrap();
-    let (text, error) = poll(&next);
+    let (text, error) = poll(&alternative_condition);
     assert!(error && text.contains("not intact"), "{text}");
     assert_eq!(fs::read(path).unwrap(), torn);
     drop(input);
     assert!(child.wait().unwrap().success());
+}
+
+#[test]
+fn conditional_status_preserves_full_and_unchanged_replies_above_the_snapshot_limit() {
+    let root = dir("large-conditional-status");
+    assert!(!tool(&root, "acr_begin", "{}").1);
+    let path = root.join(REG);
+    let mut register = Ledger::from_bytes(&fs::read(&path).unwrap()).unwrap();
+    let body = Value::Map([("text".to_string(), Value::Str("a".repeat(48 * 1024)))].into());
+    while register.bytes().len() <= 1024 * 1024 {
+        register.append("2026-11-14T00:00:00Z", "assistant", "DECLARED", "NOTE", body.clone()).unwrap();
+    }
+    fs::write(&path, register.bytes()).unwrap();
+    let condition = format!(r#"{{"if_head":"{}"}}"#, register.head());
+    let replies = tools(&root, &[("acr_status", condition.clone()), ("acr_status", condition), ("acr_status", "{}".into())]);
+    let (full, error) = &replies[0];
+    assert!(!error && full.lines().next().unwrap().ends_with(register.head()) && full.contains("ATTENTION"), "{full}");
+    assert_eq!(replies[1], ("UNCHANGED".to_string(), false));
+    assert_eq!(replies[2], replies[0]);
+}
+
+#[test]
+fn status_attention_returns_the_register_identity_and_every_attention_item_and_response() {
+    let root = dir("status-attention");
+    let fixtures: &[(&str, &[u8], &[&str])] = &[
+        ("scenario.jsonl", include_bytes!("../../../vectors/register_scenario.jsonl"), &["HIGH   task T2 challenge was LOST", "MEDIUM 1 start(s)"]),
+        ("reference.jsonl", include_bytes!("../../../vectors/register_reference.jsonl"), &["HIGH   2 recorded event(s) would not pass the guards"]),
+        ("exercise.jsonl", include_bytes!("../../../vectors/register_fphpm_exercise.jsonl"), &["ATTENTION nothing needs a response"]),
+    ];
+    for &(label, raw, signals) in fixtures {
+        let path = root.join(label);
+        fs::write(&path, raw).unwrap();
+        let (events, head) = ledger::verify(raw).unwrap();
+        let replies = tools(&root, &[
+            ("acr_status", format!(r#"{{"register":"{label}"}}"#)),
+            ("acr_status", format!(r#"{{"register":"{label}","view":"full"}}"#)),
+            ("acr_status", format!(r#"{{"register":"{label}","view":"attention"}}"#)),
+        ]);
+        assert!(replies.iter().all(|(_, error)| !error), "{label}: {replies:?}");
+        let full = &replies[0].0;
+        assert_eq!(&replies[1].0, full);
+        let identity = format!("REGISTER  {label}  |  {} events  |  head {head}\n", events.len());
+        assert!(full.starts_with(&identity));
+        let attention = &full[full.find("\nATTENTION ").unwrap() + 1..full.find("\nREVIEWS ").unwrap() + 1];
+        assert_eq!(replies[2].0, format!("{identity}{attention}"), "{label}");
+        for signal in signals {
+            assert!(attention.contains(signal), "{label}: {attention}");
+        }
+        assert_eq!(fs::read(path).unwrap(), raw);
+    }
+}
+
+#[test]
+fn status_attention_keeps_the_last_full_view_basis_and_refuses_incompatible_selectors() {
+    let root = dir("attention-basis");
+    let raw = include_bytes!("../../../vectors/register_scenario.jsonl");
+    fs::create_dir(root.join(".pcp")).unwrap();
+    fs::write(root.join(REG), raw).unwrap();
+    fs::write(root.join("other.jsonl"), raw).unwrap();
+    let (_, head) = ledger::verify(raw).unwrap();
+    let condition = format!(r#"{{"if_head":"{head}"}}"#);
+    let attention = r#"{"view":"attention"}"#.to_string();
+    let replies = tools(&root, &[
+        ("acr_status", attention.clone()),
+        ("acr_status", condition.clone()),
+        ("acr_status", attention),
+        ("acr_status", r#"{"register":"other.jsonl","view":"attention"}"#.into()),
+        ("acr_status", condition.clone()),
+        ("acr_status", format!(r#"{{"if_head":"{head}","view":"attention"}}"#)),
+        ("acr_status", r#"{"view":"unexpected"}"#.into()),
+        ("acr_status", r#"{"view":null}"#.into()),
+        ("acr_status", r#"{"view":1}"#.into()),
+        ("acr_status", format!(r#"{{"if_head":"{head}","view":"full"}}"#)),
+    ]);
+    assert!(replies[..5].iter().all(|(_, error)| !error), "{replies:?}");
+    assert!(replies[0].0.contains("ATTENTION") && !replies[0].0.contains("\nREVIEWS "));
+    assert!(replies[1].0.contains("\nREVIEWS "), "a projection alone cannot prime a conditional full status");
+    assert_eq!(replies[2], replies[0]);
+    assert!(replies[3].0.starts_with("REGISTER  other.jsonl  |"));
+    assert_eq!(replies[4], ("UNCHANGED".into(), false), "a projection on another register must preserve the full view");
+    assert!(replies[5..9].iter().all(|(_, error)| *error), "{replies:?}");
+    assert_eq!(replies[9], replies[4]);
 }
 
 #[cfg(unix)]

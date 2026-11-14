@@ -712,9 +712,9 @@ argument-hint: "[register path]"
 
 # Status and tasks
 
-Call `acr_status` (register, if they named one: $ARGUMENTS) and answer from what it returns. Do not add state from memory.
+Call `acr_status` with the named register ($ARGUMENTS), or use the session default. If they ask only what needs a response, pass `{"view":"attention"}` and report each alert with its stated response.
 
-Lead with what needs the person's response, most urgent first, each with its stated response. Then, briefly and in plain words: whether ACR is in use, each open review and how far it is, and each task.
+For general status, request the full view. Lead with what needs the person's response, most urgent first. Then briefly report whether ACR is in use, each open review and its progress, and each task. Answer from the record.
 
 Read the task states exactly as the record has them:
 
