@@ -9,6 +9,7 @@ use pcpos_core::sha256_hex;
 use pcpos_core::value::Value;
 
 mod protected_bins;
+pub mod plot;
 
 /// What an instrument found: whether the property it computes holds, and the account of it in words.
 pub struct Outcome {
@@ -17,7 +18,7 @@ pub struct Outcome {
 }
 
 /// The instruments this program offers, with the module each belongs to and what it computes.
-pub const LIST: [(&str, &str); 10] = [
+pub const LIST: &[(&str, &str)] = &[
     ("mathematics.exact", "the value of an expression in whole numbers and fractions, exactly; input: expression"),
     ("mathematics.protected_bins", "compare signed integer columns at a common scale: both squared totals must equal 2^scale_exponent (0..127); corresponding bins must have equal squared norms and odd gcds. Input: scale_exponent, source, target (ordered lists of bins of signed 64-bit integers; at most 64 bins and 4096 entries per column; squared totals must fit u128)"),
     ("mathematics.statement", "whether a Lean theorem's statement is the one that was pinned, and whether it is trivially true; it holds only against a pin, and without one it returns the digest to pin and does not hold; input: source (Lean text), theorem (name), pinned (SHA-256 of the statement)"),
@@ -28,6 +29,7 @@ pub const LIST: [(&str, &str); 10] = [
     ("science.order", "from the register: whether one artifact entered the record before another; input: earlier, later (SHA-256 digests)"),
     ("quality.coverage", "from the register: for each claim of a review, whether a finding is recorded and how it was executed; input: review"),
     ("core.calibration", "whether a Calibration Record's counts agree with each other and its thresholds and claim say no more than its counts; input: record"),
+    ("visualization.ranges", "render the supplied exact points and ranges as SVG and compare its SHA-256 with expected_svg_sha256; input: plot, expected_svg_sha256; use pcpos plot or acr_plot for the graphic"),
 ];
 
 /// Run one instrument. `events` is the register as it stands, for the instruments that read it.
@@ -35,6 +37,7 @@ pub fn run(name: &str, input: &Value, events: &[Value]) -> Result<Outcome, Strin
     let text = |k: &str| input.get(k).and_then(Value::as_str).ok_or(format!("this instrument needs {k}, as text"));
     let whole = |k: &str| input.get(k).and_then(Value::as_int).filter(|n| *n > 0).ok_or(format!("this instrument needs {k}, a whole number above zero"));
     match name {
+        "visualization.ranges" => plot::check(input),
         "mathematics.exact" => exact(text("expression")?),
         "mathematics.protected_bins" => protected_bins::compare(input),
         "mathematics.statement" => {
@@ -1434,7 +1437,8 @@ mod tests {
     #[test]
     fn an_instrument_that_does_not_exist_is_not_invented() {
         assert!(run("mathematics.prove", &v("{}"), &[]).is_err());
-        assert_eq!(LIST.len(), 10);
+        let unique: std::collections::BTreeSet<_> = LIST.iter().map(|(name, _)| name).collect();
+        assert_eq!(unique.len(), LIST.len());
         for (name, _) in LIST {
             assert!(!matches!(run(name, &v("{}"), &[]), Err(e) if e.starts_with("there is no instrument")), "{name} is listed and must exist");
         }

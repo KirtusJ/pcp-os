@@ -1,5 +1,7 @@
 # PCP OS | Rust workspace | early development
 
+The hosted Rust program can render shared Science and Mathematics data as SVG from the terminal or MCP. [Exact point and interval plots and replayable examples](docs/plots/README.md)
+
 PCP OS is part of Parrot Council Protocol (PCP), the product. The method it carries is Adversarial Claim Review (ACR). The host program `pcpos` is version 1.0.22: PCP 1.0, build 22. The kernel is early and keeps its own version, 0.3.1. Record identifiers that begin `acr:` and the record form `ACR-OS-RECORD-1` are wire names of the method's record and are kept so that earlier registers still verify.
 
 PCP OS is an operating system built around one idea: the record of what was examined, by whom and on what evidence is kept by a mechanism that the examined party cannot rewrite. ACR is part of the system itself: its mechanically checkable rules are native code in the same core the kernel runs. This workspace is the beginning of the implementation. It is not a usable operating system.

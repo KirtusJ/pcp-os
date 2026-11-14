@@ -1417,6 +1417,8 @@ fn tools() -> Value {
     let reg = ("register", "string", "Optional. Path of the register, relative to the served directory. Omit it to use the session's register.");
     let tool = |name: &str, d: &str, sc: Value| obj(vec![("name", s(name)), ("description", s(d)), ("inputSchema", sc)]);
     Value::List(vec![
+        tool("acr_plot", "Return an SVG as an embedded image/svg+xml text resource. Shared exact point and range format for Science and Mathematics. This read-only call accepts no file path and records no check.",
+             schema(vec![("plot","object","Bounded plot with title, provenance, source, x_label, y_label, x_domain, y_domain and series of [x, lower, upper] data")],vec!["plot"])),
         tool("acr_status", "What the record says now: system, ACR use, standard, what needs a response, reviews, tasks, and what a halt would stop. Read this instead of recalling state.", schema(vec![reg], vec![])),
         tool("acr_verify", "Check the register's hash chain and replay every guard. Reports the full head digest and any recorded event the guards would refuse.", schema(vec![reg], vec![])),
         tool("acr_begin", "Begin the session's register if there is none, and register this session's participant. Changes nothing if both are already done. It does not put ACR in use.", schema(vec![reg], vec![])),
@@ -1457,6 +1459,11 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
     let reg = text_arg("register")?.unwrap_or(&se.register).to_string();
     let none = || format!("there is no register at {reg}. ACR is not in use here and nothing is recorded. Begin one with acr_begin when the person directing the work asks for ACR");
     match name {
+        "acr_plot" => {
+            let Value::Map(fields) = args else { return Err("expected plot as an object".into()); };
+            if fields.len() != 1 { return Err("acr_plot accepts only plot".into()); }
+            instruments::plot::render(args.get("plot").ok_or("plot is required")?).map(|r| r.svg)
+        }
         "acr_machine" => machine_text(Some(arg("name")?)),
         "acr_kernel" => {
             // The same bytes a file tool would read, served by the program that sits beside them: a session whose
@@ -1842,6 +1849,11 @@ fn serve(se: &Session) {
                         let name = params.get("name").and_then(Value::as_str).unwrap_or("");
                         let args = params.get("arguments").unwrap_or(&empty);
                         match call(se, name, args) {
+                            Ok(svg) if name == "acr_plot" => {
+                                let uri = format!("urn:sha256:{}", sha256_hex(svg.as_bytes()));
+                                let resource = obj(vec![("uri",s(&uri)),("mimeType",s("image/svg+xml")),("text",Value::Str(svg))]);
+                                Some(Ok(obj(vec![("content", Value::List(vec![obj(vec![("type",s("resource")),("resource",resource)])])), ("isError",Value::Bool(false))])))
+                            }
                             Err(e) if e.starts_with(NO_TOOL) => Some(Err((-32602, e))),
                             r => {
                                 let (text, is_error) = match r {
@@ -2472,7 +2484,7 @@ fn person(args: &[String]) -> Result<i32, String> {
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
     let usage = || -> ! {
-        eprintln!("usage: pcpos status|verify <register> | machine [name] | method <directory> | repair <register> | modules <method directory> | clause <method directory> <module> [section] | instrument list | instrument <name> <input as JSON> [register] | workspace <register> --by <label> [--method <directory>] [module ...] | module list <register> | module add <register> <folder or Specification.md> --by <label> [--method <directory>] | module remove <register> <name> --by <label> | init <register> --principal <label> [--name <name>] | adopt <register> --by <label> --basis <words> | halt <register> --by <label> [--words <words>] | standard <register> --by <label> [--second <label>] BASELINE|CRITICAL|key=value... | mcp | hook <event>");
+        eprintln!("usage: pcpos status|verify <register> | machine [name] | method <directory> | repair <register> | modules <method directory> | clause <method directory> <module> [section] | plot (JSON on stdin, SVG on stdout) | instrument list | instrument <name> <input as JSON> [register] | workspace <register> --by <label> [--method <directory>] [module ...] | module list <register> | module add <register> <folder or Specification.md> --by <label> [--method <directory>] | module remove <register> <name> --by <label> | init <register> --principal <label> [--name <name>] | adopt <register> --by <label> --basis <words> | halt <register> --by <label> [--words <words>] | standard <register> --by <label> [--second <label>] BASELINE|CRITICAL|key=value... | mcp | hook <event>");
         exit(2)
     };
     match args.first().map(String::as_str) {
@@ -2508,6 +2520,17 @@ fn main() {
                 exit(2)
             }
         },
+        Some("plot") if args.len() == 1 => {
+            let mut bytes = Vec::new();
+            let result = std::io::stdin().lock().take((instruments::plot::MAX_INPUT + 1) as u64)
+                .read_to_end(&mut bytes).map_err(|e| e.to_string()).and_then(|_| {
+                    if bytes.len() > instruments::plot::MAX_INPUT { return Err("plot JSON exceeds 128 KiB".into()); }
+                    let input = Value::parse(&bytes).map_err(|_| "expected strict plot JSON on stdin")?;
+                    let rendered = instruments::plot::render(&input)?;
+                    std::io::stdout().lock().write_all(rendered.svg.as_bytes()).map_err(|e| e.to_string())
+                });
+            if let Err(e) = result { eprintln!("pcpos: {e}"); exit(2); }
+        }
         Some("instrument") if args.len() >= 2 => {
             // An instrument at a terminal: computed and printed, never recorded. `pcpos instrument list`, or a name and its input as JSON.
             if args[1] == "list" {

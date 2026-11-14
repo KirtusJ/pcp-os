@@ -1,0 +1,47 @@
+{
+  "title": "Squared mass of a finite walk on nonnegative sites",
+  "provenance": "model",
+  "source": "Signed Hadamard walk, sharp right launch, including the origin",
+  "x_label": "Walk ticks",
+  "y_label": "Kinematic squared mass",
+  "x_domain": [
+    0,
+    32
+  ],
+  "y_domain": [
+    0,
+    1
+  ],
+  "series": [
+    {
+      "name": "Exact half-line column",
+      "data": [
+        [
+          3,
+          "3/4",
+          "3/4"
+        ],
+        [
+          8,
+          "201/256",
+          "201/256"
+        ],
+        [
+          16,
+          "50377/65536",
+          "50377/65536"
+        ],
+        [
+          24,
+          "3199089/4194304",
+          "3199089/4194304"
+        ],
+        [
+          32,
+          "3262634697/4294967296",
+          "3262634697/4294967296"
+        ]
+      ]
+    }
+  ]
+}
