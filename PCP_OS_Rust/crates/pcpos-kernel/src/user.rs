@@ -184,6 +184,17 @@ fn empty_world() -> World {
 }
 
 impl Table {
+    /// Release the addresses of prepared processes while still on the kernel tables. The task and
+    /// capability tables belong to this attempt and drop here; the caller keeps its original world.
+    fn cancel_before_run(self) -> World {
+        for p in self.procs {
+            if let Some(space) = p.space {
+                space.release();
+            }
+        }
+        self.world
+    }
+
     fn admit(&mut self, name: &str, space: Space, frame: Frame, grants: Grants, budget: u64, linux: Option<sys::Linux>) -> Option<usize> {
         let pid = self.procs.len() as u32 + 1;
         let now = arch::ticks();
@@ -241,22 +252,16 @@ pub fn run(programs: &[Start]) -> Option<Vec<Process>> {
         Some(())
     });
     if admitted.is_none() {
-        // The group has not entered user mode. Return every earlier admission's frames
-        // while still on the kernel tables; the local task and capability tables drop here.
-        for p in t.procs {
-            if let Some(space) = p.space {
-                space.release();
-            }
-        }
+        t.cancel_before_run();
         return None;
     }
     run_table(t).map(|t| t.procs)
 }
 
-/// Load one program the loader handed over and run it until it ends. Returns what the kernel observed of
-/// it, or why it could not be started, and the world as the program left it.
+/// Offer the prepared process to `on_created`. It enters user mode only if that callback accepts.
+/// Return the observed process or the reason for a refusal or loss, along with the remaining world.
 /// Interrupts must be off when this is called; it returns with them off.
-pub fn run_program(program: &Program, world: World) -> (Result<Process, &'static str>, World) {
+pub fn run_program(program: &Program, world: World, on_created: impl FnOnce() -> bool) -> (Result<Process, &'static str>, World) {
     let mut t = new_table(world);
     let mut space = match Space::empty() {
         Some(s) => s,
@@ -273,6 +278,9 @@ pub fn run_program(program: &Program, world: World) -> (Result<Process, &'static
     let linux = sys::Linux::new(loaded.image_end);
     if t.admit(program.name, space, Frame::user(loaded.entry, loaded.stack), program.grants, program.budget, Some(linux)).is_none() {
         return (Err("the program could not be admitted as a task"), t.world);
+    }
+    if !on_created() {
+        return (Err("the register refused to record the process start"), t.cancel_before_run());
     }
     dev::keys_forget();
     let _ = dev::stop_requested(); // a stop asked for before the program existed is not a stop of it

@@ -20,10 +20,13 @@ use crate::{logged, now, obj, text};
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use pcpos_core::acr::Record;
+use pcpos_core::acr::{is_register_label, Record};
 use pcpos_core::ledger;
 use pcpos_core::sha256_hex;
 use pcpos_core::value::Value;
+
+#[cfg(feature = "test-launch-records")]
+mod launch_test;
 
 macro_rules! say {
     ($($arg:tt)*) => { crate::log(format_args!($($arg)*)) };
@@ -42,10 +45,10 @@ pub struct Start<'a> {
     pub version: &'static str,
 }
 
-struct Entry {
+struct Entry<'a> {
     name: String,
     arguments: String,
-    image: &'static [u8],
+    image: &'a [u8],
     digest: String,
 }
 
@@ -73,6 +76,20 @@ fn epoch(y: u32, mo: u32, d: u32, h: u32, mi: u32, s: u32) -> u64 {
     (days * 86400 + h as i64 * 3600 + mi as i64 * 60 + s as i64).max(0) as u64
 }
 
+/// The digest identifies the supplied bytes. The optional register alias must be a valid label;
+/// `filename` always preserves the name by which the loader and the program know this file.
+fn record_supplied(rec: &mut Record, name: &str, digest: &str, size: usize) -> bool {
+    let alias = if is_register_label(name) { text(name) } else { Value::Null };
+    logged("ARTIFACT_ADDED", rec.submit(&now(), "kernel", "HOST", "ARTIFACT_ADDED",
+        obj(&[("sha256", text(digest)), ("size", Value::Int(size as i64)), ("origin", text("SUPPLIED")), ("stored", Value::Bool(false)),
+              ("name", alias), ("filename", text(name)), ("read_by", text("HOST"))]))).is_ok()
+}
+
+fn record_refusal(rec: &mut Record, event: &str, name: &str, digest: &str, reason: &str) -> bool {
+    logged("HOST_EVENT", rec.submit(&now(), "host", "HOST", "HOST_EVENT",
+        obj(&[("event", text(event)), ("name", text(name)), ("sha256", text(digest)), ("reason", text(reason))]))).is_ok()
+}
+
 /// Run the session. Returns the number of tasks now in the register.
 pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     let mut tasks = start.tasks;
@@ -84,14 +101,29 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     for m in start.boot.modules.iter() {
         if let Some(bytes) = arch::module_bytes(m) {
             let digest = sha256_hex(bytes);
-            // Every file the loader handed over is material the kernel was given: it is recorded by the kernel's own reading of it.
-            let ok = safe || logged("ARTIFACT_ADDED", rec.submit(&now(), "kernel", "HOST", "ARTIFACT_ADDED",
-                obj(&[("sha256", text(&digest)), ("size", Value::Int(bytes.len() as i64)), ("origin", text("SUPPLIED")), ("stored", Value::Bool(false)),
-                      ("name", text(&m.name)), ("filename", text(&m.name)), ("read_by", text("HOST"))]))).is_ok();
-            if !ok {
-                *failed += 1;
+            let program = exec::looks_like_a_program(bytes);
+            if !safe {
+                // Both argv and the loader's file API use the basename. Keep that name bound to one
+                // digest even when its spelling is unsuitable as a registered artifact alias.
+                let conflict = files.iter().any(|(name, _, d)| name == &m.name && d != &digest);
+                let refusal = if conflict {
+                    Some("the loader name already belongs to a different supplied file")
+                } else if !record_supplied(rec, &m.name, &digest, bytes.len()) {
+                    *failed += 1;
+                    Some("the register refused to record the supplied file")
+                } else {
+                    None
+                };
+                if let Some(reason) = refusal {
+                    let event = if program { "PROGRAM_LAUNCH_REFUSED" } else { "SUPPLIED_FILE_REFUSED" };
+                    if !record_refusal(rec, event, &m.name, &digest, reason) {
+                        *failed += 1;
+                    }
+                    say!("{} (SHA-256 {}) was refused: {}", m.name, digest, reason);
+                    continue;
+                }
             }
-            if exec::looks_like_a_program(bytes) {
+            if program {
                 programs.push(Entry { name: m.name.clone(), arguments: m.arguments.clone(), image: bytes, digest: digest.clone() });
             }
             files.push((m.name.clone(), bytes, digest));
@@ -101,6 +133,10 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     let mut world = World { files: files.iter().map(|f| (f.0.clone(), f.1)).collect(), store: Vec::new(),
                             epoch_at_start: epoch(y, mo, d, h, mi, s).saturating_sub(arch::ticks() / arch::TICKS_PER_SECOND), unanswered: Vec::new() };
     let line = start.boot.command_line.as_str();
+    #[cfg(feature = "test-launch-records")]
+    if !safe {
+        world = launch_test::run(rec, world, &mut tasks, start, failed);
+    }
     let mut message = String::new();
     if safe {
         say!("the kernel did not verify itself ({} self-test(s) failed): it is in SAFE and starts no program", start.failed);
@@ -273,22 +309,30 @@ fn register_view(rec: &Record) {
 /// Run one program as a task in the register. Interrupts must be off; returns with them off.
 /// Returns what to tell the person, and the world as the program left it.
 fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, start: &Start, failed: &mut u32) -> (String, World) {
-    *tasks += 1;
-    let id = format!("T{}", *tasks);
-    let mut recorded = logged("TASK_STARTED", rec.submit(&now(), "kernel", "HOST", "TASK_STARTED",
-        obj(&[("label", text(&entry.name.chars().take(31).collect::<String>())), ("worker", text("PROGRAM")), ("review", Value::Null), ("quiet_limit", Value::Int(0)), ("budget", Value::Int(0)),
-              ("attempt", text(&format!("program {} of SHA-256 {}", entry.name, entry.digest))), ("observed", text("PROCESS_CREATED"))]))).is_ok();
     let mut args: Vec<&str> = alloc::vec![entry.name.as_str()];
     args.extend(entry.arguments.split_whitespace());
     say!("starting {} ({} bytes, SHA-256 {}){}", entry.name, entry.image.len(), entry.digest, if entry.arguments.is_empty() { String::new() } else { format!(" with: {}", entry.arguments) });
     let none = option(start.boot.command_line.as_str(), "grant") == Some("none");
     let grants = if none { Grants { console: true, ..Grants::default() } } else { Grants { console: true, display: start.display.is_some(), keys: start.keyboard, files: true, store: true, sound: start.sound } };
-    if none {
-        say!("{} is started with the console and no other grant (grant=none)", entry.name);
-    }
     let (free0, shows0, t0) = (user::frames_free(), dev::display_shows(), arch::ticks());
     let (_, sound0, dry0) = dev::sound_state();
-    let (result, world) = user::run_program(&Program { name: &entry.name, image: entry.image, args: &args, grants, budget: u64::MAX }, world);
+    let program = Program { name: &entry.name, image: entry.image, args: &args, grants, budget: u64::MAX };
+    let id = format!("T{}", *tasks + 1);
+    let label = if is_register_label(&entry.name) { &entry.name } else { &id };
+    let mut started = false;
+    let mut recorded = true;
+    let (result, world) = user::run_program(&program, world, || {
+        started = logged("TASK_STARTED", rec.submit(&now(), "kernel", "HOST", "TASK_STARTED",
+            obj(&[("id", text(&id)), ("label", text(label)), ("worker", text("PROGRAM")), ("review", Value::Null), ("quiet_limit", Value::Int(0)), ("budget", Value::Int(0)),
+                  ("attempt", text(&format!("program {} of SHA-256 {}", entry.name, entry.digest))), ("observed", text("PROCESS_CREATED"))]))).is_ok();
+        if started {
+            *tasks += 1;
+            if none {
+                say!("{} is started with the console and no other grant (grant=none)", entry.name);
+            }
+        }
+        started
+    });
     let (ticks, shows) = (arch::ticks() - t0, dev::display_shows() - shows0);
     let (_, sound1, dry1) = dev::sound_state();
     let (sound_ms, dry) = ((sound1 - sound0) / (dev::SOUND_RATE as u64 * 4 / 1000), dry1 - dry0);
@@ -303,7 +347,7 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
             let digest = sha256_hex(&p.output);
             let (outcome, result, how) = match p.end {
                 Some(End::Exited(0)) => {
-                    recorded &= logged("ARTIFACT_ADDED", rec.submit(&now(), "kernel", "HOST", "ARTIFACT_ADDED",
+                    recorded = recorded && logged("ARTIFACT_ADDED", rec.submit(&now(), "kernel", "HOST", "ARTIFACT_ADDED",
                         obj(&[("sha256", text(&digest)), ("size", Value::Int(p.output.len() as i64)), ("origin", text("PRODUCED")), ("stored", Value::Bool(false)), ("task", text(&id))]))).is_ok();
                     ("DONE", text(&digest), "exit 0".to_string())
                 }
@@ -319,10 +363,12 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
             let idle = if ticks > 0 { p.idle * 100 / ticks } else { 0 };
             let note = format!("{} after {} s; {} system calls; {} frames shown ({}.{} a second); the processor idled {}% of the time; {} ms of sound played, the device ran out of sound {} time(s); {} music register writes so far, the latest {} ms late; {} pages at the end, {} of them the display's, {} both writable and executable; {} frames given back, {} free before and {} after; the store holds {} file(s), {} bytes",
                                how, seconds, p.calls, shows, rate / 10, rate % 10, idle, sound_ms, dry, fm_written, fm_late, p.census.0, p.census.2, p.census.1, p.released, free0, user::frames_free(), world.store.len(), world.store.iter().map(|f| f.1.len()).sum::<usize>());
-            recorded &= logged("TASK_ENDED", rec.submit(&now(), "host", "HOST", "TASK_ENDED",
+            let observed = if p.end.is_some() { "PROCESS_END" } else { "PROCESS_END_UNOBSERVED" };
+            recorded = recorded && logged("TASK_ENDED", rec.submit(&now(), "host", "HOST", "TASK_ENDED",
                 obj(&[("id", text(&id)), ("outcome", text(outcome)), ("result", result.clone()), ("read_back", result), ("spent", Value::Int(p.periods.min(i64::MAX as u64) as i64)),
-                      ("note", text(&note)), ("observed", text("PROCESS_END"))]))).is_ok();
-            say!("{} ended {}: {}", entry.name, outcome, note);
+                      ("note", text(&note)), ("observed", text(observed))]))).is_ok();
+            let status = if p.end.is_some() { format!("ended {}", outcome) } else { "was lost".to_string() };
+            say!("{} {}: {}", entry.name, status, note);
             if !world.unanswered.is_empty() {
                 say!("calls {} made that this kernel does not answer (number, times): {:?}", entry.name, world.unanswered);
             }
@@ -330,12 +376,17 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
                 say!("  FAIL the program's memory was not what it must be: writable-and-executable pages {}, kernel reachable {}, frames {} -> {}", p.census.1, p.census.3, free0, user::frames_free());
                 *failed += 1;
             }
-            format!("{} ended {}: {} after {} s.\n{} pictures shown, {}.{} a second; the processor idled {}% of the time.\nAll {} frames of its memory were given back.", entry.name, outcome, how, seconds, shows, rate / 10, rate % 10, idle, p.released)
+            format!("{} {}: {} after {} s.\n{} pictures shown, {}.{} a second; the processor idled {}% of the time.\nAll {} frames of its memory were given back.", entry.name, status, how, seconds, shows, rate / 10, rate % 10, idle, p.released)
+        }
+        Err(why) if started => {
+            recorded = recorded && logged("TASK_ENDED", rec.submit(&now(), "host", "HOST", "TASK_ENDED",
+                obj(&[("id", text(&id)), ("outcome", text("LOST")), ("result", Value::Null), ("read_back", Value::Null), ("spent", Value::Int(0)),
+                      ("note", text(&format!("{}; the process charge was unavailable", why))), ("observed", text("PROCESS_END_UNOBSERVED"))]))).is_ok();
+            say!("{} was lost: {}", entry.name, why);
+            format!("{} was lost: {}.", entry.name, why)
         }
         Err(why) => {
-            recorded &= logged("TASK_ENDED", rec.submit(&now(), "host", "HOST", "TASK_ENDED",
-                obj(&[("id", text(&id)), ("outcome", text("FAILED")), ("result", Value::Null), ("read_back", Value::Null), ("spent", Value::Int(0)),
-                      ("note", text(&format!("not started: {}", why))), ("observed", text("PROCESS_END"))]))).is_ok();
+            recorded = record_refusal(rec, "PROGRAM_LAUNCH_REFUSED", &entry.name, &entry.digest, why);
             say!("{} could not be started: {}", entry.name, why);
             format!("{} could not be started: {}.", entry.name, why)
         }
