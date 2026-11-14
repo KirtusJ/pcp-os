@@ -28,7 +28,7 @@ use pcpos_core::authority::{Edition, Method, ModelFindings, Standard};
 use pcpos_core::machine::{self, Delivery, Link, Review, System, Use};
 use pcpos_core::value::Value;
 use pcpos_core::{ledger, sha256_hex};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io::{BufRead, IsTerminal, Read, Seek, SeekFrom, Write};
@@ -860,6 +860,8 @@ struct MethodCheck {
     /// Files absent that are not among the packet's programs and probes.
     absent_text: usize,
     differing: Vec<String>,
+    /// Unexpected entries cannot share the identity of the pinned release.
+    unexpected: Vec<String>,
 }
 
 impl MethodCheck {
@@ -868,20 +870,68 @@ impl MethodCheck {
     }
 
     fn complete(&self) -> bool {
-        self.is_native() && self.differing.is_empty() && self.absent_text == 0 && self.equal > 0
+        self.is_native() && self.differing.is_empty() && self.unexpected.is_empty() && self.absent_text == 0 && self.equal > 0
     }
 
     fn text(&self) -> String {
-        format!("manifest {} ({} the release this core implements); {} file(s) listed: {} present and equal, {} absent{}, {} differing{}",
+        format!("manifest {} ({} the release this core implements); {} file(s) listed: {} present and equal, {} absent{}, {} differing{}; {} unexpected entries{}",
                 self.fingerprint, if self.is_native() { "is" } else { "IS NOT" }, self.listed, self.equal, self.absent,
                 if self.absent > 0 && self.absent_text == 0 { " (all of them the packet's programs and probes, which a plugin does not carry)" } else { "" }, self.differing.len(),
-                if self.differing.is_empty() { String::new() } else { format!(" [{}]", self.differing.join(" ")) })
+                if self.differing.is_empty() { String::new() } else { format!(" [{}]", self.differing.join(" ")) },
+                self.unexpected.len(),
+                if self.unexpected.is_empty() { String::new() } else { format!(" [{}]", self.unexpected.iter().take(8).cloned().collect::<Vec<_>>().join(" ")) })
     }
 }
 
 /// The parts of the method packet a plugin does not carry: its Python programs and the probes that test a
 /// delivery, model answers included. A plugin holds the method's text, each file the packet's own bytes.
 const NOT_IN_A_PLUGIN: [&str; 2] = ["INTEGRATION/", "TOOLS/"];
+
+/// Check all method-tree entries, not just those listed by the manifest.
+/// The manifest authenticates *listed* bytes only; its SHA-256 does not imply
+/// that the directory contains no other modules or files. Do not follow links.
+/// This is a bounded local diagnostic, not an atomic snapshot of a live tree.
+fn unlisted_method_entries(dir: &Path, expected_files: &BTreeSet<PathBuf>) -> Result<Vec<String>, String> {
+    const MAX_ENTRIES: usize = 16_384;
+    let mut expected_dirs = BTreeSet::new();
+    expected_dirs.insert(PathBuf::new());
+    for file in expected_files {
+        let mut parent = file.parent();
+        while let Some(p) = parent {
+            expected_dirs.insert(p.to_path_buf());
+            parent = p.parent();
+        }
+    }
+    let mut pending = vec![PathBuf::new()];
+    let mut visited = 0usize;
+    let mut unexpected = Vec::new();
+    while let Some(relative) = pending.pop() {
+        let entries = fs::read_dir(dir.join(&relative))
+            .map_err(|e| format!("cannot inspect method tree {}: {e}", dir.join(&relative).display()))?;
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("cannot read a method-tree entry: {e}"))?;
+            visited += 1;
+            if visited > MAX_ENTRIES {
+                return Err(format!("method tree exceeds {MAX_ENTRIES} entries; its identity is not established"));
+            }
+            let name = relative.join(entry.file_name());
+            let ty = entry.file_type()
+                .map_err(|e| format!("cannot inspect method-tree entry {}: {e}", name.display()))?;
+            if ty.is_dir() {
+                if !expected_dirs.contains(&name) {
+                    unexpected.push(format!("{}/", name.display()));
+                }
+                pending.push(name);
+            } else if !ty.is_file() || !expected_files.contains(&name) {
+                // A symlink, including one at a manifest-listed path, is not
+                // ordinary packaged text, even if dereferencing it yields valid bytes.
+                unexpected.push(name.to_string_lossy().into_owned());
+            }
+        }
+    }
+    unexpected.sort();
+    Ok(unexpected)
+}
 
 /// Compare a method packet's files with its own manifest, and the manifest with the release this core implements.
 fn method_check(dir: &Path) -> Result<MethodCheck, String> {
@@ -891,23 +941,32 @@ fn method_check(dir: &Path) -> Result<MethodCheck, String> {
         Some(Value::List(l)) => l,
         _ => return Err("the manifest lists no files".to_string()),
     };
-    let mut c = MethodCheck { fingerprint: sha256_hex(&raw), listed: files.len(), equal: 0, absent: 0, absent_text: 0, differing: Vec::new() };
+    let mut c = MethodCheck { fingerprint: sha256_hex(&raw), listed: files.len(), equal: 0, absent: 0, absent_text: 0, differing: Vec::new(), unexpected: Vec::new() };
+    let mut expected_files = BTreeSet::new();
+    expected_files.insert(PathBuf::from("MANIFEST.json"));
     for f in files {
         let (path, want) = match (f.get("path").and_then(Value::as_str), f.get("sha256").and_then(Value::as_str)) {
             (Some(p), Some(w)) if Path::new(p).components().all(|c| matches!(c, Component::Normal(_))) => (p, w),
             _ => return Err("the manifest holds an entry this program does not accept".to_string()),
         };
+        if !expected_files.insert(PathBuf::from(path)) {
+            return Err(format!("the manifest lists {path} more than once"));
+        }
         match fs::read(dir.join(path)) {
             Ok(b) if sha256_hex(&b) == want => c.equal += 1,
             Ok(_) => c.differing.push(path.to_string()),
-            Err(_) => {
+            // A genuinely missing tool/probe is permitted in a text-only plugin.
+            // Permission failures or I/O errors are not proof of absence.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 c.absent += 1;
                 if !NOT_IN_A_PLUGIN.iter().any(|d| path.starts_with(d)) {
                     c.absent_text += 1;
                 }
             }
+            Err(e) => c.differing.push(format!("{path}: unreadable ({e})")),
         }
     }
+    c.unexpected = unlisted_method_entries(dir, &expected_files)?;
     Ok(c)
 }
 
@@ -2530,7 +2589,7 @@ fn main() {
         Some("method") if args.len() == 2 => match method_check(Path::new(&args[1])) {
             Ok(c) => {
                 println!("{}", c.text());
-                exit(if c.complete() { 0 } else if c.is_native() && c.differing.is_empty() { 1 } else { 6 })
+                exit(if c.complete() { 0 } else if c.is_native() && c.differing.is_empty() && c.unexpected.is_empty() { 1 } else { 6 })
             }
             Err(e) => {
                 eprintln!("pcpos: {e}");
