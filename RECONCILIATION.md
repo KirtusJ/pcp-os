@@ -23,7 +23,7 @@
 
 Written by Director Z after an audit of `master` at `6254a71` in a fresh clone. The section above describes the archive as pushed (`bbe8996`) and stays as written; this section says what has changed since, because one sentence above ("both are build 22") is no longer the whole truth.
 
-**The source on `master` is no longer the source of the binary in use.** The binary the research program runs is still the packaged build 22 (`servers/linux-x86_64/pcpos` of `pcp-os-claude`, SHA-256 `c2c6795d…`). Since `bbe8996`, ten source files have changed on `master` (1,025 lines added, 33 removed):
+**The source on `master` is no longer the source of the binary in use.** The binary the research program runs is still the packaged build 22 (`servers/linux-x86_64/pcpos` of `pcp-os-claude`, SHA-256 `c2c6795d…`). Since `bbe8996`, ten files in the Rust tree have changed on `master` (1,025 lines added, 33 removed; nine are source or tests, one is the kernel's README):
 
 | Change | Pull request | In the binary in use? |
 |---|---|---|
