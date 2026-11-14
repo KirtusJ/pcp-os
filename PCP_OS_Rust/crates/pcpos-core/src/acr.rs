@@ -1851,10 +1851,9 @@ impl Record {
     /// Adopt a register received from elsewhere: its chain is verified and every guard replayed. Problems
     /// found by the replay are returned beside the record; the caller decides what follows from them.
     pub fn open(raw: &[u8]) -> Result<(Self, Vec<Problem>), SubmitError> {
-        let (events, _) = crate::ledger::verify(raw).map_err(SubmitError::Ledger)?;
-        let (state, problems) = fold(&events, true).map_err(SubmitError::Refused)?;
-        let ledger = Ledger::from_bytes(raw).map_err(SubmitError::Ledger)?;
-        Ok((Record { ledger, state }, problems))
+        let checked = crate::ledger::VerifiedRegister::check(raw).map_err(SubmitError::Ledger)?;
+        let (state, problems) = fold(checked.events(), true).map_err(SubmitError::Refused)?;
+        Ok((Record { ledger: checked.into_ledger(), state }, problems))
     }
 
     /// Take in events that were appended to the same register elsewhere since this record last saw it:
