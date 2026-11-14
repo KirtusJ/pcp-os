@@ -2,7 +2,7 @@
 use super::{bus_read, in16, in32, in8, out16, out32, out8, BusDevice};
 use crate::{arch, mem};
 use core::sync::atomic::{fence, Ordering};
-mod completion;
+pub(crate) mod completion;
 
 const TX: u16 = 1;
 const MAC: u32 = 1 << 5;
@@ -83,7 +83,7 @@ impl Queue {
         let (avail, offset) = self.available(first);
         // Seed the checked window with a sentinel unlike any expected byte. In particular
         // zero-valued payload bytes cannot come from stale zero-filled memory.
-        if rx && !arch::frame_write(data, 0, &[0xa5; 16 + FRAME_BYTES]) {
+        if rx && !arch::frame_write(data, 0, &[0xa5; 16 + RX_CAPACITY]) {
             return Err("receive buffer initialization");
         }
         // The legacy header is an entire descriptor. The six-byte physical gap never goes on the wire.
@@ -158,10 +158,11 @@ fn exchange(
     first: usize,
     tx: &Queue,
     rx: Option<&Queue>,
-    nonce: [u8; 8],
-) -> Result<(), &'static str> {
+    request: &[u8; FRAME_BYTES],
+    reply: Option<&mut [u8]>,
+) -> Result<usize, &'static str> {
     let rx_first = first + tx.pages * 4096;
-    if !arch::frame_write(tx.data(first), 16, &frame(false, nonce)) {
+    if !arch::frame_write(tx.data(first), 16, request) {
         return Err("packet initialization");
     }
     tx.install(io, first)?;
@@ -177,40 +178,61 @@ fn exchange(
     }
     tx.publish(io, first)?;
     tx.complete(first)?;
-    if let Some(queue) = rx {
-        let len = queue.complete(rx_first)?;
-        // An untrusted used length cannot index memory. This one-frame experiment accepts
-        // exactly the 10-byte header and the 60-byte response, within the posted capacity.
-        completion::validate_reply_length(len)?;
+    if let (Some(queue), Some(reply)) = (rx, reply) {
+        let len = queue.complete(rx_first)? as usize;
+        // All limits are checked before reading the header or indexing the reserved page.
+        let n = len.checked_sub(HEADER).ok_or("RX used length")?;
+        if n < 14 || n > RX_CAPACITY || n > reply.len() {
+            return Err("RX used length");
+        }
         let data = queue.data(rx_first);
-        // The used index acquired above transfers CPU ownership. The queue is never reposted.
-        // Both views have fixed extents inside the dedicated DMA page; no device-supplied address.
         let header =
             core::array::from_fn(|i| unsafe { core::ptr::read_volatile((data + i) as *const u8) });
         completion::validate_header(&header)?;
-        for (i, expected) in frame(true, nonce).iter().enumerate() {
-            if unsafe { core::ptr::read_volatile((data + 16 + i) as *const u8) } != *expected {
-                return Err(if i >= 52 {
-                    "RX nonce mismatch"
-                } else {
-                    "RX payload mismatch"
-                });
-            }
+        // The acquired completion returns ownership. Copy only the published length; the
+        // device is reset before the caller receives these bounded ordinary-memory bytes.
+        for (i, byte) in reply[..n].iter_mut().enumerate() {
+            *byte = unsafe { core::ptr::read_volatile((data + 16 + i) as *const u8) };
         }
+        return Ok(n);
     }
-    Ok(())
+    Ok(0)
 }
 
 pub fn transmit(bus: &[BusDevice]) -> Result<usize, &'static str> {
-    run(bus, None)
+    run(bus, &frame(false, [0; 8]), None).map(|(size, _)| size)
 }
 
 #[cfg(feature = "virtio-rx-probe")]
 pub fn reply(bus: &[BusDevice], cmdline: &str) -> Result<(), &'static str> {
-    run(bus, Some(completion::parse_nonce(cmdline)?)).map(|_| ())
+    let nonce = completion::parse_nonce(cmdline)?;
+    let expected = frame(true, nonce);
+    let mut bytes = [0; FRAME_BYTES];
+    let (_, n) = run(bus, &frame(false, nonce), Some(&mut bytes))?;
+    completion::validate_reply_length((HEADER + n) as u32)?;
+    if bytes[..52] != expected[..52] {
+        return Err("RX payload mismatch");
+    }
+    if bytes[52..] != nonce {
+        return Err("RX nonce mismatch");
+    }
+    Ok(())
 }
 
-fn run(bus: &[BusDevice], nonce: Option<[u8; 8]>) -> Result<usize, &'static str> {
+#[cfg(feature = "virtio-register-probe")]
+pub fn register_frame(
+    bus: &[BusDevice],
+    request: &[u8; FRAME_BYTES],
+    reply: &mut [u8],
+) -> Result<usize, &'static str> {
+    run(bus, request, Some(reply)).map(|(_, n)| n)
+}
+
+fn run(
+    bus: &[BusDevice],
+    request: &[u8; FRAME_BYTES],
+    reply: Option<&mut [u8]>,
+) -> Result<(usize, usize), &'static str> {
     let matches =
         |d: &&BusDevice| (d.vendor, d.device, d.class, d.subclass) == (0x1af4, 0x1000, 2, 0);
     let mut devices = bus.iter().filter(matches);
@@ -249,7 +271,7 @@ fn run(bus: &[BusDevice], nonce: Option<[u8; 8]>) -> Result<usize, &'static str>
             return Err("fixture MAC mismatch");
         }
         let tx = Queue::inspect(io, TX)?;
-        let rx = if nonce.is_some() {
+        let rx = if reply.is_some() {
             Some(Queue::inspect(io, RX)?)
         } else {
             None
@@ -260,7 +282,7 @@ fn run(bus: &[BusDevice], nonce: Option<[u8; 8]>) -> Result<usize, &'static str>
             Err("physical queue address exceeds legacy PFN")
         } else {
             pci_command(d, command | 0x405);
-            exchange(io, first, &tx, rx.as_ref(), nonce.unwrap_or_default())
+            exchange(io, first, &tx, rx.as_ref(), request, reply)
         };
         let stopped = reset(io);
         pci_command(d, command | 0x401); // turn off bus mastering before release
@@ -272,7 +294,7 @@ fn run(bus: &[BusDevice], nonce: Option<[u8; 8]>) -> Result<usize, &'static str>
         for n in 0..pages {
             mem::give(first + 4096 * n);
         }
-        answer.map(|_| tx.size)
+        answer.map(|n| (tx.size, n))
     })();
     // A failed pre-DMA negotiation may still have set the DRIVER status.
     reset(io);

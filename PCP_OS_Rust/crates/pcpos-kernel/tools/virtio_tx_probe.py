@@ -36,10 +36,10 @@ def packets(path):
     return result
 
 
-def receive_peer(peer, finished, challenge, reply):
-    """Receive at most two datagrams, allowing a duplicate to fail verification."""
+def receive_peer(peer, finished, exchanges):
+    """Expect one or two challenges and retain one extra datagram to detect duplication."""
     seen, sent = [], []
-    while len(seen) < 2:
+    while len(seen) <= len(exchanges):
         try:
             data, address = peer.recvfrom(4096)
         except socket.timeout:
@@ -49,19 +49,25 @@ def receive_peer(peer, finished, challenge, reply):
         if address[0] != "127.0.0.1":
             raise ValueError("unexpected peer address")
         seen.append(data)
-        if len(seen) == 1 and data == challenge and reply is not None:
+        slot = len(seen) - 1
+        if slot >= len(exchanges):
+            continue
+        challenge, reply = exchanges[slot]
+        if data == challenge and reply is not None:
             if peer.sendto(reply, address) != len(reply):
                 raise ValueError("incomplete reply datagram")
             sent.append(reply)
     return seen, sent
 
 
-def boot(args, name, image, enabled, nic, mac="02:00:00:00:00:01", *, reply_probe=False, reply=None, nonce=None):
+def boot(args, name, image, enabled, nic, mac="02:00:00:00:00:01", *, reply_probe=False, reply=None, nonce=None, register_exchanges=None):
     directory = args.output / name
     directory.mkdir()
     image_bytes = image.read_bytes()
     integrity = measure(image_bytes)
     flag = "test=virtio-reply" if reply_probe else "test=virtio-tx"
+    if register_exchanges is not None:
+        flag = "test=virtio-register"
     opts = ["-machine", "pc,accel=tcg", "-icount", "shift=4,sleep=off", "-cpu", "max", "-m", "128M", "-vga", "std",
             "-display", "none", "-nic", "none", "-no-reboot", "-kernel", str(image),
             "-append", "then=off image=" + integrity + (" " + flag if enabled else ""),
@@ -87,7 +93,8 @@ def boot(args, name, image, enabled, nic, mac="02:00:00:00:00:01", *, reply_prob
         # runs; it remains queued. Keep the peer live while the guest polls RX.
         finished = Event()
         with ThreadPoolExecutor(max_workers=1) as pool:
-            receiver = pool.submit(receive_peer, peer, finished, challenge, reply)
+            exchanges = [(challenge, reply)] if register_exchanges is None else register_exchanges
+            receiver = pool.submit(receive_peer, peer, finished, exchanges)
             try:
                 with (directory / "serial.txt").open("wb") as serial, (directory / "stderr.txt").open("wb") as errors:
                     proc = subprocess.run([args.qemu, *opts], cwd=directory, stdout=serial, stderr=errors,
@@ -100,12 +107,16 @@ def boot(args, name, image, enabled, nic, mac="02:00:00:00:00:01", *, reply_prob
     tests = [line[7:] for line in lines if line.startswith("  pass ")]
     failures = [line[7:] for line in lines if line.startswith("  FAIL ")]
     prefix = "virtio reply fixture:" if reply_probe else "virtio TX fixture:"
+    if register_exchanges is not None:
+        prefix = "virtio register fixture:"
     record = dict(name=name, image_sha256=sha256(image_bytes).hexdigest(), measured=integrity,
                 command=opts, exit=proc.returncode, tests=tests, failures=failures,
                 device_result=[s for s in lines if s.startswith(prefix)],
                 guest_pci=[s for s in lines if s.startswith("device on the bus:") and "class 02.00" in s],
                 pcap=[packet.hex() for packet in capture], observed=[packet.hex() for packet in seen])
-    if reply_probe:
+    if register_exchanges is not None:
+        record["replica"] = [s for s in lines if s.startswith("register replica:")]
+    if reply_probe or register_exchanges is not None:
         record["nonce"] = nonce.hex() if nonce is not None else None
         record["peer_sent"] = [packet.hex() for packet in sent]
     return record
