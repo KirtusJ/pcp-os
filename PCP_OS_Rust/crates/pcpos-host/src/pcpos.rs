@@ -2865,3 +2865,53 @@ mod method_tree_inventory_tests {
         fs::remove_dir_all(dir).unwrap();
     }
 }
+
+#[cfg(test)]
+mod coherent_specification_tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn fixture(bytes: &[u8]) -> (PathBuf, Module) {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let dir = env::temp_dir().join(format!(
+            "pcpos-clause-identity-{}-{nonce}", std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("Specification.md");
+        fs::write(&file, bytes).unwrap();
+        let module = Module {
+            key: "core".into(), id: "acr.core".into(), version: "1.0".into(),
+            sha256: sha256_hex(bytes), words: 1, core: None,
+            file, added: false,
+        };
+        (dir, module)
+    }
+
+    #[test]
+    fn coherent_source_is_served_with_its_discovered_digest() {
+        let (dir, module) = fixture(b"the first complete source");
+        assert_eq!(
+            coherent_specification_text(&module).unwrap(),
+            "the first complete source"
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn changed_source_is_not_labelled_with_an_earlier_digest() {
+        let (dir, module) = fixture(b"the first complete source");
+        fs::write(&module.file, b"another complete source").unwrap();
+        let error = coherent_specification_text(&module).unwrap_err();
+        assert!(error.contains("changed during clause retrieval"), "{error}");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn invalid_utf8_is_not_served_as_exact_specification_text() {
+        let (dir, module) = fixture(&[0xff, 0xfe]);
+        let error = coherent_specification_text(&module).unwrap_err();
+        assert!(error.contains("not valid UTF-8"), "{error}");
+        fs::remove_dir_all(dir).unwrap();
+    }
+}
