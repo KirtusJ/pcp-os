@@ -2,19 +2,19 @@
   "pcp_index": 1,
   "owner": "kirtusj",
   "name": "bellweather-harbor",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "kind": "application",
-  "commit": "4eb35dfae2986cfda751b1f62e718babbf3e941b",
+  "commit": "449282d2ce6ad0df8cc38fbcd19f245008f8bab9",
   "files": [
     {
       "path": "store/games/bellweather-harbor/dist/Bellweather_Harbor.html",
-      "size": 632997,
-      "sha256": "99e066d304d3f513f271f6bd3cfb12db8be30471bb221d7b243632d07618edb2"
+      "size": 690135,
+      "sha256": "3fc6196e191b4a16fb1dcb0886f76ebe4d5c292de5905df1042cfb59dd0c19ba"
     },
     {
       "path": "store/games/bellweather-harbor/dist/bellweather.elf",
-      "size": 476816,
-      "sha256": "6abf5811e1087795086233af247f3df480509c7a96ca12760d8e99ce4d030a3f"
+      "size": 525968,
+      "sha256": "972bf674e426a504716bd544f4f408478c270d44e7a8791533ad20e2b6f4b530"
     }
   ],
   "capabilities": [
