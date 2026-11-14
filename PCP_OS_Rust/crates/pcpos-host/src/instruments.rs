@@ -8,6 +8,8 @@
 use pcpos_core::sha256_hex;
 use pcpos_core::value::Value;
 
+mod protected_bins;
+
 /// What an instrument found: whether the property it computes holds, and the account of it in words.
 pub struct Outcome {
     pub holds: bool,
@@ -15,8 +17,9 @@ pub struct Outcome {
 }
 
 /// The instruments this program offers, with the module each belongs to and what it computes.
-pub const LIST: [(&str, &str); 9] = [
+pub const LIST: [(&str, &str); 10] = [
     ("mathematics.exact", "the value of an expression in whole numbers and fractions, exactly; input: expression"),
+    ("mathematics.protected_bins", "compare signed integer columns at a common scale: both squared totals must equal 2^scale_exponent (0..127); corresponding bins must have equal squared norms and odd gcds. Input: scale_exponent, source, target (ordered lists of bins of signed 64-bit integers; at most 64 bins and 4096 entries per column; squared totals must fit u128)"),
     ("mathematics.statement", "whether a Lean theorem's statement is the one that was pinned, and whether it is trivially true; it holds only against a pin, and without one it returns the digest to pin and does not hold; input: source (Lean text), theorem (name), pinned (SHA-256 of the statement)"),
     ("statistics.grim", "whether a reported mean of whole-number observations can arise from the stated count; input: mean (text, as reported), n"),
     ("statistics.percent", "whether a reported percentage can arise from a whole count out of the stated total; input: percent (text, as reported), total"),
@@ -33,6 +36,7 @@ pub fn run(name: &str, input: &Value, events: &[Value]) -> Result<Outcome, Strin
     let whole = |k: &str| input.get(k).and_then(Value::as_int).filter(|n| *n > 0).ok_or(format!("this instrument needs {k}, a whole number above zero"));
     match name {
         "mathematics.exact" => exact(text("expression")?),
+        "mathematics.protected_bins" => protected_bins::compare(input),
         "mathematics.statement" => {
             let pinned = match input.get("pinned") {
                 None | Some(Value::Null) => None,
@@ -1430,7 +1434,7 @@ mod tests {
     #[test]
     fn an_instrument_that_does_not_exist_is_not_invented() {
         assert!(run("mathematics.prove", &v("{}"), &[]).is_err());
-        assert_eq!(LIST.len(), 9);
+        assert_eq!(LIST.len(), 10);
         for (name, _) in LIST {
             assert!(!matches!(run(name, &v("{}"), &[]), Err(e) if e.starts_with("there is no instrument")), "{name} is listed and must exist");
         }
