@@ -651,7 +651,12 @@ def _g_session(state, b, actor, store):
     r = state.review(b.get("review"))
     if r["lifecycle"] not in TERMINAL:
         refuse("review %s has an open session (%s)" % (r["label"], r["lifecycle"]), "Core 7.1")
-    b["session"] = r["session"] + 1
+    current = r["session"]
+    if type(current) is not int or not -(1 << 63) <= current < (1 << 63):
+        refuse("the recorded session number is not a signed 64-bit integer")
+    if current == (1 << 63) - 1:
+        refuse("the successor session number exceeds the record's signed 64-bit range")
+    b["session"] = current + 1
     b["reason"] = text(b.get("reason"), "the reason for a successor session", 2000)
     return b
 

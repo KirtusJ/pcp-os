@@ -43,6 +43,17 @@ class InUse(Case):
         self.assertEqual((r["session"], r["lifecycle"], r["passed_gates"]), (2, "ACTIVE", []))
         self.assertEqual(r["history"][0]["passed_gates"], ["G1"])
 
+    def test_successor_session_must_fit_the_record_integer(self):
+        self.review("R")
+        self.z.close("R", "CLOSED_INCOMPLETE")
+        state = self.z.state()
+        body = {"review": "R", "reason": "A subsequent observation"}
+        last = (1 << 63) - 1
+        state.reviews["R"]["session"] = last - 1
+        self.assertEqual(model.guard(state, "SESSION_OPENED", body, "Z")["session"], last)
+        state.reviews["R"]["session"] = last
+        self.refused(model.guard, state, "SESSION_OPENED", body, "Z", code=base.REFUSED)
+
     def test_an_unregistered_actor_records_nothing(self):
         self.refused(Ops(self.ws, "nobody").note, "x")
 
