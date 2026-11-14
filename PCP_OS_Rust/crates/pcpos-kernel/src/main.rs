@@ -14,6 +14,8 @@ mod dev;
 mod exec;
 mod font;
 mod mem;
+#[cfg(feature = "virtio-register-probe")]
+mod register_wire;
 mod session;
 mod sys;
 mod ui;
@@ -787,6 +789,12 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
         let reply = dev::virtio_tx::reply(&bus, &boot.command_line);
         say!("virtio reply fixture: {:?}", reply);
         check("the isolated virtio-net RX queue received the exact reply", reply.is_ok(), &mut failed);
+    }
+    #[cfg(feature = "virtio-register-probe")]
+    if failed == 0 && boot.command_line.split_whitespace().any(|word| word == "test=virtio-register") {
+        let result = register_wire::fixture(&bus, &boot.command_line);
+        say!("virtio register fixture: {:?}", result);
+        check("the isolated peer supplied the verified register extension", result.is_ok(), &mut failed);
     }
     let start = session::Start { boot: &boot, display, keyboard, sound: sound || music, passed: PASSED.load(core::sync::atomic::Ordering::Relaxed), failed, tasks: 14, version: env!("CARGO_PKG_VERSION") };
     let _tasks = session::run(&mut rec, &start, &mut failed);
