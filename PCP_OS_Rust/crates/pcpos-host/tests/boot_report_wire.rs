@@ -98,3 +98,18 @@ fn boot_report_bytes_match_the_generic_encoders() {
         }
     }
 }
+
+#[test]
+fn streamed_r1_scalars_match_the_generic_writer() {
+    for len in [0, 1, 23, 24, 63, 64, 65, 255, 256, 65_535, 65_536] {
+        for ch in ['a', 'z', 'é'] {
+            let s = ch.to_string().repeat(len);
+            let mut bytes = Vec::new();
+            r1::emit_text(&s, |part| bytes.extend_from_slice(part));
+            assert_eq!(bytes, r1::encode(&Value::Str(s)));
+        }
+    }
+    let mut bytes = Vec::new();
+    r1::emit_uint(u64::MAX, |part| bytes.extend_from_slice(part));
+    assert_eq!(bytes, [0x1b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
+}
