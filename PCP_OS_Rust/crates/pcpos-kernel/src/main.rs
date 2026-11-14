@@ -784,6 +784,10 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     } else {
         say!("the asynchronous self-tests were not run: {}", if keyboard { "the kernel did not verify itself" } else { "there is no keyboard controller" });
     }
+    // Process and device checks run after VERIFIED_OK. Record a late failure before the launcher reads the register.
+    if failed != 0 && rec.state().system() == Some(System::Operational) {
+        system_event(&mut rec, "INTEGRITY_FAULT", "a self-test failed after initial verification", &mut failed);
+    }
     let start = session::Start { boot: &boot, display, keyboard, sound: sound || music, passed: PASSED.load(core::sync::atomic::Ordering::Relaxed), failed, tasks: 14, version: env!("CARGO_PKG_VERSION") };
     let _tasks = session::run(&mut rec, &start, &mut failed);
     system_event(&mut rec, "SHUTDOWN", "end of the session", &mut failed);
