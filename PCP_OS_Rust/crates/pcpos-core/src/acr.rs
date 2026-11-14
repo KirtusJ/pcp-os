@@ -303,6 +303,14 @@ pub struct TaskState {
     pub result: Option<String>,
     /// The supervisor's identifier for this attempt, where one was recorded.
     pub attempt: Option<String>,
+    /// Identity evidence supplied by the host's subagent-start hook.
+    pub hook_attempt: Option<HookAttempt>,
+}
+
+/// Older subagent hook observations stored only the clipped attempt label.
+pub enum HookAttempt {
+    Legacy,
+    Key(String),
 }
 
 #[derive(Clone)]
@@ -1722,9 +1730,16 @@ pub fn apply(state: &mut State, ev: &Value) -> R<()> {
         }
         "LINK_STATE" => state.link = Some(st("to").and_then(|x| Link::from_name(&x)).ok_or(()).or_else(|_| integrity(seq, kind))?),
         "TASK_STARTED" => {
+            let hook_attempt = if ev.get("auth").and_then(Value::as_str) == Some("HOST")
+                && get(b, "observed").as_str() == Some("SUBAGENT_START") {
+                Some(st("hook_attempt_key").map_or(HookAttempt::Legacy, HookAttempt::Key))
+            } else {
+                None
+            };
             state.tasks.insert(need("id")?, TaskState { label: need("label")?, worker: need("worker")?, review: st("review"), actor: actor.to_string(), outcome: None,
                                                         spent: 0, budget: get(b, "budget").as_int().unwrap_or(0), started: seq, stop_requested: None,
-                                                        result: None, attempt: st("attempt") });
+                                                        result: None, attempt: st("attempt"),
+                                                        hook_attempt });
             state.counters[T] += 1;
         }
         "TASK_ENDED" => {

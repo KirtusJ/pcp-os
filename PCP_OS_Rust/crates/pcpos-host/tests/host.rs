@@ -376,6 +376,70 @@ fn a_subagent_is_a_task_whose_end_the_host_observes() {
 }
 
 #[test]
+fn a_retried_start_and_a_stop_share_one_live_attempt_identity() {
+    let root = in_use("hook-identities");
+    let start = |id: &str, session: &str| {
+        let input = format!(r#"{{"agent_id":"{id}","session_id":"{session}","agent_type":"checker"}}"#);
+        hook(&root, "subagent-start", &input);
+    };
+    let stop = |id: &str, session: &str| {
+        let input = format!(r#"{{"agent_id":"{id}","session_id":"{session}","last_assistant_message":"finished"}}"#);
+        hook(&root, "subagent-stop", &input);
+    };
+    std::thread::scope(|scope| {
+        let first = scope.spawn(|| start("same", "one"));
+        start("same", "one");
+        first.join().unwrap();
+    });
+    start("same", "two");
+    let prefix = "q".repeat(200);
+    let a = format!("{prefix}A");
+    let b = format!("{prefix}B");
+    start(&a, "one");
+    start(&b, "one");
+    stop(&b, "one");
+    stop("same", "two");
+    stop(&a, "one");
+    stop("same", "one");
+    stop("same", "one"); // a duplicate terminal delivery
+    let first = events(&root);
+    let end_ids: Vec<_> = first.iter()
+        .filter(|e| e.get("kind").and_then(Value::as_str) == Some("TASK_ENDED"))
+        .map(|e| e.get("body").unwrap().get("id").unwrap().as_str().unwrap()).collect();
+    assert_eq!(end_ids, ["T4", "T2", "T3", "T1"]);
+    // A later invocation can resume the same worker after its observed exit.
+    start("same", "one");
+    stop("same", "one");
+    assert_eq!(kinds(&root).iter().filter(|k| k.as_str() == "TASK_STARTED").count(), 5);
+    assert!(tool(&root, "acr_verify", "{}").0.contains("guards replayed: 0 problem(s)"));
+}
+
+#[test]
+fn only_unambiguous_host_observations_can_finish_legacy_attempts() {
+    let root = in_use("legacy-hook-identities");
+    let mut ledger = Ledger::from_bytes(&fs::read(root.join(REG)).unwrap()).unwrap();
+    let long = "p".repeat(200);
+    let forged_key = sha256_hex(br#"[null,"forged"]"#);
+    for (i, (agent, auth)) in [("short", "HOST"), ("twins", "HOST"), ("twins", "HOST"),
+                               (long.as_str(), "HOST"), ("forged", "DECLARED")].iter().enumerate() {
+        let key = if *auth == "DECLARED" { format!(r#","hook_attempt_key":"{forged_key}""#) } else { String::new() };
+        let body = format!(r#"{{"id":"T{}","label":"check","worker":"MODEL","review":null,"quiet_limit":0,"budget":0,"attempt":"{agent}","observed":"SUBAGENT_START"{key}}}"#, i+1);
+        let actor = if *auth == "HOST" { "assistant" } else { "principal" };
+        ledger.append("2026-11-12T00:00:00Z", actor, auth, "TASK_STARTED", Value::parse(body.as_bytes()).unwrap()).unwrap();
+    }
+    fs::write(root.join(REG), ledger.bytes()).unwrap();
+    assert!(tool(&root, "acr_verify", "{}").0.contains("guards replayed: 0 problem(s)"));
+    for id in ["short", "twins", &long, &format!("{long}b"), "forged"] {
+        hook(&root, "subagent-stop", &format!(r#"{{"agent_id":"{id}","last_assistant_message":"finished"}}"#));
+    }
+    let recorded = events(&root);
+    let ended: Vec<_> = recorded.iter()
+        .filter(|e| e.get("kind").and_then(Value::as_str) == Some("TASK_ENDED"))
+        .map(|e| e.get("body").unwrap().get("id").unwrap().as_str().unwrap()).collect();
+    assert_eq!(ended, ["T1"]);
+}
+
+#[test]
 fn a_context_reset_is_recorded_by_the_host_and_the_record_is_fenced_from_file_tools() {
     let root = in_use("reset");
     let d = sha256_hex(b"kernel");

@@ -1904,6 +1904,21 @@ fn short_status(o: &Opened) -> String {
     t
 }
 
+/// Bind the hook identity before clipping its presentation label. Canonical JSON
+/// keeps component boundaries and a missing session distinct.
+fn hook_attempt_key(input: &Value, agent: &str) -> String {
+    let session_id = input.get("session_id").and_then(Value::as_str).map(s).unwrap_or(Value::Null);
+    sha256_hex(&Value::List(vec![session_id, s(agent)]).canonical_json())
+}
+
+fn active_hook_identity(t: &acr::TaskState, key: &str, legacy_id: Option<&str>) -> bool {
+    match t.hook_attempt.as_ref() {
+        Some(acr::HookAttempt::Key(stored)) => stored == key,
+        Some(acr::HookAttempt::Legacy) => legacy_id.is_some() && t.attempt.as_deref() == legacy_id,
+        None => false,
+    }
+}
+
 /// Run one hook. Returns what to print on standard output (which the host adds to the model's context
 /// for the events that allow it). Nothing here stops the host's work: a failure is reported on standard
 /// error and the hook still ends normally, except the one hook whose purpose is to refuse a write.
@@ -2054,14 +2069,21 @@ fn hook(event: &str, input: &Value) -> Result<String, String> {
                 Some(tx) if tx.state().in_use() == Use::InUse && tx.problems.is_empty() => tx,
                 _ => return Ok(String::new()),
             };
-            if field("agent_id").is_empty() {
+            let agent = field("agent_id");
+            if agent.is_empty() {
                 return Ok(String::new()); // no attempt to match an end to: recording it would leave a task that can never be seen to end
+            }
+            let key = hook_attempt_key(input, agent);
+            let clipped = clip(agent, 200);
+            if tx.state().tasks.values().any(|t| t.outcome.is_none() &&
+                active_hook_identity(t, &key, Some(&clipped))) {
+                return Ok(String::new());
             }
             begin(&mut tx, &se, None, true)?;
             let active: Vec<String> = tx.state().reviews.values().filter(|r| r.lifecycle == Review::Active).map(|r| r.label.clone()).collect();
             let review = if active.len() == 1 { s(&active[0]) } else { Value::Null };
             let body = obj(vec![("label", s(&to_label(field("agent_type"), "subagent"))), ("worker", s("MODEL")), ("review", review), ("quiet_limit", Value::Int(0)), ("budget", Value::Int(0)),
-                                ("attempt", s(&clip(field("agent_id"), 200))), ("observed", s("SUBAGENT_START"))]);
+                                ("attempt", s(&clipped)), ("hook_attempt_key", s(&key)), ("observed", s("SUBAGENT_START"))]);
             if let Put::Refused(r) = tx.put(&se.actor, "HOST", "TASK_STARTED", body)? {
                 eprintln!("pcpos hook: the task was not recorded: {}", r.message);
             }
@@ -2074,13 +2096,23 @@ fn hook(event: &str, input: &Value) -> Result<String, String> {
                 Some(tx) if tx.problems.is_empty() => tx,
                 _ => return Ok(String::new()),
             };
-            let attempt = clip(field("agent_id"), 200);
-            let found = tx.state().tasks.iter().find(|(_, t)| t.outcome.is_none() && !attempt.is_empty() && t.attempt.as_deref() == Some(attempt.as_str()))
+            let agent = field("agent_id");
+            if agent.is_empty() { return Ok(String::new()); }
+            let key = hook_attempt_key(input, agent);
+            // Earlier versions may have clipped or trimmed this identifier.
+            // Do not assign an exit to a legacy row from a lossy match.
+            let legacy_id = (agent.chars().count() < 200 && clip(agent, 200) == agent).then_some(agent);
+            let mut candidates = tx.state().tasks.iter().filter(|(_, t)| t.outcome.is_none() &&
+                active_hook_identity(t, &key, legacy_id))
                 .map(|(id, t)| (id.clone(), t.stop_requested.is_some()));
-            let (id, stop_asked) = match found {
+            let (id, stop_asked) = match candidates.next() {
                 Some(x) => x,
                 None => return Ok(String::new()),
             };
+            if candidates.next().is_some() {
+                eprintln!("pcpos hook: several live tasks match this stop; no exit was assigned");
+                return Ok(String::new());
+            }
             let (bytes, source): (Option<Vec<u8>>, &str) = match input.get("last_assistant_message").and_then(Value::as_str) {
                 Some(m) if !m.is_empty() => (Some(m.as_bytes().to_vec()), "the final message"),
                 _ => match fs::read(field("agent_transcript_path")) {
