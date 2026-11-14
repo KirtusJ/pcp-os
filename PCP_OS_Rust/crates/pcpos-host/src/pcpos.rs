@@ -1243,10 +1243,22 @@ fn clause_text(se: &Session, module: &str, section: Option<&str>) -> Result<Stri
     let at = marks.iter().position(|(_, n, _)| *n == section).ok_or(format!("{} has no provision numbered {}. Call this tool without a section for its headings. Nothing was fetched; do not supply the text from memory", m.id, clip(&section, 40)))?;
     let (start, _, depth) = (marks[at].0, &marks[at].1, marks[at].2);
     let end = marks[at + 1..].iter().find(|(_, _, d)| depth == 9 || (*d != 9 && *d <= depth)).map(|(i, _, _)| *i).unwrap_or(lines.len());
-    // What is shown is exactly what the digest is of: the provision without the white space around it, and one line end.
+    // Exact clause retrieval must not label a clipped preview as complete text.
+    // Keep the established output limit, but refuse the whole clause instead
+    // of returning partial text under the digest of an unseen remainder.
+    const MAX_EXACT_CLAUSE_CHARS: usize = 60_000;
     let body = lines[start..end].join("\n").trim().to_string();
+    let length = body.chars().count();
+    if length > MAX_EXACT_CLAUSE_CHARS {
+        return Err(format!(
+            "{} provision {} has {} characters, beyond the exact clause output limit of {}; no provision text was served",
+            m.id, section, length, MAX_EXACT_CLAUSE_CHARS
+        ));
+    }
+    // The returned provision is byte-for-byte the text the digest identifies,
+    // with a single final line end.
     let digest = sha256_hex(format!("{body}\n").as_bytes());
-    Ok(format!("{head}\nPROVISION {section} | lines {}..{} | SHA-256 of this text {digest}\n\n{}\n", start + 1, end, clip_long(&body, 60_000)))
+    Ok(format!("{head}\nPROVISION {section} | lines {}..{} | SHA-256 of this text {digest}\n\n{}\n", start + 1, end, body))
 }
 
 /// Text passed on whole, up to a limit that only a damaged file would reach.
