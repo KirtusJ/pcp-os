@@ -586,9 +586,17 @@ fn asynchronous(failed: &mut u32) {
     let end = r.as_ref().map(|p| p.end).unwrap_or(None);
     check("a stop key pressed before a program is started does not stop it", end == Some(End::Exited(0)) && free0 == free1, failed);
 
-    // 7. A name the task table refuses as a label (33 bytes; it takes 32). Whatever the kernel answers, no memory may be lost.
+    // 7. A name the task table refuses as a label (33 bytes; it takes 32). The program must be refused, with the
+    // admission error and no other, and no memory may be lost. The control before it is the same program under a
+    // name one byte shorter, which must run: it shows that the refusal is the name's and not the loader's.
+    let (r, free0, free1, _) = loaded("sleeper", "a-name-of-thirty-three-character", &[], 0);
+    let end = r.as_ref().map(|p| p.end).unwrap_or(None);
+    say!("  note a 32-byte name: {:?}; frames free {} before, {} after", r.as_ref().map(|p| p.end), free0, free1);
+    check("a program under a name of 32 bytes is admitted and runs to its end", end == Some(End::Exited(0)) && free0 == free1, failed);
     let (r, free0, free1, _) = loaded("sleeper", "a-name-of-thirty-three-characters", &[], 0);
     say!("  note a 33-byte name: {:?}; frames free {} before, {} after", r.as_ref().map(|p| p.end), free0, free1);
+    let refused = matches!(r, Err("the program could not be admitted as a task"));
+    check("a program under a name of 33 bytes is refused admission as a task", refused, failed);
     check("a program that cannot be admitted as a task leaves no memory behind: as many frames are free after as before", free0 == free1, failed);
 }
 
