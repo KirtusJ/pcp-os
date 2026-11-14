@@ -386,6 +386,46 @@ pub fn interrupt(line: u8) {
     }
 }
 
+/// For the kernel's self-tests: scan codes to hand to the keyboard controller, one each timer tick from tick `at`.
+struct Script {
+    at: u64,
+    bytes: [u8; 8],
+    len: usize,
+    next: usize,
+}
+
+static SCRIPT: arch::Single<Script> = arch::Single::new(Script { at: 0, bytes: [0; 8], len: 0, next: 0 });
+
+/// For the kernel's self-tests, which have nobody at the keyboard: from timer tick `at`, hand the controller one
+/// of these scan codes (at most eight) each tick, with its command "put this byte in the output buffer as if the
+/// keyboard had sent it" (0xD2). The controller then interrupts on the keyboard's line, so each byte arrives the
+/// way a key does: asynchronously, through `interrupt` and `keyboard_byte`.
+pub fn keyboard_script(at: u64, bytes: &[u8]) {
+    arch::without_interrupts(|| SCRIPT.with(|s| {
+        let n = bytes.len().min(s.bytes.len());
+        s.bytes[..n].copy_from_slice(&bytes[..n]);
+        *s = Script { at, bytes: s.bytes, len: n, next: 0 };
+    }))
+}
+
+/// How many scan codes of the script have not been handed to the controller yet.
+pub fn keyboard_script_left() -> usize {
+    arch::without_interrupts(|| SCRIPT.with(|s| s.len - s.next))
+}
+
+/// Entered from `tick`, with interrupts off.
+fn script_tick(ticks: u64) {
+    SCRIPT.with(|s| {
+        // One byte a tick, and only when the controller holds nothing: neither a byte to be read nor one being taken.
+        if s.next < s.len && ticks >= s.at && in8(0x64) & 3 == 0 {
+            out8(0x64, 0xD2);
+            controller_wait_write();
+            out8(0x60, s.bytes[s.next]);
+            s.next += 1;
+        }
+    })
+}
+
 /// The oldest key event not yet taken, if any.
 pub fn key_take() -> Option<Key> {
     arch::without_interrupts(|| {
@@ -678,6 +718,7 @@ fn clock_ms(ticks: u64) -> u32 {
 
 /// Entered from `arch` on every timer tick, with interrupts off: write the registers whose time has come.
 pub fn tick(ticks: u64) {
+    script_tick(ticks);
     FM.with(|f| {
         if f.count == 0 {
             return;

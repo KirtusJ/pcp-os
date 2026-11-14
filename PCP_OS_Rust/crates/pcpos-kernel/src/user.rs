@@ -195,8 +195,14 @@ impl Table {
                 caps[object as usize] = self.caps.install(pid, object as u64, rights).ok();
             }
         }
-        let task = self.tasks.admit(name, Worker::Program, 0, now, u64::MAX, budget).ok()?;
-        self.tasks.event(task, TaskEvent::Start, now).ok()?;
+        let task = match self.tasks.admit(name, Worker::Program, 0, now, u64::MAX, budget).and_then(|task| self.tasks.event(task, TaskEvent::Start, now).map(|_| task)) {
+            Ok(task) => task,
+            Err(_) => {
+                // Not a task, so not a process: the memory it was given goes back to the pool now, since nothing else ever would give it back.
+                space.release();
+                return None;
+            }
+        };
         self.procs.push(Process { pid, name: name.to_string(), frame, audit: space.audit(), frames: space.frames(), space: Some(space), fpu: Box::new(arch::FpuArea::clean()), fs_base: 0,
                                   caps, task, end: None, waiting: Waiting::Nothing, output: Vec::new(), written: 0, periods: 0, preempted: 0, calls: 0, settled: None, linux,
                                   census: (0, 0, 0, false), released: 0, idle: 0 });
@@ -407,7 +413,10 @@ impl Table {
         let _ = match end {
             End::Exited(0) => self.tasks.exit_ok(p.task, sha256(&p.output), now).map(|_| ()),
             End::Exited(_) | End::Refused { .. } => self.tasks.event(p.task, TaskEvent::ExitFail, now).map(|_| ()),
-            End::OverBudget | End::Stopped => self.tasks.event(p.task, TaskEvent::StopConfirmed, now).map(|_| ()),
+            End::OverBudget => self.tasks.event(p.task, TaskEvent::StopConfirmed, now).map(|_| ()),
+            // The charge that found a program over its budget asked its task to stop. The person's key asks here:
+            // the task table confirms a stop only of a task that was asked.
+            End::Stopped => self.tasks.event(p.task, TaskEvent::StopRequest, now).and_then(|_| self.tasks.event(p.task, TaskEvent::StopConfirmed, now)).map(|_| ()),
         };
         if self.fpu_owner == Some(i) {
             self.fpu_owner = None; // its registers are nobody's now, and are replaced before any program runs again
