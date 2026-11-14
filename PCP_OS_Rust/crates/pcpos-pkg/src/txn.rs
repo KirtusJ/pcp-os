@@ -25,10 +25,11 @@ use crate::Entry;
 /// One complete list of what is active: `owner/name` to the digest of its entry.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Generation {
-    /// Its number. The first is 1; numbers are never reused.
+    /// Its number. The first is 1; numbers are never reused. Number 0 is the empty state before any
+    /// installation: it is not stored, and it can be restored like any other.
     pub number: u64,
-    /// The generation it was made from, if any.
-    pub made_from: Option<u64>,
+    /// The generation that was active when this one was made (0 for the first).
+    pub made_from: u64,
     /// What is installed in it.
     pub packages: BTreeMap<String, String>,
 }
@@ -61,20 +62,36 @@ pub enum Change {
     },
     /// Make active again exactly what an earlier generation held.
     Restore {
-        /// The number of that generation.
+        /// The number of that generation; 0 is the empty state before any installation.
         generation: u64,
     },
 }
 
 /// A change drawn against one generation, not yet applied.
+///
+/// A plan is made only by the `plan_` methods of [`Installed`], from an entry that was read and checked, and
+/// it cannot be changed afterwards: it is read through the methods below. So what [`Installed::commit`]
+/// applies is the plan that was issued, for the package and the digest it was issued for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Plan {
+    request: String,
+    against: u64,
+    change: Change,
+}
+
+impl Plan {
     /// The caller's identifier for this request.
-    pub request: String,
-    /// The generation that was active when the plan was drawn (0 when nothing was installed yet).
-    pub against: u64,
+    pub fn request(&self) -> &str {
+        &self.request
+    }
+    /// The generation that was active when the plan was drawn (0 is the empty state before any installation).
+    pub fn against(&self) -> u64 {
+        self.against
+    }
     /// What it would do.
-    pub change: Change,
+    pub fn change(&self) -> &Change {
+        &self.change
+    }
 }
 
 /// What is installed, and every state it has been in.
@@ -95,7 +112,7 @@ impl Installed {
         Installed::default()
     }
 
-    /// The number of the active generation; 0 when nothing has been installed.
+    /// The number of the active generation; 0 is the empty state before any installation.
     pub fn active(&self) -> u64 {
         self.active
     }
@@ -124,14 +141,14 @@ impl Installed {
     /// that is an installation naming exactly what it had, not a new choice.
     pub fn plan_install(&self, request: &str, entry: &Entry, pinned: Option<&str>) -> Result<Plan, String> {
         Self::request_ok(request)?;
-        if entry.withdrawn && pinned != Some(entry.digest()) {
+        if entry.withdrawn() && pinned != Some(entry.digest()) {
             return Err(format!("{} is withdrawn from new installations; it is installed only by naming its digest {}", entry.id(), entry.digest()));
         }
         if let Some(p) = pinned.filter(|p| *p != entry.digest()) {
             return Err(format!("the digest named is {p} and the entry of {} has digest {}", entry.id(), entry.digest()));
         }
-        let package = key(&entry.owner, &entry.name);
-        let change = match self.installed(&entry.owner, &entry.name) {
+        let package = key(entry.owner(), entry.name());
+        let change = match self.installed(entry.owner(), entry.name()) {
             None => Change::Add { package, digest: entry.digest().to_string() },
             Some(d) if d == entry.digest() => return Err(format!("{} is already installed with this digest; there is nothing to change", entry.id())),
             Some(d) => Change::Replace { package, from: d.to_string(), to: entry.digest().to_string() },
@@ -150,8 +167,15 @@ impl Installed {
     /// active one held. Undoing twice goes back and forth between the two; an older state is reached with
     /// [`Installed::plan_restore`].
     pub fn plan_undo(&self, request: &str) -> Result<Plan, String> {
-        let before = self.current().and_then(|g| g.made_from).ok_or("there is no earlier state to go back to")?;
+        let before = self.current().map(|g| g.made_from).ok_or("nothing has been installed; there is no earlier state to go back to")?;
         self.plan_restore(request, before)
+    }
+
+    fn packages_of(&self, number: u64) -> Option<BTreeMap<String, String>> {
+        if number == 0 {
+            return Some(BTreeMap::new());
+        }
+        self.generations.iter().find(|g| g.number == number).map(|g| g.packages.clone())
     }
 
     /// Draw the plan that makes active again what generation `number` held.
@@ -160,7 +184,7 @@ impl Installed {
         if number == self.active {
             return Err(format!("generation {number} is the active one; there is nothing to change"));
         }
-        if !self.generations.iter().any(|g| g.number == number) {
+        if self.packages_of(number).is_none() {
             return Err(format!("there is no generation {number}"));
         }
         Ok(Plan { request: request.to_string(), against: self.active, change: Change::Restore { generation: number } })
@@ -175,7 +199,7 @@ impl Installed {
         if plan.against != self.active {
             return Err(format!("the plan was drawn against generation {} and generation {} is active now; it is not applied to a state it was not drawn for", plan.against, self.active));
         }
-        let mut packages = self.current().map(|g| g.packages.clone()).unwrap_or_default();
+        let mut packages = self.packages_of(self.active).unwrap_or_default();
         match &plan.change {
             Change::Add { package, digest } => {
                 if packages.insert(package.clone(), digest.clone()).is_some() {
@@ -194,16 +218,15 @@ impl Installed {
                 }
             }
             Change::Restore { generation } => {
-                packages = self.generations.iter().find(|g| g.number == *generation).map(|g| g.packages.clone()).ok_or(format!("there is no generation {generation}"))?;
+                if *generation == self.active {
+                    return Err(format!("generation {generation} is the active one; the plan to restore it does not fit the active generation"));
+                }
+                packages = self.packages_of(*generation).ok_or(format!("there is no generation {generation}"))?;
             }
         }
         let number = self.generations.last().map_or(1, |g| g.number + 1);
-        let made_from = match &plan.change {
-            // Going back points at what that state itself came from, so that undo, undo returns here.
-            Change::Restore { .. } => Some(self.active),
-            _ => (self.active != 0).then_some(self.active),
-        };
-        self.generations.push(Generation { number, made_from, packages });
+        // Every generation remembers which one was active when it was made, so that undo, undo returns here.
+        self.generations.push(Generation { number, made_from: self.active, packages });
         self.active = number;
         self.answered.insert(plan.request.clone(), (plan.clone(), number));
         Ok(number)
@@ -227,13 +250,13 @@ mod tests {
         let mut s = Installed::new();
         assert_eq!((s.active(), s.current(), s.installed("kirtusj", "optics")), (0, None, None));
         let p = s.plan_install("r-1", &a1, None).unwrap();
-        assert_eq!((p.against, &p.change), (0, &Change::Add { package: "kirtusj/optics".to_string(), digest: a1.digest().to_string() }));
+        assert_eq!((p.request(), p.against(), p.change()), ("r-1", 0, &Change::Add { package: "kirtusj/optics".to_string(), digest: a1.digest().to_string() }));
         assert_eq!(s.active(), 0, "a plan changes nothing");
         assert_eq!(s.commit(&p).unwrap(), 1);
         assert_eq!(s.installed("kirtusj", "optics"), Some(a1.digest()));
         assert_eq!(s.commit(&s.plan_install("r-2", &b1, None).unwrap()).unwrap(), 2);
         let p = s.plan_install("r-3", &a2, None).unwrap();
-        assert!(matches!(&p.change, Change::Replace { from, to, .. } if from == a1.digest() && to == a2.digest()));
+        assert!(matches!(p.change(), Change::Replace { from, to, .. } if from == a1.digest() && to == a2.digest()));
         assert_eq!(s.commit(&p).unwrap(), 3);
         assert_eq!(s.commit(&s.plan_remove("r-4", "kirtusj", "acoustics").unwrap()).unwrap(), 4);
         assert_eq!((s.installed("kirtusj", "optics"), s.installed("kirtusj", "acoustics")), (Some(a2.digest()), None));
@@ -241,7 +264,7 @@ mod tests {
         let sizes: Vec<usize> = s.history().iter().map(|g| g.packages.len()).collect();
         assert_eq!(sizes, vec![1, 2, 2, 1]);
         assert_eq!(s.history()[1].packages.get("kirtusj/optics").map(String::as_str), Some(a1.digest()));
-        assert_eq!(s.history().iter().map(|g| g.made_from).collect::<Vec<_>>(), vec![None, Some(1), Some(2), Some(3)]);
+        assert_eq!(s.history().iter().map(|g| g.made_from).collect::<Vec<_>>(), vec![0, 1, 2, 3]);
         // Nothing to do is said, not done.
         assert!(s.plan_install("r-5", &a2, None).unwrap_err().contains("already installed"));
         assert!(s.plan_remove("r-5", "kirtusj", "acoustics").unwrap_err().contains("not installed"));
@@ -251,9 +274,8 @@ mod tests {
     fn undo_goes_back_to_a_whole_earlier_state() {
         let (a1, a2) = (entry("optics", "1.0.0", b"one", false), entry("optics", "1.1.0", b"two", false));
         let mut s = Installed::new();
-        assert!(s.plan_undo("u-0").unwrap_err().contains("no earlier state"));
+        assert!(s.plan_undo("u-0").unwrap_err().contains("nothing has been installed"));
         s.commit(&s.plan_install("r-1", &a1, None).unwrap()).unwrap();
-        assert!(s.plan_undo("u-0").unwrap_err().contains("no earlier state"), "the first generation has nothing before it");
         s.commit(&s.plan_install("r-2", &a2, None).unwrap()).unwrap();
         assert_eq!(s.commit(&s.plan_undo("u-1").unwrap()).unwrap(), 3);
         assert_eq!(s.installed("kirtusj", "optics"), Some(a1.digest()), "back to the first entry");
@@ -266,6 +288,43 @@ mod tests {
         assert_eq!(s.installed("kirtusj", "optics"), Some(a1.digest()));
         assert!(s.plan_restore("u-4", 5).unwrap_err().contains("the active one"));
         assert!(s.plan_restore("u-4", 99).unwrap_err().contains("no generation 99"));
+    }
+
+    #[test]
+    fn the_first_installation_can_be_undone() {
+        // Director G's finding: the empty state before any installation is a state like any other.
+        let a1 = entry("optics", "1.0.0", b"one", false);
+        let mut s = Installed::new();
+        assert!(s.plan_restore("u-0", 0).unwrap_err().contains("the active one"), "nothing installed: the empty state is active");
+        assert_eq!(s.commit(&s.plan_install("r-1", &a1, None).unwrap()).unwrap(), 1);
+        // Undo the first installation: a new generation, numbered on, and empty.
+        let undo = s.plan_undo("u-1").unwrap();
+        assert_eq!(undo.change(), &Change::Restore { generation: 0 });
+        assert_eq!(s.commit(&undo).unwrap(), 2);
+        assert_eq!((s.active(), s.installed("kirtusj", "optics"), s.current().map(|g| g.packages.len())), (2, None, Some(0)));
+        // Undo that: the first package is back, in generation 3.
+        assert_eq!(s.commit(&s.plan_undo("u-2").unwrap()).unwrap(), 3);
+        assert_eq!(s.installed("kirtusj", "optics"), Some(a1.digest()));
+        assert_eq!(s.history().iter().map(|g| (g.number, g.made_from, g.packages.len())).collect::<Vec<_>>(), vec![(1, 0, 1), (2, 1, 0), (3, 2, 1)]);
+        // The empty state can also be named directly.
+        assert_eq!(s.commit(&s.plan_restore("u-3", 0).unwrap()).unwrap(), 4);
+        assert_eq!(s.current().map(|g| g.packages.len()), Some(0));
+    }
+
+    #[test]
+    fn a_plan_is_what_was_issued_or_it_is_refused() {
+        // Director G's finding. From outside this crate a plan cannot be built or edited at all: its fields
+        // are private. Inside it, a plan put together by hand is still checked against the active generation.
+        let a1 = entry("optics", "1.0.0", b"one", false);
+        let mut s = Installed::new();
+        s.commit(&s.plan_install("r-1", &a1, None).unwrap()).unwrap();
+        let by_hand = |request: &str, against: u64, change: Change| Plan { request: request.to_string(), against, change };
+        // Restoring the generation that is active: the planner refuses it, and so does commit.
+        assert!(s.commit(&by_hand("h-1", 1, Change::Restore { generation: 1 })).unwrap_err().contains("does not fit"));
+        assert!(s.commit(&by_hand("h-2", 1, Change::Restore { generation: 7 })).unwrap_err().contains("no generation 7"));
+        // A package that is installed cannot be added again, whatever digest is named.
+        assert!(s.commit(&by_hand("h-3", 1, Change::Add { package: "kirtusj/optics".to_string(), digest: "x".to_string() })).unwrap_err().contains("does not fit"));
+        assert_eq!((s.active(), s.history().len()), (1, 1), "nothing was applied");
     }
 
     #[test]
