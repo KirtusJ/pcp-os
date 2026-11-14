@@ -13,6 +13,7 @@ pcpos-core = { path = "../pcpos-core" }
 
 [features]
 virtio-tx-probe = []      # one explicitly requested legacy PCI transmit in the isolated QEMU fixture
+virtio-rx-probe = ["virtio-tx-probe"] # one TX challenge and one RX completion on the same fixture
 fault-demo = []            # after the self-tests, fault on purpose to show that an unexpected exception is reported and stops the kernel
 
 overflow-demo = []         # after the self-tests, exhaust the stack on purpose to show that it is reported

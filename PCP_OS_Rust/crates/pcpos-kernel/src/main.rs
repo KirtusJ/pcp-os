@@ -782,6 +782,12 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
         say!("virtio TX fixture: {:?}", transmit);
         check("the isolated virtio-net TX queue completed its single frame", transmit.is_ok(), &mut failed);
     }
+    #[cfg(feature = "virtio-rx-probe")]
+    if failed == 0 && boot.command_line.split_whitespace().any(|word| word == "test=virtio-reply") {
+        let reply = dev::virtio_tx::reply(&bus, &boot.command_line);
+        say!("virtio reply fixture: {:?}", reply);
+        check("the isolated virtio-net RX queue received the exact reply", reply.is_ok(), &mut failed);
+    }
     let start = session::Start { boot: &boot, display, keyboard, sound: sound || music, passed: PASSED.load(core::sync::atomic::Ordering::Relaxed), failed, tasks: 14, version: env!("CARGO_PKG_VERSION") };
     let _tasks = session::run(&mut rec, &start, &mut failed);
     system_event(&mut rec, "SHUTDOWN", "end of the session", &mut failed);

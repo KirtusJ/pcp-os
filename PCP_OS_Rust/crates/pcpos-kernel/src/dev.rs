@@ -1,14 +1,14 @@
 //! Devices: the bus that says which devices there are, a display, a keyboard, and sound. This is the second of the
 //! two kernel units in which `unsafe` is allowed. This file reads and writes device ports. Its opt-in
-//! TX probe also polls a device-owned completion in a reserved physical frame. Display memory is reached through `arch`, which checks every address against the
+//! Ethernet probes poll device-owned completions in reserved physical frames. Display memory is reached through `arch`, which checks every address against the
 //! extent it mapped.
 //!
 //! What is here was written for the devices an emulator presents (QEMU's standard display adapter, which
 //! speaks the Bochs display interface; the PS/2 keyboard controller every PC emulator has; the Intel AC'97
 //! sound device), and for a display mode that a loader has already set. It has not been tried on hardware.
 //!
-//! The sound device reads frames reserved for it. The optional TX probe reserves its own split-ring
-//! and packet frames; only the used ring is written by its emulated device.
+//! The sound device reads frames reserved for it. The Ethernet fixture reserves its rings and packet
+//! frames until reset. The RX experiment also grants the device write access to one header and frame.
 #![allow(unsafe_code)]
 use crate::arch;
 use alloc::vec::Vec;
@@ -22,7 +22,7 @@ fn in8(port: u16) -> u8 {
     unsafe { arch::port_in8(port) }
 }
 fn out8(port: u16, value: u8) {
-    // Safety: as above; no port written from this file starts a transfer into memory.
+    // Safety: device-specific callers own the selected I/O ports. DMA probes only publish reserved frames.
     unsafe { arch::port_out8(port, value) }
 }
 fn in16(port: u16) -> u16 {

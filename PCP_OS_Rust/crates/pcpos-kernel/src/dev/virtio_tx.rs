@@ -1,8 +1,8 @@
-//! One polled Ethernet transmit on the QEMU legacy virtio-net PCI fixture.
-//! Only built for the opt-in probe; there is no receive queue or user API.
+//! Opt-in one-shot Ethernet probes for the QEMU legacy PCI transport.
 use super::{bus_read, in16, in32, in8, out16, out32, out8, BusDevice};
 use crate::{arch, mem};
 use core::sync::atomic::{fence, Ordering};
+mod completion;
 
 const TX: u16 = 1;
 const MAC: u32 = 1 << 5;
@@ -28,77 +28,189 @@ fn reset(io: u16) -> bool {
     false
 }
 
-fn descriptor(address: usize, bytes: usize, next: Option<u16>) -> [u8; 16] {
+fn descriptor(address: usize, bytes: usize, next: Option<u16>, write: bool) -> [u8; 16] {
     let mut d = [0; 16];
     d[0..8].copy_from_slice(&(address as u64).to_le_bytes());
     d[8..12].copy_from_slice(&(bytes as u32).to_le_bytes());
-    d[12..14].copy_from_slice(&u16::from(next.is_some()).to_le_bytes());
+    d[12..14].copy_from_slice(&(u16::from(next.is_some()) | u16::from(write) << 1).to_le_bytes());
     d[14..16].copy_from_slice(&next.unwrap_or(0).to_le_bytes());
     d
 }
 
-fn send(
+const RX: u16 = 0;
+const HEADER: usize = 10;
+// One legacy header and 1516 payload bytes meet the 1526-byte receive-buffer recommendation.
+const RX_CAPACITY: usize = 1516;
+const POLLS: usize = 10_000_000;
+
+struct Queue {
+    index: u16,
+    size: usize,
+    used_offset: usize,
+    pages: usize,
+}
+
+impl Queue {
+    fn inspect(io: u16, index: u16) -> Result<Self, &'static str> {
+        out16(io + 14, index);
+        let size = in16(io + 12) as usize;
+        if !(2..=256).contains(&size) || !size.is_power_of_two() || in32(io + 8) != 0 {
+            return Err("unavailable or oversized queue");
+        }
+        let used_offset = (16 * size + 6 + 2 * size).next_multiple_of(4096);
+        let pages = (used_offset + 6 + 8 * size).div_ceil(4096) + 1;
+        Ok(Self {
+            index,
+            size,
+            used_offset,
+            pages,
+        })
+    }
+
+    fn data(&self, first: usize) -> usize {
+        first + 4096 * (self.pages - 1)
+    }
+
+    fn available(&self, first: usize) -> (usize, usize) {
+        let offset = 16 * self.size;
+        (first + (offset & !4095), offset & 4095)
+    }
+
+    fn install(&self, io: u16, first: usize) -> Result<(), &'static str> {
+        let data = self.data(first);
+        let rx = self.index == RX;
+        let payload = if rx { RX_CAPACITY } else { FRAME_BYTES };
+        let (avail, offset) = self.available(first);
+        // Seed the checked window with a sentinel unlike any expected byte. In particular
+        // zero-valued payload bytes cannot come from stale zero-filled memory.
+        if rx && !arch::frame_write(data, 0, &[0xa5; 16 + FRAME_BYTES]) {
+            return Err("receive buffer initialization");
+        }
+        // The legacy header is an entire descriptor. The six-byte physical gap never goes on the wire.
+        if !arch::frame_write(first, 0, &descriptor(data, HEADER, Some(1), rx))
+            || !arch::frame_write(first, 16, &descriptor(data + 16, payload, None, rx))
+            || !arch::frame_write(avail, offset, &1u16.to_le_bytes())
+        {
+            return Err("ring initialization");
+        }
+        // Zeroed avail.ring[0] names descriptor 0; flags=NO_INTERRUPT. Order all queue
+        // initialization before exposing its PFN to the coherent, legacy x86 device.
+        fence(Ordering::SeqCst);
+        out16(io + 14, self.index);
+        out32(io + 8, (first >> 12) as u32);
+        if in32(io + 8) != (first >> 12) as u32 {
+            return Err("queue address readback");
+        }
+        Ok(())
+    }
+
+    fn publish(&self, io: u16, first: usize) -> Result<(), &'static str> {
+        let (avail, offset) = self.available(first);
+        fence(Ordering::SeqCst);
+        if !arch::frame_publish_u16(avail, offset + 2, 1) {
+            return Err("available index");
+        }
+        fence(Ordering::SeqCst);
+        out16(io + 16, self.index);
+        Ok(())
+    }
+
+    fn complete(&self, first: usize) -> Result<u32, &'static str> {
+        let used = first + self.used_offset;
+        for _ in 0..POLLS {
+            // Safety: the queue owns the allocated, page-aligned range through confirmed reset.
+            // The device writes the used index and its sole element; only these fields are polled.
+            let count = unsafe { core::ptr::read_volatile((used + 2) as *const u16) };
+            if count != 0 {
+                fence(Ordering::Acquire);
+                let head = unsafe { core::ptr::read_volatile((used + 4) as *const u32) };
+                completion::validate_used(count, head)?;
+                return Ok(unsafe { core::ptr::read_volatile((used + 8) as *const u32) });
+            }
+            core::hint::spin_loop();
+        }
+        Err(if self.index == RX {
+            "RX completion timeout"
+        } else {
+            "completion timeout"
+        })
+    }
+}
+
+fn frame(reply: bool, nonce: [u8; 8]) -> [u8; FRAME_BYTES] {
+    let mut bytes = [0; FRAME_BYTES];
+    bytes[0] = 2;
+    bytes[6] = 2;
+    bytes[5] = if reply { 1 } else { 2 };
+    bytes[11] = if reply { 2 } else { 1 };
+    bytes[12..14].copy_from_slice(&0x88b5u16.to_be_bytes());
+    bytes[14..34].copy_from_slice(if reply {
+        b"PCP-OS virtio RX v1!"
+    } else {
+        b"PCP-OS virtio TX v1!"
+    });
+    bytes[52..60].copy_from_slice(&nonce);
+    bytes
+}
+
+fn exchange(
     io: u16,
-    qsize: usize,
     first: usize,
-    data: usize,
-    used: usize,
-    mac: [u8; 6],
+    tx: &Queue,
+    rx: Option<&Queue>,
+    nonce: [u8; 8],
 ) -> Result<(), &'static str> {
-    let mut frame = [0; FRAME_BYTES];
-    frame[..6].copy_from_slice(&[0x02, 0, 0, 0, 0, 2]);
-    frame[6..12].copy_from_slice(&mac);
-    frame[12..14].copy_from_slice(&0x88b5u16.to_be_bytes());
-    frame[14..34].copy_from_slice(b"PCP-OS virtio TX v1!");
-    // Legacy framing with no offloads: a separate, zeroed 10-byte virtio-net
-    // header, followed by the Ethernet frame. Both descriptors are read-only.
-    let available = 16 * qsize;
-    let apage = first + (available & !4095);
-    let offset = available & 4095;
-    if !arch::frame_write(data, 16, &frame)
-        || !arch::frame_write(first, 0, &descriptor(data, 10, Some(1)))
-        || !arch::frame_write(first, 16, &descriptor(data + 16, FRAME_BYTES, None))
-        || !arch::frame_write(apage, offset, &1u16.to_le_bytes())
-    {
-        return Err("ring initialization");
+    let rx_first = first + tx.pages * 4096;
+    if !arch::frame_write(tx.data(first), 16, &frame(false, nonce)) {
+        return Err("packet initialization");
     }
-    // avail.ring[0] names descriptor 0 (zero-filled), flags=NO_INTERRUPT.
-    // Order every ring and payload write before the port I/O exposes the queue PFN.
-    fence(Ordering::SeqCst);
-    out32(io + 8, (first >> 12) as u32);
-    if in32(io + 8) != (first >> 12) as u32 {
-        return Err("queue address readback");
+    tx.install(io, first)?;
+    if let Some(queue) = rx {
+        queue.install(io, rx_first)?;
     }
-    out8(io + 18, 7); // ACKNOWLEDGE | DRIVER | DRIVER_OK (legacy transport)
+    out8(io + 18, 7); // ACKNOWLEDGE | DRIVER | DRIVER_OK
     if in8(io + 18) != 7 {
         return Err("driver status readback");
     }
-    fence(Ordering::SeqCst);
-    if !arch::frame_publish_u16(apage, offset + 2, 1) {
-        return Err("available index");
+    if let Some(queue) = rx {
+        queue.publish(io, rx_first)?;
     }
-    fence(Ordering::SeqCst);
-    out16(io + 16, TX);
-    for _ in 0..10_000_000 {
-        // The used ring is inside an exclusively reserved run of physical pool
-        // frames. The device updates the aligned index and element; poll without
-        // issuing a second descriptor. The run is kept until reset is confirmed.
-        let count = unsafe { core::ptr::read_volatile((used + 2) as *const u16) };
-        if count != 0 {
-            fence(Ordering::Acquire);
-            let head = unsafe { core::ptr::read_volatile((used + 4) as *const u32) };
-            return if count == 1 && head == 0 {
-                Ok(())
-            } else {
-                Err("invalid used entry")
-            };
+    tx.publish(io, first)?;
+    tx.complete(first)?;
+    if let Some(queue) = rx {
+        let len = queue.complete(rx_first)?;
+        // An untrusted used length cannot index memory. This one-frame experiment accepts
+        // exactly the 10-byte header and the 60-byte response, within the posted capacity.
+        completion::validate_reply_length(len)?;
+        let data = queue.data(rx_first);
+        // The used index acquired above transfers CPU ownership. The queue is never reposted.
+        // Both views have fixed extents inside the dedicated DMA page; no device-supplied address.
+        let header =
+            core::array::from_fn(|i| unsafe { core::ptr::read_volatile((data + i) as *const u8) });
+        completion::validate_header(&header)?;
+        for (i, expected) in frame(true, nonce).iter().enumerate() {
+            if unsafe { core::ptr::read_volatile((data + 16 + i) as *const u8) } != *expected {
+                return Err(if i >= 52 {
+                    "RX nonce mismatch"
+                } else {
+                    "RX payload mismatch"
+                });
+            }
         }
-        core::hint::spin_loop();
     }
-    Err("completion timeout")
+    Ok(())
 }
 
 pub fn transmit(bus: &[BusDevice]) -> Result<usize, &'static str> {
+    run(bus, None)
+}
+
+#[cfg(feature = "virtio-rx-probe")]
+pub fn reply(bus: &[BusDevice], cmdline: &str) -> Result<(), &'static str> {
+    run(bus, Some(completion::parse_nonce(cmdline)?)).map(|_| ())
+}
+
+fn run(bus: &[BusDevice], nonce: Option<[u8; 8]>) -> Result<usize, &'static str> {
     let matches =
         |d: &&BusDevice| (d.vendor, d.device, d.class, d.subclass) == (0x1af4, 0x1000, 2, 0);
     let mut devices = bus.iter().filter(matches);
@@ -136,28 +248,19 @@ pub fn transmit(bus: &[BusDevice]) -> Result<usize, &'static str> {
         if mac != [0x02, 0, 0, 0, 0, 1] {
             return Err("fixture MAC mismatch");
         }
-        out16(io + 14, TX);
-        let qsize = in16(io + 12) as usize;
-        if !(2..=256).contains(&qsize) || !qsize.is_power_of_two() || in32(io + 8) != 0 {
-            return Err("unavailable or oversized TX queue");
-        }
-        // The legacy device fixes ring size and 4 KiB used-ring alignment.
-        let used_offset = (16 * qsize + 6 + 2 * qsize).next_multiple_of(4096);
-        let ring_pages = (used_offset + 6 + 8 * qsize).div_ceil(4096);
-        let pages = ring_pages + 1; // one additional frame holds header and packet
+        let tx = Queue::inspect(io, TX)?;
+        let rx = if nonce.is_some() {
+            Some(Queue::inspect(io, RX)?)
+        } else {
+            None
+        };
+        let pages = tx.pages + rx.as_ref().map_or(0, |q| q.pages);
         let first = mem::take_run(pages).ok_or("no bounded contiguous frames")?;
-        let answer = if (first >> 12) > u32::MAX as usize {
+        let answer = if (first >> 12) + pages - 1 > u32::MAX as usize {
             Err("physical queue address exceeds legacy PFN")
         } else {
             pci_command(d, command | 0x405);
-            send(
-                io,
-                qsize,
-                first,
-                first + 4096 * ring_pages,
-                first + used_offset,
-                mac,
-            )
+            exchange(io, first, &tx, rx.as_ref(), nonce.unwrap_or_default())
         };
         let stopped = reset(io);
         pci_command(d, command | 0x401); // turn off bus mastering before release
@@ -169,7 +272,7 @@ pub fn transmit(bus: &[BusDevice]) -> Result<usize, &'static str> {
         for n in 0..pages {
             mem::give(first + 4096 * n);
         }
-        answer.map(|_| qsize)
+        answer.map(|_| tx.size)
     })();
     // A failed pre-DMA negotiation may still have set the DRIVER status.
     reset(io);
