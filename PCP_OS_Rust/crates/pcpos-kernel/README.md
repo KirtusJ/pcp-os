@@ -119,6 +119,8 @@ Build the default image as above, then build the opt-in reply image. A fresh gue
 PCPOS_KERNEL_FEATURES=virtio-rx-probe sh run.sh build
 python3 -O tools/virtio_reply_probe.py target/pcpos-kernel.elf32 target/default.elf32 reply-results
 rustc --test src/dev/virtio_tx/completion.rs -o target/test-rx-completions
+rustc --edition 2021 --test src/session/ethernet.rs -o target/test-ethernet-admission
+./target/test-ethernet-admission
 target/test-rx-completions
 ```
 

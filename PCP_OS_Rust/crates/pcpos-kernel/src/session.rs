@@ -57,10 +57,9 @@ fn option<'a>(line: &'a str, key: &str) -> Option<&'a str> {
 }
 
 #[cfg(feature = "guest-ethernet")]
-fn ethernet_grant(cmd: &str, digest: &str) -> bool {
-    let mut pins = cmd.split_ascii_whitespace().filter_map(|word| word.strip_prefix("net_image="));
-    option(cmd, "grant") != Some("none") && pins.next() == Some(digest) && pins.next().is_none()
-}
+mod ethernet;
+#[cfg(feature = "guest-ethernet")]
+use ethernet::ethernet_grant;
 
 fn size_text(bytes: usize) -> String {
     if bytes >= 10 << 20 {
