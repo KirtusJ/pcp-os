@@ -208,6 +208,33 @@ fn repair_preserves_a_conflicting_or_partial_backup_and_can_retry() {
 
 #[cfg(unix)]
 #[test]
+fn repair_creates_private_fragments_under_either_name() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = dir("private-fragment");
+    let register = root.join("register.jsonl");
+    let tail = b"unfinished private event";
+    for occupied in [false, true] {
+        fs::write(&register, tail).unwrap();
+        fs::set_permissions(&register, fs::Permissions::from_mode(0o600)).unwrap();
+        // The first repair leaves the preferred name occupied for the second one.
+        let mut command = Command::new("sh");
+        command.args(["-c", r#"umask 000; exec "$@""#, "repair-test", env!("CARGO_BIN_EXE_pcpos"), "repair"])
+            .arg(&register).current_dir(&root);
+        let (out, code) = feed(command, b"");
+        assert_eq!(code, 0, "{out}");
+        let fragments: Vec<_> = fs::read_dir(&root).unwrap().map(|entry| entry.unwrap().path())
+            .filter(|p| p != &register).collect();
+        assert_eq!(fragments.len(), if occupied { 2 } else { 1 });
+        for fragment in fragments {
+            assert_eq!(fs::metadata(&fragment).unwrap().permissions().mode() & 0o777, 0o600);
+            assert_eq!(fs::read(fragment).unwrap(), tail);
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
 fn a_backup_link_does_not_overwrite_its_target_during_repair() {
     use std::os::unix::fs::symlink;
     let root = dir("repair-links");

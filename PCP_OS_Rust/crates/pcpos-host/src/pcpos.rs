@@ -2299,12 +2299,20 @@ fn at_terminal(path: &str, create: bool) -> Result<(PathBuf, String), String> {
 fn save_fragment(register: &Path, bytes: &[u8]) -> std::io::Result<PathBuf> {
     let extension = format!("fragment-{}", &sha256_hex(bytes)[..12]);
     let mut aside = register.with_extension(&extension);
-    let mut file = match File::create_new(&aside) {
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    // A recovered line can contain private register data. Restrict access at creation, before writing.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = match options.open(&aside) {
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
             let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
             aside = register.with_extension(format!("{extension}-{}-{stamp}", std::process::id()));
-            File::create_new(&aside)?
+            options.open(&aside)?
         }
         Err(e) => return Err(e),
     };
