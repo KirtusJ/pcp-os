@@ -92,6 +92,8 @@ Multiboot 1 only, as provided by QEMU's `-kernel`. UEFI and other loaders are no
 
 The [Surfbird TCP/IP experiment](../../../apps/surfbird/guest/TCP.md) gives one digest-granted ELF a raw packet device on the opt-in `guest-ethernet` kernel. The guest owns the TCP endpoint. The boot-time kernel probes below can be run separately.
 
+Raw Ethernet admission requires one matching `net_image=` token on a printable, losslessly copied Multiboot command line. The loader must observe the terminating NUL at or before byte offset 255. An incomplete line, a replaced character, a duplicate pin or any `grant=none` token denies the raw device.
+
 A kernel built with the **virtio-tx-probe** feature can send one 60-byte test frame when the loader supplies `test=virtio-tx` and the preceding self-tests pass. Build the two images and run the local replay from this directory:
 
 ```sh
@@ -119,6 +121,8 @@ Build the default image as above, then build the opt-in reply image. A fresh gue
 PCPOS_KERNEL_FEATURES=virtio-rx-probe sh run.sh build
 python3 -O tools/virtio_reply_probe.py target/pcpos-kernel.elf32 target/default.elf32 reply-results
 rustc --test src/dev/virtio_tx/completion.rs -o target/test-rx-completions
+rustc --edition 2021 --test src/session/ethernet.rs -o target/test-ethernet-admission
+./target/test-ethernet-admission
 target/test-rx-completions
 ```
 

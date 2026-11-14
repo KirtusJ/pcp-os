@@ -139,6 +139,8 @@ pub struct LoaderDisplay {
     pub bits: u8,
 }
 
+mod boot_text;
+
 /// Everything the loader said, copied out of its own structures while they can still be read.
 #[derive(Clone, Debug, Default)]
 pub struct BootInfo {
@@ -147,8 +149,16 @@ pub struct BootInfo {
     /// The usable memory that contains the kernel: where it ends (exclusive), from the loader's memory map.
     pub usable_end: Option<usize>,
     pub command_line: alloc::string::String,
+    command_line_exact: bool,
     pub modules: alloc::vec::Vec<Module>,
     pub display: Option<LoaderDisplay>,
+}
+
+impl BootInfo {
+    #[cfg(feature = "guest-ethernet")]
+    pub(crate) fn exact_command_line(&self) -> Option<&str> {
+        self.command_line_exact.then_some(self.command_line.as_str())
+    }
 }
 
 /// Read what a Multiboot loader handed over. Called once, before [`protect`], while the first gibibyte is
@@ -165,26 +175,16 @@ pub fn boot_info(magic: u32, info: u32) -> BootInfo {
     // address taken from it is checked against the mapped gibibyte before it is followed.
     unsafe {
         let word = |at: usize| ((info as usize + at) as *const u32).read_unaligned();
-        let text = |addr: usize| -> alloc::string::String {
-            let mut s = alloc::string::String::new();
-            for i in 0..255usize {
-                if addr == 0 || addr + i >= LIMIT {
-                    break;
-                }
-                let b = ((addr + i) as *const u8).read();
-                if b == 0 {
-                    break;
-                }
-                s.push(if (0x20..0x7f).contains(&b) { b as char } else { '?' });
-            }
-            s
-        };
+        let text = |addr: usize| boot_text::read(|i| {
+            let at = addr.checked_add(i)?;
+            (addr != 0 && at < LIMIT).then(|| (at as *const u8).read())
+        });
         let flags = word(0);
         if flags & 1 != 0 {
             out.memory = Some((word(4), word(8)));
         }
         if flags & 4 != 0 {
-            out.command_line = text(word(16) as usize);
+            (out.command_line, out.command_line_exact) = text(word(16) as usize);
         }
         if flags & 8 != 0 {
             let (count, at) = (word(20) as usize, word(24) as usize);
@@ -195,7 +195,7 @@ pub fn boot_info(magic: u32, info: u32) -> BootInfo {
                 }
                 let r = |o: usize| ((e + o) as *const u32).read_unaligned() as usize;
                 let (start, end) = (r(0), r(4));
-                let full = text(r(8));
+                let (full, _) = text(r(8));
                 // The loader gives the path it was told; a program is known here by its last component.
                 let (first, rest) = match full.split_once(' ') {
                     Some((f, r)) => (f, r.trim()),
