@@ -8,6 +8,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from pcpos.base import PcposError, USAGE, INTEGRITY, ZERO, canon, now_utc
 from pcpos.store import Workspace
+from pcpos import bag
 
 
 def nested(value, count):
@@ -79,6 +80,27 @@ class NativeRecordValueContract(unittest.TestCase):
                 with self.assertRaises(PcposError):
                     self.ws.append(kind, body, actor, auth=auth)
                 self.assertEqual(self.ws.register_path.read_bytes(), prior)
+
+    def test_received_bundle_register_uses_the_same_native_grammar(self):
+        # Receiving another party's register must not silently weaken the
+        # grammar used for the workspace's own recorded events.
+        self.forge()
+        parsed, head = bag.parse_register(self.ws.register_path.read_bytes())
+        self.assertEqual(len(parsed), 1)
+        self.assertEqual(len(head), 64)
+        for name, seq, value in (
+            ("boolean_sequence", False, 3),
+            ("floating_sequence", 0.0, 3),
+            ("body_float", 0, 1.5),
+            ("big_integer", 0, 1 << 64),
+            ("unpaired_surrogate", 0, "\ud800"),
+            ("excess_depth", 0, nested(0, 31)),
+        ):
+            with self.subTest(case=name):
+                self.forge(seq=seq, body={"v": value})
+                with self.assertRaises(PcposError) as caught:
+                    bag.parse_register(self.ws.register_path.read_bytes())
+                self.assertEqual(caught.exception.code, INTEGRITY)
 
     def test_native_boundary_values_still_append(self):
         self.ws.append("X_LOCAL", {"n": -(1 << 63), "b": False}, "P")
