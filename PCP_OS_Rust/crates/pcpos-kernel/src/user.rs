@@ -407,7 +407,10 @@ impl Table {
         let _ = match end {
             End::Exited(0) => self.tasks.exit_ok(p.task, sha256(&p.output), now).map(|_| ()),
             End::Exited(_) | End::Refused { .. } => self.tasks.event(p.task, TaskEvent::ExitFail, now).map(|_| ()),
-            End::OverBudget | End::Stopped => self.tasks.event(p.task, TaskEvent::StopConfirmed, now).map(|_| ()),
+            End::OverBudget => self.tasks.event(p.task, TaskEvent::StopConfirmed, now).map(|_| ()),
+            // The charge that found a program over its budget asked its task to stop. The person's key asks here:
+            // the task table confirms a stop only of a task that was asked.
+            End::Stopped => self.tasks.event(p.task, TaskEvent::StopRequest, now).and_then(|_| self.tasks.event(p.task, TaskEvent::StopConfirmed, now)).map(|_| ()),
         };
         if self.fpu_owner == Some(i) {
             self.fpu_owner = None; // its registers are nobody's now, and are replaced before any program runs again
