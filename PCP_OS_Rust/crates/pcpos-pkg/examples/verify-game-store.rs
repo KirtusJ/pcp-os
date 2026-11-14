@@ -9,19 +9,20 @@ use std::{
 };
 
 const OWNER: &str = "kirtusj";
-const GAMES: [(&str, [&str; 2]); 2] = [
-    ("night-post", ["Night_Post.html", "nightpost.elf"]),
+const GAMES: [(&str, &[&str]); 3] = [
+    ("night-post", &["Night_Post.html", "nightpost.elf"]),
     (
         "bellweather-harbor",
-        ["Bellweather_Harbor.html", "bellweather.elf"],
+        &["Bellweather_Harbor.html", "bellweather.elf"],
     ),
+    ("gullpost-express", &["gullpost.elf"]),
 ];
 
 fn read(path: &Path) -> Result<Vec<u8>, String> {
     fs::read(path).map_err(|error| format!("cannot read {}: {error}", path.display()))
 }
 
-fn check_game(root: &Path, name: &str, required: [&str; 2]) -> Result<(), String> {
+fn check_game(root: &Path, name: &str, required: &[&str]) -> Result<(), String> {
     let shard = index_path(OWNER, name)?;
     let listing = root.join("store/index").join(&shard);
     let entry = Entry::parse(&read(&listing)?)
@@ -57,7 +58,8 @@ fn check_game(root: &Path, name: &str, required: [&str; 2]) -> Result<(), String
         .map(|(path, bytes)| (*path, bytes.as_slice()))
         .collect();
     verify(&entry, &supplied).map_err(|error| format!("{}: {error}", listing.display()))?;
-    println!("Verified {} ({} files)", entry.id(), supplied.len());
+    let unit = if supplied.len() == 1 { "file" } else { "files" };
+    println!("Verified {} ({} {unit})", entry.id(), supplied.len());
     Ok(())
 }
 

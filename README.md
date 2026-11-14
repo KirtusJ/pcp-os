@@ -6,16 +6,17 @@ PCP OS runs Adversarial Claim Review (ACR) and keeps a verifiable register of wh
 | --- | --- | --- |
 | Run a calculation or check | [Built-in apps](#built-in-apps) | Discover the host’s executable instruments with `pcpos instrument list`. Agents can also call `acr_instrument` with `{"instrument":"list"}`. |
 | Choose the rules for a review | [Method modules](#method-modules) | Read the specification for Core and each selected specialist. `pcpos modules <method-directory>` lists the modules supplied to that host. |
-| Find a downloadable application | [Store package index](store/README.md#package-index) · [Games](#games) | Each published package entry identifies its version, payload files and hashes. The current packages ship browser players and native guests. |
+| Find a downloadable application | [Store package index](store/README.md#package-index) · [Games](#games) | Each published package entry identifies its version, payload files and hashes. The index lists the files available for each game. |
 
 ## Games
 
-Both games are published Store packages. Download a browser player from its GitHub file page using **Download raw file**, then open the HTML locally. For native play, the [launcher guide](store/README.md#play-both-on-pcp-os) covers both guests.
+All three games run on native PCP OS. The [launcher guide](store/README.md#play-on-pcp-os) covers the native guests. Night Post and Bellweather Harbor also have offline browser players. Use **Download raw file** on their GitHub file pages, then open the HTML locally.
 
 | Game | What you do | Play and inspect |
 | --- | --- | --- |
 | **Night Post · Return Mail** | Fly a coastal mail route and drop letters into nets aboard passing ships. | [Browser player](store/games/night-post/dist/Night_Post.html) · [Manual](store/games/night-post/README.md) · [Package](store/index/kirtusj/ni/gh/night-post) (`kirtusj/night-post`) |
 | **Bellweather Harbor · The Second Manifest** | Run a harbor, trade cargo and investigate discrepancies in the shipping records. | [Browser player](store/games/bellweather-harbor/dist/Bellweather_Harbor.html) · [Manual](store/games/bellweather-harbor/README.md) · [Package](store/index/kirtusj/be/ll/bellweather-harbor) (`kirtusj/bellweather-harbor`) |
+| **Gullpost Express · Alpha v1.0** | Hop between jetties, bounce off crabs and deliver mail to three lighthouses. | [Native guest](store/games/gullpost-express/dist/gullpost.elf) · [Manual](store/games/gullpost-express/README.md) · [Package](store/index/kirtusj/gu/ll/gullpost-express) |
 
 ## Built-in apps
 
