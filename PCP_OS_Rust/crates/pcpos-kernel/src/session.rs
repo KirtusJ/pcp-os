@@ -209,7 +209,7 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
         at(4, row + 1, if start.sound { "starting it lets it use: the display, the keyboard, sound, the loader's files, the store" } else { "starting it lets it use: the display, the keyboard, the loader's files, the store" }, SOFT, ground);
         row += 2;
         #[cfg(feature = "guest-ethernet")]
-        if ethernet_grant(&start.boot.command_line, &p.digest) {
+        if ethernet_grant(start.boot.exact_command_line(), &p.digest) {
             at(4, row, "Ethernet grant: this program can send and receive raw network frames.", SOFT, ground);
             row += 1;
         }
@@ -298,7 +298,7 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
     say!("starting {} ({} bytes, SHA-256 {}){}", entry.name, entry.image.len(), entry.digest, if entry.arguments.is_empty() { String::new() } else { format!(" with: {}", entry.arguments) });
     let none = option(start.boot.command_line.as_str(), "grant") == Some("none");
     let grants = if none { Grants { console: true, ..Grants::default() } } else { Grants { console: true, display: start.display.is_some(), keys: start.keyboard, files: true, store: true, sound: start.sound,
-        #[cfg(feature = "guest-ethernet")] ethernet: ethernet_grant(&start.boot.command_line, &entry.digest),
+        #[cfg(feature = "guest-ethernet")] ethernet: ethernet_grant(start.boot.exact_command_line(), &entry.digest),
         #[cfg(feature = "game-link")] game_link: option(&start.boot.command_line, "link_image") == Some(entry.digest.as_str()) && arch::game_link_init(), } };
     if none {
         say!("{} is started with the console and no other grant (grant=none)", entry.name);
