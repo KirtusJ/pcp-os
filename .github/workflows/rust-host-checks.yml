@@ -60,9 +60,14 @@ jobs:
           persist-credentials: false
       - name: Test coherent clause source under concurrent regular-file replacement
         run: |
+          # The coherence check needs two readable editions of Core.
+          # The released catalog deliberately admits only its original edition.
+          method="$RUNNER_TEMP/provisional-clause-method"
+          core="MODULES/01_Core/SOURCE/Specification.md"
+          install -D "$GITHUB_WORKSPACE/released-plugin/method/$core" "$method/$core"
           python3 "$GITHUB_WORKSPACE/clause-tests/tests/clause_snapshot_regression.py" \
             "$GITHUB_WORKSPACE/PCP_OS_Rust/target/release/pcpos" \
-            "$GITHUB_WORKSPACE/released-plugin/method"
+            "$method"
       - name: Test nonblocking clause access during concurrent FIFO replacement
         run: |
           python3 "$GITHUB_WORKSPACE/clause-tests/tests/clause_fifo_race_regression.py" \
