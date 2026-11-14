@@ -9,6 +9,10 @@
 //! against the generation that is active when it is drawn, and says exactly what would change. *Commit*
 //! applies a plan only if that generation is still the active one: a plan shown to someone and then
 //! overtaken by another change is refused, not applied to a state its reader never saw.
+//! A plan binds the SHA-256 chain of every generation through the one shown. Independently built
+//! installations with identical generation contents in identical order can share a plan. Different
+//! histories can reach the same active packages while giving an older restore target a different meaning.
+//! Request identifiers and receipts are local to each installation.
 //!
 //! Each request carries an identifier chosen by the caller. The same identifier with the same plan is the
 //! same request arriving again (a reply was lost, a call was repeated) and gets the first answer; the same
@@ -76,6 +80,7 @@ pub enum Change {
 pub struct Plan {
     request: String,
     against: u64,
+    history_digest: [u8; 32],
     change: Change,
 }
 
@@ -99,11 +104,28 @@ impl Plan {
 pub struct Installed {
     generations: Vec<Generation>,
     active: u64,
+    history_digest: [u8; 32],
     answered: BTreeMap<String, (Plan, u64)>,
 }
 
 fn key(owner: &str, name: &str) -> String {
     format!("{owner}/{name}")
+}
+
+fn extend_history(previous: &[u8; 32], next: &Generation) -> [u8; 32] {
+    // Genesis uses 32 zero bytes. The generation numbers have fixed width; the map is sorted by key
+    // and each variable-width field has an explicit byte length.
+    let mut bytes = b"pcpos-pkg/generation-history/v1\0".to_vec();
+    bytes.extend_from_slice(previous);
+    bytes.extend_from_slice(&next.number.to_be_bytes());
+    bytes.extend_from_slice(&next.made_from.to_be_bytes());
+    for (package, digest) in &next.packages {
+        for field in [package, digest] {
+            bytes.extend_from_slice(&(field.len() as u64).to_be_bytes());
+            bytes.extend_from_slice(field.as_bytes());
+        }
+    }
+    pcpos_core::sha256(&bytes)
 }
 
 impl Installed {
@@ -137,6 +159,10 @@ impl Installed {
         if ok { Ok(()) } else { Err("a request identifier is 1 to 64 ASCII letters, digits and hyphens".to_string()) }
     }
 
+    fn plan(&self, request: &str, change: Change) -> Plan {
+        Plan { request: request.to_string(), against: self.active, history_digest: self.history_digest, change }
+    }
+
     /// Draw the plan that installs `entry`. A withdrawn entry is planned only when `pinned` is its digest:
     /// that is an installation naming exactly what it had, not a new choice.
     pub fn plan_install(&self, request: &str, entry: &Entry, pinned: Option<&str>) -> Result<Plan, String> {
@@ -153,14 +179,14 @@ impl Installed {
             Some(d) if d == entry.digest() => return Err(format!("{} is already installed with this digest; there is nothing to change", entry.id())),
             Some(d) => Change::Replace { package, from: d.to_string(), to: entry.digest().to_string() },
         };
-        Ok(Plan { request: request.to_string(), against: self.active, change })
+        Ok(self.plan(request, change))
     }
 
     /// Draw the plan that removes a package.
     pub fn plan_remove(&self, request: &str, owner: &str, name: &str) -> Result<Plan, String> {
         Self::request_ok(request)?;
         let digest = self.installed(owner, name).ok_or(format!("{owner}/{name} is not installed"))?.to_string();
-        Ok(Plan { request: request.to_string(), against: self.active, change: Change::Remove { package: key(owner, name), digest } })
+        Ok(self.plan(request, Change::Remove { package: key(owner, name), digest }))
     }
 
     /// Draw the plan that undoes the last change: it makes active again what the generation before the
@@ -187,7 +213,7 @@ impl Installed {
         if self.packages_of(number).is_none() {
             return Err(format!("there is no generation {number}"));
         }
-        Ok(Plan { request: request.to_string(), against: self.active, change: Change::Restore { generation: number } })
+        Ok(self.plan(request, Change::Restore { generation: number }))
     }
 
     /// Apply a plan. Returns the number of the generation it made active.
@@ -198,6 +224,9 @@ impl Installed {
         }
         if plan.against != self.active {
             return Err(format!("the plan was drawn against generation {} and generation {} is active now; it is not applied to a state it was not drawn for", plan.against, self.active));
+        }
+        if plan.history_digest != self.history_digest {
+            return Err(format!("the plan was drawn against a different installation history at generation {}", self.active));
         }
         let mut packages = self.packages_of(self.active).unwrap_or_default();
         match &plan.change {
@@ -226,7 +255,9 @@ impl Installed {
         }
         let number = self.generations.last().map_or(1, |g| g.number + 1);
         // Every generation remembers which one was active when it was made, so that undo, undo returns here.
-        self.generations.push(Generation { number, made_from: self.active, packages });
+        let next = Generation { number, made_from: self.active, packages };
+        self.history_digest = extend_history(&self.history_digest, &next);
+        self.generations.push(next);
         self.active = number;
         self.answered.insert(plan.request.clone(), (plan.clone(), number));
         Ok(number)
@@ -318,7 +349,8 @@ mod tests {
         let a1 = entry("optics", "1.0.0", b"one", false);
         let mut s = Installed::new();
         s.commit(&s.plan_install("r-1", &a1, None).unwrap()).unwrap();
-        let by_hand = |request: &str, against: u64, change: Change| Plan { request: request.to_string(), against, change };
+        let history_digest = s.history_digest;
+        let by_hand = |request: &str, against: u64, change: Change| Plan { request: request.to_string(), against, history_digest, change };
         // Restoring the generation that is active: the planner refuses it, and so does commit.
         assert!(s.commit(&by_hand("h-1", 1, Change::Restore { generation: 1 })).unwrap_err().contains("does not fit"));
         assert!(s.commit(&by_hand("h-2", 1, Change::Restore { generation: 7 })).unwrap_err().contains("no generation 7"));
@@ -365,10 +397,82 @@ mod tests {
         assert_eq!(s.commit(&p).unwrap(), 1);
         assert_eq!((s.active(), s.history().len()), (2, 2));
         // The same identifier for another change is refused.
-        let other = Plan { request: "r-1".to_string(), against: s.active(), change: Change::Remove { package: "kirtusj/optics".to_string(), digest: a1.digest().to_string() } };
+        let other = s.plan_remove("r-1", "kirtusj", "optics").unwrap();
         assert!(s.commit(&other).unwrap_err().contains("already used for another change"));
         for bad in ["", "has space", "semi;colon", &"x".repeat(65)] {
             assert!(s.plan_remove(bad, "kirtusj", "optics").unwrap_err().contains("request identifier"), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_genuine_plan_cannot_cross_divergent_installation_histories() {
+        let a = entry("optics", "1.0.0", b"a", false);
+        let b = entry("acoustics", "1.0.0", b"b", false);
+        let c = entry("records", "1.0.0", b"c", false);
+        let mut left = Installed::new();
+        let mut right = Installed::new();
+        left.commit(&left.plan_install("first", &a, None).unwrap()).unwrap();
+        right.commit(&right.plan_install("first", &b, None).unwrap()).unwrap();
+        let foreign = left.plan_install("common", &c, None).unwrap();
+        let local = right.plan_install("common", &c, None).unwrap();
+        assert!(right.commit(&foreign).is_err(), "an otherwise applicable addition came from a different state");
+        assert_eq!(right.active(), 1);
+        assert_eq!(right.commit(&local), Ok(2), "a refusal did not consume the request");
+        assert!(right.commit(&foreign).is_err(), "a foreign plan cannot collect the local receipt");
+        left.commit(&foreign).unwrap();
+        let foreign_restore = left.plan_restore("restore", 1).unwrap();
+        assert!(right.commit(&foreign_restore).is_err(), "generation 1 held a different package");
+        assert_eq!(right.history().len(), 2);
+    }
+
+    #[test]
+    fn restoration_checks_the_target_even_when_the_active_contents_match() {
+        let a = entry("optics", "1.0.0", b"a", false);
+        let b = entry("optics", "1.1.0", b"b", false);
+        let empty_again = |entry: &Entry, first_request: &str| {
+            let mut s = Installed::new();
+            s.commit(&s.plan_install(first_request, entry, None).unwrap()).unwrap();
+            s.commit(&s.plan_undo("empty").unwrap()).unwrap();
+            s
+        };
+        let left = empty_again(&a, "first");
+        let mut equivalent = empty_again(&a, "different-request");
+        let mut right = empty_again(&b, "first");
+        assert_eq!(left.current(), right.current());
+        let add = left.plan_install("reinstall", &a, None).unwrap();
+        assert!(right.commit(&add).is_err(), "a converged current state still has a distinct history");
+        let foreign = left.plan_restore("restore", 1).unwrap();
+        assert!(right.commit(&foreign).is_err(), "equal active packages do not imply equal restore targets");
+        let local = right.plan_restore("restore", 1).unwrap();
+        assert_eq!(right.commit(&local), Ok(3));
+        assert_eq!(right.installed("kirtusj", "optics"), Some(b.digest()));
+        assert!(right.commit(&foreign).is_err(), "equal public actions do not imply equal receipt keys");
+        right.commit(&right.plan_undo("again").unwrap()).unwrap();
+        assert_eq!(right.commit(&local), Ok(3), "exact retries still work after later changes");
+        assert_eq!(right.active(), 4);
+        assert_eq!(equivalent.commit(&foreign), Ok(3), "separate installations with the same generations can apply the same plan");
+        assert_eq!(equivalent.installed("kirtusj", "optics"), Some(a.digest()));
+    }
+
+    #[test]
+    fn a_resolved_withdrawal_requires_the_exact_pin_at_installation() {
+        use crate::{resolve, Source, Want};
+        let first = entry("optics", "1.0.0", b"one", false);
+        let withdrawn = entry("optics", "1.0.0", b"one", true);
+        let other = entry("optics", "1.1.0", b"two", false);
+        for entries in [
+            vec![first.clone(), withdrawn.clone()],
+            vec![withdrawn.clone(), first.clone()],
+            vec![withdrawn.clone()],
+        ] {
+            let sources = [Source { label: "catalog".into(), rank: 0, entries }];
+            let (_, selected) = resolve(&sources, "kirtusj", "optics", Want::Pinned(first.digest())).unwrap();
+            let mut s = Installed::new();
+            assert!(s.plan_install("install", selected, None).is_err());
+            assert!(s.plan_install("install", selected, Some(other.digest())).is_err());
+            let plan = s.plan_install("install", selected, Some(first.digest())).unwrap();
+            assert_eq!(s.commit(&plan), Ok(1));
+            assert_eq!(s.installed("kirtusj", "optics"), Some(first.digest()));
         }
     }
 
