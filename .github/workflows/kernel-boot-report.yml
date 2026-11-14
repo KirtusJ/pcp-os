@@ -34,8 +34,9 @@ jobs:
         working-directory: PCP_OS_Rust
         run: |
           cargo build --locked --release --bin pcpos
-          cargo test --locked -p pcpos-host --test boot_report --test boot_report_wire
-          cargo test --locked -p pcpos-host --test host boot_report
+          # The kernel and receiver share pcpos-core. Run all workspace regressions,
+          # not only the boot-report tests, before trusting this candidate.
+          cargo test --locked --workspace
       - name: Boot the kernel and compare all report encodings and console modes with the receiver
         working-directory: PCP_OS_Rust/crates/pcpos-kernel
         run: |
