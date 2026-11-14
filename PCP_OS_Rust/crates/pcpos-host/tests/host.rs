@@ -947,6 +947,35 @@ fn a_report_that_does_not_say_in_the_host_s_form_whether_the_command_finished_is
 }
 
 #[test]
+fn recorded_instrument_results_identify_previews_and_hash_the_complete_text() {
+    let root = in_use("result-preview");
+    for count in [1, 64] {
+        let bins = vec!["[1]"; count].join(",");
+        let input = format!(r#"{{"scale_exponent":0,"source":[{bins}],"target":[{bins}]}}"#);
+        let which = "mathematics.protected_bins";
+        let args = format!(r#"{{"instrument":"{which}","input":{input}}}"#);
+        let cli = pcpos(&root).args(["instrument", which, &input]).output().unwrap();
+        assert_eq!(cli.status.code(), Some(if count == 1 { 0 } else { 1 }));
+        let stdout = String::from_utf8(cli.stdout).unwrap();
+        let full = stdout.strip_prefix(&format!("{which}\n")).unwrap().strip_suffix('\n').unwrap();
+        let (reply, err) = tool(&root, "acr_instrument", &args);
+        assert!(!err && reply.contains(full), "{reply}");
+        let rows = events(&root);
+        let body = rows.last().unwrap().get("body").unwrap();
+        assert_eq!(body.get("stdout").and_then(Value::as_str), Some(sha256_hex(full.as_bytes()).as_str()));
+        let result = body.get("result").and_then(Value::as_str).unwrap();
+        if count == 1 {
+            assert_eq!(result, full);
+            assert!(body.get("result_is_preview").is_none() && body.get("result_bytes").is_none());
+        } else {
+            assert!(full.starts_with(result) && result.len() < full.len());
+            assert_eq!(body.get("result_is_preview"), Some(&Value::Bool(true)));
+            assert_eq!(body.get("result_bytes").and_then(Value::as_int), Some(full.len() as i64));
+        }
+    }
+}
+
+#[test]
 fn a_file_is_material_a_review_was_given_only_if_its_last_write_is_shown_to_be_earlier() {
     let root = in_use("file-origin");
     let commissioned = events(&root).iter().rev().find(|e| e.get("kind").and_then(Value::as_str) == Some("REVIEW_COMMISSIONED")).and_then(|e| e.get("ts").and_then(Value::as_str).map(epoch)).unwrap();
