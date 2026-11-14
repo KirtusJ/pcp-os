@@ -539,24 +539,30 @@ def _(ck):
 # ---------- F22: clause lookup against the machine form -----------------------------------------------------------------
 @scenario("F22 every provision the machine form lists is returned by the program, byte for byte", "all modules")
 def _(ck):
-    mf = json.load(open(os.environ["PCP_MACHINE"])); s = S(); n = bad = 0; calls = []; want = []
-    def walk(o):
-        if isinstance(o, dict):
-            if "module" in o and ("section" in o or "address" in o or "number" in o) and "sha256" in o: yield o
-            for v in o.values(): yield from walk(v)
-        elif isinstance(o, list):
-            for v in o: yield from walk(v)
-    for m in mf["modules"]:
-        for p in m["provisions"]: calls.append(("acr_clause", {"module": m["key"], "section": p["number"]})); want.append(p["text_sha256"])
-    res = s.mcp(calls); miss = [(c[1], r[:80]) for c, w, r in zip(calls, want, res) if w not in r]
-    ck(f"all {len(calls)} provisions returned with the machine form's digest", len(calls) == 260 and not miss, miss[:5])
-    import re as _re
-    bad = []
-    for c, w, r in zip(calls, want, res):
-        body = r.split("\n", 2)[2] if r.count("\n") >= 2 else ""
-        cands = [body, body.strip("\n"), body.strip("\n") + "\n", body.lstrip("\n")]; cands += [x + " " for x in cands] + [x.rstrip() + " \n" for x in cands]
-        if not any(hashlib.sha256(x.encode()).hexdigest() == w for x in cands): bad.append(c[1])
-    ck("the text returned hashes to the digest stated", len(bad) == 0, (len(bad), bad[:4]))
+    import re
+    with open(os.environ["PCP_MACHINE"]) as reference:
+        modules = json.load(reference)["modules"]
+    s = S()
+    calls, digests = [], []
+    for module in modules:
+        for provision in module["provisions"]:
+            calls.append(("acr_clause", {"module": module["key"], "section": provision["number"]}))
+            digests.append(provision["text_sha256"])
+    replies = s.mcp(calls)
+    ck("all 260 requested provisions have one reply", len(calls) == len(replies) == 260,
+       {"requests": len(calls), "replies": len(replies)})
+    bad_headers, bad_bodies = [], []
+    for (_, request), digest, reply in zip(calls, digests, replies):
+        header, separator, body = reply.partition("\n\n")
+        module_line, _, provision_line = header.partition("\n")
+        section = re.escape(request["section"])
+        if (not module_line.startswith(f"acr.{request['module']} ")
+                or not re.fullmatch(rf"PROVISION {section} \| lines [0-9]+\.\.[0-9]+ \| SHA-256 of this text {digest}", provision_line)):
+            bad_headers.append(request)
+        if not separator or hashlib.sha256(body.encode("utf-8")).hexdigest() != digest:
+            bad_bodies.append(request)
+    ck("each reply names its module, provision and expected text digest", not bad_headers, bad_headers[:5])
+    ck("the exact returned text hashes to the expected digest", not bad_bodies, bad_bodies[:5])
     ck("lookup puts nothing in use and writes nothing", not s.reg.exists())
     s.close()
 
