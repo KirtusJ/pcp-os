@@ -152,6 +152,8 @@ pub struct BootInfo {
     /// The usable memory that contains the kernel: where it ends (exclusive), from the loader's memory map.
     pub usable_end: Option<usize>,
     pub command_line: alloc::string::String,
+    /// True when the bounded loader read reached the command line's terminating NUL.
+    pub command_line_complete: bool,
     pub modules: alloc::vec::Vec<Module>,
     pub display: Option<LoaderDisplay>,
 }
@@ -170,26 +172,31 @@ pub fn boot_info(magic: u32, info: u32) -> BootInfo {
     // address taken from it is checked against the mapped gibibyte before it is followed.
     unsafe {
         let word = |at: usize| ((info as usize + at) as *const u32).read_unaligned();
-        let text = |addr: usize| -> alloc::string::String {
+        let text = |addr: usize| {
             let mut s = alloc::string::String::new();
-            for i in 0..255usize {
+            // Keep at most 255 bytes. Inspect the next mapped byte for a terminator
+            // so that a complete 255-byte option string is distinguishable from a prefix.
+            for i in 0..=255usize {
                 if addr == 0 || addr + i >= LIMIT {
                     break;
                 }
                 let b = ((addr + i) as *const u8).read();
                 if b == 0 {
+                    return (s, true);
+                }
+                if i == 255 {
                     break;
                 }
                 s.push(if (0x20..0x7f).contains(&b) { b as char } else { '?' });
             }
-            s
+            (s, false)
         };
         let flags = word(0);
         if flags & 1 != 0 {
             out.memory = Some((word(4), word(8)));
         }
         if flags & 4 != 0 {
-            out.command_line = text(word(16) as usize);
+            (out.command_line, out.command_line_complete) = text(word(16) as usize);
         }
         if flags & 8 != 0 {
             let (count, at) = (word(20) as usize, word(24) as usize);
@@ -200,7 +207,7 @@ pub fn boot_info(magic: u32, info: u32) -> BootInfo {
                 }
                 let r = |o: usize| ((e + o) as *const u32).read_unaligned() as usize;
                 let (start, end) = (r(0), r(4));
-                let full = text(r(8));
+                let (full, _) = text(r(8));
                 // The loader gives the path it was told; a program is known here by its last component.
                 let (first, rest) = match full.split_once(' ') {
                     Some((f, r)) => (f, r.trim()),

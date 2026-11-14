@@ -1,5 +1,5 @@
 //! Read the kernel's COM2 observations on the host.
-use pcpos_core::{boot_report::expand_positional, machine::System, r1, value::Value};
+use pcpos_core::{boot_report::{expand_positional, BootId}, machine::System, r1, value::Value};
 use std::{
     fmt,
     io::{self, Read, Write},
@@ -9,6 +9,7 @@ pub enum Format {
     Json,
     Cbor,
     Cbor2,
+    Cbor3(BootId),
 }
 
 pub enum View {
@@ -62,6 +63,29 @@ fn read(input: &mut impl Read, buffer: &mut [u8]) -> io::Result<usize> {
     }
 }
 
+/// The v3 envelope has a fixed canonical prefix. Compare it with the caller's
+/// expected ID before decoding the unchanged v2 observation inside it.
+fn decode_cbor(bytes: &[u8], id: Option<BootId>, event: &str) -> Result<Option<(Value, usize)>> {
+    let body = if let Some(id) = id {
+        let prefix = id.prefix();
+        let available = bytes.len().min(prefix.len());
+        if bytes[..available] != prefix[..available] {
+            return Err(invalid(format!("incorrect {event} boot ID or envelope")));
+        }
+        if available < prefix.len() {
+            return Ok(None);
+        }
+        &bytes[prefix.len()..]
+    } else {
+        bytes
+    };
+    match r1::decode_prefix(body) {
+        Ok((value, rest)) => Ok(Some((value, bytes.len() - rest.len()))),
+        Err(r1::R1Error::UnexpectedEnd) => Ok(None),
+        Err(_) => Err(invalid(format!("invalid {event} CBOR message"))),
+    }
+}
+
 impl<R: Read, const N: usize> Records<R, N> {
     fn new(input: R, format: Option<Format>, remaining: usize) -> Self {
         Self { input, format, bytes: [0; N], filled: 0, remaining }
@@ -89,18 +113,15 @@ impl<R: Read, const N: usize> Records<R, N> {
                         None => None,
                     }
                 }
-                None | Some(Format::Cbor | Format::Cbor2) => match r1::decode_prefix(bytes) {
-                    Ok((value, rest)) => Some((value, bytes.len() - rest.len())),
-                    Err(r1::R1Error::UnexpectedEnd) => None,
-                    Err(_) => return Err(invalid(format!("invalid {event} CBOR message"))),
-                },
+                Some(Format::Cbor3(id)) => decode_cbor(bytes, Some(id), event)?,
+                None | Some(Format::Cbor | Format::Cbor2) => decode_cbor(bytes, None, event)?,
             };
             if let Some((row, used)) = decoded {
                 let layout = self.format.get_or_insert_with(|| {
                     if matches!(&row, Value::List(_)) { Format::Cbor2 } else { Format::Cbor }
                 });
                 let row = match layout {
-                    Format::Cbor2 => expand_positional(row)
+                    Format::Cbor2 | Format::Cbor3(_) => expand_positional(row)
                         .ok_or_else(|| invalid(format!("invalid positional {event} message")))?,
                     Format::Cbor | Format::Json => row,
                 };
@@ -212,7 +233,8 @@ fn write_line(output: &mut impl Write, value: &Value) -> io::Result<()> {
     output.flush()
 }
 
-/// Forward every structurally valid CBOR observation, including a reported failure.
+/// Translate unbound v1/v2 CBOR observations, including reported failures.
+/// A v3 capture requires an explicit expected ID and is rejected here.
 pub fn translate(input: impl Read, mut output: impl Write) -> Result<()> {
     let mut records = Records::<_, 1024>::new(input, None, 3 * 1024);
     write_line(&mut output, &records.record("boot", 4, image)?.0)?;
@@ -270,10 +292,10 @@ fn verdict<R: Read, const N: usize>(mut records: Records<R, N>, view: &View) -> 
 }
 
 pub fn summarize(input: impl Read, format: Format, view: View) -> i32 {
-    // Both binary layouts fit within 128 bytes for each observation. JSON permits whitespace.
+    // Binary observations, including their optional v3 envelope, fit in 128 bytes.
     let result = match format {
         Format::Json => verdict(Records::<_, 4096>::new(input, Some(format), 4096), &view),
-        Format::Cbor | Format::Cbor2 => verdict(Records::<_, 128>::new(input, Some(format), 4096), &view),
+        Format::Cbor | Format::Cbor2 | Format::Cbor3(_) => verdict(Records::<_, 128>::new(input, Some(format), 4096), &view),
     };
     let (code, summary) = match result {
         Ok((ok, summary)) => (if ok { 0 } else { 1 }, summary),

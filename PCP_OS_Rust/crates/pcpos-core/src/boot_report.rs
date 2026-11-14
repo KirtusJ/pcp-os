@@ -6,6 +6,37 @@ use alloc::collections::BTreeMap;
 
 const VERSION: u8 = 2;
 
+/// A supervisor-supplied identifier echoed by all three v3 records.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BootId([u8; 16]);
+
+impl BootId {
+    /// Parse exactly 32 lowercase hexadecimal digits.
+    pub fn parse(text: &str) -> Option<Self> {
+        if text.len() != 32 {
+            return None;
+        }
+        let nibble = |c: u8| match c {
+            b'0'..=b'9' => Some(c - b'0'),
+            b'a'..=b'f' => Some(c - b'a' + 10),
+            _ => None,
+        };
+        let mut bytes = [0; 16];
+        for (byte, digits) in bytes.iter_mut().zip(text.as_bytes().chunks_exact(2)) {
+            *byte = (nibble(digits[0])? << 4) | nibble(digits[1])?;
+        }
+        Some(Self(bytes))
+    }
+
+    /// Canonical CBOR prefix of [3, bytes(16), v2_positional_record].
+    pub fn prefix(self) -> [u8; 19] {
+        let mut prefix = [0; 19];
+        prefix[..3].copy_from_slice(&[0x83, 0x03, 0x50]);
+        prefix[3..].copy_from_slice(&self.0);
+        prefix
+    }
+}
+
 /// A COM2 event with a fixed v2 tag and ordered body fields.
 pub struct Layout {
     tag: u8,

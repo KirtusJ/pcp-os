@@ -2,8 +2,9 @@
 //!
 //!     pcpos status <register>                 what is running, what needs a response, what a halt would stop
 //!     pcpos verify <register>                 check the chain and replay every guard
-//!     pcpos boot-report <file>                 translate one captured kernel CBOR boot report to JSON Lines
+//!     pcpos boot-report <file>                 translate a v1/v2 kernel CBOR boot report to JSON Lines
 //!     pcpos boot-report --admission|--health json|cbor|cbor2 < COM2    summarize session entry or completed boot
+//!     pcpos boot-report --admission|--health cbor3 <boot-id> < COM2    verify the expected ID on each consumed record
 //!     pcpos machine [name [state event]]      print state-machine tables or one transition row
 //!     pcpos method <directory>                check a method packet against the release this core implements
 //!     pcpos init <register> --principal L     begin a register (a person, at a terminal)
@@ -2558,7 +2559,7 @@ fn person(args: &[String]) -> Result<i32, String> {
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
     let usage = || -> ! {
-        eprintln!("usage: pcpos status|verify <register> | boot-report <file> | boot-report --admission|--health json|cbor|cbor2 < COM2 | machine [name [state event]] | method <directory> | repair <register> | modules <method directory> | clause <method directory> <module> [section] | instrument list | instrument <name> <input as JSON> [register] | workspace <register> --by <label> [--method <directory>] [module ...] | module list <register> | module add <register> <folder or Specification.md> --by <label> [--method <directory>] | module remove <register> <name> --by <label> | init <register> --principal <label> [--name <name>] | adopt <register> --by <label> --basis <words> | halt <register> --by <label> [--words <words>] | standard <register> --by <label> [--second <label>] BASELINE|CRITICAL|key=value... | mcp | hook <event>");
+        eprintln!("usage: pcpos status|verify <register> | boot-report <file> | boot-report --admission|--health (json|cbor|cbor2 | cbor3 <32-lowercase-hex-boot-id>) < COM2 | machine [name [state event]] | method <directory> | repair <register> | modules <method directory> | clause <method directory> <module> [section] | instrument list | instrument <name> <input as JSON> [register] | workspace <register> --by <label> [--method <directory>] [module ...] | module list <register> | module add <register> <folder or Specification.md> --by <label> [--method <directory>] | module remove <register> <name> --by <label> | init <register> --principal <label> [--name <name>] | adopt <register> --by <label> --basis <words> | halt <register> --by <label> [--words <words>] | standard <register> --by <label> [--second <label>] BASELINE|CRITICAL|key=value... | mcp | hook <event>");
         exit(2)
     };
     match args.first().map(String::as_str) {
@@ -2569,16 +2570,20 @@ fn main() {
                 exit(6);
             }
         }
-        Some("boot-report") if args.len() == 3 => {
+        Some("boot-report") if matches!(args.len(), 3 | 4) => {
             let view = match args[1].as_str() {
                 "--admission" => boot_report::View::Admission,
                 "--health" => boot_report::View::Health,
                 _ => usage(),
             };
-            let format = match args[2].as_str() {
-                "json" => boot_report::Format::Json,
-                "cbor" => boot_report::Format::Cbor,
-                "cbor2" => boot_report::Format::Cbor2,
+            let format = match (args[2].as_str(), args.get(3)) {
+                ("json", None) => boot_report::Format::Json,
+                ("cbor", None) => boot_report::Format::Cbor,
+                ("cbor2", None) => boot_report::Format::Cbor2,
+                ("cbor3", Some(id)) => {
+                    let expected = pcpos_core::boot_report::BootId::parse(id).unwrap_or_else(|| usage());
+                    boot_report::Format::Cbor3(expected)
+                }
                 _ => usage(),
             };
             exit(boot_report::summarize(std::io::stdin().lock(), format, view))

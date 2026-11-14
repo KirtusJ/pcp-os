@@ -29,7 +29,7 @@ The self-tests cover rollback of a refused group of built-in programs. For the s
 
 ## Machine boot report
 
-To receive boot health without parsing the console, attach a second 16550-compatible UART (COM2, I/O 0x2F8) and select `report=json`, `report=cbor` or `report=cbor2` on the loader command line. Leave the option out for ordinary console operation. Configure the receiver to read only the second UART. The first UART still carries diagnostics and user-program output. In QEMU the order of the two `-serial` arguments selects the ports:
+To receive boot health without parsing the console, attach a second 16550-compatible UART (COM2, I/O 0x2F8) and select `report=json`, `report=cbor`, `report=cbor2` or the per-boot ID format described below on the loader command line. Leave the option out for ordinary console operation. Configure the receiver to read only the second UART. The first UART still carries diagnostics and user-program output. In QEMU the order of the two `-serial` arguments selects the ports:
 
 ```sh
 qemu-system-x86_64 -cpu max -m 128M -kernel target/pcpos-kernel.elf32 \
@@ -57,7 +57,7 @@ Measured COM2 bytes from this kernel under QEMU are below. The admission prefix 
 
 The positional framing saves 91 bytes per complete capture by encoding the event tag and field order directly. All three kernel writers stream the data to COM2 from borrowed values and stack buffers. Larger counter values can change the total size in either layout. Both binary forms produced the same host verdict for each case. For example, an admitted, unchecked boot produced a 35-byte admission reply and a 34-byte final health reply, including LF. These measurements cover COM2 and the host verdict. The independent COM1 console has its own output volume.
 
-For a binary link, select either CBOR form and use `-serial file:health.cbor` as the second serial argument. The host can then render the captured report for a model or a JSON consumer:
+For a binary link carrying named or positional v2 observations, select `report=cbor` or `report=cbor2` and use `-serial file:health.cbor` as the second serial argument. The host can then render the captured report for a model or a JSON consumer:
 
 ```sh
 pcpos boot-report health.cbor > health.jsonl
@@ -93,7 +93,7 @@ pcpos boot-report --health cbor < maps.cbor
 pcpos boot-report --health cbor2 < arrays.cbor
 ```
 
-Both summary modes write one JSON line and send diagnostics to stderr. They accept up to 4,096 bytes through the requested observation. Each record in either binary layout fits in a 128-byte input buffer. Select the producer’s encoding explicitly for `--admission` and `--health`. Final health requires all three records in order, both full digest fields, consistent counters and EOF. A live stream waiting for bytes can stay open indefinitely. Supervisors with a deadline should treat expiration before a verdict as unknown.
+Both summary modes write one JSON line and send diagnostics to stderr. They accept up to 4,096 bytes through the requested observation. The binary receiver uses a 128-byte buffer for each record, including the optional v3 wrapper. Select the producer’s encoding explicitly for `--admission` and `--health`. Final health requires all three records in order, both full digest fields, consistent counters and EOF. A live stream waiting for bytes can stay open indefinitely. Supervisors with a deadline should treat expiration before a verdict as unknown.
 
 | Exit | Admission | Final health |
 |---|---|---|
@@ -102,7 +102,7 @@ Both summary modes write one JSON line and send diagnostics to stderr. They acce
 | 6 | `{"admit":null}` when the two records are incomplete or invalid | `{"boot":"unknown"}` when the completed capture is incomplete or invalid |
 | 2 | Command usage or local I/O error | Command usage or local I/O error |
 
-Give admission its own stream or capture branch. The receiver may read ahead and exits after reporting admission. Preserve the full capture separately for later health checks and the image and register digests. These summaries describe the emitter's observations. Keep the COM2 capture bound to one guest boot and preserve the process/VM identity outside the stream. The three records contain no shared boot identifier or challenge; they cannot independently detect a capture assembled from portions of different boots. A healthy reply is not authenticated attestation of the running image, nor independent replay of its register. Those guarantees require separate evidence or a versioned binding mechanism ([tracking issue #64](https://github.com/KirtusJ/pcp-os/issues/64)). Pass `--host /path/to/pcpos` to `tests/boot_report.py` to exercise all three encodings during interactive sessions and after shutdown.
+Give admission its own stream or capture branch. The receiver may read ahead and exits after reporting admission. Preserve the full capture separately for later health checks and the image and register digests. These summaries describe the emitter's observations. Keep the COM2 capture bound to one guest boot and preserve the process/VM identity outside the stream. The three records in JSON, named CBOR and positional v2 contain no shared boot identifier or challenge; they cannot independently detect a capture assembled from portions of different boots. A healthy reply is not authenticated attestation of the running image, nor independent replay of its register. Those guarantees require separate evidence ([tracking issue #64](https://github.com/KirtusJ/pcp-os/issues/64)). Pass `--host /path/to/pcpos` to `tests/boot_report.py` to exercise all three encodings during interactive sessions and after shutdown.
 
 To reproduce the capture-boundary limitation with two measured kernel images, run the following from this crate after building the kernel and release host. Choose a new output directory to retain the captures.
 
@@ -112,6 +112,27 @@ python3 tests/cross_boot_capture.py target/pcpos-kernel.elf32 \
 ```
 
 The experiment boots one image that matches its loader pin and then fails, and another that finishes healthy with no pin. It passes the first image's boot record and the second image's session and stop records to the receiver, preserving the original bytes. The receiver gives the same matched, healthy verdict it gives a genuine positive control. The test exercises JSON, named CBOR and positional CBOR.
+
+### Checking which boot supplied each record
+
+A supervisor can assign a fresh 128-bit ID to each launch and select `report=cbor3 boot_id=<32 lowercase hex digits>`. Give that same expected ID to the receiver from the supervisor's launch record. Read the admission prefix on a dedicated stream. For final health, retain the whole capture through shutdown.
+
+```sh
+# Run once for this launch. Keep this value with the guest process handle.
+boot_id=$(python3 -c 'import secrets; print(secrets.token_hex(16))')
+qemu-system-x86_64 -cpu max -m 128M -kernel target/pcpos-kernel.elf32 \
+  -display none -monitor none -no-reboot -serial file:console.log -serial file:health.cbor \
+  -append "then=off report=cbor3 boot_id=$boot_id" -device isa-debug-exit,iobase=0xf4,iosize=0x04
+pcpos boot-report --health cbor3 "$boot_id" < health.cbor
+```
+
+The wire item for each observation is the definite-length CBOR array `[3, boot_id, v2_observation]`. Its prefix is `83 03 50` in hex followed by the 16 raw ID bytes. The original v2 array follows directly as the third element. This adds 19 bytes per observation, 38 to the admission prefix and 57 to a complete capture. The supervisor can use the existing compact verdict text. The file-to-JSON translator accepts the unbound formats. Use the explicit `cbor3` summary command for a bound capture.
+
+Both `--admission` and `--health` compare **each consumed record** to the ID supplied on the command line. A missing wrapper, wrong ID or malformed record yields unknown (exit 6). Omitting the expected ID or giving it in the wrong format is a command usage error (exit 2). On the kernel side, v3 requires one valid `boot_id=` option and a complete loader command line. The bounded Multiboot reader accepts up to 255 bytes, including any path the loader prepends. An invalid v3 configuration produces no COM2 report and leaves the normal console available.
+
+The supervisor owns the ID's lifetime. Associate it with one process and capture when launching. Keep the compact reply attached to the invocation that supplied its expected ID. Use the same value for that attempt's admission and final reads. Accept its final outcome once and retire the ID on completion, cancellation, timeout or failed launch. A restart gets a new ID. Preserve the retired ID for offline inspection. Reading an archived capture again with its original ID reproduces the result. The CLI has no persistent table of attempts, time limit or replay cache.
+
+The ID travels in clear text. With distinct IDs, the receiver detects whole records accidentally mixed between captures. A writer able to replace the ID in each record can make a splice pass. The admission reader checks the two records present at session entry. Final health checks all three and requires EOF. Authenticating a guest, independently measuring an image or replaying the register requires additional evidence. To repeat the guest and receiver checks, run `python3 tests/bound_boot_report.py target/pcpos-kernel.elf32 --host ../../target/release/pcpos`; add `--out <new-directory>` to retain the captures. [Issue #64](https://github.com/KirtusJ/pcp-os/issues/64)
 
 ### Quiet boot console for a machine receiver
 
