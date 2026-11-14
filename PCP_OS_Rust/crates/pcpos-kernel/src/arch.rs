@@ -1399,11 +1399,22 @@ impl Space {
             return None;
         }
         let mut s = Space::empty()?;
-        let (c, d, k) = (crate::mem::take()?, crate::mem::take()?, crate::mem::take()?);
-        frame_write(c, 0, code);
-        let ok = s.map(USER_BASE, c, false, true) && s.map(USER_DATA, d, true, false) && s.map(USER_STACK_TOP - 0x1000, k, true, false);
-        s.three = [c, d, k];
-        if ok { Some(s) } else { None }
+        // Map each frame as it is acquired. A successful mapping transfers ownership to `s`;
+        // the current, not-yet-mapped frame is the only one that release cannot reach.
+        for (i, addr) in [USER_BASE, USER_DATA, USER_STACK_TOP - 0x1000].into_iter().enumerate() {
+            let Some(frame) = crate::mem::take() else {
+                s.release();
+                return None;
+            };
+            if !s.map(addr, frame, i != 0, i == 0) {
+                crate::mem::give(frame);
+                s.release();
+                return None;
+            }
+            s.three[i] = frame;
+        }
+        frame_write(s.three[0], 0, code);
+        Some(s)
     }
 
     /// The physical pages a built-in program was given: code, data, stack.

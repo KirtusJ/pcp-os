@@ -536,9 +536,34 @@ fn asynchronous(failed: &mut u32) {
         let before = user::frames_free();
         let rejected = user::run(&specifications).is_none();
         let after = user::frames_free();
-        say!("  REVIEW group={} denied={} frames_before={} frames_after={} difference={}", label, rejected, before, after, before.saturating_sub(after));
+        say!("  note refused group {}: refused {}, free frames {} before and {} after", label, rejected, before, after);
         check("rejected batch returns the frames of every member", rejected && before == after, failed);
     }
+
+    // Leave each possible number of frames below one built-in address space's requirement.
+    // Restore the fixture before checking the total so any leak remains visible.
+    let before = user::frames_free();
+    let mut reserved = alloc::vec::Vec::with_capacity(before);
+    while let Some(frame) = mem::take() {
+        reserved.push(frame);
+    }
+    let mut restored = true;
+    for available in 0..=7 {
+        if available > 0 {
+            restored &= reserved.pop().map(mem::give) == Some(true);
+        }
+        let space = arch::Space::new(&[0xc3]);
+        restored &= space.is_some() == (available == 7);
+        if let Some(space) = space {
+            restored &= space.release() == 7;
+        }
+        restored &= user::frames_free() == available;
+    }
+    for frame in reserved {
+        restored &= mem::give(frame);
+    }
+    check("a built-in address space gives its frames back at every allocation cutoff and after a successful construction",
+          restored && user::frames_free() == before, failed);
 
     // 1. The stop key while a program runs. The program never yields and never ends; its budget is far away.
     dev::keyboard_script(arch::ticks() + 5, &STOP_KEYS);
