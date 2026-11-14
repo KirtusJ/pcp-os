@@ -1317,6 +1317,19 @@ fn positional_suffix_only_requires_representable_timestamps_after_the_anchor() {
     fs::write(&source, ledger.bytes()).unwrap();
     assert!(!send(&anchor).status.success());
     assert_eq!(fs::read(&wire).unwrap(), good_wire);
+    // A representation error is provisional until the rest of the source checks.
+    // A later damaged line must be reported as a chain failure even after the anchor.
+    let mut damaged = ledger.bytes().to_vec();
+    damaged.extend_from_slice(b"{}\n");
+    fs::write(&source, &damaged).unwrap();
+    let failed = send(&anchor);
+    assert_eq!(failed.status.code(), Some(6));
+    assert!(failed.stdout.is_empty() && fs::read(&wire).unwrap() == good_wire);
+    damaged.pop(); // interrupted final line after an unrepresentable event
+    fs::write(&source, damaged).unwrap();
+    let failed = send(&anchor);
+    assert_eq!(failed.status.code(), Some(6));
+    assert!(failed.stdout.is_empty() && fs::read(&wire).unwrap() == good_wire);
     fs::remove_dir_all(root).unwrap();
 }
 
