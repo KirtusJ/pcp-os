@@ -9,9 +9,9 @@
 **Use.**
 
 ```
-python3 acr_os.py --help
-python3 acr_os.py doctor
-python3 acr_os.py init <new directory> --principal <label>
+python3 pcp_os.py --help
+python3 pcp_os.py doctor
+python3 pcp_os.py init <new directory> --principal <label>
 python3 -m unittest discover -s TESTS -p "test_*.py"
 ```
 
