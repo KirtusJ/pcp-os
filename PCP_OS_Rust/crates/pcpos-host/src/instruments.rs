@@ -33,7 +33,14 @@ pub fn run(name: &str, input: &Value, events: &[Value]) -> Result<Outcome, Strin
     let whole = |k: &str| input.get(k).and_then(Value::as_int).filter(|n| *n > 0).ok_or(format!("this instrument needs {k}, a whole number above zero"));
     match name {
         "mathematics.exact" => exact(text("expression")?),
-        "mathematics.statement" => statement(text("source")?, text("theorem")?, input.get("pinned").and_then(Value::as_str)),
+        "mathematics.statement" => {
+            let pinned = match input.get("pinned") {
+                None | Some(Value::Null) => None,
+                Some(Value::Str(p)) => Some(p.as_str()),
+                Some(_) => return Err("pinned was supplied and is not a string of 64 hexadecimal digits; a pin that cannot be read is not the same as no pin, and nothing was compared".to_string()),
+            };
+            statement(text("source")?, text("theorem")?, pinned)
+        }
         "statistics.grim" => granularity(text("mean")?, whole("n")?, 1, "mean"),
         "statistics.percent" => granularity(text("percent")?, whole("total")?, 100, "percentage"),
         "engineering.units" => units(text("from")?, text("to")?),
@@ -717,6 +724,9 @@ fn statement(source: &str, name: &str, pinned: Option<&str>) -> Result<Outcome, 
                 break;
             }
             bar |= c[j] == '|';
+            if let Some(w) = lean_word(&c, &k, j).filter(|w| ["let", "have", "letI", "haveI", "let_fun"].contains(&w.as_str())) {
+                return Err(format!("the statement of {full} has a local binding ({w}) outside brackets, and its := would be taken for the end of the signature; this instrument does not read such a statement, and nothing was pinned or compared"));
+            }
             if lean_word(&c, &k, j).as_deref() == Some("where") {
                 return Err(format!("{full} is given with where and no := ends its signature; this instrument reads a statement that ends at :="));
             }
@@ -736,7 +746,15 @@ fn statement(source: &str, name: &str, pinned: Option<&str>) -> Result<Outcome, 
         format!("\nprobe {what}: {}", found.map(|f| format!("FIRES: {f}")).unwrap_or(format!("clear: {clear}")))
     };
     // (a) sorry or admit, anywhere from the name to the next declaration, outside comments and strings.
-    let gap = (from..end).find_map(|j| lean_word(&c, &k, j).filter(|w| ["sorry", "admit", "sorryAx"].contains(&w.as_str())));
+    let gap = (from..end).find_map(|j| lean_word(&c, &k, j).filter(|w| ["sorry", "admit", "sorryAx"].contains(&w.as_str()))).or_else(|| {
+        // The reserved axiom written with a qualifier (_root_.sorryAx): a word that follows a dot is not seen above.
+        let want: Vec<char> = "sorryAx".chars().collect();
+        (from..end.saturating_sub(want.len() - 1)).find(|&j| {
+            k[j] == 0 && j > 0 && c[j - 1] == '.' && k[j - 1] == 0
+                && c[j..j + want.len()] == want[..] && k[j..j + want.len()].iter().all(|m| *m == 0)
+                && c.get(j + want.len()).map_or(true, |ch| !lean_wordy(*ch) || k[j + want.len()] != 0)
+        }).map(|_| "sorryAx (qualified)".to_string())
+    });
     let mut lines = probe("(a), a proof left open", gap.map(|w| format!("{w} stands in the statement or proof of {full}")), "no sorry and no admit between the name and the next declaration".to_string());
     // (b) the conclusion, and what remains of it after its last comma or arrow at depth zero.
     let last = if lean_top(conclusion).iter().zip(conclusion).any(|(t, x)| *t && x.0 == '↔') { None } else { lean_cuts(conclusion, 1).last().map(|x| &conclusion[x.0 + x.1..]) };
@@ -1130,6 +1148,25 @@ mod tests {
 
     const LEAN: &str = "namespace Chain\n/-- Not this one: theorem foo : True := trivial /- nested -/ still a comment := -/\ntheorem foo_bar (n : Nat) : n + 0 = n := by simp\n\ntheorem foo (c₀ c₁ : ℝ) (h : 0 < c₀) (x : Nat := 3) : c₀ * c₁ ≤ c₁ * c₀ ∧ ∀ ε > 0, ∃ δ, δ < ε := by\n  constructor\n  · exact le_of_eq (mul_comm _ _)\n  · intro ε hε; exact ⟨ε / 2, by linarith⟩\nend Chain\n";
     const STATED: &str = "(c₀ c₁ : ℝ) (h : 0 < c₀) (x : Nat := 3) : c₀ * c₁ ≤ c₁ * c₀ ∧ ∀ ε > 0, ∃ δ, δ < ε";
+
+    #[test]
+    fn a_lean_statement_review_findings_of_director_g() {
+        let run = |json: &str| run("mathematics.statement", &v(json), &[]);
+        // 1. A let outside brackets in the conclusion: refused, for both the honest and the weakened copy.
+        for src in ["theorem t (n : Nat) : let m := n + 1; n < m := Nat.lt_succ_self n", "theorem t (n : Nat) : let m := n + 1; m = m := rfl", "theorem t (n : Nat) : have h : n = n := rfl; n = n := rfl"] {
+            let e = run(&format!(r#"{{"source":"{src}","theorem":"t"}}"#)).err().expect("a local binding outside brackets is refused");
+            assert!(e.contains("local binding"), "{e}");
+        }
+        // A let inside brackets does not own the separator and is read.
+        assert!(run(r#"{"source":"theorem t (n : Nat) : (let m := n + 1; n < m) := Nat.lt_succ_self n","theorem":"t"}"#).unwrap().holds);
+        // 2. The reserved axiom with a qualifier fires probe (a); a field that merely ends in other letters does not.
+        let o = run(r#"{"source":"theorem t (n : Nat) : n < n+1 := _root_.sorryAx _ false","theorem":"t"}"#).unwrap();
+        assert!(!o.holds && o.text.contains("probe (a), a proof left open: FIRES"), "{}", o.text);
+        assert!(run(r#"{"source":"theorem t (n : Nat) : n < n+1 := x.sorryAxis n","theorem":"t"}"#).unwrap().holds);
+        // 3. A pinned that is supplied and is not a string is an error; null and absence are no pin.
+        assert!(run(r#"{"source":"theorem t (n : Nat) : n < n+1 := Nat.lt_succ_self n","theorem":"t","pinned":1234}"#).is_err());
+        assert!(run(r#"{"source":"theorem t (n : Nat) : n < n+1 := Nat.lt_succ_self n","theorem":"t","pinned":null}"#).unwrap().holds);
+    }
 
     #[test]
     fn a_lean_statement_is_the_pinned_one_or_it_is_not() {
