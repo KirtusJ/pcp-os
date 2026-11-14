@@ -1,5 +1,4 @@
 """Exercise public native hooks under controlled Linux path and lifecycle changes."""
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 import hashlib
 import json
@@ -103,3 +102,32 @@ with fixture() as (root, env, hook, bodies):
     assert [(r["task"], r["sha256"]) for r in bodies("ARTIFACT_ADDED") if "task" in r] == [
         ("T1", digest(b"earlier exit")), ("T2", digest(b"its own exit"))]
     print("PASS competing completion followed by resume; original observer cannot credit resumed task", flush=True)
+
+for mode in ("disabled", "unmatched", "ambiguous"):
+    with fixture() as (root, env, hook, bodies):
+        reg = root / ".pcp/register.jsonl"
+        if mode == "disabled":
+            reg.unlink()  # only this temporary fixture's synthetic register
+        elif mode == "ambiguous":
+            # Replay two historical observed tasks in the pre-correlation-key format.
+            lines = reg.read_bytes().splitlines()
+            start = json.loads(lines[-1])
+            assert start["kind"] == "TASK_STARTED"
+            del start["body"]["hook_attempt_key"]
+            canonical = lambda v: json.dumps(v, separators=(",", ":"), sort_keys=True).encode()
+            lines[-1] = canonical(start)
+            start["prev"] = digest(lines[-1]); start["seq"] += 1; start["body"]["id"] = "T2"
+            lines.append(canonical(start))
+            reg.write_bytes(b"\n".join(lines) + b"\n")
+            verify = subprocess.run([bin_path, "verify", str(reg)], cwd=root, env=env, capture_output=True, text=True)
+            assert "guards replayed: 0 problem(s)" in verify.stdout, verify.stdout
+        snapshot = reg.read_bytes() if reg.exists() else None
+        target = root/"transcript"; target.write_bytes(b"regular")
+        entered = root/"should-not-open"
+        probe = {**env, "LD_PRELOAD":shim, "PROBE_TARGET":str(target), "PROBE_STAGE":"before",
+                 "PROBE_ENTERED":str(entered), "PROBE_RELEASE":str(root/"never-released")}
+        data = dict(agent_id="other" if mode == "unmatched" else "a", agent_transcript_path=str(target))
+        subprocess.run([bin_path, "hook", "subagent-stop"], cwd=root, env=probe, input=json.dumps(data),
+                       text=True, capture_output=True, timeout=5, check=True)
+        assert not entered.exists() and (reg.read_bytes() if reg.exists() else None) == snapshot
+    print("PASS", mode, "stop never opened transcript", flush=True)
