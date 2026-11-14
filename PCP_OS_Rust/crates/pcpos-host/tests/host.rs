@@ -185,6 +185,52 @@ fn mcp_reports_the_depth_limit_of_the_complete_request() {
 }
 
 #[test]
+fn repair_preserves_a_conflicting_or_partial_backup_and_can_retry() {
+    let root = dir("repair-retry");
+    let path = root.join("register.jsonl");
+    let tail = b"unfinished final event";
+    let base = path.with_extension(format!("fragment-{}", &sha256_hex(tail)[..12]));
+    fs::write(&base, b"partial").unwrap();
+    for _ in 0..2 {
+        fs::write(&path, tail).unwrap(); // also covers a later interruption with the same fragment
+        let mut c = pcpos(&root);
+        c.args(["repair", "register.jsonl"]);
+        let (out, code) = feed(c, b"");
+        assert_eq!(code, 0);
+        assert_eq!(fs::read(&path).unwrap(), b"");
+        assert_eq!(fs::read(&base).unwrap(), b"partial", "a prior backup must survive");
+        let saved: Vec<_> = fs::read_dir(&root).unwrap().map(|e| e.unwrap().path())
+            .filter(|p| out.contains(&format!("moved to {}.", p.display())) && fs::read(p).unwrap() == tail).collect();
+        assert_eq!(saved.len(), 1, "receipt should name the complete copy: {out}");
+    }
+    assert_eq!(fs::read_dir(root).unwrap().count(), 4);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_backup_link_does_not_overwrite_its_target_during_repair() {
+    use std::os::unix::fs::symlink;
+    let root = dir("repair-links");
+    let target = dir("repair-outside").join("sentinel");
+    let path = root.join("register.jsonl");
+    let tail = b"unfinished";
+    let aside = path.with_extension(format!("fragment-{}", &sha256_hex(tail)[..12]));
+    for hard in [false, true] {
+        fs::write(&path, tail).unwrap();
+        fs::write(&target, b"other file").unwrap();
+        if hard { fs::hard_link(&target, &aside).unwrap(); } else { symlink(&target, &aside).unwrap(); }
+        let mut c = pcpos(&root);
+        c.args(["repair", "register.jsonl"]);
+        let (out, code) = feed(c, b"");
+        assert_eq!(code, 0, "{out}");
+        assert_eq!(fs::read(&target).unwrap(), b"other file");
+        assert_eq!(fs::read(&path).unwrap(), b"");
+        assert_eq!(fs::read(&aside).unwrap(), b"other file");
+        fs::remove_file(&aside).unwrap();
+    }
+}
+
+#[test]
 fn only_a_typed_command_is_the_person_s_own_adoption_and_a_fragment_of_a_prompt_is_not_the_prompt() {
     let root = dir("adopt");
     tool(&root, "acr_begin", "{}");

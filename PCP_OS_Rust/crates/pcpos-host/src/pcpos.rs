@@ -2294,6 +2294,28 @@ fn at_terminal(path: &str, create: bool) -> Result<(PathBuf, String), String> {
     Ok((dir.canonicalize().map_err(|e| format!("{}: {}", dir.display(), e))?, name))
 }
 
+/// Keep the historical fragment name when available. Never open an occupied name, even to retry a
+/// repair: it may be a link, an unrelated file, or a partial copy left after an earlier failure.
+fn save_fragment(register: &Path, bytes: &[u8]) -> std::io::Result<PathBuf> {
+    let extension = format!("fragment-{}", &sha256_hex(bytes)[..12]);
+    let mut aside = register.with_extension(&extension);
+    let mut file = match File::create_new(&aside) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
+            aside = register.with_extension(format!("{extension}-{}-{stamp}", std::process::id()));
+            File::create_new(&aside)?
+        }
+        Err(e) => return Err(e),
+    };
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    // On Unix the new directory entry is a separate persistence step from the file contents.
+    #[cfg(unix)]
+    File::open(aside.parent().unwrap_or(Path::new(".")))?.sync_all()?;
+    Ok(aside)
+}
+
 /// Set aside an unfinished last line, which an interrupted write can leave. Nothing that was stored whole is
 /// touched: the fragment is moved to a file beside the register and the register ends at its last whole event.
 fn repair(path: &str) -> Result<String, String> {
@@ -2306,8 +2328,7 @@ fn repair(path: &str) -> Result<String, String> {
     }
     let keep = raw.iter().rposition(|b| *b == b'\n').map(|i| i + 1).unwrap_or(0);
     ledger::verify(&raw[..keep]).map_err(|e| format!("the part before the unfinished line is not intact either ({:?}); nothing was changed", e))?;
-    let aside = h.path.with_extension(format!("fragment-{}", sha256_hex(&raw[keep..]).get(..12).unwrap_or("x")));
-    fs::write(&aside, &raw[keep..]).map_err(|e| format!("the fragment could not be saved ({e}); nothing was changed"))?;
+    let aside = save_fragment(&h.path, &raw[keep..]).map_err(|e| format!("the fragment could not be saved ({e}); the register was not shortened"))?;
     h.file.set_len(keep as u64).and_then(|_| h.file.sync_all()).map_err(|e| format!("the register could not be shortened: {e}"))?;
     Ok(format!("an unfinished last line of {} byte(s) was moved to {}. The register now ends at its last whole event. Run verify, and record what happened.\n", raw.len() - keep, aside.display()))
 }
