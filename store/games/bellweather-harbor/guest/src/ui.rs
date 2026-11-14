@@ -1,6 +1,7 @@
 mod freight;
 mod journal;
 mod order;
+mod quay;
 mod wire;
 mod works;
 mod yard;
@@ -49,6 +50,7 @@ pub enum Notice {
 }
 pub enum Book {
     Harbor,
+    Quay(crate::quay::QuayDesk),
     Charter,
     Journal(crate::journal::Journal),
     Mail(MailRun),
@@ -63,6 +65,8 @@ pub struct Desk {
     pub notice: Notice,
     pub notice_until: u64,
     pub store_ok: bool,
+    pub bell_reply: bellweather::neighbors::BellReply,
+    pub answer: Option<(usize, u64)>,
 }
 
 pub struct Money(pub u64);
@@ -147,6 +151,28 @@ impl Canvas<'_> {
 }
 
 pub fn render(out: &mut Screen, scene: &mut Harbor, game: &Economy, desk: &mut Desk, now: u64) {
+    render_desk(out, scene, game, desk, now);
+    if let Some((person, until)) = desk.answer {
+        if now < until {
+            let mut c = Canvas(out);
+            c.rect(8, 361, 624, 23, INK);
+            c.rect(8, 361, 3, 23, BRASS);
+            c.label(
+                18,
+                369,
+                1,
+                PAPER,
+                format_args!("{}", bellweather::quay_text::ANSWERS[person]),
+            );
+        }
+    }
+}
+
+fn render_desk(out: &mut Screen, scene: &mut Harbor, game: &Economy, desk: &mut Desk, now: u64) {
+    if let Book::Quay(quay) = &desk.book {
+        quay::draw(&mut Canvas(out), game, quay);
+        return;
+    }
     if let Book::Journal(journal) = &mut desk.book {
         journal::draw(&mut Canvas(out), game, journal);
         return;
@@ -192,6 +218,12 @@ pub fn render(out: &mut Screen, scene: &mut Harbor, game: &Economy, desk: &mut D
         scene,
         (now.saturating_mul(30) / 1000) as u32,
         game.manifest.ending,
+    );
+    art::draw_harbor_watch(
+        scene,
+        game.freight.tide,
+        u32::from(game.freight.elapsed_ms),
+        game.neighbors.lanterns_unlocked(),
     );
     let mut c = Canvas(out);
     c.rect(0, 0, W, H, NIGHT);
@@ -285,6 +317,17 @@ pub fn render(out: &mut Screen, scene: &mut Harbor, game: &Economy, desk: &mut D
     c.rect(0, 231, W, 132, PAPER);
     c.rect(0, 231, W, 2, BRASS);
     c.label(12, 238, 1, INK, format_args!("FLEET REGISTER"));
+    quay::watch(&mut c, game, 132, 238, TEAL);
+    c.label(
+        315,
+        238,
+        1,
+        TEAL,
+        format_args!(
+            "Q  Talk to {}",
+            bellweather::neighbors::NAMES[bellweather::neighbors::visitor(game.freight.tide)]
+        ),
+    );
     let mode = match desk.bulk {
         Bulk::One => "1",
         Bulk::Ten => "10",
@@ -517,7 +560,7 @@ fn charter_overlay(c: &mut Canvas<'_>, game: &Economy) {
         202,
         1,
         TEAL,
-        format_args!("Launched ships and current shipyard work carry over."),
+        format_args!("Ships, yard work, friendships and keepsakes carry over."),
     );
     c.label(
         108,

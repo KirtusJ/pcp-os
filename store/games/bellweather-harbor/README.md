@@ -1,4 +1,4 @@
-# Bellweather Harbor
+# Bellweather Harbor · Lantern Watch
 
 You have one rowboat, an empty till, and a brass bell. Ring for a one-coin tip and send the boat out. Two seconds later it brings home eight more coins. What happens to the waterfront after that is up to you.
 
@@ -23,6 +23,16 @@ At 10, 25, 50, 100, 150 and 200 units, a business doubles its payout. Trips also
 **Charters.** The first offer comes at 500,000 qualifying coins. Fares and tips count in full. Exchange receipts first recover outstanding raw-material purchases and processing fees, then the excess qualifies. Selling purchased crates straight back cannot manufacture charter progress. You may keep growing the port. When you sign, you return to the starting rowboat and receive a permanent 25% business payout bonus per charter. Two charters in a single offer take two million qualifying coins. Three take 4.5 million.
 
 **Saves.** The browser saves in local storage when available. Open the logbook to export a `bellweather.sav` file or to import one on another device. Keep an export before moving the HTML to a different folder or clearing browser data. The native edition uses the same binary ledger.
+
+## A day on the quay
+
+A harbor day takes six minutes. Four watches of three tides each carry the town from dawn at 06:00 through daylight, dusk and night. The sky and the water follow the same clock as the exchange. Sea mist, rain and wind move through on a five-day weather pattern. On the browser's Sound setting you can hear the oars, gulls or foghorn between actions.
+
+Nell Reed tends the lower light, Ada Pike feeds the late shift, and Kit Sayer meets the mail packet. One of them visits the public quay every tide. In the browser, select the visitor in the waterfront scene or choose **On the quay**. On PCP OS, press **Q**. Ring the ordinary harbor bell and listen for an answer from whoever was on duty when you rang. The caption works with sound off.
+
+Ask about work to see the exact cargo and payment. Favors use crates from your hold. The cashbook records their payments with freight orders, and the cargo account records each delivery. You can fill one request per tide. An unfinished request comes back on that person's next visit, and the first three favors for each person unlock a keepsake you can read again. When you have helped all three, watch the channel at dusk. The neighbors sail paper lanterns every evening after that.
+
+The clock, friendships and keepsakes carry across charters. Time continues when you close the game, under the existing offline limit. Favors wait for you to choose them.
 
 ## The freight exchange
 
@@ -63,7 +73,7 @@ The cashbook posts cargo sales, settled freight orders, raw purchases, processin
 
 Select a commodity in the cargo account to follow its opening inventory, landings, purchases, production, sales, usage and consignments to its closing balance. Older saves import their existing cargo as opening inventory and begin the new cash accounts at zero.
 
-The starting hold fits 24 crates per good. Expansion costs 1,800 coins for 48, then 14,000 for 96. Signing a charter restarts the market, works, trading accounts and outstanding orders. The mail album, shipyard register and paid construction carry over. Earlier public saves import into this edition, including both lengths of the BWH5 ledger.
+The starting hold fits 24 crates per good. Expansion costs 1,800 coins for 48, then 14,000 for 96. Signing a charter restarts the market, works, trading accounts and outstanding orders. The mail album, shipyard register and paid construction carry over. Earlier public saves import into this edition, including both lengths of BWH5 and the BWH6 mystery journal. Existing harbors meet the neighbors at their current tide.
 
 ## An odd receipt
 
@@ -105,6 +115,10 @@ qemu-system-x86_64 -cpu max -m 256M -vga std \
 | X | Cycle between one, ten and maximum |
 | M | Hire a captain |
 | P, then Space | Open harbor mail and catch the bag |
+| Q | Visit the quay |
+| 1–3 / V on the quay | Select a neighbor / visit the person on duty |
+| Enter / D on the quay | Deliver the displayed request / decline it |
+| L on the quay | Open the selected neighbor’s keepsakes |
 | J | Examine the odd receipt, then reopen the casebook |
 | 1–4 / Space / Enter in a case | Read a lead / tag it / file the pair |
 | H / N in a case | Read the hint / continue after a finding |

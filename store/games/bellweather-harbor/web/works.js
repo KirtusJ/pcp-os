@@ -66,7 +66,7 @@ function initWorks() {
       <div><span>Net trading cash flow</span><strong id="ledger-net">0</strong></div>
     </div>
     <div class="ledger-postings">` +
-    bookTable('Cash received', [['sales','Cargo sales'],['orders','Freight orders paid']], 'receipts-total') +
+    bookTable('Cash received', [['sales','Cargo sales'],['orders','Freight orders & quay favors']], 'receipts-total') +
     bookTable('Cash paid', [['purchases','Purchased raw cargo'],['fees','Processing fees'],['construction','Workshop openings']], 'paid-total') +
     `</div><section class="ledger-stock" aria-labelledby="ledger-stock-head">
       <h4 id="ledger-stock-head">Warehouse valuation</h4>
@@ -102,7 +102,7 @@ function initWorks() {
     const option=document.createElement('option');option.value=g;option.textContent=name;flowGood.appendChild(option);
   });
   flowGood.onchange=renderLedger;
-  ['Opening stock','Landed at berth','Bought at market','Made in workshop','Sold at market','Used at works or shipyard','Consigned to freight orders'].forEach((label,k)=>{
+  ['Opening stock','Landed at berth','Bought at market','Made in workshop','Sold at market','Used at works or shipyard','Delivered to orders and neighbors'].forEach((label,k)=>{
     const row=document.createElement('tr');
     row.innerHTML='<th scope="row">'+label+'</th><td id="ledger-flow-'+k+'"></td>';
     flowRows.appendChild(row);

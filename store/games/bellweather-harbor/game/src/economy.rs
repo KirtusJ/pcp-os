@@ -5,6 +5,7 @@ use crate::factory::{Factory, PLANS as WORKS};
 use crate::freight::{Freight, TIDE_MS};
 use crate::manifest::{Ending, Manifest};
 use crate::market::Quote;
+use crate::neighbors::{self, Favor, Neighbors};
 use crate::yard::{Yard, PLANS};
 use core::{cell::Cell, convert::TryInto};
 
@@ -20,7 +21,8 @@ pub const V3_SAVE_LEN: usize = 90;
 pub const V4_SAVE_LEN: usize = 96;
 pub const V5_INITIAL_SAVE_LEN: usize = 507;
 pub const V5_SAVE_LEN: usize = 526;
-pub const SAVE_LEN: usize = 532;
+pub const V6_SAVE_LEN: usize = 532;
+pub const SAVE_LEN: usize = 545;
 const VALID_POSTMARKS: u8 = (1 << SHOP_NAMES.len()) - 1;
 
 const BASE_COST: [u64; 5] = [12, 140, 2_200, 34_000, 480_000];
@@ -186,6 +188,7 @@ pub struct Economy {
     pub ledger: Ledger,
     pub ticket: Ticket,
     pub manifest: Manifest,
+    pub neighbors: Neighbors,
     pub shops: [Shop; 5],
     // A clock correction must not turn hours already settled into new earnings.
     settled_through_s: Cell<u64>,
@@ -217,6 +220,7 @@ impl Economy {
             ledger: Ledger::new(),
             ticket: Ticket::new(),
             manifest: Manifest::new(),
+            neighbors: Neighbors::new(),
             shops,
             settled_through_s: Cell::new(0),
         }
@@ -505,6 +509,48 @@ impl Economy {
         self.factories[i].built = true;
         true
     }
+    pub fn current_favor(&self) -> Favor {
+        self.neighbors.offer(self.freight.tide)
+    }
+
+    pub fn can_help(&self) -> bool {
+        let favor = self.current_favor();
+        !self.neighbors.served
+            && favor
+                .cargo
+                .iter()
+                .enumerate()
+                .all(|(g, &qty)| self.inventory(g) >= qty)
+    }
+
+    /// Recheck the displayed visitor, tide, materials and price before any
+    /// crate leaves the hold. An expired request never pays its successor.
+    pub fn help_neighbor(&mut self, expected: Favor) -> bool {
+        if expected != self.current_favor() || !self.can_help() {
+            return false;
+        }
+        for (g, qty) in expected.cargo.into_iter().enumerate() {
+            if g < 3 {
+                self.freight.stock[g] -= qty;
+            } else {
+                self.factories[g - 3].output -= qty;
+            }
+            let flow = &mut self.ledger.flows[g];
+            flow.delivered = flow.delivered.saturating_add(u64::from(qty));
+        }
+        self.neighbors.served = true;
+        let n = &mut self.neighbors.helped[expected.neighbor];
+        *n = n.saturating_add(1);
+        self.ledger.orders = self.ledger.orders.saturating_add(expected.reward);
+        self.trade_receipt(expected.reward);
+        self.retry_works();
+        true
+    }
+
+    pub fn lanterns_sailing(&self) -> bool {
+        self.neighbors.lanterns_unlocked() && neighbors::watch(self.freight.tide) == 2
+    }
+
     pub fn can_start_batch(&self, i: usize) -> bool {
         let Some(plan) = WORKS.get(i) else {
             return false;
@@ -724,7 +770,11 @@ impl Economy {
     }
 
     fn advance_businesses(&mut self, ms: u64) -> u64 {
+        let before_tide = self.freight.tide;
         let order = self.freight.advance(ms);
+        if self.freight.tide != before_tide {
+            self.neighbors.served = false;
+        }
         self.ledger.orders = self.ledger.orders.saturating_add(order);
         self.trade_receipt(order);
         let mut income = 0u64;
@@ -797,6 +847,14 @@ impl Economy {
                 postmarks: self.postmarks,
                 yard: self.yard,
                 manifest: self.manifest,
+                neighbors: self.neighbors,
+                // The port calendar and appointment at the quay carry through
+                // a new charter; businesses, cargo, market stock and orders reset.
+                freight: Freight {
+                    tide: self.freight.tide,
+                    elapsed_ms: self.freight.elapsed_ms,
+                    ..Freight::new()
+                },
                 settled_through_s: self.settled_through_s.clone(),
                 ..Self::new()
             };
@@ -804,11 +862,11 @@ impl Economy {
         award
     }
 
-    /// BWH6 appends six casebook bytes after the complete BWH5 exchange ledger.
+    /// BWH7 appends lifetime neighbor counts and this tide's service lock to BWH6.
     /// All integers are little-endian, with a trailing CRC-32.
     pub fn encode(&self, now_s: u64) -> [u8; SAVE_LEN] {
         let mut bytes = [0; SAVE_LEN];
-        bytes[..4].copy_from_slice(b"BWH6");
+        bytes[..4].copy_from_slice(b"BWH7");
         let settled_s = now_s.max(self.settled_through_s.get());
         self.settled_through_s.set(settled_s);
         bytes[4..12].copy_from_slice(&settled_s.to_le_bytes());
@@ -896,6 +954,10 @@ impl Economy {
         write(&[u8::from(self.manifest.unlocked), self.manifest.solved]);
         write(&self.manifest.read);
         write(&[self.manifest.ending as u8]);
+        for count in self.neighbors.helped {
+            write(&count.to_le_bytes());
+        }
+        write(&[u8::from(self.neighbors.served)]);
         debug_assert_eq!(offset, SAVE_LEN - 4);
         let checksum = crc32(&bytes[..offset]);
         bytes[offset..].copy_from_slice(&checksum.to_le_bytes());
@@ -912,7 +974,8 @@ impl Economy {
             | (b"BWH4", V4_SAVE_LEN)
             | (b"BWH5", V5_INITIAL_SAVE_LEN)
             | (b"BWH5", V5_SAVE_LEN)
-            | (b"BWH6", SAVE_LEN)
+            | (b"BWH6", V6_SAVE_LEN)
+            | (b"BWH7", SAVE_LEN)
                 if bytes[67] & !VALID_POSTMARKS == 0 =>
             {
                 bytes[67]
@@ -1070,7 +1133,7 @@ impl Economy {
                     return None;
                 }
             }
-            if bytes.len() == SAVE_LEN {
+            if bytes.len() >= V6_SAVE_LEN {
                 let [unlocked, solved] = take(&mut fields)?;
                 game.manifest.unlocked = match unlocked {
                     0 => false,
@@ -1086,6 +1149,21 @@ impl Economy {
                     _ => return None,
                 };
                 if !game.manifest.valid() {
+                    return None;
+                }
+            }
+            if bytes.len() == SAVE_LEN {
+                for count in &mut game.neighbors.helped {
+                    *count = u32::from_le_bytes(take(&mut fields)?);
+                }
+                game.neighbors.served = match take::<1>(&mut fields)?[0] {
+                    0 => false,
+                    1 => true,
+                    _ => return None,
+                };
+                if game.neighbors.served
+                    && game.neighbors.helped[neighbors::visitor(game.freight.tide)] == 0
+                {
                     return None;
                 }
             }
@@ -1116,7 +1194,7 @@ impl Economy {
                 flow.opening = stock;
             }
         }
-        if bytes.len() < SAVE_LEN {
+        if bytes.len() < V6_SAVE_LEN {
             // Pre-casebook editions did not always record landings. Material
             // progress provides an invitation even when an old hold is empty.
             game.manifest.unlocked = game
@@ -1332,7 +1410,7 @@ mod tests {
         assert_eq!(game.freight.stock, [1, 0, 0]);
         assert!(game.shops[0].manager);
         assert_eq!(game.shops[0].elapsed_ms, 0);
-        assert_eq!(&game.encode(1_001)[..4], b"BWH6");
+        assert_eq!(&game.encode(1_001)[..4], b"BWH7");
     }
 
     #[test]
@@ -1357,7 +1435,7 @@ mod tests {
     }
 
     #[test]
-    fn v6_save_round_trip_and_single_bit_damage_detection() {
+    fn v7_save_round_trip_and_single_bit_damage_detection() {
         let mut game = funded(100_000);
         game.hire(0);
         game.buy(2, Bulk::Ten);
@@ -1365,7 +1443,7 @@ mod tests {
         game.advance(333);
         assert!(game.mark_berth(2));
         let save = game.encode(160);
-        assert_eq!(&save[..4], b"BWH6");
+        assert_eq!(&save[..4], b"BWH7");
         assert_eq!(save[67], 0b100);
         let (restored, paid) = Economy::decode(&save, 160).unwrap();
         assert_eq!(paid, 0);
@@ -1518,7 +1596,13 @@ mod tests {
         assert_eq!(game.freight.stock, [96; 3]);
         assert!(game.reserve_order());
         assert!(game.charter() >= 1);
-        assert_eq!(game.freight, Freight::new());
+        assert_eq!(
+            game.freight,
+            Freight {
+                tide: 360,
+                ..Freight::new()
+            }
+        );
         assert_eq!(game.postmarks, 1);
         assert_eq!(game.advance(30_000), 0);
         assert!(!game.upgrade_hold());
@@ -1984,6 +2068,137 @@ mod tests {
             let crc = crc32(&bad[..SAVE_LEN - 4]);
             bad[SAVE_LEN - 4..].copy_from_slice(&crc.to_le_bytes());
             assert!(Economy::decode(&bad, 123).is_none());
+        }
+    }
+    #[test]
+    fn a_quay_visit_checks_terms_and_pays_the_contract_ledger_once() {
+        let mut port = funded(200);
+        let nell = port.current_favor();
+        assert_eq!(
+            (nell.neighbor, nell.tier, nell.cargo, nell.reward),
+            (0, 0, [1, 0, 0, 0, 0], 12)
+        );
+        assert!(!port.can_help());
+        assert!(!port.help_neighbor(nell));
+        assert_eq!(port.trade_lot(0, true, 1), Quote { qty: 1, coins: 7 });
+        assert!(port.can_help());
+        let before = port.clone();
+        assert!(!port.help_neighbor(Favor {
+            reward: 1_000_000,
+            ..nell
+        }));
+        assert_eq!(port, before);
+        assert!(port.help_neighbor(nell));
+        assert_eq!(port.current_favor(), nell);
+        assert!(!port.help_neighbor(nell));
+        assert_eq!(port.cash, 205);
+        assert_eq!(port.charter_earned(), 205);
+        assert_eq!(port.earned, 212);
+        assert_eq!(port.ledger.orders, 12);
+        assert_eq!(port.ledger.flows[0].delivered, 1);
+        assert_eq!(port.inventory(0), 0);
+        port.advance(30_000);
+        let ada = port.current_favor();
+        port.trade_lot(0, true, 2);
+        assert!(!port.help_neighbor(nell));
+        assert!(port.help_neighbor(ada));
+        assert!(Economy::decode(&port.encode(0), 0).is_some());
+    }
+
+    #[test]
+    fn the_lanterns_return_each_dusk_and_the_charter_keeps_appointments() {
+        let mut port = funded(CHARTER_UNIT);
+        port.trade_lot(0, true, 12);
+        for i in 0..3 {
+            let favor = port.current_favor();
+            assert_eq!(favor.neighbor, i);
+            assert!(port.help_neighbor(favor));
+            if i < 2 {
+                port.advance(30_000);
+            }
+        }
+        assert!(port.neighbors.lanterns_unlocked());
+        assert!(!port.lanterns_sailing());
+        port.advance(13_000);
+        let snapshot = port.encode(100);
+        let (mut same, _) = Economy::decode(&snapshot, 100).unwrap();
+        assert_eq!(same.charter(), 1);
+        assert_eq!(same.freight.tide, 2);
+        assert_eq!(same.freight.elapsed_ms, 13_000);
+        assert!(same.neighbors.served);
+        assert_eq!(same.neighbors.helped, [1, 1, 1]);
+        assert!(!same.can_help());
+        same.advance(17_000);
+        assert!(!same.neighbors.served);
+        assert_eq!(same.current_favor().tier, 1);
+        same.advance(90_000);
+        assert!(same.lanterns_sailing());
+        same.advance(90_000);
+        assert!(!same.lanterns_sailing());
+        same.advance(270_000);
+        assert!(same.lanterns_sailing());
+        let (offline, delta) = Economy::decode(&snapshot, 100 + 12 * 3600).unwrap();
+        assert_eq!(delta, 0);
+        assert_eq!(offline.neighbors.helped, [1, 1, 1]);
+        assert!(!offline.neighbors.served);
+        assert_eq!(offline.ledger.orders, 45);
+    }
+
+    #[test]
+    fn higher_tiers_take_real_products_and_the_last_terms_repeat() {
+        let mut port = funded(10_000);
+        port.trade_lot(0, true, 20);
+        port.trade_lot(1, true, 10);
+        port.open_factory(0);
+        assert!(port.help_neighbor(port.current_favor()));
+        port.advance(90_000);
+        let second = port.current_favor();
+        assert_eq!(second.tier, 1);
+        assert!(port.help_neighbor(second));
+        port.advance(90_000);
+        let third = port.current_favor();
+        assert_eq!(third.cargo, [3, 0, 0, 1, 0]);
+        assert!(!port.can_help());
+        assert!(port.start_batch(0));
+        port.advance(8_000);
+        assert_eq!(port.inventory(3), 1);
+        assert!(port.help_neighbor(third));
+        assert_eq!(port.inventory(3), 0);
+        assert_eq!(port.ledger.flows[3].delivered, 1);
+        port.advance(82_000);
+        let again = port.current_favor();
+        assert_eq!(
+            (again.tier, again.reward, again.cargo),
+            (third.tier, third.reward, third.cargo)
+        );
+        assert!(Economy::decode(&port.encode(0), 0).is_some());
+    }
+
+    #[test]
+    fn v6_keeps_a_signed_manifest_and_imports_no_imaginary_relationships() {
+        let mut port = funded(CHARTER_UNIT);
+        port.dispatch(0);
+        port.advance(2_000);
+        solve_manifest(&mut port, 2);
+        assert!(port.place_sale(0, 19, 1));
+        let latest = port.encode(9);
+        let mut old = [0; V6_SAVE_LEN];
+        let cut = V6_SAVE_LEN - 4;
+        old[..cut].copy_from_slice(&latest[..cut]);
+        old[..4].copy_from_slice(b"BWH6");
+        let crc = crc32(&old[..cut]);
+        old[cut..].copy_from_slice(&crc.to_le_bytes());
+        let (migrated, paid) = Economy::decode(&old, 9).unwrap();
+        assert_eq!(paid, 0);
+        assert_eq!(migrated.manifest, port.manifest);
+        assert_eq!(migrated.neighbors, Neighbors::new());
+        assert_eq!(migrated.ticket, port.ticket);
+        for flag in [1, 2] {
+            let mut corrupt = latest;
+            corrupt[SAVE_LEN - 5] = flag;
+            let crc = crc32(&corrupt[..SAVE_LEN - 4]);
+            corrupt[SAVE_LEN - 4..].copy_from_slice(&crc.to_le_bytes());
+            assert!(Economy::decode(&corrupt, 9).is_none());
         }
     }
 }

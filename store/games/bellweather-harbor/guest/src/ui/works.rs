@@ -91,7 +91,7 @@ fn ledger(c: &mut Canvas<'_>, g: &Economy, show_cargo: bool) {
     let l = &g.ledger;
     for (n, (label, amount, credit)) in [
         ("Cargo sales", l.sales, true),
-        ("Freight order payments", l.orders, true),
+        ("Freight orders and quay favors", l.orders, true),
         ("Cargo purchases", l.purchases, false),
         ("Processing fees", l.fees, false),
         ("Construction", l.construction, false),

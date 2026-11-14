@@ -41,7 +41,6 @@ h1 em{color:var(--orange);font-weight:normal;white-space:nowrap}
 .art-panel{background:var(--deep);border:2px solid var(--deep);border-radius:7px;overflow:hidden;position:relative;box-shadow:0 4px 0 #b5a98c}
 .dockline{display:flex;color:#f6edcb;align-items:center;justify-content:space-between;padding:8px 13px;font-size:10px}
 .signal{display:inline-block;width:7px;height:7px;background:#e8a454;box-shadow:0 0 0 2px #5a5844;border-radius:50%;margin-right:9px}
-#waters{font-size:9px;color:#c5d5bc;letter-spacing:1px}
 #harbor{display:block;width:100%;height:auto;image-rendering:pixelated;background:#b4c9bc;border-block:1px solid var(--deep)}
 .art-caption{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 13px;color:#f6edcc}
 .art-caption b{font:italic 16px var(--display);color:#ffdfae}
@@ -156,6 +155,7 @@ body{background:#f5efdc}
 /*__BELLWEATHER_TICKET_CSS__*/
 /*__BELLWEATHER_YARD_CSS__*/
 /*__BELLWEATHER_MANIFEST_CSS__*/
+/*__BELLWEATHER_QUAY_CSS__*/
 </style>
 </head>
 <body>
@@ -164,9 +164,10 @@ body{background:#f5efdc}
 <div class="banner"><h1>Bellweather <em>Harbor</em></h1><div class="hero-ledger"><div class="stat"><span class="label">Cash on hand</span><strong><i class="coin" aria-hidden="true"></i><span id="cash">0</span></strong></div><div class="stat"><span class="label">Automatic income</span><strong id="auto-rate">0/s</strong></div></div></div>
 <div class="workspace">
 <section class="port" aria-label="Working waterfront">
-<div class="art-panel"><div class="dockline"><span><i class="signal"></i>Harbor view</span><span id="waters">LIVE TIDE</span></div><canvas id="harbor" width="480" height="192" role="img" aria-label="Animated pixel-art harbor. Your businesses add boats and activity to the water."></canvas><div class="art-caption"><b id="port-class">The little landing</b><span id="business-count">1 of 5 businesses open</span></div></div>
+<div class="art-panel"><div class="dockline"><span class="quay-watch-face"><i class="signal"></i><b id="quay-clock">06:00</b> · <span id="quay-watch">Dawn</span></span><span id="quay-weather">Harbor weather</span></div><div class="quay-scene"><canvas id="harbor" width="480" height="192" role="img" aria-label="Animated pixel-art harbor. Your businesses add boats and activity to the water."></canvas><button type="button" id="quay-contact" aria-label="Visit the neighbor on the pier"><span aria-hidden="true">Visit ↗</span></button></div><div class="art-caption"><b id="port-class">The little landing</b><span id="business-count">1 of 5 businesses open</span></div>
+<button type="button" id="quay-open" class="quay-invite"><canvas width="80" height="64" id="quay-mini" aria-hidden="true"></canvas><span class="quay-preview"><small>On the quay</small><strong id="quay-present">The first visitor</strong></span><span class="quay-visit">Visit <i aria-hidden="true">↗</i></span></button></div>
 <div class="bellbox"><div class="bellcopy"><h2>The harbor bell</h2><p id="bell-pay">Earn 1 coin and send the rowboat out.</p></div><button type="button" id="bell" disabled><canvas id="bell-mark" width="40" height="32" aria-hidden="true"></canvas>Ring the bell</button><div id="spray" aria-hidden="true"></div></div>
-<div class="port-notice"><strong>Dock notes</strong><span id="hint">Ring the bell. Your first rowboat brings back 8 coins in 2 seconds.</span></div>
+<div class="port-notice"><strong>Dock notes</strong><div class="quay-note"><span id="hint">Ring the bell. Your first rowboat brings back 8 coins in 2 seconds.</span><span id="quay-bell-answer" role="status"></span></div></div>
 <button type="button" id="manifest-open" class="odd-slip" hidden><span class="receipt-mark" aria-hidden="true">≋</span><span id="manifest-entry">An odd receipt</span><span class="receipt-action" id="manifest-entry-action">Examine ↗</span></button>
 </section>
 <section class="holdings" aria-labelledby="ledger-title"><div class="section-head"><h2 class="section-title" id="ledger-title">Business ledger</h2><div class="buygroup"><span class="label">Buy</span><div class="seg" role="group" aria-label="Purchase quantity"><button id="bulk-1" aria-pressed="true" class="active">×1</button><button id="bulk-10" aria-pressed="false">×10</button><button id="bulk-max" aria-pressed="false">Max</button></div></div></div><div id="shops"></div></section>
@@ -177,8 +178,27 @@ body{background:#f5efdc}
 </div>
 <noscript>Enable JavaScript to play Bellweather Harbor.</noscript>
 </main>
-<footer><span id="save-status">Opening harbor…</span><span>Bellweather Port Authority</span></footer>
+<footer><span id="save-status">Opening harbor…</span><span>Bellweather Port Authority · 1.1.0</span></footer>
 <dialog id="book" aria-labelledby="book-title"><div class="book-head"><span class="book-meta">Bellweather Port Authority</span><button id="close-book" title="Close" aria-label="Close">×</button></div><div class="book-page"><h2 id="book-title">Logbook</h2><div id="book-body"></div><div class="book-actions" id="book-actions"></div></div></dialog>
+<dialog id="quay-book" aria-labelledby="quay-title">
+  <header class="quay-mast"><h2 id="quay-title">On the quay</h2><button id="quay-close" type="button" aria-label="Close On the quay">Close ×</button></header>
+  <nav id="quay-roster" aria-label="Harbor neighbors"></nav>
+  <div class="quay-page">
+    <div class="quay-profile"><canvas id="quay-portrait" width="80" height="64" aria-hidden="true"></canvas><div><p class="quay-label" id="quay-role"></p><h3 id="quay-name"></h3><p id="quay-place"></p></div></div>
+    <div class="quay-voice"><p id="quay-greeting"></p></div>
+    <p class="quay-state" id="quay-relation"></p>
+    <button id="quay-ask" type="button" aria-expanded="false" aria-controls="quay-favor">Ask about work</button>
+    <section id="quay-favor" class="quay-favor" aria-labelledby="quay-request" hidden>
+      <h4 id="quay-request">A favor</h4><p id="quay-task"></p><p id="quay-departure"></p>
+      <p id="quay-terms"></p><p id="quay-stock"></p>
+      <button type="button" id="quay-give">Deliver cargo</button>
+    </section>
+    <p id="quay-response" role="status"></p>
+    <details id="quay-memory"><summary>Keepsakes</summary><div id="quay-keepsakes"></div></details>
+    <details id="quay-overheard"><summary>Overheard on the quay</summary><p id="quay-line-a"></p><p id="quay-line-b"></p></details>
+    <aside id="quay-lanterns" hidden aria-label="Lantern flotilla"></aside>
+  </div>
+</dialog>
 <dialog id="manifest-book" aria-labelledby="manifest-title">
   <header class="case-mast"><span class="case-file-mark" aria-hidden="true">≋</span><h2 id="manifest-title">The Second <em>Manifest</em></h2><button type="button" id="manifest-close" aria-label="Close case file">Close ×</button></header>
   <nav class="case-tabs" id="manifest-chapters" aria-label="Case register"></nav>
@@ -316,7 +336,7 @@ function syncSound(){
   $('sound').setAttribute('aria-pressed',String(sounding));
 }
 $('sound').onclick=()=>{
-  sounding=!sounding;syncSound();sound([587,880]);
+  sounding=!sounding;syncSound();if(!sounding)stopHarborAmbience();sound([587,880]);
   try{localStorage.setItem('bellweather.sound',sounding?'on':'off')}catch(_){}
 };
 function makeRows(){
@@ -370,18 +390,22 @@ function renderUI(){
     r.hire.disabled=!!managed||!owned||cash<mgr;r.hire.setAttribute('aria-label',names[i]+' · '+r.hire.title);
     r.bar.style.width=(running?elapsed/period*100:0).toFixed(2)+'%';
   });
-  setText($('port-class'),portNames[highest]);setText($('business-count'),open+' of 5 businesses open');
+  setText($('port-class'),wasm.quay_sailing()?'Lanterns on the water':portNames[highest]);setText($('business-count'),open+' of 5 businesses open');
   const offer=wasm.charter_offer(),target=wasm.charter_target();
   setText($('charter-count'),wasm.charters());setText($('charter-progress'),offer?'Ready to sign for '+offer:num(earned)+' / '+num(target)+' qualifying');
   setText($('charter'),offer?'Sign charter ↗':'Visit office ↗');
   $('charter-fill').style.width=Math.min(100,earned/target*100)+'%';
   const nextHint=hint(cash,open);if(nextHint!==lastHint){lastHint=nextHint;setText($('hint'),nextHint)}
-  albumStatus();renderFreight();renderYard();renderManifest();if(bookMode==='charter')updateCharter();
+  albumStatus();renderFreight();renderYard();renderManifest();renderQuay();if(bookMode==='charter')updateCharter();
 }
 function draw(t,force=false){
-  if(!force&&(reduced.matches||t-lastDraw<90))return;
+  if(reduced.matches){
+    const still=[wasm.freight_tide(),wasm.quay_lanterns(),wasm.yard_bonus(),wasm.manifest_ending()].join('/');
+    if(!force&&still===quayStill)return;
+    quayStill=still;
+  }else if(!force&&t-lastDraw<90)return;
   lastDraw=t;
-  const ptr=wasm.render(reduced.matches?0:Math.floor(artTick*.03),selected);
+  const ptr=reduced.matches?wasm.render_still(selected):wasm.render(Math.floor(artTick*.03),selected);
   blitRgb(new Uint32Array(wasm.memory.buffer,ptr,480*192),frame,ctx);
 }
 function blitRgb(src,frame,ctx){
@@ -396,7 +420,9 @@ function snapshot(){
 function restore(bytes){
   if(!wasm.valid_save_size(bytes.length))return -1;
   new Uint8Array(wasm.memory.buffer,wasm.save_ptr(),wasm.save_size()).set(bytes);
-  return wasm.restore_sized(nowSeconds(),bytes.length);
+  const result=wasm.restore_sized(nowSeconds(),bytes.length);
+  if(result>=0)clearQuayBell();
+  return result;
 }
 function welcomeBack(income,launch){
   const events=[];
@@ -460,7 +486,7 @@ function action(kind,i){
 }
 $('bell').onclick=()=>{
   if(!wasm)return;
-  actStart();const tip=wasm.ring(0);selected=0;sound([659.25,1318.5]);
+  actStart();const tip=wasm.ring(0);wasm.quay_bell_strike(time());selected=0;sound([659.25,1318.5]);
   if(!reduced.matches){
     const e=document.createElement('span');e.className='tip';e.textContent='+'+tip;
     e.style.marginRight=Math.round(Math.random()*28)+'px';$('spray').appendChild(e);setTimeout(()=>e.remove(),690);
@@ -481,7 +507,7 @@ $('close-book').onclick=closeBook;
 book.addEventListener('close',()=>{bookMode='';importBytes=null});
 book.addEventListener('click',ev=>{if(ev.target===book){const r=book.getBoundingClientRect();if(ev.clientX<r.left||ev.clientX>r.right||ev.clientY<r.top||ev.clientY>r.bottom)closeBook()}});
 $('log').onclick=()=>{
-  showBook('log','Harbormaster’s logbook','<p>Ring the bell for a tip and a rowboat departure. Run other businesses from the ledger. A captain keeps a business working for up to 12 hours while the harbor is closed.</p><h3>Growing the fleet</h3><p>At 10, 25, 50, 100, 150 and 200 units, that business doubles its payout. At 25, 100 and 200, trips also take half the time. Use ×10 for a bundle or Max to spend what you can afford.</p><h3>Freight exchange</h3><p>Buy and sell raw cargo at the merchant’s counter. Selling fills the merchant’s warehouse and puts pressure on bids. Buying draws stock down and raises the price of later crates. Each tide brings outside traders and a new order. Market depth shows the full price of a lot. At Processing works, turn salt and crab into provisions, or salt and timber into fittings. The broker can sell future stock at your price for up to twelve tides. Accounts records money and crate movements through the exchange.</p><h3>The shipyard</h3><p>Take coins and landed freight to the slipway to build three ships. A launched vessel permanently increases business payouts. Your fleet and the work on the ways carry over when you sign a charter.</p><h3>Your save</h3><p>Your ledger saves in this browser. Export a copy to move it to another browser, device, or the PCP OS edition.</p>','<button id="export-save" class="primary">Export save</button><button id="import-save">Import save</button>');
+  showBook('log','Harbormaster’s logbook','<p>Ring the bell for a tip and a rowboat departure. Run other businesses from the ledger. A captain keeps a business working for up to 12 hours while the harbor is closed.</p><h3>Neighbors on the quay</h3><p>Each visitor stays one tide (30 seconds). Twelve tides make a six-minute harbor day. Visit the quay and ask about work. The rowboat lands salt, the crab pots land crab, and the ferry lands timber. Make provisions at the cannery and fittings at the chandler. Your neighbors remember favors across charters.</p><h3>Growing the fleet</h3><p>At 10, 25, 50, 100, 150 and 200 units, that business doubles its payout. At 25, 100 and 200, trips also take half the time. Use ×10 for a bundle or Max to spend what you can afford.</p><h3>Freight exchange</h3><p>Buy and sell raw cargo at the merchant’s counter. Selling fills the merchant’s warehouse and puts pressure on bids. Buying draws stock down and raises the price of later crates. Each tide brings outside traders and a new order. Market depth shows the full price of a lot. At Processing works, turn salt and crab into provisions, or salt and timber into fittings. The broker can sell future stock at your price for up to twelve tides. Accounts records money and crate movements through the exchange.</p><h3>The shipyard</h3><p>Take coins and landed freight to the slipway to build three ships. A launched vessel permanently increases business payouts. Your fleet and the work on the ways carry over when you sign a charter.</p><h3>Your save</h3><p>Your ledger saves in this browser. Export a copy to move it to another browser, device, or the PCP OS edition.</p>','<button id="export-save" class="primary">Export save</button><button id="import-save">Import save</button>');
   $('export-save').disabled=!wasm;$('import-save').disabled=!wasm;
   $('export-save').onclick=()=>{
     actStart();const blob=new Blob([snapshot()],{type:'application/octet-stream'}),url=URL.createObjectURL(blob);
@@ -593,11 +619,11 @@ book.addEventListener('keydown',e=>{
 
 function step(){
   if(!wasm||parked)return;
-  settle();const t=time();draw(t);if(bookMode==='mail')paintMeter();
+  settle();const t=time();pollQuayBell(t);harborAmbience(wasm,sounding,parked);draw(t);if(bookMode==='mail')paintMeter();
   if(t-lastUi>=100){lastUi=t;renderUI()}
   if(t-lastWrite>4000)persist();
 }
-function park(){if(!wasm||parked)return;settle();persist();parkTime=time();parkWallTime=Date.now();parkedSave=lastRead;parked=true}
+function park(){stopHarborAmbience();if(!wasm||parked)return;clearQuayBell();settle();persist();parkTime=time();parkWallTime=Date.now();parkedSave=lastRead;parked=true}
 function wake(){
   if(!wasm||!parked)return;
   parked=false;let gained=0;const activeBefore=wasm.yard_active();
@@ -620,9 +646,9 @@ window.addEventListener('pagehide',park);window.addEventListener('pageshow',wake
 window.addEventListener('storage',e=>{if(wasm&&!parked&&e.key===storeKey&&e.newValue&&e.newValue!==lastRead){readLatest();renderUI();draw(time(),true)}});
 async function start(){
   try{
-    makeRows();initWorks();initBroker();initExchange();initYard();initManifest();const result=await WebAssembly.instantiate(un64(WASM_BYTES));wasm=result.instance.exports;
+    makeRows();initWorks();initBroker();initExchange();initYard();initManifest();initQuay();const result=await WebAssembly.instantiate(un64(WASM_BYTES));wasm=result.instance.exports;
     try{sounding=localStorage.getItem('bellweather.sound')==='on'}catch(_){}
-    syncSound();clock=time();readLatest(true);persist();$('bell').disabled=false;setText($('waters'),reduced.matches?'STILL WATER':'LIVE TIDE');
+    syncSound();clock=time();readLatest(true);persist();$('bell').disabled=false;
     renderUI();draw(time(),true);timer=setInterval(step,72);
   }catch(err){
     setText($('save-status'),'The harbor could not open. Download this HTML and open it in a browser with WebAssembly enabled.');
@@ -637,6 +663,8 @@ async function start(){
 /*__BELLWEATHER_YARD__*/
 /*__BELLWEATHER_MANIFEST_ART__*/
 /*__BELLWEATHER_MANIFEST__*/
+/*__BELLWEATHER_QUAY_SOUND__*/
+/*__BELLWEATHER_QUAY__*/
 start();
 </script>
 </body>
