@@ -143,6 +143,38 @@ fn admission_only_describes_the_first_two_records() {
 }
 
 #[test]
+fn every_truncated_byte_prefix_refuses_final_health() {
+    // The receiver sees UART bytes, not record boundaries supplied out of band.
+    // Exercise every interruption point, including the final byte of each item.
+    let rows = sample();
+    for format in ["json", "cbor", "cbor2"] {
+        let full = encode(format, &rows);
+        let admission = encode(format, &rows[..2]);
+        assert!(admission.len() < full.len());
+
+        for cut in 0..full.len() {
+            let prefix = &full[..cut];
+            assert_eq!(
+                call(format, prefix),
+                (6, "{\\"boot\\":\\"unknown\\"}\\n".into()),
+                "health accepted a {format} capture cut at byte {cut}",
+            );
+            let expected = if cut < admission.len() {
+                (6, "{\\"admit\\":null}\\n".to_owned())
+            } else {
+                (0, "{\\"admit\\":true,\\"image\\":\\"unchecked\\"}\\n".to_owned())
+            };
+            assert_eq!(
+                summary("--admission", format, prefix),
+                expected,
+                "admission decision at {format} byte {cut}",
+            );
+        }
+        assert_eq!(call(format, &full).0, 0);
+    }
+}
+
+#[test]
 fn summary_budget_is_inclusive_and_independent_of_following_records() {
     let rows = sample();
     let all = encode("json", &rows);
