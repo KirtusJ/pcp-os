@@ -5,6 +5,11 @@
 pub const CAPACITY: usize = 2048;
 pub const START: &str = "/harbour";
 
+// RFC 9110 §5.6.2. Validate the name as received, before matching known fields.
+fn token_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte)
+}
+
 pub fn body_length(head: &[u8]) -> Result<usize, &'static str> {
     let mut fields = core::str::from_utf8(head)
         .map_err(|_| "HTTP header encoding")?
@@ -16,20 +21,26 @@ pub fn body_length(head: &[u8]) -> Result<usize, &'static str> {
     let mut html = false;
     for field in fields {
         let (name, value) = field.split_once(':').ok_or("HTTP header syntax")?;
+        if name.is_empty() || !name.bytes().all(token_byte) {
+            return Err("HTTP header syntax");
+        }
+        if !value.bytes().all(|b| b == b'\t' || !b.is_ascii_control()) {
+            return Err("HTTP header syntax");
+        }
+        let value = value.trim_matches([' ', '\t']);
         if name.eq_ignore_ascii_case("transfer-encoding")
             || name.eq_ignore_ascii_case("content-encoding")
         {
             return Err("unsupported encoding");
         }
         if name.eq_ignore_ascii_case("content-length") {
-            let v = value.trim_matches([' ', '\t']);
-            if length.is_some() || v.is_empty() || !v.bytes().all(|b| b.is_ascii_digit()) {
+            if length.is_some() || value.is_empty() || !value.bytes().all(|b| b.is_ascii_digit()) {
                 return Err("invalid length");
             }
-            length = Some(v.parse::<usize>().map_err(|_| "invalid length")?);
+            length = Some(value.parse::<usize>().map_err(|_| "invalid length")?);
         }
         if name.eq_ignore_ascii_case("content-type") {
-            if html || !value.trim().eq_ignore_ascii_case("text/html") {
+            if html || !value.eq_ignore_ascii_case("text/html") {
                 return Err("unsupported content type");
             }
             html = true;
@@ -118,6 +129,35 @@ pub fn parse(body: &[u8]) -> Result<Page<'_>, &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validates_all_fields_before_interpreting_framing() {
+        const PREFIX: &str = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 4\r\n";
+        let check = |field: &str| {
+            let mut head = [0; 256];
+            head[..PREFIX.len()].copy_from_slice(PREFIX.as_bytes());
+            let end = PREFIX.len() + field.len();
+            head[PREFIX.len()..end].copy_from_slice(field.as_bytes());
+            body_length(&head[..end])
+        };
+        for bad in [
+            "Transfer-Encoding : chunked",
+            "Transfer-Encoding\t: chunked",
+            "X: value\r\n Transfer-Encoding: chunked",
+            "X: value\r\n\tcontinued",
+            ": empty",
+            "Bad(Name): v",
+            "Bad/Name: v",
+            "Náme: v",
+            "Bad\x7f: v",
+            "X: one\nTransfer-Encoding: chunked",
+            "X: one\rTransfer-Encoding: chunked",
+            "X: bad\0value",
+        ] {
+            assert!(check(bad).is_err(), "accepted {bad:?}");
+        }
+        assert_eq!(check("!#$%&'*+-.^_`|~aZ09: \tvalid\tvalue "), Ok(4));
+    }
 
     #[test]
     fn accepts_fixed_length_html_and_preserves_received_link_order() {

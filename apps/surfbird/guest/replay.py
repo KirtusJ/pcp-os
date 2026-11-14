@@ -95,6 +95,12 @@ def run_arm(args, work, scenario):
             self.send_header("Content-Length", str(len(body)))
             if scenario == "ambiguous":
                 self.send_header("Transfer-Encoding", "chunked")
+            if scenario == "space-before-colon":
+                self.flush_headers()
+                self.wfile.write(b"Transfer-Encoding : chunked\r\n")
+            if scenario == "folded":
+                self.flush_headers()
+                self.wfile.write(b"X-Fixture: one\r\n\tTransfer-Encoding: chunked\r\n")
             self.end_headers()
             self.wfile.write(body)
 
@@ -167,7 +173,8 @@ def run_arm(args, work, scenario):
                         wait("SURFBIRD error cable grant unavailable")
                         expected = []
                     else:
-                        wait("SURFBIRD error unsupported encoding")
+                        reason = "unsupported encoding" if scenario == "ambiguous" else "HTTP header syntax"
+                        wait("SURFBIRD error " + reason)
                         expected = ["/harbour"]
                     time.sleep(.35)
                     key("p")
@@ -202,7 +209,7 @@ def main():
     parser.add_argument("--output", type=Path, help="parent directory for unique run logs")
     args = parser.parse_args()
     root = Path(tempfile.mkdtemp(prefix="surfbird-", dir=args.output))
-    for scenario in ["allowed", "denied", "ambiguous"]:
+    for scenario in ["allowed", "denied", "ambiguous", "space-before-colon", "folded"]:
         run_arm(args, root / scenario, scenario)
 
 
