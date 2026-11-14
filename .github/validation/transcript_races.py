@@ -14,7 +14,7 @@ bin_path, shim = map(lambda p: str(Path(p).resolve()), sys.argv[1:])
 digest = lambda b: hashlib.sha256(b).hexdigest()
 
 @contextmanager
-def fixture():
+def fixture(review=False):
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         env = {**os.environ, "PCPOS_ROOT": tmp, "PCPOS_LOCK_WAIT": "0"}
@@ -28,7 +28,19 @@ def fixture():
             return [r["body"] for r in map(json.loads, lines) if r["kind"] == kind]
         hook("prompt", hook_event_name="UserPromptExpansion", expansion_type="slash_command",
              command_name="pcp-os:review", command_args="test", prompt="test")
+        if review:
+            target = digest(b"target")
+            records = [("ARTIFACT_ADDED", dict(origin="SUPPLIED", sha256=target, size=6)),
+                       ("REVIEW_COMMISSIONED", dict(claims=[dict(label="A", origin="COMMISSIONER", text="target")],
+                        director="principal", extent="TOTAL", label="R", procedure="FOCUSED", target={"sha256":target,"t":"artifact"}))]
+            requests = [dict(id=i, jsonrpc="2.0", method="tools/call",
+                             params=dict(name="acr_submit", arguments=dict(kind=kind,body=b)))
+                        for i,(kind,b) in enumerate(records,1)]
+            p = subprocess.run([bin_path,"mcp"], cwd=root, env=env, text=True, capture_output=True, timeout=5,
+                               input="".join(json.dumps(req)+"\n" for req in requests), check=True)
+            assert p.stdout.count("WRITTEN") == 2, p.stdout
         hook("subagent-start", agent_id="a", agent_type="worker")
+        if review: assert bodies("TASK_STARTED")[-1]["review"] == "R"
         yield root, env, hook, bodies
 
 @contextmanager
@@ -73,11 +85,11 @@ for stage, replacement in (("before", "fifo"), ("before", "other-inode"), ("befo
         assert not [r for r in bodies("ARTIFACT_ADDED") if r.get("task") == "T1"]
     print("PASS", stage, replacement, "independent start committed while observation was held", flush=True)
 
-with fixture() as (root, env, hook, bodies):
+with fixture(review=True) as (root, env, hook, bodies):
     with delayed_stop(root, env, "after"):
         hook("prompt", hook_event_name="UserPromptSubmit", prompt="stop")
         assert bodies("HALTED")
-    assert [(r["id"], r["outcome"]) for r in bodies("TASK_ENDED")] == [("T1","STOPPED")]
+    assert [(r["id"], r["outcome"]) for r in bodies("TASK_ENDED")] == [("T1","STOPPED")], bodies("TASK_ENDED")
     assert not [r for r in bodies("ARTIFACT_ADDED") if r.get("task") == "T1"]
     print("PASS halt during regular-file observation", flush=True)
 
