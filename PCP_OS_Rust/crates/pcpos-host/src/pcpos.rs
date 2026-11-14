@@ -1241,14 +1241,9 @@ fn clip_long(text: &str, chars: usize) -> String {
 /// their development-mode handling. The check is made only for a consequential
 /// new released-namespace selection, not on the ordinary work path.
 fn require_current_method_after_verified_pin(tx: &Tx, se: &Session) -> Result<(), String> {
-    let (events, _) = ledger::verify(tx.rec.ledger().bytes())
-        .map_err(|e| format!("cannot inspect the pinned method's register history: {e:?}"))?;
-    let was_verified = events.iter().rev()
-        .find(|e| e.get("kind").and_then(Value::as_str) == Some("METHOD_PINNED"))
-        .and_then(|e| e.get("body"))
-        .and_then(|b| b.get("verified"))
-        .and_then(Value::as_str) == Some("FILES_VERIFIED_AGAINST_OWN_MANIFEST");
-    if !was_verified {
+    // The record's incremental replay has already applied the last METHOD_PINNED
+    // event. Do not re-verify the entire ledger for a single new selection.
+    if !tx.state().method_verified_at_pin() {
         return Ok(());
     }
     let method = se.method.as_deref()
