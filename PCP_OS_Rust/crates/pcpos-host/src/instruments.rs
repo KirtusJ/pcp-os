@@ -420,7 +420,39 @@ fn exact(expression: &str) -> Result<Outcome, String> {
 
 // ---- mathematics.statement -------------------------------------------------------------------------------------
 
-/// Lean text, character by character: 0 for code, 1 for a comment, 2 for the inside of a string or character literal.
+/// Return the end of a Lean raw string, including its closing quote and matching
+/// hashes. A backslash is ordinary data here, even with zero hashes.
+fn lean_raw_end(c: &[char], start: usize) -> Result<Option<usize>, String> {
+    if c[start] != 'r' || (start > 0 && (lean_wordy(c[start - 1]) || matches!(c[start - 1], '!' | '?'))) {
+        return Ok(None);
+    }
+    let mut quote = start + 1;
+    while c.get(quote) == Some(&'#') {
+        quote += 1;
+    }
+    if c.get(quote) != Some(&'"') {
+        return Ok(None);
+    }
+    let hashes = quote - start - 1;
+    let mut i = quote + 1;
+    while i < c.len() {
+        if c[i] != '"' {
+            i += 1;
+            continue;
+        }
+        i += 1;
+        let after_quote = i;
+        while i - after_quote < hashes && c.get(i) == Some(&'#') {
+            i += 1;
+        }
+        if i - after_quote == hashes {
+            return Ok(Some(i));
+        }
+    }
+    Err(format!("a raw string opened at character {start} of the source is not closed; nothing was read"))
+}
+
+/// 0 for code, 1 for comments, 2 for literals, 3 for escaped identifier components.
 fn lean_marks(c: &[char]) -> Result<Vec<u8>, String> {
     let mut k = vec![0u8; c.len()];
     let mut i = 0;
@@ -453,6 +485,15 @@ fn lean_marks(c: &[char]) -> Result<Vec<u8>, String> {
                     break;
                 }
             }
+        } else if c[i] == '«' {
+            let end = c[i + 1..].iter().position(|ch| *ch == '»')
+                .map(|offset| i + offset + 2)
+                .ok_or_else(|| format!("an identifier escape opened at character {i} is not closed; nothing was read"))?;
+            k[i..end].fill(3);
+            i = end;
+        } else if let Some(end) = lean_raw_end(c, i)? {
+            k[i..end].fill(2);
+            i = end;
         } else if c[i] == '"' {
             let start = i;
             k[i] = 2;
@@ -508,7 +549,7 @@ fn lean_name(c: &[char], k: &[u8], from: usize) -> (usize, usize) {
         a += 1;
     }
     let mut b = a;
-    while b < c.len() && k[b] == 0 && !c[b].is_whitespace() && !"({[:⦃⟨".contains(c[b]) {
+    while b < c.len() && (k[b] == 3 || (k[b] == 0 && !c[b].is_whitespace() && !"({[:⦃⟨".contains(c[b]))) {
         b += 1;
     }
     if b > a && c[b - 1] == '.' && c.get(b) == Some(&'{') {
@@ -530,7 +571,7 @@ fn lean_norm(c: &[char], k: &[u8], a: usize, b: usize) -> Vec<(char, bool)> {
             out.push((' ', false));
         }
         gap = false;
-        out.push((c[i], k[i] == 2));
+        out.push((c[i], k[i] >= 2));
     }
     out
 }
@@ -1149,6 +1190,36 @@ mod tests {
 
     const LEAN: &str = "namespace Chain\n/-- Not this one: theorem foo : True := trivial /- nested -/ still a comment := -/\ntheorem foo_bar (n : Nat) : n + 0 = n := by simp\n\ntheorem foo (c₀ c₁ : ℝ) (h : 0 < c₀) (x : Nat := 3) : c₀ * c₁ ≤ c₁ * c₀ ∧ ∀ ε > 0, ∃ δ, δ < ε := by\n  constructor\n  · exact le_of_eq (mul_comm _ _)\n  · intro ε hε; exact ⟨ε / 2, by linarith⟩\nend Chain\n";
     const STATED: &str = "(c₀ c₁ : ℝ) (h : 0 < c₀) (x : Nat := 3) : c₀ * c₁ ≤ c₁ * c₀ ∧ ∀ ε > 0, ∃ δ, δ < ε";
+
+    #[test]
+    fn raw_string_examples_cannot_supply_a_pinned_declaration() {
+        let pin = sha256_hex(b": 2 + 1 = 3");
+        let declaration = "theorem captured : 2 + 1 = 3 := by decide";
+        let raw_example = format!("def exampleText := r##\"quote \"#\n{declaration}\nnext quote \" end\"##\n");
+        assert!(statement(&raw_example, "captured", Some(&pin)).err().unwrap().contains("no theorem"));
+        let real_source = format!("{raw_example}{declaration}\n");
+        assert!(statement(&real_source, "captured", Some(&pin)).unwrap().holds);
+
+        let zero_hash = format!("def slash := r\"\\\"\n{declaration}\n");
+        assert!(statement(&zero_hash, "captured", Some(&pin)).unwrap().holds);
+        let unterminated = format!("def exampleText := r##\"not terminated by \"#\n{declaration}\n");
+        assert!(statement(&unterminated, "captured", Some(&pin)).err().unwrap().contains("raw string"));
+
+        let declaration = "theorem sameText : r#\"a  b\"# = \"a b\" := by sorry";
+        let pin = sha256_hex(b": r#\"a  b\"# = \"a b\"");
+        let result = statement(declaration, "sameText", Some(&pin)).unwrap();
+        assert!(!result.holds && result.text.contains("THE PINNED STATEMENT") && result.text.contains("sorry stands"));
+    }
+
+    #[test]
+    fn escaped_identifier_text_cannot_supply_a_declaration() {
+        let pin = sha256_hex(b": 2 + 1 = 3");
+        let decoy = "def «example\ntheorem captured : 2 + 1 = 3 := by decide\nend» := 1";
+        assert!(statement(decoy, "captured", Some(&pin)).err().unwrap().contains("no theorem"));
+        let real = format!("{decoy}\ntheorem «if» : 2 + 1 = 3 := by decide");
+        assert!(statement(&real, "«if»", Some(&pin)).unwrap().holds);
+        assert!(statement("def «open", "captured", Some(&pin)).err().unwrap().contains("identifier escape"));
+    }
 
     #[test]
     fn a_lean_statement_review_findings_of_director_g() {
