@@ -81,7 +81,7 @@ A controller can read a dedicated copy of COM2 from the beginning of a boot. Att
 pcpos boot-report --admission cbor2 < com2.fifo
 ```
 
-The receiver returns as soon as the `boot` and `session` records validate, even while the writer stays open. A typical result is `{"admit":true,"image":"unchecked"}`. Admission describes whether verification allowed the kernel to start programs at session entry. A program can fail later. Image values describe the kernel's comparison with the loader's expected digest. An omitted expectation gives `unchecked`. A successful comparison gives `matched`.
+The receiver returns as soon as the `boot` and `session` records validate, even while the writer stays open. A typical result is `{"admit":true,"image":"unchecked"}`. Admission describes whether verification allowed the kernel to start programs at session entry. It is an observation, **not a request for host authorization**: the kernel does not wait for a COM2 acknowledgement before proceeding to its session. A program may already be running when a separate supervisor reads the verdict, and it can fail later. A future pre-execution host gate would require a separate protocol and an enforceable wait/deny path. Image values describe the kernel's comparison with the loader's expected digest. An omitted expectation gives `unchecked`. A successful comparison gives `matched`.
 
 ### Reading final health
 
