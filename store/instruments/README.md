@@ -45,4 +45,4 @@ The incident-count bounds instrument and the shared Science and Mathematics SVG 
 
 ## Maintaining this catalog
 
-Add an instrument's name, purpose and inputs in the same change as its Rust implementation, dispatch entry and tests. The [catalog check](../../PCP_OS_Rust/crates/pcpos-host/tests/store_catalog.rs) compares these tables with a freshly built host. [Rust dispatcher](../../PCP_OS_Rust/crates/pcpos-host/src/instruments.rs) · [Instrument implementations](../../PCP_OS_Rust/crates/pcpos-host/src/instruments/) · [Rust contribution policy](../../RUST_PRIMACY.md)
+List a new instrument in the [front README](../../README.md#built-in-apps) and record its inputs here in the same change as its Rust implementation and tests. The [catalog check](../../PCP_OS_Rust/crates/pcpos-host/tests/store_catalog.rs) compares both pages with a freshly built host. [Rust dispatcher](../../PCP_OS_Rust/crates/pcpos-host/src/instruments.rs) · [Instrument implementations](../../PCP_OS_Rust/crates/pcpos-host/src/instruments/) · [Rust contribution policy](../../RUST_PRIMACY.md)

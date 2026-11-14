@@ -2,7 +2,49 @@
 
 PCP OS runs Adversarial Claim Review (ACR) and keeps a verifiable register of what was examined, who examined it and what evidence they used. This repository contains the Rust host program `pcpos`, its integrity core, the experimental kernel and the source used to build PCP editions.
 
-**[Browse the PCP OS Store](store/README.md)** for packaged applications and built-in research instruments. The [instrument catalog](store/instruments/README.md) gives the inputs for each check, with CLI and MCP examples. The [game shelf](store/index.html) includes offline browser players and native PCP OS guests.
+[Games](#games) · [Built-in apps](#built-in-apps) · [Method modules](#method-modules) · [Build the host](#run-the-rust-host) · [Store guide](store/README.md)
+
+## Games
+
+Both games are published Store packages. Download a browser player from its GitHub file page using **Download raw file**, then open the HTML locally. For native play, the [launcher guide](store/README.md#play-both-on-pcp-os) covers both guests.
+
+| Game | What you do | Play and inspect |
+| --- | --- | --- |
+| **Night Post · Return Mail** | Fly a coastal mail route and drop letters into nets aboard passing ships. | [Browser player](store/games/night-post/dist/Night_Post.html) · [Manual](store/games/night-post/README.md) · [Package](store/index/kirtusj/ni/gh/night-post) (`kirtusj/night-post`) |
+| **Bellweather Harbor · The Second Manifest** | Run a harbor, trade cargo and investigate discrepancies in the shipping records. | [Browser player](store/games/bellweather-harbor/dist/Bellweather_Harbor.html) · [Manual](store/games/bellweather-harbor/README.md) · [Package](store/index/kirtusj/be/ll/bellweather-harbor) (`kirtusj/bellweather-harbor`) |
+
+## Built-in apps
+
+These instruments ship in the Rust host. Run `pcpos instrument list` to see what your binary contains. The [instrument guide](store/instruments/README.md) lists inputs and shows how to run the same check from a terminal or an MCP client.
+
+| Area | Instrument | What it checks |
+| --- | --- | --- |
+| Mathematics | `mathematics.exact` | Evaluates rational expressions and compares their values exactly. |
+| Mathematics | `mathematics.protected_bins` | Compares squared norms and odd coordinate gcds of signed columns in corresponding bins. |
+| Mathematics | `mathematics.statement` | Checks a Lean statement against a pinned digest and screens for trivial forms. |
+| Science | `science.order` | Determines which of two artifacts entered a given register first. |
+| Statistics | `statistics.grim` | Tests whether an integer sample of the stated size could yield a reported rounded mean. |
+| Statistics | `statistics.percent` | Tests whether a reported percentage could arise from a whole count out of the stated total. |
+| Engineering | `engineering.units` | Compares physical quantities after conversion to compatible units. |
+| Cryptography | `cryptography.digest` | Computes SHA-256 for supplied text and optionally compares a claimed digest. |
+| Quality assurance | `quality.coverage` | Reports finding coverage for the claims of a commissioned review. |
+| Core | `core.calibration` | Checks the internal consistency of a Calibration Record and the claim made from its counts. |
+
+## Method modules
+
+ACR 1.0 ships one Core specification and six specialist specifications. Core applies when ACR is authorized. Specialist modules extend Core when selected for a task. The [release catalog](https://github.com/KirtusJ/pcp-os-claude/blob/c0fbde739b4cc3bc409878d901de0974702c506e/method/REFERENCE/Module_Catalog.csv) records each component's status, dependency and specification digest.
+
+| Module | Component ID | Review scope |
+| --- | --- | --- |
+| [Core](https://github.com/KirtusJ/pcp-os-claude/blob/c0fbde739b4cc3bc409878d901de0974702c506e/method/MODULES/01_Core/SOURCE/Specification.md) | `acr.core` | Review authority, claims, evidence, challenges and dispositions. |
+| [Mathematics](https://github.com/KirtusJ/pcp-os-claude/blob/c0fbde739b4cc3bc409878d901de0974702c506e/method/MODULES/02_Mathematics/SOURCE/Specification.md) | `acr.mathematics` | Definitions, hypotheses, proof steps and counterexamples. |
+| [Science](https://github.com/KirtusJ/pcp-os-claude/blob/c0fbde739b4cc3bc409878d901de0974702c506e/method/MODULES/03_Science/SOURCE/Specification.md) | `acr.science` | Experimental design, measurements and the evidence for a scientific claim. |
+| [Engineering](https://github.com/KirtusJ/pcp-os-claude/blob/c0fbde739b4cc3bc409878d901de0974702c506e/method/MODULES/04_Engineering/SOURCE/Specification.md) | `acr.engineering` | Requirements, operating conditions, failure modes and verification. |
+| [Cryptography](https://github.com/KirtusJ/pcp-os-claude/blob/c0fbde739b4cc3bc409878d901de0974702c506e/method/MODULES/05_Cryptography/SOURCE/Specification.md) | `acr.cryptography` | Security claims, threat models, assumptions and adversarial tests. |
+| [Statistics](https://github.com/KirtusJ/pcp-os-claude/blob/c0fbde739b4cc3bc409878d901de0974702c506e/method/MODULES/06_Statistics/SOURCE/Specification.md) | `acr.statistics` | Sampling, inference, uncertainty and statistical assumptions. |
+| [Quality Assurance](https://github.com/KirtusJ/pcp-os-claude/blob/c0fbde739b4cc3bc409878d901de0974702c506e/method/MODULES/07_Quality_Assurance/SOURCE/Specification.md) | `acr.quality_assurance` | Acceptance criteria, test coverage and reproducibility. |
+
+With a method directory on disk, run `pcpos method <method-directory>` to check it against the host’s pinned release, then `pcpos modules <method-directory>` to list its components. Use `pcpos module list <register>` to inspect the workspace profile.
 
 ## Run the Rust host
 

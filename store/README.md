@@ -4,6 +4,7 @@
 | --- | --- |
 | Run a Science, Mathematics, Statistics, Engineering or review instrument | [Host instrument catalog and CLI/MCP examples](instruments/README.md) |
 | Get a packaged application or verify its files | [Package index](#package-index) |
+| Choose a review module or read its specification | [Released method modules](../README.md#method-modules) |
 | Play a game | [Offline browser shelf](index.html) or [native PCP OS launcher](#play-both-on-pcp-os) |
 
 ## PCP OS game store

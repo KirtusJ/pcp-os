@@ -54,8 +54,27 @@ fn catalog_names_match_the_instrument_list() {
         documented, available,
         "published Store catalog differs from pcpos instrument list"
     );
+
+    let front_page = include_str!("../../../../README.md");
+    let mut lines = front_page.lines();
+    assert!(
+        lines.any(|line| line == "## Built-in apps"),
+        "front README is missing its Built-in apps section"
+    );
+    let mut front_apps = Vec::new();
+    for row in lines
+        .take_while(|line| !line.starts_with("## "))
+        .filter(|line| line.starts_with('|'))
+    {
+        front_apps.extend(row.split('`').skip(1).step_by(2));
+    }
+    front_apps.sort_unstable();
+    assert_eq!(
+        front_apps, available,
+        "front README app table differs from pcpos instrument list"
+    );
     assert!(
         available.windows(2).all(|pair| pair[0] != pair[1]),
-        "duplicate app name in both lists"
+        "duplicate app name in pcpos instrument list"
     );
 }
