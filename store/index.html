@@ -27,7 +27,7 @@
     h1, h2, h3, p { margin: 0 }
     h1 { font: 700 clamp(3.1rem, 7.2vw, 6.1rem)/.96 var(--serif); letter-spacing: -.065em }
     .intro p { font: .96rem/1.5 var(--sans); color: var(--slate); margin-block-start: .7rem }
-    .shelf { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: clamp(1.5rem, 3.5vw, 3rem); padding: 1.7rem 0 2rem }
+    .shelf { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem clamp(1.5rem, 3.5vw, 3rem); padding: 1.7rem 0 2rem }
     article { min-width: 0; display: flex; flex-direction: column; --accent: var(--navy) }
     article.harbor { --accent: var(--red) }
     .picture { margin: 0; border: 1px solid var(--ink); padding: .27rem; background: #fffaed }
@@ -61,7 +61,7 @@
     <main>
       <div class="intro">
         <h1>Game Store</h1>
-        <p>Two Rust games for your browser or PCP OS.</p>
+        <p>Six Rust games for native PCP OS. Two also play in your browser.</p>
       </div>
       <div class="shelf">
         <article aria-labelledby="night">
@@ -80,8 +80,36 @@
           <p class="controls"><strong>Ring the bell</strong> to send out your first boat. Click or tap the ledger to buy another, or use Tab and Enter.</p>
           <a class="play" href="games/bellweather-harbor/dist/Bellweather_Harbor.html">Play Bellweather Harbor <span aria-hidden="true">&rarr;</span></a>
         </article>
+        <article aria-labelledby="gullpost">
+          <figure class="picture"><img src="art/gullpost-express.png" width="512" height="288" alt="A gull in a postal cap stands on the Saltwharf pier beneath the morning sun."></figure>
+          <p class="type">Native platformer · Alpha v1.0</p>
+          <h2 id="gullpost">Gullpost Express</h2>
+          <p class="blurb">Carry the mail from Saltwharf to Mooncap Light. Hop from pier to pier and fill a postmark album along the way.</p>
+          <p class="controls"><strong>Jump</strong> with Space. Press it again in midair to flap across a wider gap.</p>
+          <a class="play" href="games/gullpost-express/README.md">Open native play guide <span aria-hidden="true">&rarr;</span></a>
+        </article>
+        <article aria-labelledby="gull64">
+          <figure class="picture"><img src="games/gullpost-express-64/evidence/free-play.png" width="512" height="288" alt="A gull courier crosses a broken pier toward the island lighthouse."></figure>
+          <p class="type">Native 3D platformer · v0.1.1</p>
+          <h2 id="gull64">Gullpost Express 64</h2>
+          <p class="blurb">Find three postmarks on Lighthouse Island. Cross the pier, land on the boathouse roof and carry the keeper’s letter around the beacon.</p>
+          <p class="controls"><strong>Space</strong> jumps and flaps. Turn the camera with Q and E. <a href="games/gullpost-express-64/evidence/render-0.1.1/REPORT.md">Read the 3D test log.</a></p>
+          <a class="play" href="games/gullpost-express-64/README.md">Open native play guide <span aria-hidden="true">&rarr;</span></a>
+        </article>
+        <article aria-labelledby="sunspur-rally">
+          <figure class="picture"><img src="games/sunspur-rally/evidence/cinder-pass.png" width="384" height="216" alt="A rally coupe on the Cinder Pass road."></figure>
+          <p class="type">Desert time trial</p>
+          <h2 id="sunspur-rally">Sunspur Rally</h2>
+          <a class="play" href="games/sunspur-rally/README.md">Open native play guide <span aria-hidden="true">&rarr;</span></a>
+        </article>
+        <article aria-labelledby="flux-rink">
+          <figure class="picture"><img src="games/flux-rink/evidence/north-dock.png" width="640" height="360" alt="Amber and jade mallets on the North Dock rink."></figure>
+          <p class="type">Two-player 3D air hockey</p>
+          <h2 id="flux-rink">Flux Rink</h2>
+          <a class="play" href="games/flux-rink/README.md">Open native play guide <span aria-hidden="true">&rarr;</span></a>
+        </article>
       </div>
-      <footer><p><strong>Playing offline?</strong> Extract the store folder, then open this index in your browser. Both games run from their own HTML files.</p></footer>
+      <footer><p><strong>Playing offline?</strong> Extract the store folder, then open this index in your browser. Night Post and Bellweather Harbor run from their own HTML files. All six games run on PCP OS. See the <a href="engines/heliograph/README.md">Heliograph engine and material lab</a> for rendering tools.</p></footer>
     </main>
   </div>
 </body>

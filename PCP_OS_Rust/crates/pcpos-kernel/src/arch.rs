@@ -50,6 +50,31 @@ pub unsafe fn port_out32(port: u16, value: u32) {
     asm!("out dx, eax", in("dx") port, in("eax") value, options(nomem, nostack, preserves_flags))
 }
 
+// This optional polling device uses COM2 exclusively. COM1 remains the verification console.
+#[cfg(feature = "game-link")]
+const GAME_UART: u16 = 0x2f8;
+
+#[cfg(feature = "game-link")]
+pub fn game_link_init() -> bool {
+    let p = GAME_UART;
+    // A scratch register readback detects an absent UART without touching its peer.
+    outb(p + 7, 0x5a);
+    if inb(p + 7) != 0x5a { return false; }
+    outb(p + 1, 0); outb(p + 3, 0x80);
+    outb(p, 1); outb(p + 1, 0); outb(p + 3, 3);
+    outb(p + 2, 7); outb(p + 4, 3);
+    true
+}
+#[cfg(feature = "game-link")]
+pub fn game_link_read() -> Option<u8> {
+    (inb(GAME_UART + 5) & 1 != 0).then(|| inb(GAME_UART))
+}
+#[cfg(feature = "game-link")]
+pub fn game_link_write(byte: u8) -> bool {
+    if inb(GAME_UART + 5) & 0x20 == 0 { return false; }
+    outb(GAME_UART, byte); true
+}
+
 const COM1: u16 = 0x3F8;
 
 /// Prepare the first serial port: 115200 baud, 8 bits, no parity, one stop bit.

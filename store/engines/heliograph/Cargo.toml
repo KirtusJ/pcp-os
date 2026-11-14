@@ -1,0 +1,20 @@
+[package]
+name = "heliograph"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "heliograph"
+path = "src/main.rs"
+test = false
+bench = false
+
+[profile.release]
+opt-level = 3
+panic = "abort"
+codegen-units = 1
+strip = "symbols"
