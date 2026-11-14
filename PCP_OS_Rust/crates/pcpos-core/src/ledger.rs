@@ -76,6 +76,30 @@ pub fn verify(raw: &[u8]) -> Result<(Vec<Value>, String), LedgerError> {
     verify_tail(raw, 0, ZERO)
 }
 
+/// The events, original bytes and head from one successful whole-register check.
+pub(crate) struct VerifiedRegister<'a> {
+    raw: &'a [u8],
+    events: Vec<Value>,
+    head: String,
+}
+
+impl<'a> VerifiedRegister<'a> {
+    pub(crate) fn check(raw: &'a [u8]) -> Result<Self, LedgerError> {
+        let (events, head) = verify(raw)?;
+        Ok(Self { raw, events, head })
+    }
+
+    pub(crate) fn events(&self) -> &[Value] {
+        &self.events
+    }
+
+    pub(crate) fn into_ledger(self) -> Ledger {
+        let count = self.events.len() as u64;
+        drop(self.events);
+        Ledger { bytes: self.raw.to_vec(), count, head: Some(self.head) }
+    }
+}
+
 /// Check the lines that follow a part already checked: `first` events came before, and the last of them
 /// has the digest `prev`. The same checks as [`verify`], which is this with nothing before.
 pub fn verify_tail(raw: &[u8], first: usize, prev: &str) -> Result<(Vec<Value>, String), LedgerError> {
@@ -111,8 +135,7 @@ impl Ledger {
 
     /// Adopt bytes received from elsewhere, after checking them in full.
     pub fn from_bytes(raw: &[u8]) -> Result<Self, LedgerError> {
-        let (events, head) = verify(raw)?;
-        Ok(Ledger { bytes: raw.to_vec(), count: events.len() as u64, head: Some(head) })
+        VerifiedRegister::check(raw).map(VerifiedRegister::into_ledger)
     }
 
     /// Append one event. The sequence number and the link to the previous event are set here and nowhere else.
