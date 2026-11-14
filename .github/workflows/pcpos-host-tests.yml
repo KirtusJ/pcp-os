@@ -60,3 +60,10 @@ jobs:
             --pcpos "$GITHUB_WORKSPACE/PCP_OS_Rust/target/release/pcpos" \
             --method "$GITHUB_WORKSPACE/released-plugin/method" \
             --expect-fixed
+
+      - name: Refuse unlisted review modules after a verified method loses its manifest
+        run: |
+          python3 "$GITHUB_WORKSPACE/audit/build22-method-pinning/commission_manifest_removal.py" \
+            --pcpos "$GITHUB_WORKSPACE/PCP_OS_Rust/target/release/pcpos" \
+            --method "$GITHUB_WORKSPACE/released-plugin/method" \
+            --expect-fixed
