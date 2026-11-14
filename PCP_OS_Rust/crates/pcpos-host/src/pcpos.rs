@@ -2386,6 +2386,9 @@ fn module_command(args: &[String]) -> Result<i32, String> {
             let found = modules_in(&se).into_iter().find(|m| m.added && m.key == want)
                 .ok_or_else(|| format!("{what} is not an installed local module; nothing was removed"))?;
             let target = home.join(want);
+            if found.file != target.join("SOURCE").join("Specification.md") {
+                return Err(format!("{what} was discovered in a different directory; nothing was removed"));
+            }
             if fs::symlink_metadata(&target).map(|m| m.file_type().is_symlink()).unwrap_or(false) {
                 return Err(format!("{what} is a linked module directory; nothing was removed"));
             }
