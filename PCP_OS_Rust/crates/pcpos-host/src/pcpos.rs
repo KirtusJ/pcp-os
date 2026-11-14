@@ -877,7 +877,7 @@ impl MethodCheck {
     }
 
     fn text(&self) -> String {
-        format!("manifest {} ({} the release this core implements); {} file(s) listed: {} present and equal, {} absent{}, {} differing{}; {} unlisted entries{}",
+        format!("manifest {} ({} the release this core implements); {} file(s) listed: {} present and equal, {} absent{}, {} differing{}; {} unexpected entries{}",
                 self.fingerprint, if self.is_native() { "is" } else { "IS NOT" }, self.listed, self.equal, self.absent,
                 if self.absent > 0 && self.absent_text == 0 { " (all of them the packet's programs and probes, which a plugin does not carry)" } else { "" },
                 self.differing.len(),
@@ -966,7 +966,7 @@ fn read_method_regular_file(path: &Path) -> Result<Option<Vec<u8>>, String> {
         use std::os::unix::fs::OpenOptionsExt;
         opts.custom_flags(O_NOFOLLOW);
     }
-    let mut f = opts.open(path)
+    let f = opts.open(path)
         .map_err(|e| format!("cannot open {}: {e}", path.display()))?;
     let opened = f.metadata()
         .map_err(|e| format!("cannot inspect opened {}: {e}", path.display()))?;
