@@ -8,6 +8,8 @@ This preview reads HTTP(S) HTML and plain text through the host operating system
 
 ## Run
 
+A separate [native guest experiment](guest/) renders a small document and follows numbered links from a local HTTP fixture over the kernel’s opt-in serial cable. The hosted reader below uses the operating system’s network stack.
+
 From this directory with Rust 1.91 or newer, run:
 
 ```sh
