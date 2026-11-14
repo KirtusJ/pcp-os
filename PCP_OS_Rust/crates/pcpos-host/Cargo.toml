@@ -23,3 +23,6 @@ pcpos-core = { path = "../pcpos-core" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+winapi-util = "0.1.11"

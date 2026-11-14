@@ -486,6 +486,24 @@ fn a_fifo_without_a_writer_cannot_hold_a_stop_and_a_link_is_not_read_as_evidence
 }
 
 #[test]
+fn an_unmatched_or_ambiguous_stop_does_not_observe_the_transcript() {
+    let root = in_use("ambiguous-stop-transcript");
+    let mut ledger = Ledger::from_bytes(&fs::read(root.join(REG)).unwrap()).unwrap();
+    for id in ["T1", "T2"] {
+        let body = format!(r#"{{"id":"{id}","label":"old","worker":"MODEL","review":null,"quiet_limit":0,"budget":0,"attempt":"twins","observed":"SUBAGENT_START"}}"#);
+        ledger.append("2026-11-12T00:00:00Z", "assistant", "HOST", "TASK_STARTED", Value::parse(body.as_bytes()).unwrap()).unwrap();
+    }
+    fs::write(root.join(REG), ledger.bytes()).unwrap();
+    assert!(tool(&root, "acr_verify", "{}").0.contains("guards replayed: 0 problem(s)"));
+    fs::write(root.join("transcript"), b"belongs to neither worker").unwrap();
+    let before = fs::read(root.join(REG)).unwrap();
+    for agent in ["missing", "twins"] {
+        hook(&root, "subagent-stop", &format!(r#"{{"agent_id":"{agent}","agent_transcript_path":"transcript"}}"#));
+    }
+    assert_eq!(fs::read(root.join(REG)).unwrap(), before);
+}
+
+#[test]
 fn only_unambiguous_host_observations_can_finish_legacy_attempts() {
     let root = in_use("legacy-hook-identities");
     let mut ledger = Ledger::from_bytes(&fs::read(root.join(REG)).unwrap()).unwrap();

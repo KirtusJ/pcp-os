@@ -1932,7 +1932,7 @@ fn active_stop_id(state: &State, key: &str, legacy_id: Option<&str>) -> Option<S
 
 /// Read through the same handle we classify. On Unix a raced FIFO cannot block
 /// even during open. On Windows explicitly exclude device namespaces and open
-/// the reparse point itself; sharing only for read prevents replacing the leaf.
+/// the reparse point itself; sharing only for read pins the leaf during observation.
 fn read_stop_transcript(path: &Path) -> Option<Vec<u8>> {
     let mut options = OpenOptions::new();
     options.read(true);
@@ -1967,15 +1967,32 @@ fn read_stop_transcript(path: &Path) -> Option<Vec<u8>> {
         // FILE_FLAG_OPEN_REPARSE_POINT and FILE_SHARE_READ.
         options.custom_flags(0x00200000).share_mode(1);
     }
-    let before = fs::symlink_metadata(path).ok()?;
-    if !before.is_file() || before.len() == 0 || before.len() > MAX_ARTIFACT { return None; }
+    // Unix requires a metadata snapshot before open: O_NONBLOCK protects a
+    // raced FIFO, but there is no reason even to open a known special file.
+    #[cfg(unix)]
+    let before = {
+        let m = fs::symlink_metadata(path).ok()?;
+        if !m.is_file() || m.len() == 0 || m.len() > MAX_ARTIFACT { return None; }
+        m
+    };
     let mut file = options.open(path).ok()?;
+    #[cfg(windows)]
+    let identity = {
+        use winapi_util::file::{information, typ};
+        if !typ(&file).ok()?.is_disk() { return None; }
+        let info = information(&file).ok()?;
+        // FILE_ATTRIBUTE_REPARSE_POINT (includes reparse tags beyond symlinks).
+        if info.file_attributes() & 0x400 != 0 { return None; }
+        (info.volume_serial_number(), info.file_index())
+    };
     let opened = file.metadata().ok()?;
-    if !opened.is_file() || opened.len() != before.len() || opened.modified().ok()? != before.modified().ok()? { return None; }
+    if !opened.is_file() || opened.len() == 0 || opened.len() > MAX_ARTIFACT { return None; }
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        if (opened.dev(), opened.ino()) != (before.dev(), before.ino()) { return None; }
+        if opened.len() != before.len() || opened.modified().ok()? != before.modified().ok()? ||
+            (opened.dev(), opened.ino(), opened.ctime(), opened.ctime_nsec()) !=
+            (before.dev(), before.ino(), before.ctime(), before.ctime_nsec()) { return None; }
     }
     let mut data = Vec::new();
     Read::by_ref(&mut file).take(opened.len() + 1).read_to_end(&mut data).ok()?;
@@ -1987,6 +2004,11 @@ fn read_stop_transcript(path: &Path) -> Option<Vec<u8>> {
         use std::os::unix::fs::MetadataExt;
         if (opened.dev(), opened.ino(), opened.ctime(), opened.ctime_nsec()) !=
             (after.dev(), after.ino(), after.ctime(), after.ctime_nsec()) { return None; }
+    }
+    #[cfg(windows)]
+    {
+        let current = winapi_util::file::information(&options.open(path).ok()?).ok()?;
+        if (current.volume_serial_number(), current.file_index()) != identity { return None; }
     }
     Some(data)
 }
