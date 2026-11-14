@@ -907,7 +907,7 @@ fn an_instrument_is_run_by_the_program_and_recorded_as_a_check_it_ran() {
         assert!(err && kinds(&root).len() == before, "{bad}: {out}");
     }
     let (out, _) = tool(&root, "acr_instrument", r#"{"instrument":"list"}"#);
-    assert!(out.contains("statistics.grim") && out.contains("core.calibration") && out.lines().count() == 9, "{out}");
+    assert!(out.contains("statistics.grim") && out.contains("mathematics.statement") && out.contains("core.calibration") && out.lines().count() == 10, "{out}");
     // A finding that cites the program's own check is EXECUTED, and the register verifies.
     let f = r#"{"kind":"FINDING_RECORDED","body":{"review":"R","claim":"A","disposition":"UNRESOLVED","basis":[{"ref":{"t":"check","id":"K1"}}],"left_open":"the claim was commissioned with no criterion"}}"#;
     let (out, _) = tool(&root, "acr_submit", r#"{"kind":"GATE_COMMITTED","body":{"review":"R","gate":"G1"}}"#);
