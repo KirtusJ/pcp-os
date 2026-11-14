@@ -213,19 +213,11 @@ fn in_use(name: &str) -> PathBuf {
     root
 }
 
-#[test]
-fn conditional_status_rechecks_the_register_and_requires_a_full_view_from_this_session() {
+/// Keep one MCP connection alive while the test changes the register between calls.
+fn with_status_session(root: &Path, run: impl FnOnce(&mut dyn FnMut(&str) -> (String, bool))) {
     use std::io::{BufRead, BufReader};
 
-    let root = dir("conditional-status");
-    assert!(!tool(&root, "acr_begin", "{}").1);
-    let path = root.join(REG);
-    let original = fs::read(&path).unwrap();
-    let head = ledger::verify(&original).unwrap().1;
-    fs::copy(&path, root.join("copy.jsonl")).unwrap();
-    let conditional = format!(r#"{{"if_head":"{head}"}}"#);
-
-    let mut child = pcpos(&root).arg("mcp").env("PCPOS_LOCK_WAIT", "0").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+    let mut child = pcpos(root).arg("mcp").env("PCPOS_LOCK_WAIT", "0").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
     let mut input = child.stdin.take().unwrap();
     let mut output = BufReader::new(child.stdout.take().unwrap());
     let mut request = |method: &str, params: &str| {
@@ -241,65 +233,133 @@ fn conditional_status_rechecks_the_register_and_requires_a_full_view_from_this_s
         let Some(Value::List(content)) = result.get("content") else { panic!("{result:?}"); };
         (content[0].get("text").unwrap().as_str().unwrap().to_string(), result.get("isError") == Some(&Value::Bool(true)))
     };
-    let (full, error) = poll(&conditional);
-    assert!(!error && full.lines().next().unwrap().ends_with(&head) && full.contains("ATTENTION"), "{full}");
-    assert_eq!(poll(&conditional), ("UNCHANGED".into(), false));
-    let writer = fs::OpenOptions::new().read(true).write(true).open(&path).unwrap();
-    writer.try_lock().unwrap();
-    let (locked, error) = poll(&conditional);
-    assert!(error && locked.contains("locked by another program"), "{locked}");
-    writer.unlock().unwrap();
-    drop(writer);
-    assert_eq!(poll("{}"), (full.clone(), false));
-
-    // An earlier line can change while the entire last event, length, inode and modification time stay the same.
-    let mut rewritten = original.clone();
-    let first_actor = rewritten.windows(b"\"host\"".len()).position(|part| part == b"\"host\"").unwrap();
-    rewritten[first_actor + 1] = b'H';
-    let modified = fs::metadata(&path).unwrap().modified().unwrap();
-    fs::write(&path, &rewritten).unwrap();
-    fs::OpenOptions::new().write(true).open(&path).unwrap().set_modified(modified).unwrap();
-    let (broken, error) = poll(&conditional);
-    assert!(error && broken.contains("not intact"), "{broken}");
-    fs::write(&path, &original).unwrap();
-    assert_eq!(poll("{}"), (full.clone(), false));
-    assert_eq!(fs::read(&path).unwrap(), original);
-    let (copied, error) = poll(&format!(r#"{{"register":"copy.jsonl","if_head":"{head}"}}"#));
-    assert!(!error && copied.starts_with("REGISTER  copy.jsonl") && copied.contains("ATTENTION"), "{copied}");
-    assert_eq!(poll(&conditional), (full, false), "only the last full view can be reused");
-    for bad in [r#"{"if_head":"1234"}"#.into(), format!(r#"{{"if_head":"{}"}}"#, "F".repeat(64)), r#"{"if_head":null}"#.into()] {
-        assert!(poll(&bad).1, "{bad}");
-    }
-
-    // A separate writer changes the basis under the running server.
-    assert!(tool(&root, "acr_submit", r#"{"kind":"PARTICIPANT_ADDED","body":{"label":"helper","kind":"AUTOMATED","model":"m"}}"#).0.starts_with("WRITTEN"));
-    let bytes = fs::read(&path).unwrap();
-    let next_head = ledger::verify(&bytes).unwrap().1;
-    assert_ne!(head, next_head);
-    let (changed, error) = poll(&conditional);
-    assert!(!error && changed.lines().next().unwrap().ends_with(&next_head) && changed.contains("ATTENTION"), "{changed}");
-    let next = format!(r#"{{"if_head":"{next_head}"}}"#);
-    assert_eq!(poll(&next), ("UNCHANGED".into(), false));
-    assert_eq!(tool(&root, "acr_status", &next), (changed, false), "a fresh server must send the full status");
-    // A valid replacement of equal length must produce its own full view.
-    let mut alternate = bytes.clone();
-    let seconds = alternate.strip_suffix(b"Z\"}\n").unwrap().len() - 1;
-    alternate[seconds] = if alternate[seconds] == b'0' { b'1' } else { b'0' };
-    let alternate_head = ledger::verify(&alternate).unwrap().1;
-    assert_ne!(alternate_head, next_head);
-    fs::write(&path, &alternate).unwrap();
-    let (replaced, error) = poll(&next);
-    assert!(!error && replaced.lines().next().unwrap().ends_with(&alternate_head) && replaced.contains("ATTENTION"), "{replaced}");
-    let alternative_condition = format!(r#"{{"if_head":"{alternate_head}"}}"#);
-    assert_eq!(poll(&alternative_condition), ("UNCHANGED".into(), false));
-    let mut torn = alternate;
-    torn.extend_from_slice(b"unfinished");
-    fs::write(&path, &torn).unwrap();
-    let (text, error) = poll(&alternative_condition);
-    assert!(error && text.contains("not intact"), "{text}");
-    assert_eq!(fs::read(path).unwrap(), torn);
+    run(&mut poll);
     drop(input);
     assert!(child.wait().unwrap().success());
+}
+
+#[test]
+fn conditional_status_rechecks_the_register_and_requires_a_full_view_from_this_session() {
+    let root = dir("conditional-status");
+    assert!(!tool(&root, "acr_begin", "{}").1);
+    let path = root.join(REG);
+    let original = fs::read(&path).unwrap();
+    let head = ledger::verify(&original).unwrap().1;
+    fs::copy(&path, root.join("copy.jsonl")).unwrap();
+    let conditional = format!(r#"{{"if_head":"{head}"}}"#);
+
+    with_status_session(&root, |poll| {
+        let (full, error) = poll(&conditional);
+        assert!(!error && full.lines().next().unwrap().ends_with(&head) && full.contains("ATTENTION"), "{full}");
+        assert_eq!(poll(&conditional), ("UNCHANGED".into(), false));
+        let writer = fs::OpenOptions::new().read(true).write(true).open(&path).unwrap();
+        writer.try_lock().unwrap();
+        let (locked, error) = poll(&conditional);
+        assert!(error && locked.contains("locked by another program"), "{locked}");
+        writer.unlock().unwrap();
+        drop(writer);
+        assert_eq!(poll("{}"), (full.clone(), false));
+
+        // An earlier line can change while the entire last event, length, inode and modification time stay the same.
+        let mut rewritten = original.clone();
+        let first_actor = rewritten.windows(b"\"host\"".len()).position(|part| part == b"\"host\"").unwrap();
+        rewritten[first_actor + 1] = b'H';
+        let modified = fs::metadata(&path).unwrap().modified().unwrap();
+        fs::write(&path, &rewritten).unwrap();
+        fs::OpenOptions::new().write(true).open(&path).unwrap().set_modified(modified).unwrap();
+        let (broken, error) = poll(&conditional);
+        assert!(error && broken.contains("not intact"), "{broken}");
+        fs::write(&path, &original).unwrap();
+        assert_eq!(poll("{}"), (full.clone(), false));
+        assert_eq!(fs::read(&path).unwrap(), original);
+        let (copied, error) = poll(&format!(r#"{{"register":"copy.jsonl","if_head":"{head}"}}"#));
+        assert!(!error && copied.starts_with("REGISTER  copy.jsonl") && copied.contains("ATTENTION"), "{copied}");
+        assert_eq!(poll(&conditional), (full, false), "only the last full view can be reused");
+        for bad in [r#"{"if_head":"1234"}"#.into(), format!(r#"{{"if_head":"{}"}}"#, "F".repeat(64)), r#"{"if_head":null}"#.into()] {
+            assert!(poll(&bad).1, "{bad}");
+        }
+
+        // A separate writer changes the basis under the running server.
+        assert!(tool(&root, "acr_submit", r#"{"kind":"PARTICIPANT_ADDED","body":{"label":"helper","kind":"AUTOMATED","model":"m"}}"#).0.starts_with("WRITTEN"));
+        let bytes = fs::read(&path).unwrap();
+        let next_head = ledger::verify(&bytes).unwrap().1;
+        assert_ne!(head, next_head);
+        let (changed, error) = poll(&conditional);
+        assert!(!error && changed.lines().next().unwrap().ends_with(&next_head) && changed.contains("ATTENTION"), "{changed}");
+        let next = format!(r#"{{"if_head":"{next_head}"}}"#);
+        assert_eq!(poll(&next), ("UNCHANGED".into(), false));
+        assert_eq!(tool(&root, "acr_status", &next), (changed, false), "a fresh server must send the full status");
+        // A valid replacement of equal length must produce its own full view.
+        let mut alternate = bytes.clone();
+        let seconds = alternate.strip_suffix(b"Z\"}\n").unwrap().len() - 1;
+        alternate[seconds] = if alternate[seconds] == b'0' { b'1' } else { b'0' };
+        let alternate_head = ledger::verify(&alternate).unwrap().1;
+        assert_ne!(alternate_head, next_head);
+        fs::write(&path, &alternate).unwrap();
+        let (replaced, error) = poll(&next);
+        assert!(!error && replaced.lines().next().unwrap().ends_with(&alternate_head) && replaced.contains("ATTENTION"), "{replaced}");
+        let alternative_condition = format!(r#"{{"if_head":"{alternate_head}"}}"#);
+        assert_eq!(poll(&alternative_condition), ("UNCHANGED".into(), false));
+        let mut torn = alternate;
+        torn.extend_from_slice(b"unfinished");
+        fs::write(&path, &torn).unwrap();
+        let (text, error) = poll(&alternative_condition);
+        assert!(error && text.contains("not intact"), "{text}");
+        assert_eq!(fs::read(path).unwrap(), torn);
+    });
+}
+
+#[test]
+fn compact_status_updates_require_the_same_body_and_a_verified_successor() {
+    let root = dir("status-update");
+    assert!(!tool(&root, "acr_begin", "{}").1);
+    let path = root.join(REG);
+    let original = fs::read(&path).unwrap();
+    let head = ledger::verify(&original).unwrap().1;
+    let update = |head: &str| format!(r#"{{"view":"update","if_head":"{head}"}}"#);
+
+    with_status_session(&root, |poll| {
+        let (full, error) = poll(r#"{"view":"update"}"#);
+        assert!(!error && full.contains("ATTENTION"));
+        let mut torn = original.clone();
+        torn.extend_from_slice(b"unfinished");
+        fs::write(&path, &torn).unwrap();
+        assert!(poll(&update(&head)).1, "the compact selector cannot reuse a torn register");
+        fs::write(&path, &original).unwrap();
+        let add_note = |msg: &str| {
+            let mut ledger = Ledger::from_bytes(&fs::read(&path).unwrap()).unwrap();
+            let body = Value::parse(format!(r#"{{"text":"{msg}"}}"#).as_bytes()).unwrap();
+            ledger.append("2026-01-01T00:00:00Z", "assistant", "HOST", "NOTE", body).unwrap();
+            fs::write(&path, ledger.bytes()).unwrap();
+            (ledger.head().to_string(), format!(r#"[{},"{}"]"#, ledger.len(), ledger.head()))
+        };
+        let (one, reply1) = add_note("one");
+        assert_eq!(tool(&root, "acr_status", &update(&head)), (tool(&root, "acr_status", "{}").0, false),
+                   "a fresh server cannot issue a header update on the caller's word");
+        assert_eq!(poll(&update(&head)), (reply1, false));
+        assert_eq!(poll(&update(&one)), ("UNCHANGED".into(), false));
+        let (two, reply2) = add_note("two");
+        assert_eq!(poll(&update(&one)), (reply2, false));
+        let current = tool(&root, "acr_status", "{}").0;
+        assert_eq!(poll(&update(&one)), (current.clone(), false), "lost update response needs a full recovery");
+        assert_eq!(poll(r#"{"view":"update"}"#), (current, false));
+        // Replace with a longer valid sibling history with the same displayed body.
+        fs::write(&path, &original).unwrap();
+        for msg in ["alternate", "chain", "longer"] { add_note(msg); }
+        let replacement = tool(&root, "acr_status", "{}").0;
+        assert_eq!(poll(&update(&two)), (replacement.clone(), false));
+        // A genuine successor that changes guard replay diagnostics also needs a full view.
+        let mut sibling = Ledger::from_bytes(&fs::read(&path).unwrap()).unwrap();
+        let prior = sibling.head().to_string();
+        sibling.append("2026-01-01T00:01:00Z", "assistant", "DECLARED", "ADOPTED",
+                       Value::parse(br#"{"basis":"because","by":"nobody"}"#).unwrap()).unwrap();
+        fs::write(&path, sibling.bytes()).unwrap();
+        let (replay, error) = tool(&root, "acr_status", "{}");
+        assert!(!error && replay.contains("would not pass the guards") && replay != replacement, "{replay}");
+        assert_eq!(poll(&update(&prior)), (replay, false));
+        fs::write(&path, original).unwrap();
+        assert_eq!(poll(&update(sibling.head())), (full, false), "rollback needs a full view");
+    });
 }
 
 #[test]

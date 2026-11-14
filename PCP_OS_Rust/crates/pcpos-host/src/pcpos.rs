@@ -28,7 +28,7 @@ use pcpos_core::acr::{self, Problem, Record, State, SubmitError};
 use pcpos_core::authority::{Edition, Method, ModelFindings, Standard};
 use pcpos_core::machine::{self, Delivery, Link, Review, System, Use};
 use pcpos_core::value::Value;
-use pcpos_core::{ledger, sha256_hex};
+use pcpos_core::{ledger, sha256, sha256_hex};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::fs::{self, File, OpenOptions, TryLockError};
@@ -577,8 +577,7 @@ fn write_attention(s: &mut String, o: &Opened) {
     }
 }
 
-fn status(label: &str, o: &Opened, full_head: bool) -> String {
-    let mut s = status_header(label, o, full_head);
+fn write_status_body(s: &mut String, o: &Opened) {
     let st = &o.state;
     let std = st.standard();
     let _ = writeln!(s, "SYSTEM    {}   USE {}   LINK {}{}", st.system().map(|x| x.name()).unwrap_or("not recorded (kept on another system)"), st.in_use().name(),
@@ -600,7 +599,7 @@ fn status(label: &str, o: &Opened, full_head: bool) -> String {
         let d: Vec<String> = st.delivery.iter().map(|(a, d)| format!("{} {}", a, d.name())).collect();
         let _ = writeln!(s, "DELIVERY  {}", d.join(", "));
     }
-    write_attention(&mut s, o);
+    write_attention(s, o);
     let _ = writeln!(s, "REVIEWS   {:<12} {:<9} {:<17} {:>3} {:>6} {:>8} {:>10}", "LABEL", "PROCEDURE", "STATE", "SES", "GATES", "NO-FIND", "OBJECTIONS");
     for r in st.reviews.values() {
         let _ = writeln!(s, "          {:<12} {:<9} {:<17} {:>3} {:>6} {:>8} {:>10}", r.label, r.procedure, r.lifecycle.name(), r.session,
@@ -644,7 +643,6 @@ fn status(label: &str, o: &Opened, full_head: bool) -> String {
     if !ob.is_empty() {
         let _ = writeln!(s, "OPEN OBLIGATIONS {}", ob.join(" "));
     }
-    s
 }
 
 /// For each finding not superseded: what it cites, and how the record came by each check among it.
@@ -1492,7 +1490,7 @@ fn tools() -> Value {
     let tool = |name: &str, d: &str, sc: Value| obj(vec![("name", s(name)), ("description", s(d)), ("inputSchema", sc)]);
     Value::List(vec![
         tool("acr_status", "Read register state, attention, reviews, tasks and halt scope. Omit if_head after context reset.",
-             schema(vec![reg, ("view", "string", "full (default) or attention for alerts and responses only. if_head requires full."),
+             schema(vec![reg, ("view", "string", "full (default), attention (alerts), or update. With if_head, update may return [count,new head] when only the header changed."),
                           ("if_head", "string", "Full lowercase digest of the last full status you still hold. A match may return UNCHANGED.")], vec![])),
         tool("acr_verify", "Check the hash chain and replay all guards. Report the full head, total replay problems and up to 20 details.", schema(vec![reg], vec![])),
         tool("acr_begin", "Create the register and add this participant as needed. Does not adopt ACR.", schema(vec![reg], vec![])),
@@ -1521,8 +1519,10 @@ fn tools() -> Value {
     ])
 }
 
-/// The last full status sent by this server. Larger registers retain only the basis for a verified poll.
+/// The last full status this client could reconstruct. Only smaller registers also retain their bytes.
 struct LastStatus {
+    event_count: usize,
+    body_digest: [u8; 32],
     register: String,
     head: String,
     bytes: Option<Box<[u8]>>,
@@ -1781,20 +1781,21 @@ fn call(se: &Session, name: &str, args: &Value, last_status: &mut Option<LastSta
             }
         }
         "acr_status" => {
-            match args.get("view") {
-                None => {}
-                Some(Value::Str(view)) if view == "full" => {}
+            let update = match args.get("view") {
+                None => false,
+                Some(Value::Str(view)) if view == "full" => false,
+                Some(Value::Str(view)) if view == "update" => true,
                 Some(Value::Str(view)) if view == "attention" => {
                     if args.get("if_head").is_some() {
-                        return Err("if_head requires the full status view".to_string());
+                        return Err("if_head requires the full or update status view".to_string());
                     }
                     let o = open(&se.root, &reg)?.ok_or_else(none)?;
                     let mut text = status_header(&reg, &o, true);
                     write_attention(&mut text, &o);
                     return Ok(text);
                 }
-                Some(_) => return Err("view must be either full or attention".to_string()),
-            }
+                Some(_) => return Err("view must be full, attention or update".to_string()),
+            };
             let if_head = match args.get("if_head") {
                 None => None,
                 Some(Value::Str(head)) if head.len() == 64 && head.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) => Some(head.as_str()),
@@ -1813,9 +1814,19 @@ fn call(se: &Session, name: &str, args: &Value, last_status: &mut Option<LastSta
             if basis.is_some_and(|view| view.bytes.is_none() && view.head == o.head) {
                 return Ok("UNCHANGED".to_string());
             }
-            let full = status(&reg, &o, true);
-            *last_status = Some(LastStatus { register: reg, head: o.head, bytes: retained_status_bytes(o.raw) });
-            Ok(full)
+            let mut full = status_header(&reg, &o, true);
+            let header_len = full.len();
+            write_status_body(&mut full, &o);
+            let body_digest = sha256(&full.as_bytes()[header_len..]);
+            // A verified successor can reuse the rendered body. Replacements and rollbacks always send a full view.
+            let header_only = update && basis.is_some_and(|view| {
+                o.events.get(view.event_count).and_then(|event| event.get("prev")).and_then(Value::as_str) == Some(view.head.as_str())
+                    && view.body_digest == body_digest
+            });
+            let event_count = o.events.len();
+            let reply = if header_only { format!(r#"[{event_count},"{}"]"#, o.head) } else { full };
+            *last_status = Some(LastStatus { register: reg, head: o.head, event_count, body_digest, bytes: retained_status_bytes(o.raw) });
+            Ok(reply)
         }
         "acr_verify" => Ok(verify_text(&open(&se.root, &reg)?.ok_or_else(none)?, 20)),
         "acr_begin" => {
@@ -2762,7 +2773,9 @@ fn main() {
                 Ok(o) => {
                     if cmd == "status" {
                         let colour = std::io::stdout().is_terminal() && env::var_os("NO_COLOR").map(|v| v.is_empty()).unwrap_or(true) && env::var("TERM").map(|t| t != "dumb").unwrap_or(true);
-                        print!("{}{}", banner(&o, colour), status(&args[1], &o, false));
+                        let mut full = status_header(&args[1], &o, false);
+                        write_status_body(&mut full, &o);
+                        print!("{}{}", banner(&o, colour), full);
                     } else {
                         print!("{}", verify_text(&o, usize::MAX));
                         let n = attention(&o).len();

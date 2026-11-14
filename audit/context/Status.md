@@ -41,3 +41,34 @@ taskset -c "$CPU" python3 audit/context/status_cpu.py "$BASELINE_PCPOS" "$CANDID
 ```
 
 Token counts used tiktoken 0.14.0 with locally cached o200k_base and cl100k_base encodings. Omit `--tokens` to reproduce the byte counts with the Python standard library. Use `--register PATH` with the CPU script to measure a different workload.
+
+## Reading a register that keeps changing
+
+A worker that retains a full status can poll `acr_status` with `{"view":"update","if_head":"<full SHA-256>"}`. Three replies are possible.
+
+| Reply in the MCP text content | Client action |
+|---|---|
+| `UNCHANGED` | Keep the complete view and its head. |
+| JSON pair `[count,"new head"]` | Replace the event count and head in the register header. Keep every byte of the previously rendered status body. Use the new head on the next poll. |
+| Full status | Replace the complete view, including its head. |
+
+The pair describes the displayed status. New ledger events may contain evidence or notes that the status does not display. A consumer of those events still needs the register. A client that lost its view requests a full status without `if_head`.
+
+Each changed register goes through chain verification and guard replay. The server hashes the complete rendered body after the header. It sends the pair only when the caller supplies the basis held for that register in the same session, the new chain extends that basis at its original event count, and the body digest matches. A missed reply, fork, rollback, register switch or changed body yields a full status. A broken chain produces an error. The session retains one 32-byte body digest and one event count in addition to the existing cache. The default full response and attention view retain their existing formats.
+
+### Measured on published registers
+
+Run `python3 audit/context/status_updates.py BASELINE_PCPOS CANDIDATE_PCPOS --tokens` against the release host at `54b5903` and this revision. Omit `--tokens` to measure bytes without a tokenizer. Each persistent client discovers all tools once and reads the same file after each append. The harness reconstructs every candidate status and compares it byte-for-byte with the full response of the parent binary. The six-read control begins at event 77 of the scenario and changes the displayed system state on each subsequent read.
+
+| Register and read count | Header updates | Bidirectional JSON-RPC bytes, parent → candidate | o200k_base tokens | cl100k_base tokens |
+|---|---:|---:|---:|---:|
+| Published scenario, 82 | 19 | 181,294 → 159,277 | 44,411 → 39,098 | 44,416 → 39,084 |
+| FPHPM exercise, 13 | 5 | 24,602 → 20,527 | 5,639 → 4,672 | 5,618 → 4,646 |
+| Reference register, 4 | 1 | 11,866 → 10,969 | 2,563 → 2,351 | 2,531 → 2,318 |
+| Scenario events 77–82, 6 | 0 | 25,217 → 25,356 | 5,897 → 5,933 | 5,865 → 5,901 |
+
+Wire totals include request and response framing and line terminators. Token totals count the tool catalog once and the tool name, compact arguments and decoded response text separately for each call. They exclude provider chat framing, hidden prompts, billing and inference. The selector costs bytes on every call. Its savings depend on how often append operations leave the displayed body intact.
+
+If the host also loads the generated Enterprise review instructions once, add 36 tokens to the candidate relative to the parent under either tokenizer. Those instructions grew by 151 UTF-8 bytes. On the six-read control, discovery, the selector and that one instruction load together cost 72 extra tokens.
+
+This change aims at transmission. Changed registers still undergo the existing full read, verification, replay and rendering. A SHA-256 of the rendered body is computed when a full status basis is established or refreshed. A matching poll that reuses verified bytes skips this work. This benchmark measures neither model inference nor a CPU speedup.
