@@ -49,7 +49,7 @@ Designing a wholly new encoding was considered and set aside: the gain over a re
 - Definite lengths only; integer heads in shortest form; no floating point; no tags; map keys in bytewise order of their encodings; text is UTF-8.
 - A digest is 32 bytes, never text. Text of 64 lower-case hexadecimal characters is not in the profile, so a digest has one form.
 - A field name in the table (`r1::KEYS`, 71 entries so far) is its number, never text. A name in the table sent as text is not in the profile.
-- An event is a positional array `[seq, prev, seconds, actor, authority, kind, body]`; the time is an integer of seconds.
+- An event is a positional array `[seq, prev, seconds, actor, authority, kind, body]`; the time is an integer of seconds. Positional export requires a real proleptic Gregorian date in the four-digit UTC spelling with seconds 00–59. The JSON register admits the fixed timestamp spelling even for some dates without a calendar interpretation. Such a register can be verified and encoded as an R1 map. A positional export reports the first unrepresentable event and leaves the destination untouched.
 
 `crates/pcpos-core/src/r1.rs` implements the encoder and a decoder that refuses anything outside the profile. Both are exercised in the test suite and inside the kernel at start.
 
@@ -61,6 +61,39 @@ Designing a wholly new encoding was considered and set aside: the gain over a re
 | Research-baseline exercise, 13 events | 6,027 bytes | 3,651 (60%) | 2,962 (49%) |
 
 Every event of both registers decodes to exactly the value encoded.
+
+### Transmitting an existing register
+
+A sender can run `pcpos-verify register.jsonl --r1 transfer.r1` and give the recipient the full canonical register head through an authenticated or independently trusted channel. The compact file is a sequence of self-delimiting positional events. A receiver can restore the canonical JSONL bytes with the Rust host:
+
+```sh
+pcpos-verify --from-r1 transfer.r1 "$expected_register_head" > received.jsonl
+```
+
+The receiver decodes the positional fields, checks each original JSON predecessor and sequence number, and compares the final JSON head with the supplied head before emitting any bytes. It returns 6 for a bad frame, broken chain or head mismatch and 2 for an invalid head argument or I/O error. Shell redirection opens the destination before the program runs. Use a fresh destination. This command verifies record integrity. It does not replay ACR guards or authenticate the source of the supplied head.
+
+The 82-event scenario travels in 12,787 bytes and recovers all 28,651 JSONL bytes, including the final newline. A full lowercase-hex head adds 64 bytes if sent separately, before transport framing. With this transport the sender and receiver can pass compact bytes between programs without supplying the register to a model. This measures wire bytes only. A model-facing adapter still determines which fields become tokens.
+
+### Updating a receiver that already holds a snapshot
+
+The receiver gives the sender the full head of its existing canonical JSONL snapshot. The sender verifies the source and exports only the R1 events following that head. The receiver verifies its local snapshot, extends it with the received frames and checks the independently obtained final head before writing the complete JSONL to stdout. Use a fresh output path because shell redirection opens it before verification.
+
+```sh
+# Sender, using the checkpoint reported by the receiver
+pcpos-verify source.jsonl --r1 changes.r1 --after "$base_head"
+# Receiver, using its existing snapshot and the expected final head
+pcpos-verify --from-r1 changes.r1 "$expected_register_head" --base local.jsonl > next.jsonl
+```
+
+A head missing from the source cannot identify a suffix. A receiver at the final head needs zero event frames. A zero-event transfer still requires the receiver to verify its local snapshot and match the expected final head. The 64-zero genesis head requests the full stream. Only transmitted events need a timestamp representable in positional R1.
+
+| Events already held in the 82-event scenario | R1 event bytes sent | SHA-256 head bytes if both heads travel as lowercase hex |
+| ---: | ---: | ---: |
+| 41 | 6,036 | 128 |
+| 81 | 105 | 128 |
+| 82 | 0 | 128 |
+
+For comparison, sending the full stream and one final head costs 12,851 bytes before transport framing. These counts describe the transfer between programs. The sender still verifies the full source, and the receiver reads the local prefix and outputs the full reconstructed register. To see whether the ACR guards accept that history, use `pcpos verify next.jsonl` separately.
 
 ## 6. Open, in order of importance
 

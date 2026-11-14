@@ -14,6 +14,7 @@ mod dev;
 mod exec;
 mod font;
 mod mem;
+mod report;
 mod session;
 mod sys;
 mod ui;
@@ -103,10 +104,13 @@ pub(crate) fn logged<T, E: core::fmt::Debug>(what: &str, r: Result<T, E>) -> Res
     r
 }
 
+static BRIEF_CHECKS: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 static PASSED: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 
 fn check(name: &str, ok: bool, failed: &mut u32) {
-    say!("  {} {}", if ok { "pass" } else { "FAIL" }, name);
+    if !ok || !BRIEF_CHECKS.load(core::sync::atomic::Ordering::Relaxed) {
+        say!("  {} {}", if ok { "pass" } else { "FAIL" }, name);
+    }
     if ok {
         PASSED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     } else {
@@ -170,7 +174,12 @@ fn self_test() -> u32 {
             let enc = r1::encode(ev);
             round &= r1::decode(&enc).as_ref() == Ok(ev);
             json += ev.canonical_json().len() + 1;
-            compact += r1::encode_event(ev).map(|e| e.len()).unwrap_or(usize::MAX / 2);
+            if let Some(frame) = r1::encode_event(ev) {
+                round &= matches!(r1::decode_event(&frame), Ok((decoded, [])) if decoded == *ev);
+                compact += frame.len();
+            } else {
+                round = false;
+            }
         }
     }
     check("the draft compact record form round-trips every event", round && compact < json, &mut failed);
@@ -646,6 +655,9 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     say!("PCP OS kernel {} | x86_64 | new kernel, written in Rust | early", env!("CARGO_PKG_VERSION"));
     arch::interrupts_init();
     let mut boot = arch::boot_info(magic, info);
+    let brief = boot.command_line.split_whitespace().find_map(|word| word.strip_prefix("checks=")) == Some("brief");
+    BRIEF_CHECKS.store(brief, core::sync::atomic::Ordering::Relaxed);
+    let report = report::Report::open(&boot.command_line);
     match boot.memory {
         Some((lower, upper)) => say!("memory reported by the loader: {} KiB below 1 MiB, {} KiB above", lower, upper),
         None => say!("the loader reported no memory size"),
@@ -676,6 +688,9 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     // person expected, and nothing about who that person is.
     let expected: Option<&str> = boot.command_line.split_whitespace().find_map(|w| w.strip_prefix("image="));
     let as_expected = expected.map(|e| e.eq_ignore_ascii_case(&measured));
+    if let Some(report) = &report {
+        report.boot(&measured, as_expected);
+    }
     match (expected, as_expected) {
         (Some(_), Some(true)) => say!("running image (code and read-only data), SHA-256: {} (measured; equal to the value the loader named)", measured),
         (Some(e), _) => say!("running image (code and read-only data), SHA-256: {} (measured; NOT the value the loader named, which is {})", measured, e),
@@ -777,12 +792,17 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
         say!("the asynchronous self-tests were not run: {}", if keyboard { "the kernel did not verify itself" } else { "there is no keyboard controller" });
     }
     let start = session::Start { boot: &boot, display, keyboard, sound: sound || music, passed: PASSED.load(core::sync::atomic::Ordering::Relaxed), failed, tasks: 14, version: env!("CARGO_PKG_VERSION") };
+    if let Some(report) = &report {
+        report.session(start.passed, failed, rec.state().system());
+    }
     let _tasks = session::run(&mut rec, &start, &mut failed);
     system_event(&mut rec, "SHUTDOWN", "end of the session", &mut failed);
     system_event(&mut rec, "STOPPED_OK", "stopped in order", &mut failed);
     let reopened = Record::open(rec.ledger().bytes());
+    let replay_ok = matches!(&reopened, Ok((r, problems)) if problems.is_empty()
+        && r.state().system() == Some(System::Stopped) && r.ledger().head() == rec.ledger().head());
     check("the kernel's register of its own start, verification and stop verifies and replays without a problem",
-          matches!(&reopened, Ok((r, problems)) if problems.is_empty() && r.state().system() == Some(System::Stopped) && r.ledger().head() == rec.ledger().head()), &mut failed);
+          replay_ok, &mut failed);
     say!("kernel register: {} events, head {}", rec.ledger().len(), rec.ledger().head());
     #[cfg(feature = "overflow-demo")]
     {
@@ -801,6 +821,13 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
         say!("ALL SELF-TESTS PASS. Present: user mode and preemptive processes; programs loaded from the loader's files; a display, a keyboard, sound and music where the machine has ones this kernel drives. Not present: storage that outlasts power, a mouse, network, a second processor.");
     } else {
         say!("{} SELF-TEST(S) FAILED", failed);
+    }
+    let passed = PASSED.load(core::sync::atomic::Ordering::Relaxed);
+    if brief {
+        say!("self-test totals: {} passed, {} failures", passed, failed);
+    }
+    if let Some(report) = &report {
+        report.stop(passed, failed, replay_ok, rec.ledger());
     }
     arch::stop(failed == 0)
 }

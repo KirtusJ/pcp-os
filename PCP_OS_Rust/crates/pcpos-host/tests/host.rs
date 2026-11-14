@@ -38,6 +38,33 @@ fn feed(mut c: Command, input: &[u8]) -> (String, i32) {
     (String::from_utf8_lossy(&out.stdout).to_string(), out.status.code().unwrap_or(-1))
 }
 
+#[test]
+fn calendar_collision_cannot_overwrite_a_positional_export() {
+    let root = dir("r1-calendar");
+    let reg = root.join("test.jsonl");
+    let out = root.join("test.r1");
+    let verify = || {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_pcpos-verify"));
+        cmd.arg(&reg);
+        cmd
+    };
+    for ts in ["2025-03-01T00:00:00Z", "2025-02-29T00:00:00Z"] {
+        let mut ledger = Ledger::new();
+        ledger.append(ts, "host", "HOST", "NOTE", Value::Map(Default::default())).unwrap();
+        fs::write(&reg, ledger.bytes()).unwrap();
+        assert!(verify().output().unwrap().status.success());
+        let before = fs::read(&out).ok();
+        let result = verify().arg("--r1").arg(&out).output().unwrap();
+        if let Some(valid_export) = before {
+            assert_eq!(result.status.code(), Some(2));
+            assert_eq!(fs::read(&out).unwrap(), valid_export);
+        } else {
+            assert!(result.status.success());
+            assert!(!fs::read(&out).unwrap().is_empty());
+        }
+    }
+}
+
 /// Call tools in one session. Returns each call's text and whether it was reported as an error.
 fn tools(root: &Path, calls: &[(&str, String)]) -> Vec<(String, bool)> {
     let mut input = String::from("{\"id\":0,\"jsonrpc\":\"2.0\",\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}\n");
@@ -70,6 +97,97 @@ fn hook(root: &Path, event: &str, input: &str) -> String {
     out
 }
 
+#[test]
+fn mcp_tool_discovery_fits_its_wire_budget() {
+    let root = dir("discovery");
+    let mut c = pcpos(&root);
+    c.arg("mcp");
+    let (out, code) = feed(c, b"{\"id\":1,\"jsonrpc\":\"2.0\",\"method\":\"tools/list\"}\n");
+    assert_eq!(code, 0);
+    let reply = Value::parse(out.as_bytes()).unwrap();
+    let catalog = reply.get("result").unwrap().get("tools").unwrap();
+    assert!(matches!(catalog, Value::List(tools) if !tools.is_empty()));
+    // Budget the shared catalog, never truncate an individual tool result to meet this limit.
+    let bytes = catalog.canonical_json().len();
+    assert!(bytes <= 7 * 1024, "MCP tool catalog is {bytes} bytes; review the discovery cost before raising the 7 KiB budget");
+}
+
+#[test]
+fn machine_lookups_match_the_published_tables_without_a_register() {
+    let root = dir("machine-lookup");
+    let published = include_str!("../../../vectors/machines.tsv");
+    let cli = |args: &[&str]| {
+        let mut command = pcpos(&root);
+        command.arg("machine").args(args);
+        feed(command, b"")
+    };
+    assert_eq!(cli(&[]), (published.to_string(), 0));
+    for m in pcpos_core::machine::ALL {
+        let rows: Vec<&str> = published.lines().filter(|line| line.split('\t').next() == Some(m.name)).collect();
+        let table = rows.join("\n") + "\n";
+        let name = m.name.to_ascii_lowercase();
+        assert_eq!(cli(&[&name]), (table.clone(), 0));
+        assert_eq!(tool(&root, "acr_machine", &format!(r#"{{"name":"{name}"}}"#)), (table, false));
+        // Skip the initial/final marker. Every remaining row is a defined (also possibly refused) transition.
+        for batch in rows[1..].chunks(8) {
+            let mut calls = Vec::new();
+            for line in batch {
+                let fields: Vec<_> = line.split('\t').collect();
+                assert_eq!(fields.len(), 4);
+                let (state, event) = (fields[1].to_ascii_lowercase(), fields[2].to_ascii_lowercase());
+                calls.push(("acr_machine", format!(r#"{{"name":"{name}","state":"{state}","event":"{event}"}}"#)));
+                assert_eq!(cli(&[&name, &state, &event]), (format!("{line}\n"), 0));
+            }
+            let expected: Vec<_> = batch.iter().map(|line| (format!("{line}\n"), false)).collect();
+            assert_eq!(tools(&root, &calls), expected);
+        }
+    }
+    for selectors in [r#""state":"ACTIVE""#, r#""event":"PAUSE""#, r#""state":null,"event":null"#,
+                      r#""state":"UNKNOWN","event":"PAUSE""#, r#""state":"ACTIVE","event":"UNKNOWN""#] {
+        let (_, error) = tool(&root, "acr_machine", &format!(r#"{{"name":"REVIEW",{selectors}}}"#));
+        assert!(error, "{selectors}");
+    }
+    for fields in [&["REVIEW", "ACTIVE"][..], &["UNKNOWN", "ACTIVE", "PAUSE"], &["REVIEW", "ACTIVE", "UNKNOWN"],
+                   &["REVIEW", "ACTIVE", "PAUSE", "extra"]] {
+        assert_eq!(cli(fields), (String::new(), 2));
+    }
+    assert!(!root.join(".pcp").exists());
+}
+
+#[test]
+fn boot_report_translates_one_ordered_capture_and_retains_only_complete_frames() {
+    use pcpos_core::r1;
+    let root = dir("boot-report");
+    let capture = root.join("com2.cbor");
+    let image = sha256_hex(b"kernel image");
+    let head = sha256_hex(b"register");
+    let boot = format!(r#"{{"event":"boot","image":"{image}","match":false,"v":1}}"#);
+    let session = String::from(r#"{"admit":false,"event":"session","fail":1,"pass":58,"system":"SAFE","v":1}"#);
+    let stop = format!(r#"{{"event":"stop","events":18,"fail":1,"head":"{head}","pass":59,"replay":true,"v":1}}"#);
+    let encode = |text: &str| r1::encode(&Value::parse(text.as_bytes()).unwrap());
+    let (b, s, t) = (encode(&boot), encode(&session), encode(&stop));
+    let run = |parts: &[&[u8]], code: i32, expected_output: &[&str], diagnostic: &str| {
+        fs::write(&capture, parts.concat()).unwrap();
+        let reply = pcpos(&root).arg("boot-report").arg(&capture).output().unwrap();
+        assert_eq!(reply.status.code(), Some(code));
+        assert_eq!(String::from_utf8(reply.stdout).unwrap(), expected_output.iter().map(|s| format!("{s}\n")).collect::<String>());
+        assert!(String::from_utf8(reply.stderr).unwrap().contains(diagnostic));
+    };
+    run(&[&b, &s, &t], 0, &[&boot, &session, &stop], "");
+    run(&[], 6, &[], "incomplete");
+    run(&[&b], 6, &[&boot], "session");
+    run(&[&b, &s, &t[..t.len() - 1]], 6, &[&boot, &session], "incomplete");
+    run(&[&b, &t], 6, &[&boot], "expected the session");
+    run(&[&b, &s, &t, &b], 6, &[&boot, &session, &stop], "after the stop");
+    run(&[&[0xff]], 6, &[], "invalid");
+    run(&[&[0x79, 0x08, 0x00], &[b'x'; 1021]], 6, &[], "oversized");
+    run(&[&encode(&boot.replace("\"v\":1", "\"v\":2"))], 6, &[], "version");
+    run(&[&encode(&boot.replace(&image, "abc"))], 6, &[], "invalid fields");
+    run(&[&b, &encode(&session.replace("false", "0"))], 6, &[&boot], "invalid fields");
+    run(&[&b, &s, &encode(&stop.replace("\"events\":18", "\"events\":-1"))], 6, &[&boot, &session], "invalid fields");
+    assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+}
+
 fn events(root: &Path) -> Vec<Value> {
     ledger::verify(&fs::read(root.join(REG)).unwrap()).unwrap().0
 }
@@ -93,6 +211,66 @@ fn in_use(name: &str) -> PathBuf {
     ]);
     assert!(r.iter().all(|(t, e)| t.starts_with("WRITTEN") && !e), "{r:?}");
     root
+}
+
+#[test]
+fn conditional_status_rechecks_the_register_and_requires_a_full_view_from_this_session() {
+    use std::io::{BufRead, BufReader};
+
+    let root = dir("conditional-status");
+    assert!(!tool(&root, "acr_begin", "{}").1);
+    let path = root.join(REG);
+    let original = fs::read(&path).unwrap();
+    let head = ledger::verify(&original).unwrap().1;
+    fs::copy(&path, root.join("copy.jsonl")).unwrap();
+    let conditional = format!(r#"{{"if_head":"{head}"}}"#);
+
+    let mut child = pcpos(&root).arg("mcp").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+    let mut input = child.stdin.take().unwrap();
+    let mut output = BufReader::new(child.stdout.take().unwrap());
+    let mut request = |method: &str, params: &str| {
+        writeln!(input, r#"{{"jsonrpc":"2.0","id":1,"method":"{method}","params":{params}}}"#).unwrap();
+        input.flush().unwrap();
+        let mut line = String::new();
+        assert!(output.read_line(&mut line).unwrap() > 0);
+        Value::parse(line.as_bytes()).unwrap().get("result").unwrap().clone()
+    };
+    request("initialize", r#"{"protocolVersion":"2025-06-18"}"#);
+    let mut poll = |args: &str| {
+        let result = request("tools/call", &format!(r#"{{"name":"acr_status","arguments":{args}}}"#));
+        let Some(Value::List(content)) = result.get("content") else { panic!("{result:?}"); };
+        (content[0].get("text").unwrap().as_str().unwrap().to_string(), result.get("isError") == Some(&Value::Bool(true)))
+    };
+    let (full, error) = poll(&conditional);
+    assert!(!error && full.lines().next().unwrap().ends_with(&head) && full.contains("ATTENTION"), "{full}");
+    assert_eq!(poll(&conditional), ("UNCHANGED".into(), false));
+    assert_eq!(poll("{}"), (full.clone(), false));
+    assert_eq!(fs::read(&path).unwrap(), original);
+    let (copied, error) = poll(&format!(r#"{{"register":"copy.jsonl","if_head":"{head}"}}"#));
+    assert!(!error && copied.starts_with("REGISTER  copy.jsonl") && copied.contains("ATTENTION"), "{copied}");
+    assert_eq!(poll(&conditional), (full, false), "only the last full view can be reused");
+    for bad in [r#"{"if_head":"1234"}"#.into(), format!(r#"{{"if_head":"{}"}}"#, "F".repeat(64)), r#"{"if_head":null}"#.into()] {
+        assert!(poll(&bad).1, "{bad}");
+    }
+
+    // A separate writer changes the basis under the running server.
+    assert!(tool(&root, "acr_submit", r#"{"kind":"PARTICIPANT_ADDED","body":{"label":"helper","kind":"AUTOMATED","model":"m"}}"#).0.starts_with("WRITTEN"));
+    let bytes = fs::read(&path).unwrap();
+    let next_head = ledger::verify(&bytes).unwrap().1;
+    assert_ne!(head, next_head);
+    let (changed, error) = poll(&conditional);
+    assert!(!error && changed.lines().next().unwrap().ends_with(&next_head) && changed.contains("ATTENTION"), "{changed}");
+    let next = format!(r#"{{"if_head":"{next_head}"}}"#);
+    assert_eq!(poll(&next), ("UNCHANGED".into(), false));
+    assert_eq!(tool(&root, "acr_status", &next), (changed, false), "a fresh server must send the full status");
+    let mut torn = bytes;
+    torn.extend_from_slice(b"unfinished");
+    fs::write(&path, &torn).unwrap();
+    let (text, error) = poll(&next);
+    assert!(error && text.contains("not intact"), "{text}");
+    assert_eq!(fs::read(path).unwrap(), torn);
+    drop(input);
+    assert!(child.wait().unwrap().success());
 }
 
 #[cfg(unix)]
@@ -989,4 +1167,229 @@ fn an_instrument_is_run_by_the_program_and_recorded_as_a_check_it_ran() {
     let k = kinds(&quiet).len();
     let (out, _) = tool(&quiet, "acr_instrument", r#"{"instrument":"engineering.units","input":{"from":"1 in","to":"25.4 mm"}}"#);
     assert!(out.contains("EQUAL to the last digit given") && out.contains("No review is open") && kinds(&quiet).len() == k, "{out}");
+}
+
+#[test]
+fn positional_transport_restores_bytes_only_for_the_addressed_chain() {
+    let root = dir("receive-r1");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vectors/register_scenario.jsonl");
+    let original = fs::read(&fixture).unwrap();
+    let (events, head) = ledger::verify(&original).unwrap();
+    let path = root.join("transport.r1");
+    let bin = env!("CARGO_BIN_EXE_pcpos-verify");
+    assert!(Command::new(bin).arg(&fixture).arg("--r1").arg(&path).output().unwrap().status.success());
+    let received = || Command::new(bin).arg("--from-r1").arg(&path).arg(&head).output().unwrap();
+    let result = received();
+    assert!(result.status.success());
+    assert_eq!(result.stdout, original);
+    let packed = fs::read(&path).unwrap();
+    let last = pcpos_core::r1::encode_event(events.last().unwrap()).unwrap().len();
+    let first = pcpos_core::r1::encode_event(&events[0]).unwrap().len();
+    let mut interrupted = packed.clone();
+    interrupted.remove(first);
+    let mut duplicate = packed.clone();
+    duplicate.extend_from_slice(&packed[..first]);
+    for bad in [&packed[..packed.len()-1], &packed[..packed.len()-last], &packed[first..],
+                interrupted.as_slice(), duplicate.as_slice(), &[]] {
+        fs::write(&path, bad).unwrap();
+        let fail = received();
+        assert_eq!(fail.status.code(), Some(6));
+        assert!(fail.stdout.is_empty());
+    }
+    let empty = Command::new(bin).arg("--from-r1").arg(&path).arg(pcpos_core::ZERO).output().unwrap();
+    assert!(empty.status.success() && empty.stdout.is_empty());
+}
+
+/// An incremental transfer sends exactly the corresponding suffix of a full positional file.
+#[test]
+fn positional_suffix_matches_full_transfer_at_every_published_scenario_boundary() {
+    let root = dir("r1-boundaries");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../vectors/register_scenario.jsonl");
+    let source = fs::read(&fixture).unwrap();
+    let (events, target) = ledger::verify(&source).unwrap();
+    let wire = root.join("transfer.r1");
+    let base = root.join("base.jsonl");
+    let cli = || Command::new(env!("CARGO_BIN_EXE_pcpos-verify"));
+    assert!(cli().arg(&fixture).arg("--r1").arg(&wire).output().unwrap().status.success());
+    let full = fs::read(&wire).unwrap();
+    let lines: Vec<_> = source.split_inclusive(|&c| c == b'\n').collect();
+    let mut prefix = Ledger::new();
+    let mut suffix = full.as_slice();
+    for count in 0..=events.len() {
+        fs::write(&base, prefix.bytes()).unwrap();
+        let sent = cli().arg(&fixture).arg("--r1").arg(&wire).arg("--after").arg(prefix.head()).output().unwrap();
+        assert!(sent.status.success(), "split {count}: {}", String::from_utf8_lossy(&sent.stderr));
+        assert_eq!(fs::read(&wire).unwrap(), suffix, "suffix at split {count}");
+        let got = cli().arg("--from-r1").arg(&wire).arg(&target).arg("--base").arg(&base).output().unwrap();
+        assert!(got.status.success(), "split {count}: {}", String::from_utf8_lossy(&got.stderr));
+        assert_eq!(got.stdout, source, "restored bytes at split {count}");
+        assert_eq!(fs::read(&base).unwrap(), prefix.bytes(), "decoding wrote to its base");
+        if let Some(line) = lines.get(count) {
+            prefix.extend(line).unwrap();
+            suffix = pcpos_core::r1::decode_event(suffix).unwrap().1;
+        }
+    }
+    assert!(suffix.is_empty());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn positional_suffix_errors_preserve_destinations_and_emit_no_partial_restoration() {
+    let root = dir("r1-fork");
+    let mut register = Ledger::new();
+    let note = |ledger: &mut Ledger, actor| {
+        ledger.append("2026-11-12T00:00:00Z", actor, "DECLARED", "NOTE", Value::Map(Default::default())).unwrap();
+    };
+    note(&mut register, "first");
+    let base = root.join("base.jsonl");
+    fs::write(&base, register.bytes()).unwrap();
+    let anchor = register.head().to_owned();
+    note(&mut register, "second");
+    let source = root.join("source.jsonl");
+    fs::write(&source, register.bytes()).unwrap();
+    let wire = root.join("suffix.r1");
+    let cli = || Command::new(env!("CARGO_BIN_EXE_pcpos-verify"));
+    let send = |head: &str| cli().arg(&source).arg("--r1").arg(&wire).arg("--after").arg(head).output().unwrap();
+    let receive = |target: &str| cli().arg("--from-r1").arg(&wire).arg(target).arg("--base").arg(&base).output().unwrap();
+    assert!(send(&anchor).status.success());
+    let good_wire = fs::read(&wire).unwrap();
+    let good_base = fs::read(&base).unwrap();
+    let mut fork = Ledger::new();
+    note(&mut fork, "other-first");
+    for invalid in [fork.head(), "ff", &"F".repeat(64)] {
+        assert!(!send(invalid).status.success());
+        assert_eq!(fs::read(&wire).unwrap(), good_wire);
+    }
+    let check_receive_error = |target: &str| {
+        let got = receive(target);
+        assert!(!got.status.success() && got.stdout.is_empty(), "target {target}");
+    };
+    check_receive_error("short-digest");
+    check_receive_error(fork.head());
+    fs::write(&base, fork.bytes()).unwrap();
+    check_receive_error(register.head());
+    fs::write(&base, &good_base[..good_base.len() - 1]).unwrap();
+    check_receive_error(register.head());
+    fs::write(&base, &good_base).unwrap();
+    for invalid in [Vec::new(), [good_wire.as_slice(), &good_wire].concat(), good_wire[..good_wire.len()-1].to_vec()] {
+        fs::write(&wire, invalid).unwrap();
+        check_receive_error(register.head());
+        assert_eq!(fs::read(&base).unwrap(), good_base);
+    }
+    fs::write(&wire, &good_wire).unwrap();
+    fs::write(&source, &register.bytes()[..register.bytes().len() - 1]).unwrap();
+    assert!(!send(&anchor).status.success());
+    assert_eq!(fs::read(&wire).unwrap(), good_wire);
+    // Even when the caller knows the final head (empty suffix), the source prefix is rechecked.
+    let mut bad_prefix = register.bytes().to_vec();
+    let old_actor = b"\"first\"";
+    let at = bad_prefix.windows(old_actor.len()).position(|bytes| bytes == old_actor).unwrap();
+    bad_prefix[at + 1] = b'F';
+    fs::write(&source, bad_prefix).unwrap();
+    assert!(!send(register.head()).status.success());
+    assert_eq!(fs::read(&wire).unwrap(), good_wire);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn positional_suffix_only_requires_representable_timestamps_after_the_anchor() {
+    let root = dir("r1-calendar-anchor");
+    let mut ledger = Ledger::new();
+    // Such a timestamp passes the historical register grammar and has no positional UTC encoding.
+    ledger.append("2025-02-29T00:00:00Z", "one", "HOST", "NOTE", Value::Map(Default::default())).unwrap();
+    let anchor = ledger.head().to_owned();
+    let base = root.join("historical.jsonl");
+    fs::write(&base, ledger.bytes()).unwrap();
+    ledger.append("2025-03-01T00:00:00Z", "two", "HOST", "NOTE", Value::Map(Default::default())).unwrap();
+    let source = root.join("source.jsonl");
+    fs::write(&source, ledger.bytes()).unwrap();
+    let wire = root.join("suffix.r1");
+    let cli = || Command::new(env!("CARGO_BIN_EXE_pcpos-verify"));
+    let send = |head: &str| cli().arg(&source).arg("--r1").arg(&wire).arg("--after").arg(head).output().unwrap();
+    assert!(send(&anchor).status.success());
+    let got = cli().arg("--from-r1").arg(&wire).arg(ledger.head()).arg("--base").arg(&base).output().unwrap();
+    assert!(got.status.success());
+    assert_eq!(got.stdout, ledger.bytes());
+    let good_wire = fs::read(&wire).unwrap();
+    assert!(!send(pcpos_core::ZERO).status.success());
+    assert_eq!(fs::read(&wire).unwrap(), good_wire);
+    ledger.append("2025-04-31T00:00:00Z", "three", "HOST", "NOTE", Value::Map(Default::default())).unwrap();
+    fs::write(&source, ledger.bytes()).unwrap();
+    assert!(!send(&anchor).status.success());
+    assert_eq!(fs::read(&wire).unwrap(), good_wire);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn positional_exports_do_not_replace_their_canonical_source() {
+    let root = dir("r1-output-alias");
+    let source = root.join("source.jsonl");
+    let mut record = Ledger::new();
+    record.append("2026-11-12T00:00:00Z", "one", "HOST", "NOTE", Value::Map(Default::default())).unwrap();
+    fs::write(&source, record.bytes()).unwrap();
+    let check = |destination: &Path| {
+        for after in [None, Some(pcpos_core::ZERO)] {
+            let mut cmd = Command::new(env!("CARGO_BIN_EXE_pcpos-verify"));
+            cmd.arg(&source).arg("--r1").arg(destination);
+            if let Some(head) = after { cmd.arg("--after").arg(head); }
+            assert!(!cmd.output().unwrap().status.success());
+            assert_eq!(fs::read(&source).unwrap(), record.bytes());
+            assert_eq!(fs::read(destination).unwrap(), record.bytes());
+        }
+    };
+    check(&source);
+    #[cfg(unix)]
+    {
+        let hard = root.join("same-file");
+        let link = root.join("alias");
+        fs::hard_link(&source, &hard).unwrap();
+        std::os::unix::fs::symlink(&source, &link).unwrap();
+        check(&hard);
+        check(&link);
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn scoped_event_recipes_return_every_complete_matching_section_without_writing() {
+    let root = dir("event-recipes");
+    let plug = root.join("plug");
+    let path = plug.join("skills/review/events.md");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let first = "## 1. First gate\r\n\r\n`GATE_COMMITTED`\r\n\r\n```json\r\n{\"gate\": \"G1\"}\r\n```\r\n\r\nRègle for G1.\r\n\r\n```text\r\n## 9. Heading inside a note example\r\n```\r\n\r\n";
+    let other = "## 2. Another kind\n\n`GATE_COMMITTED_EXTRA`\n\n```json\n{}\n```\n\n`GATE_COMMITTED` occurs in prose.\n\n";
+    let last = "## 3. Last gate\n\n`GATE_COMMITTED`\n\n```json\n{\"gate\": \"G6\"}\n```\n\nRetain this final note.\n\n";
+    let tail = "## Values the guards accept\n\nGeneral guidance.\n";
+    let cookbook = format!("# Events\n\n{first}{other}{last}{tail}");
+    let call = |args: &str| {
+        let mut c = pcpos(&root);
+        c.env("CLAUDE_PLUGIN_ROOT", &plug).arg("mcp");
+        let req = format!(r#"{{"id":1,"jsonrpc":"2.0","method":"tools/call","params":{{"name":"acr_events","arguments":{args}}}}}"#);
+        let (out, code) = feed(c, format!("{req}\n").as_bytes());
+        assert_eq!(code, 0);
+        let v = Value::parse(out.trim().as_bytes()).unwrap();
+        let r = v.get("result").unwrap();
+        let Some(Value::List(content)) = r.get("content") else { panic!("{out}") };
+        (content[0].get("text").unwrap().as_str().unwrap().to_owned(), r.get("isError") == Some(&Value::Bool(true)))
+    };
+    fs::write(&path, &cookbook).unwrap();
+    let args = r#"{"kind":"GATE_COMMITTED"}"#;
+    let (selected, err) = call(args);
+    assert!(!err && selected.contains(&sha256_hex(cookbook.as_bytes())) && selected.contains("2 recipe(s)"), "{selected}");
+    assert_eq!(selected.split_once("\n\n").unwrap().1, format!("{first}{last}"));
+    let (full, err) = call("{}");
+    assert!(!err && full.ends_with(&cookbook), "{full}");
+    for bad in [r#"{"kind":null}"#, r#"{"kind":7}"#, r#"{"kind":""}"#, r#"{"kind":"gate_committed"}"#, r#"{"kind":"GATE"}"#] {
+        let (result, err) = call(bad);
+        assert!(err && !result.contains(first), "{bad}: {result}");
+    }
+    for broken in [last.replace("```json", "```text"), last.replace("{\"gate\": \"G6\"}", "{oops}"), last.replace("\n```\n", "\n"), last.replace("3. Last", "3 Last")] {
+        fs::write(&path, format!("{first}{broken}{tail}")).unwrap();
+        let (result, err) = call(args);
+        assert!(err && !result.contains(first), "incomplete guide returned a partial set: {result}");
+    }
+    fs::write(&path, format!("{first}{last}{}\n{tail}", "x".repeat(80_000))).unwrap();
+    let (result, err) = call(args);
+    assert!(err && result.contains("exceed") && !result.contains(first), "truncated examples must not be presented as complete");
+    assert!(!root.join(REG).exists());
 }
