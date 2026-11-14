@@ -1019,3 +1019,84 @@ fn module_remove_uses_exact_installed_identity_and_does_not_delete_unknown_folde
     assert_eq!(fs::read(root.join(REG)).unwrap(), before);
     assert_eq!(fs::read(orphan.join("private.txt")).unwrap(), b"synthetic sentinel");
 }
+
+
+#[test]
+fn simultaneous_module_adds_claim_one_id_and_one_corresponding_specification() {
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+    // Multiple rounds stress the interleaving. The source-level check must
+    // still be made under the same register lock as the eventual event.
+    for round in 0..4 {
+        let root = dir(&format!("race-module-add-{round}"));
+        let method = small_method(&root);
+        let mut init = with_method(&root, &method);
+        init.args(["init", REG, "--principal", "p"]);
+        assert_eq!(feed(init, b"").1, 0);
+        let barrier = Arc::new(Barrier::new(8));
+        let mut workers = Vec::new();
+        for i in 0..8 {
+            let src = root.join(format!("source-{i}"));
+            fs::create_dir_all(&src).unwrap();
+            fs::write(src.join("Specification.md"), format!(
+                "**Component:** `local.concurrent`, Version 1.0\n\n## 1. Source {i}\n\nSynthetic {round}:{i}\n"
+            )).unwrap();
+            let r = root.clone();
+            let m = method.clone();
+            let gate = barrier.clone();
+            workers.push(thread::spawn(move || {
+                let mut command = with_method(&r, &m);
+                command.args(["module", "add", REG, src.to_str().unwrap(), "--by", "p"]);
+                gate.wait();
+                feed(command, b"")
+            }));
+        }
+        let replies: Vec<_> = workers.into_iter().map(|job| job.join().unwrap()).collect();
+        let accepted = replies.iter().filter(|(_, status)| *status == 0).count();
+        assert_eq!(accepted, 1, "round {round}: multiple installations accepted: {replies:?}");
+        let added: Vec<_> = events(&root).into_iter().filter(|e|
+            e.get("body").and_then(|b| b.get("event")).and_then(Value::as_str) == Some("MODULE_ADDED")
+        ).collect();
+        assert_eq!(added.len(), 1, "one installed module must have exactly one event");
+        let stored = fs::read(root.join(".pcp/modules/concurrent/SOURCE/Specification.md")).unwrap();
+        let digest = sha256_hex(&stored);
+        assert_eq!(added[0].get("body").unwrap().get("module").unwrap()
+                   .get("sha256").and_then(Value::as_str), Some(digest.as_str()));
+        let mut verify = pcpos(&root);
+        verify.args(["verify", REG]);
+        assert_eq!(feed(verify, b"").1, 0, "module record must verify");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn module_add_refuses_preexisting_child_link_or_unrecognized_directory() {
+    use std::os::unix::fs::symlink;
+    let root = dir("module-add-linked-or-occupied");
+    let method = small_method(&root);
+    let mut init = with_method(&root, &method);
+    init.args(["init", REG, "--principal", "p"]);
+    assert_eq!(feed(init, b"").1, 0);
+    let home = root.join(".pcp/modules");
+    fs::create_dir_all(&home).unwrap();
+    let outside = dir("module-add-outer-sentinel");
+    symlink(&outside, home.join("linked")).unwrap();
+    let unrecognized = home.join("unrecognized");
+    fs::create_dir_all(&unrecognized).unwrap();
+    fs::write(unrecognized.join("synthetic.txt"), b"do not modify").unwrap();
+    let before = fs::read(root.join(REG)).unwrap();
+    for key in ["linked", "unrecognized"] {
+        let src = root.join(format!("input-{key}"));
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("Specification.md"), format!(
+            "**Component:** `local.{key}`, Version 1.0\n\nSynthetic {key}.\n"
+        )).unwrap();
+        let mut command = with_method(&root, &method);
+        command.args(["module", "add", REG, src.to_str().unwrap(), "--by", "p"]);
+        let (_, code) = feed(command, b"");
+        assert_ne!(code, 0, "the existing slot {key} cannot be reused");
+        assert_eq!(fs::read(root.join(REG)).unwrap(), before, "no MODULE_ADDED event");
+    }
+    assert!(!outside.join("SOURCE/Specification.md").exists(), "nothing was written outside the register root");
+    assert_eq!(fs::read(unrecognized.join("synthetic.txt")).unwrap(), b"do not modify");
+}
