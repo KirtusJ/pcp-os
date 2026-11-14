@@ -942,7 +942,6 @@ fn unlisted_method_entries(dir: &Path, expected: &BTreeSet<PathBuf>) -> Result<V
 /// omission of optional plugin code. On Linux, nonblocking no-follow opens
 /// guard against a file swapped to a FIFO or symlink before the actual open.
 fn read_method_regular_file(path: &Path) -> Result<Option<Vec<u8>>, String> {
-    const MAX_METHOD_FILE: u64 = 4 * 1024 * 1024;
     let before = match fs::symlink_metadata(path) {
         Ok(m) => m,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -951,7 +950,7 @@ fn read_method_regular_file(path: &Path) -> Result<Option<Vec<u8>>, String> {
     if !before.file_type().is_file() {
         return Err(format!("{} is not an ordinary method file", path.display()));
     }
-    if before.len() > MAX_METHOD_FILE {
+    if before.len() > MAX_SPECIFICATION {
         return Err(format!("{} exceeds the method file size limit", path.display()));
     }
     let mut opts = OpenOptions::new();
@@ -970,7 +969,7 @@ fn read_method_regular_file(path: &Path) -> Result<Option<Vec<u8>>, String> {
         .map_err(|e| format!("cannot open {}: {e}", path.display()))?;
     let opened = f.metadata()
         .map_err(|e| format!("cannot inspect opened {}: {e}", path.display()))?;
-    if !opened.is_file() || opened.len() > MAX_METHOD_FILE {
+    if !opened.is_file() || opened.len() > MAX_SPECIFICATION {
         return Err(format!("{} is not a bounded ordinary method file", path.display()));
     }
     #[cfg(unix)]
@@ -981,9 +980,9 @@ fn read_method_regular_file(path: &Path) -> Result<Option<Vec<u8>>, String> {
         }
     }
     let mut raw = Vec::new();
-    f.take(MAX_METHOD_FILE + 1).read_to_end(&mut raw)
+    f.take(MAX_SPECIFICATION + 1).read_to_end(&mut raw)
         .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-    if raw.len() as u64 > MAX_METHOD_FILE {
+    if raw.len() as u64 > MAX_SPECIFICATION {
         return Err(format!("{} grew beyond the method file size limit", path.display()));
     }
     let after = fs::symlink_metadata(path)
@@ -1091,7 +1090,7 @@ fn component_header(text: &str) -> Result<(String, String, String, Option<String
     Ok((id, key, version, core))
 }
 
-/// The largest Specification this program reads.
+/// The largest method text file this program reads, including a Specification.
 const MAX_SPECIFICATION: u64 = 4 * 1024 * 1024;
 
 /// The modules at hand: every folder under the method text's MODULES that holds a Specification naming its
@@ -1126,10 +1125,12 @@ fn modules_and_oddities(se: &Session) -> (Vec<Module>, Vec<String>) {
                 continue;
             }
             let file = d.join("SOURCE").join("Specification.md");
-            let bytes = match fs::metadata(&file).ok().filter(|m| m.is_file() && m.len() <= MAX_SPECIFICATION).and_then(|_| fs::read(&file).ok()) {
-                Some(b) => b,
-                None => {
-                    odd.push(format!("{folder}: no SOURCE/Specification.md that can be read; not a module"));
+            // Discovery and clause rendering share the bounded, nonblocking reader.
+            // A path swapped to a FIFO between type inspection and open must not hang.
+            let bytes = match read_method_regular_file(&file) {
+                Ok(Some(b)) => b,
+                Ok(None) | Err(_) => {
+                    odd.push(format!("{folder}: no ordinary SOURCE/Specification.md that can be read; not a module"));
                     continue;
                 }
             };
@@ -1197,6 +1198,23 @@ fn provision_start(line: &str) -> Option<(String, u8)> {
     Some((number.to_string(), depth))
 }
 
+/// Serve text only if the bytes read now match the identity established during
+/// module discovery. This does not freeze the method directory, but prevents a
+/// returned provision being labelled with another Specification's digest.
+fn coherent_specification_text(m: &Module) -> Result<String, String> {
+    let bytes = read_method_regular_file(&m.file)
+        .map_err(|e| format!("the Specification of {} cannot be read: {e}", m.id))?
+        .ok_or_else(|| format!("the Specification of {} is absent", m.id))?;
+    if sha256_hex(&bytes) != m.sha256 {
+        return Err(format!(
+            "the Specification of {} changed during clause retrieval; retry with a stable source",
+            m.id
+        ));
+    }
+    String::from_utf8(bytes)
+        .map_err(|e| format!("the Specification of {} is not valid UTF-8: {e}", m.id))
+}
+
 /// The exact text of one provision of a module's Specification, or the list of its headings.
 fn clause_text(se: &Session, module: &str, section: Option<&str>) -> Result<String, String> {
     se.method.as_deref().ok_or("no method text is at hand")?;
@@ -1207,7 +1225,7 @@ fn clause_text(se: &Session, module: &str, section: Option<&str>) -> Result<Stri
         Some(o) => format!("{want} is ambiguous in the method text at hand and no text is served for it ({o}). Remove one of the folders"),
         None => format!("{} is not a module of the method text at hand. The modules are: {}", clip(module, 60), found.iter().map(|m| m.key.as_str()).collect::<Vec<_>>().join(", ")),
     })?;
-    let text = fs::read_to_string(&m.file).map_err(|e| format!("the Specification of {} cannot be read: {e}", m.id))?;
+    let text = coherent_specification_text(m)?;
     let lines: Vec<&str> = text.lines().collect();
     let marks: Vec<(usize, String, u8)> = lines.iter().enumerate().filter_map(|(i, l)| provision_start(l).map(|(n, d)| (i, n, d))).collect();
     let head = format!("{} {} | Specification SHA-256 {}", m.id, m.version, m.sha256);
