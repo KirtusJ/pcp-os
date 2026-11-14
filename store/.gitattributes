@@ -1,0 +1,5 @@
+# Package entries pin the complete release bytes, including the offline player.
+games/**/dist/*.html -text
+games/**/dist/*.elf binary
+art/*.png binary
+*.sh text eol=lf

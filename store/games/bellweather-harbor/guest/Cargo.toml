@@ -1,0 +1,13 @@
+[package]
+name = "bellweather-guest"
+version = "1.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+bellweather = { path = "../game" }
+
+[lib]
+crate-type = ["staticlib"]
+test = false
+doctest = false

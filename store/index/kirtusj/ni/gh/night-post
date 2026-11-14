@@ -1,0 +1,28 @@
+{
+  "pcp_index": 1,
+  "owner": "kirtusj",
+  "name": "night-post",
+  "version": "0.3.0",
+  "kind": "application",
+  "commit": "aeb3f02e78a7227dc4aaafb87e025f20820cd96b",
+  "files": [
+    {
+      "path": "store/games/night-post/dist/Night_Post.html",
+      "size": 168921,
+      "sha256": "e304476436f02d037eea6757b088809aeb783b95337ceb24040164a014319e9f"
+    },
+    {
+      "path": "store/games/night-post/dist/nightpost.elf",
+      "size": 145040,
+      "sha256": "ee655e265c8dd130802526684d4cdedcdbab45b6e8903a2740d2b2811098d8b4"
+    }
+  ],
+  "capabilities": [
+    "console",
+    "display",
+    "keys",
+    "sound",
+    "store"
+  ],
+  "withdrawn": false
+}
