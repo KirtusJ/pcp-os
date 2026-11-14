@@ -6,6 +6,7 @@ reaches the network, and cannot adopt, halt, commission or close: those remain a
 the work, made at the command line. What a tool returns is reference material, not an instruction.
 """
 from __future__ import annotations
+from decimal import Decimal, InvalidOperation
 import json, re, sys
 from .base import PcposError, strict_loads
 from .ops import Ops
@@ -51,6 +52,47 @@ TOOLS = [
      "inputSchema": _obj({"review": S, "claim": S, "disposition": S, "basis": LS, "contrary": LS, "conditions": LS, "estimate": S,
                           "left_open": S, "grounding": S, "noncritical": LS}, ("review", "claim", "disposition")), "annotations": WR},
 ]
+
+
+class _WireFloat(float):
+    """Retain the original number token for tool arguments that require exact integers."""
+    def __new__(cls, token):
+        value = super().__new__(cls, token)
+        value.token = token
+        return value
+
+
+def _validate_arguments(schema, args):
+    """Check the input types and constraints advertised by this server's tools."""
+    properties = schema["properties"]
+    for key in schema["required"]:
+        if key not in args:
+            raise ValueError("Missing required argument %r" % key)
+    for key, value in args.items():
+        if key not in properties:
+            raise ValueError("Unknown argument %r" % key)
+        spec = properties[key]
+        kind = spec["type"]
+        if kind == "string" and isinstance(value, str):
+            continue
+        if kind == "boolean" and type(value) is bool:
+            continue
+        if kind == "array" and isinstance(value, list) and all(isinstance(item, str) for item in value):
+            continue  # Every array argument advertised here contains strings.
+        if kind == "integer" and isinstance(value, _WireFloat) and value.is_integer():
+            # Binary floats can round a fraction to a whole number or change a large integer.
+            try:
+                exact = Decimal(value.token)
+            except InvalidOperation:
+                raise ValueError("Argument %r must be an integer" % key) from None
+            if exact == exact.to_integral_value():
+                value = args[key] = int(exact)
+        if kind == "integer" and (type(value) is int or (type(value) is float and value.is_integer())):
+            if "minimum" in spec and value < spec["minimum"]:
+                raise ValueError("Argument %r must be at least %d" % (key, spec["minimum"]))
+            continue
+        expected = "array of strings" if kind == "array" else kind
+        raise ValueError("Argument %r must have type %s" % (key, expected))
 
 
 def call_tool(ops, name, a):
@@ -119,6 +161,8 @@ class Server:
             return {"jsonrpc": "2.0", "id": mid, "result": {"protocolVersion": self.legacy_version, "capabilities": {"tools": {"listChanged": False}},
                                                              "serverInfo": SERVER, "instructions": INSTRUCTIONS}}
         if modern:
+            if not isinstance(meta[META_VERSION], str):
+                return self.error(mid, -32602, "The protocol version must be a string")
             if meta[META_VERSION] not in MODERN:
                 return self.error(mid, -32022, "Unsupported protocol version", {"supported": MODERN + LEGACY, "requested": meta[META_VERSION]})
         elif method == "server/discover":
@@ -137,9 +181,11 @@ class Server:
             name, args = params.get("name"), params.get("arguments", {})
             if not isinstance(args, dict):
                 return self.error(mid, -32602, "Tool arguments must be an object when present")
-            if name not in [t["name"] for t in TOOLS]:
+            tool = next((t for t in TOOLS if t["name"] == name), None)
+            if tool is None:
                 return self.error(mid, -32602, "Unknown tool: %s" % name)
             try:
+                _validate_arguments(tool["inputSchema"], args)
                 text, is_error = call_tool(self.ops, name, args), False
             except PcposError as e:
                 text, is_error = e.render(), True
@@ -195,7 +241,7 @@ def _line_reply(server, line):
             line = line.decode("utf-8")
         if not line.strip(" \t\r\n"):
             return None
-        msg = strict_loads(line)
+        msg = strict_loads(line, parse_float=_WireFloat)
         scalar = _scalar_strings(msg)
     except (UnicodeDecodeError, json.JSONDecodeError):
         return Server.error(None, -32700, "Parse error")

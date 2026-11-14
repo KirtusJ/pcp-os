@@ -238,6 +238,46 @@ class ToolServer(Case):
             delta = self.ws.register_path.read_bytes()[len(before):].splitlines()
             self.assertEqual([json.loads(line)["kind"] for line in delta], ["OBJECTION_RAISED"])
 
+    def test_tool_arguments_are_validated_before_the_operation(self):
+        meta = {"_meta": {server.META_VERSION: server.MODERN[0]}}
+        def invoke(name, args):
+            return self.srv.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                                    "params": dict(meta, name=name, arguments=args)})
+        objection = {"review": "R", "text": "fixture"}
+        before = self.ws.register_path.read_bytes()
+        for name, args in [
+            ("pcpos_read", {"ref": []}), ("pcpos_read", {"ref": "K1", "start": -1}),
+            ("pcpos_objection", dict(objection, basis=False)), ("pcpos_objection", dict(objection, basis=[[]])),
+            ("pcpos_objection", dict(objection, dry_run=True)), ("pcpos_objection", {"text": "missing review"}),
+            ("pcpos_kernel", {"card": "false"}), ("pcpos_brief", {"max_bytes": True}),
+            ("pcpos_brief", {"max_bytes": 499}), ("pcpos_brief", {"max_bytes": 500.5})
+        ]:
+            with self.subTest(name=name, args=args):
+                reply = invoke(name, args)
+                self.assertEqual(reply["id"], 3)
+                self.assertTrue(reply["result"]["isError"])
+                self.assertEqual(self.ws.register_path.read_bytes(), before)
+        self.assertFalse(invoke("pcpos_brief", {"max_bytes": 500.0})["result"]["isError"])
+        self.assertFalse(invoke("pcpos_objection", dict(objection, basis=[]))["result"]["isError"])
+        delta = self.ws.register_path.read_bytes()[len(before):].splitlines()
+        self.assertEqual([json.loads(line)["kind"] for line in delta], ["OBJECTION_RAISED"])
+
+    def test_read_lengths_are_checked_before_float_rounding(self):
+        self.z.add_bytes(b"abcd", name="numeric-input")
+        before = self.ws.register_path.read_bytes()
+        def request(length):
+            return ('{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"pcpos_read",'
+                    '"arguments":{"ref":"numeric-input","length":' + length + '},"_meta":'
+                    + json.dumps({server.META_VERSION: server.MODERN[0]}) + '}}')
+        inp = io.StringIO("\n".join(request(n) for n in ["1.000000000000000001", "1e-9999", "2.0"]) + "\n")
+        out = io.StringIO()
+        server.main(self.ws, "Z", inp, out)
+        replies = [json.loads(line)["result"] for line in out.getvalue().splitlines()]
+        self.assertEqual([r["isError"] for r in replies], [True, True, False])
+        self.assertIn("bytes 0-2 of 4", replies[-1]["content"][0]["text"])
+        delta = self.ws.register_path.read_bytes()[len(before):].splitlines()
+        self.assertEqual([json.loads(line)["kind"] for line in delta], ["ARTIFACT_READ"])
+
     def test_both_protocol_eras_are_answered(self):
         meta = {"_meta": {server.META_VERSION: "2026-07-28"}}
         r = self.srv.handle({"jsonrpc": "2.0", "id": 1, "method": "server/discover", "params": meta})
