@@ -1,0 +1,56 @@
+name: "Kernel grouped admission counterexample"
+on:
+  push:
+    branches: [director-g/test-kernel-group-rollback]
+permissions:
+  contents: read
+jobs:
+  boot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rev: 3f873f652bd66e3c33f9e4b678119ba53c80c2d0
+            ok: 67
+            fail: 2
+            rc: 35
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ matrix.rev }}
+          persist-credentials: false
+      - name: Compile the pinned native kernel
+        env:
+          REVISION: ${{ matrix.rev }}
+          RUSTUP_TOOLCHAIN: 1.97.0
+        run: |
+          test "$(git rev-parse HEAD)" = "$REVISION"
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 lld binutils
+          rustup toolchain install 1.97.0 --profile minimal --component rust-src
+          rustc --version
+          qemu-system-x86_64 --version
+          sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          sha256sum PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
+      - name: Exact boot on two TCG CPUs
+        env:
+          EXPECTED_RC: ${{ matrix.rc }}
+          EXPECTED_PASS: ${{ matrix.ok }}
+          EXPECTED_FAIL: ${{ matrix.fail }}
+        run: |
+          set -euo pipefail
+          for cpu in qemu64 max; do
+            set +e
+            timeout 65s qemu-system-x86_64 -accel tcg -cpu "$cpu" -kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 -m 128M -display none -serial stdio -no-reboot -append then=off -device isa-debug-exit,iobase=0xf4,iosize=0x04 > "$RUNNER_TEMP/$cpu.txt" 2>&1
+            rc=$?
+            set -e
+            cat "$RUNNER_TEMP/$cpu.txt"
+            echo "Independent QEMU $cpu exit: $rc"
+            test "$rc" = "$EXPECTED_RC"
+            test "$(grep -c '^  pass ' "$RUNNER_TEMP/$cpu.txt")" = "$EXPECTED_PASS"
+            failed=$(grep -c '^  FAIL ' "$RUNNER_TEMP/$cpu.txt" || true)
+            test "$failed" = "$EXPECTED_FAIL"
+            grep -q 'kernel register: 43 events' "$RUNNER_TEMP/$cpu.txt"
+          done
