@@ -762,6 +762,43 @@ fn a_person_adds_a_module_beside_the_register_and_it_never_displaces_the_method_
 }
 
 #[test]
+fn simultaneous_module_adds_to_one_identifier_have_one_recorded_winner() {
+    let root = dir("module-add-race");
+    let method = small_method(&root);
+    let mut init = with_method(&root, &method);
+    init.args(["init", REG, "--principal", "p"]);
+    let (out, code) = feed(init, b"");
+    assert_eq!(code, 0, "{out}");
+    let sources: Vec<PathBuf> = (0..8).map(|i| {
+        let folder = root.join(format!("incoming-{i}"));
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(folder.join("Specification.md"), format!("**Component:** \`local.race\`, Version 1.0\n\n## 1. Scope\n\nsynthetic source {i}\n")).unwrap();
+        folder
+    }).collect();
+    let jobs: Vec<_> = sources.iter().map(|src| {
+        let (r, m, source) = (root.clone(), method.clone(), src.clone());
+        std::thread::spawn(move || {
+            let mut cmd = with_method(&r, &m);
+            cmd.args(["module", "add", REG, source.to_str().unwrap(), "--by", "p"]);
+            feed(cmd, b"")
+        })
+    }).collect();
+    let results: Vec<_> = jobs.into_iter().map(|job| job.join().unwrap()).collect();
+    assert_eq!(results.iter().filter(|(_, code)| *code == 0).count(), 1, "{results:?}");
+    let written: Vec<_> = events(&root).into_iter()
+        .filter(|e| e.get("body").and_then(|b| b.get("event")).and_then(Value::as_str) == Some("MODULE_ADDED"))
+        .collect();
+    assert_eq!(written.len(), 1, "only one module-add event may be recorded");
+    let recorded_digest = written[0].get("body").and_then(|b| b.get("module"))
+        .and_then(|m| m.get("sha256")).and_then(Value::as_str).unwrap();
+    let installed = fs::read(root.join(".pcp/modules/race/SOURCE/Specification.md")).unwrap();
+    assert_eq!(recorded_digest, sha256_hex(&installed), "installed bytes must match the only accepted event");
+    let mut verify = pcpos(&root);
+    verify.args(["verify", REG]);
+    assert_eq!(feed(verify, b"").1, 0);
+}
+
+#[test]
 fn verify_says_why_it_exits_1_and_a_subagent_the_host_cannot_name_is_not_recorded() {
     let root = in_use("verify-reason");
     let before = kinds(&root).len();
