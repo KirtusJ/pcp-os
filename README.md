@@ -2,7 +2,7 @@
 
 PCP OS runs Adversarial Claim Review (ACR) and keeps a verifiable register of what was examined, who examined it and what evidence they used. This repository contains the Rust host program `pcpos`, its integrity core, the experimental kernel and the source used to build PCP editions.
 
-**[Browse the Store apps](store/README.md)** for Science, Mathematics, Statistics, Engineering and review. The catalog includes the inputs for each instrument, a terminal example and the equivalent MCP call.
+**[Browse the PCP OS Store](store/README.md)** for packaged applications and built-in research instruments. The [instrument catalog](store/instruments/README.md) gives the inputs for each check, with CLI and MCP examples. The [game shelf](store/index.html) includes offline browser players and native PCP OS guests.
 
 ## Run the Rust host
 
@@ -19,7 +19,7 @@ For build targets, tests, register verification and the kernel's QEMU requiremen
 
 | Path | What you will find |
 | --- | --- |
-| [Store](store/README.md) | Available instruments, how to run them, and where to find packages, modules and plugins. |
+| [Store](store/README.md) | Application packages, browser players, native launch instructions and the catalog of built-in host instruments. |
 | [Rust workspace](PCP_OS_Rust/) | The host, integrity core, package-manager library, kernel and reference vectors. |
 | [Python implementation](PCP_OS_Python/) | The companion implementation tested against the Rust vectors. Place `ACR_1.0_Implementation.zip` beside the Python directory, then run `python3 -m unittest discover -s TESTS` inside it. |
 | [OS documentation](os-docs/) | The overview, specification and async execution notes. |

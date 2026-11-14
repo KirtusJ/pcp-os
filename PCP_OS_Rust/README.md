@@ -8,7 +8,7 @@ PCP OS is an operating system built around one idea: the record of what was exam
 
 ## What exists, and what was checked
 
-For the names, inputs and invocation of built-in instruments, see the [Store app catalog](../store/README.md). Run `pcpos instrument list` for the catalog in your binary.
+For the names, inputs and invocation of built-in instruments, see the [Store instrument catalog](../store/instruments/README.md). Run `pcpos instrument list` for the catalog in your binary.
 
 | Part | What it is | Checked how |
 | --- | --- | --- |

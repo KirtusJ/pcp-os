@@ -2,7 +2,7 @@ use std::process::Command;
 
 #[test]
 fn catalog_names_match_the_instrument_list() {
-    let catalog = include_str!("../../../../store/README.md");
+    let catalog = include_str!("../../../../store/instruments/README.md");
     let mut documented = Vec::new();
     for row in catalog.lines().filter(|line| line.starts_with("| `")) {
         let cell = row[1..]
