@@ -38,7 +38,7 @@ To recheck the retained capture offline, run the following from this directory. 
 python3 packet_trace.py evidence/guest-http.pcap evidence/guest-http.json
 ```
 
-In the retained 33-frame capture the socket was `10.0.2.15:53241 → 10.0.2.2:51093`. The verifier checked the ARP exchange, the initial guest SYN, the peer’s SYN-ACK and the guest’s matching ACK. It reassembled three requests and 413 response bytes, matched the complete bodies against the fixture, and observed a guest FIN. The request targets were `/harbour`, `/jetty-8b7204f02fc5` and `/bar-8b7204f02fc5`. The hosted reader’s independent JSON client reproduced the paths and document contents. All six TCP replay arms verified their kernel registers at shutdown. [Open the Ethernet capture](evidence/guest-http.pcap) · [Packet verifier](packet_trace.py)
+In the retained 33-frame capture the socket was `10.0.2.15:50543 → 10.0.2.2:64425`. The verifier checked the ARP exchange, the initial guest SYN, the peer’s SYN-ACK and the guest’s matching ACK. It reassembled three requests and 413 response bytes, matched the complete bodies against the fixture, and observed a guest FIN. The request targets were `/harbour`, `/jetty-9cf8e0e895f8` and `/bar-9cf8e0e895f8`. The hosted reader’s independent JSON client reproduced the paths and document contents. All six TCP replay arms verified their kernel registers at shutdown. [Open the Ethernet capture](evidence/guest-http.pcap) · [Packet verifier](packet_trace.py)
 
 | Replay arm | Result on QEMU 11.1.0, Rust 1.91.1 |
 | --- | --- |
@@ -49,8 +49,10 @@ In the retained 33-frame capture the socket was `10.0.2.15:53241 → 10.0.2.2:51
 | Folded field line | The malformed field was rejected before display. |
 | Bound port without a listener | This host’s QEMU backend returned no handshake reply. The guest retransmitted its SYN and hit its eight-second connect deadline after four SYN attempts. Zero HTTP payload bytes. A backend that reports refusal with RST is checked against the guest’s refusal result. |
 
-The captured kernel measurement was `36134207e9f922ddc8b847f3e59b5eae3af4ee8a3012e600fe34caa048509cc9`, the guest ELF SHA-256 was `df272f3c2284ddebd0a70b9782bedeae1a80935eef876bf7c5565cbb3a1c3f88`, and the pcap SHA-256 was `d189eaacf9aaa5c0f6f66135a9344c18add4eef66a70f6d0788864a54a7d3806`.
+The captured kernel measurement was `0232c02a8946d66216da0ac65953a246ce3d41d7a966ae31aa83c3335b3259e3`, the guest ELF SHA-256 was `49107154cd8d6a9d399d504ca2f94710a07c147b67431d92b904258ad4156b32`, and the pcap SHA-256 was `b0e30fda0ab5df8f10fdda80bb5ad59ed40f9742e5ada596135478d70ca33f60`.
 
 The longer run issued 133 guest GETs on one connection and displayed 264 pages, including cached Back navigation. Its 1,078 Ethernet frames included 537 from the guest and 541 from the peer. All 14,973 HTTP response bytes matched the fixture. This exercises repeated reuse of both virtqueues. A separate run used 1,077 frames for the same navigation, so the replay checks the streams and page results without prescribing a packet count.
 
 During separate serial-cable regression boots, the pre-existing kernel keyboard-wakeup self-test entered SAFE before Surfbird launched. The logs were retained. The five cable arms subsequently passed across individual boots.
+
+During cross-review, all six arms passed on the corrected kernel. The raw device accepts `O_RDWR`. Rebuilding the guest with `--features probe-ethernet-modes` and running `--tcp --arm allowed` verifies that read-only, write-only and reserved mode 3 each return `EINVAL` before completing navigation. The denial arm requires an empty capture. Run `python3 -m unittest test_packet_trace` for the spoofed-source-MAC negative control.

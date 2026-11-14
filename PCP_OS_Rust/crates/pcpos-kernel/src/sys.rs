@@ -210,6 +210,8 @@ fn open(p: &mut Process, caps: &CapSpace, world: &mut World, path: u64, flags: u
     };
     let (writing, create, truncate) = (flags & 3 != 0, flags & 0x40 != 0, flags & 0x200 != 0);
     let node = match lookup(p, caps, world, &path) {
+        #[cfg(feature = "guest-ethernet")]
+        Ok(Node::Ethernet) if flags & 3 != 2 => return err(EINVAL), // raw packet sessions require O_RDWR
         Ok(Node::File(_)) if writing => return err(EACCES), // the loader's files are read and never written
         Ok(n) => n,
         Err(e) if e == err(ENOENT) && create => {

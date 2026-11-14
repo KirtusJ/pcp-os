@@ -16,6 +16,7 @@ smoltcp = { version = "0.14", optional = true, default-features = false, feature
 
 [features]
 tcp-ip = ["dep:smoltcp"]
+probe-ethernet-modes = ["tcp-ip"]
 
 [profile.release]
 panic = "abort"

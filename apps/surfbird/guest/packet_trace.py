@@ -65,7 +65,8 @@ def verify(capture, port, expected_paths, scenario, bodies):
             tcp.append((outgoing, sp if outgoing else dp, seq, ack, s[13], s[4 * (s[12] >> 4) :]))
     evidence = {"frames": len(packets), "pcap_sha256": hashlib.sha256(raw).hexdigest()}
     if scenario == "denied":
-        check(all(f[6:12] != GUEST_MAC for f in packets), "denied guest transmitted")
+        # The isolated denial fixture has no background traffic. A raw writer chooses its MAC.
+        check(not packets, "expected an empty capture on the denied arm")
         return evidence
     check(
         (GUEST_MAC, 1, GUEST_IP, HOST_IP) in arp

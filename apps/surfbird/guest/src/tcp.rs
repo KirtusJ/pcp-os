@@ -111,6 +111,15 @@ pub(super) fn browse() -> Result<(), &'static str> {
     if fd < 0 {
         return Err("Ethernet grant unavailable");
     }
+    #[cfg(feature = "probe-ethernet-modes")]
+    {
+        for mode in [0, 1, 3] {
+            if open(b"/dev/ethernet\0", mode | 0x800) != -22 {
+                return Err("unexpected Ethernet open mode result");
+            }
+        }
+        pcp_game_guest::log(b"SURFBIRD Ethernet open modes verified\n");
+    }
     let mut boot = [0; 12];
     if !load(b"net.cfg\0", &mut boot) || boot[..2] == [0, 0] {
         return Err("invalid fixture network configuration");
