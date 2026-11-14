@@ -1,0 +1,19 @@
+name: Native stop-hook FIFO and register lock
+on:
+  push:
+    branches: [director-g/validate-transcript-fifo]
+permissions:
+  contents: read
+jobs:
+  reproduce:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Exercise a real FIFO using only a temporary register
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal
+          cargo +1.97.0 build --release --locked --manifest-path PCP_OS_Rust/Cargo.toml --bin pcpos
+          python3 .github/validation/transcript_fifo.py
