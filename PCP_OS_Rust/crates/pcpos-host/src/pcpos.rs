@@ -2717,3 +2717,133 @@ fn main() {
         _ => usage(),
     }
 }
+
+
+#[cfg(test)]
+mod method_tree_inventory_tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn sample() -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "pcpos-method-inventory-{}-{nonce}", std::process::id()
+        ));
+        fs::create_dir_all(dir.join("MODULES/01_Core/SOURCE")).unwrap();
+        let bytes = b"test Specification";
+        fs::write(dir.join("MODULES/01_Core/SOURCE/Specification.md"), bytes).unwrap();
+        let manifest = format!(
+            r#"{{"files":[{{"path":"MODULES/01_Core/SOURCE/Specification.md","sha256":"{}"}},{{"path":"TOOLS/acr.py","sha256":"{}"}}]}}"#,
+            sha256_hex(bytes), sha256_hex(b"optional program")
+        );
+        fs::write(dir.join("MANIFEST.json"), manifest).unwrap();
+        dir
+    }
+
+    #[test]
+    fn pristine_method_and_optional_tool_omission_are_distinct() {
+        let dir = sample();
+        let c = method_check(&dir).unwrap();
+        assert_eq!(c.equal, 1);
+        assert_eq!(c.absent, 1);
+        assert_eq!(c.absent_text, 0);
+        assert!(c.differing.is_empty());
+        assert!(c.unexpected.is_empty());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn unlisted_module_and_empty_directory_invalidate_tree_inventory() {
+        let dir = sample();
+        let extra = dir.join("MODULES/99_Probe/SOURCE/Specification.md");
+        fs::create_dir_all(extra.parent().unwrap()).unwrap();
+        fs::write(&extra, b"extra module").unwrap();
+        let c = method_check(&dir).unwrap();
+        assert_eq!(c.equal, 1);
+        assert!(c.unexpected.iter().any(|p| p == "MODULES/99_Probe/"));
+        assert!(c.unexpected.iter().any(|p| p == "MODULES/99_Probe/SOURCE/Specification.md"));
+        fs::remove_file(extra).unwrap();
+        fs::remove_dir(dir.join("MODULES/99_Probe/SOURCE")).unwrap();
+        fs::remove_dir(dir.join("MODULES/99_Probe")).unwrap();
+        fs::create_dir(dir.join("MODULES/99_Empty")).unwrap();
+        let empty = method_check(&dir).unwrap();
+        assert!(empty.unexpected.iter().any(|p| p == "MODULES/99_Empty/"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn changed_listed_file_is_not_reported_equal() {
+        let dir = sample();
+        fs::write(dir.join("MODULES/01_Core/SOURCE/Specification.md"), b"changed").unwrap();
+        let c = method_check(&dir).unwrap();
+        assert_eq!(c.equal, 0);
+        assert_eq!(c.differing, vec!["MODULES/01_Core/SOURCE/Specification.md"]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinks_cannot_satisfy_listed_or_unlisted_release_paths() {
+        use std::os::unix::fs::symlink;
+        let dir = sample();
+        let listed = dir.join("MODULES/01_Core/SOURCE/Specification.md");
+        let outside = dir.with_extension("shadow");
+        fs::write(&outside, b"test Specification").unwrap();
+        fs::remove_file(&listed).unwrap();
+        symlink(&outside, &listed).unwrap();
+        symlink(&outside, dir.join("unexpected-link.md")).unwrap();
+        let c = method_check(&dir).unwrap();
+        assert_eq!(c.equal, 0);
+        assert!(c.differing.iter().any(|p| p.starts_with("MODULES/01_Core/SOURCE/Specification.md")));
+        assert!(c.unexpected.iter().any(|p| p == "MODULES/01_Core/SOURCE/Specification.md"));
+        assert!(c.unexpected.iter().any(|p| p == "unexpected-link.md"));
+        fs::remove_dir_all(dir).unwrap();
+        fs::remove_file(outside).unwrap();
+    }
+
+    #[test]
+    fn absent_and_nonregular_method_paths_are_different() {
+        let dir = sample();
+        assert!(read_method_regular_file(&dir.join("absent")).unwrap().is_none());
+        assert!(read_method_regular_file(&dir.join("MODULES")).is_err());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn oversized_method_file_is_rejected_before_reading() {
+        let dir = sample();
+        let oversized = dir.join("oversized");
+        let file = File::create(&oversized).unwrap();
+        file.set_len(4 * 1024 * 1024 + 1).unwrap();
+        assert!(read_method_regular_file(&oversized).is_err());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn fifo_at_manifest_or_listed_path_is_rejected_without_reading() {
+        let dir = sample();
+        for relative in ["MANIFEST.json", "MODULES/01_Core/SOURCE/Specification.md"] {
+            let path = dir.join(relative);
+            fs::remove_file(&path).unwrap();
+            let status = std::process::Command::new("mkfifo").arg(&path)
+                .status().expect("Linux test requires mkfifo");
+            assert!(status.success());
+            assert!(read_method_regular_file(&path).is_err());
+            assert!(method_check(&dir).map(|c| !c.differing.is_empty()).unwrap_or(true));
+            fs::remove_file(path).unwrap();
+            // Restore the manifest and listed payload for the next iteration.
+            if relative == "MANIFEST.json" {
+                let bytes = b"test Specification";
+                fs::write(dir.join("MANIFEST.json"), format!(
+                    r#"{{"files":[{{"path":"MODULES/01_Core/SOURCE/Specification.md","sha256":"{}"}},{{"path":"TOOLS/acr.py","sha256":"{}"}}]}}"#,
+                    sha256_hex(bytes), sha256_hex(b"optional program")
+                )).unwrap();
+            } else {
+                fs::write(dir.join(relative), b"test Specification").unwrap();
+            }
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+}
