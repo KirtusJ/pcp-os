@@ -3,11 +3,11 @@
 Nothing here interprets an event. The register is the record; everything else is derived from it.
 """
 from __future__ import annotations
-import json, os, re, time, uuid
+import json, os, re, stat, time, uuid
 from pathlib import Path
 from . import WORKSPACE_PROFILE, RECORD_PROFILE, VERSION
 from .base import (PcposError, INTEGRITY, USAGE, ENVIRONMENT, ZERO, HEX64, canon, strict_loads, no_floats,
-                   sha_bytes, sha_file, now_utc, atomic_write, append_durable)
+                   sha_bytes, sha_file, now_utc, atomic_write)
 
 MARKER = "workspace.json"
 MAX_EVENT_BYTES = 64 * 1024
@@ -142,12 +142,42 @@ class Workspace:
         return data
 
     # ---- register ---------------------------------------------------------------
-    def events(self):
-        """Read and check the whole register: line form, sequence and hash chain. Returns (events, head)."""
+    def _open_register(self, flags):
+        """Open the actual register inode; refuse linked or non-regular files.
+
+        The whole read/validate/append sequence uses one descriptor. This also
+        prevents a pathname substitution between the chain check and append.
+        It is not a boundary against code replacing parent directories while
+        running with the same operating-system privileges.
+        """
+        path = self.register_path
         try:
-            raw = self.register_path.read_bytes()
+            if path.parent.resolve() != self.root.resolve():
+                raise PcposError(INTEGRITY, "register directory is outside its workspace")
+            if not hasattr(os, "O_NOFOLLOW") and path.is_symlink():
+                raise PcposError(INTEGRITY, "register is a symbolic link")
+            fd = os.open(path, flags | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0))
+            try:
+                opened = os.fstat(fd)
+                current = path.lstat()
+                if (not stat.S_ISREG(opened.st_mode) or not stat.S_ISREG(current.st_mode)
+                        or opened.st_nlink != 1 or current.st_nlink != 1
+                        or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)):
+                    raise PcposError(INTEGRITY, "register must be one regular file in its workspace, not an alias")
+                return fd
+            except BaseException:
+                os.close(fd)
+                raise
         except OSError as e:
-            raise PcposError(INTEGRITY, "cannot read the register: %s" % e)
+            raise PcposError(INTEGRITY, "cannot open register safely: %s" % e) from e
+
+    def events(self):
+        """Read and check the register from a verified single-link file descriptor."""
+        with os.fdopen(self._open_register(os.O_RDONLY), "rb") as f:
+            return self._check_events(f.read())
+
+    def _check_events(self, raw):
+        """Validate the canonical event sequence and return its current head."""
         if raw and not raw.endswith(b"\n"):
             raise PcposError(INTEGRITY, "the register ends in an incomplete line (an interrupted write)",
                              "inspect it, then remove only the incomplete final line with: pcpos repair")
@@ -176,19 +206,21 @@ class Workspace:
         no_floats(body, "event body")
         lock = self._lock()
         try:
-            events, head = self.events()
-            if check is not None:
-                replaced = check(events)
-                if replaced is not None:
-                    body = replaced
-                    no_floats(body, "event body")
-            ev = {"seq": len(events), "prev": head, "ts": now_utc(), "actor": actor, "auth": auth, "kind": kind, "body": body}
-            line = canon(ev)
-            if len(line) > MAX_EVENT_BYTES:
-                raise PcposError(USAGE, "the event is %d bytes; the limit is %d" % (len(line), MAX_EVENT_BYTES),
-                                 "store long text as an artifact (pcpos add) and refer to it")
-            append_durable(self.register_path, line + b"\n")
-            return ev, sha_bytes(line)
+            with os.fdopen(self._open_register(os.O_RDWR | os.O_APPEND), "r+b") as f:
+                events, head = self._check_events(f.read())
+                if check is not None:
+                    replaced = check(events)
+                    if replaced is not None:
+                        body = replaced
+                        no_floats(body, "event body")
+                ev = {"seq": len(events), "prev": head, "ts": now_utc(), "actor": actor, "auth": auth, "kind": kind, "body": body}
+                line = canon(ev)
+                if len(line) > MAX_EVENT_BYTES:
+                    raise PcposError(USAGE, "the event is %d bytes; the limit is %d" % (len(line), MAX_EVENT_BYTES),
+                                     "store long text as an artifact (pcpos add) and refer to it")
+                f.seek(0, os.SEEK_END)
+                f.write(line + b"\n"); f.flush(); os.fsync(f.fileno())
+                return ev, sha_bytes(line)
         finally:
             try:
                 lock.unlink()
@@ -196,10 +228,19 @@ class Workspace:
                 pass
 
     def repair(self):
-        """Remove an incomplete final line left by an interrupted write. Complete lines are never touched."""
-        raw = self.register_path.read_bytes()
-        if not raw or raw.endswith(b"\n"):
-            return 0
-        keep = raw[:raw.rfind(b"\n") + 1]
-        atomic_write(self.register_path, keep)
-        return len(raw) - len(keep)
+        """Remove an incomplete final line while holding the same lock as append."""
+        lock = self._lock()
+        try:
+            with os.fdopen(self._open_register(os.O_RDWR), "r+b") as f:
+                raw = f.read()
+                if not raw or raw.endswith(b"\n"):
+                    return 0
+                keep = raw[:raw.rfind(b"\n") + 1]
+                self._check_events(keep)  # Never truncate a malformed complete prefix.
+                f.truncate(len(keep)); f.flush(); os.fsync(f.fileno())
+                return len(raw) - len(keep)
+        finally:
+            try:
+                lock.unlink()
+            except OSError:
+                pass
