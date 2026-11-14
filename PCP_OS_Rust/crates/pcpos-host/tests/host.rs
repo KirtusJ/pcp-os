@@ -762,6 +762,37 @@ fn a_person_adds_a_module_beside_the_register_and_it_never_displaces_the_method_
 }
 
 #[test]
+fn removing_a_directory_without_a_recognized_module_preserves_files_and_record() {
+    let root = dir("nonmodule-remove");
+    let method = small_method(&root);
+    let run = |args: &[&str]| {
+        let mut cmd = with_method(&root, &method);
+        cmd.args(args);
+        feed(cmd, b"")
+    };
+    let (init, status) = run(&["init", REG, "--principal", "p"]);
+    assert_eq!(status, 0, "{init}");
+    let module_root = root.join(".pcp/modules");
+    for (key, spec) in [("unrelated", false), ("malformed", true)] {
+        let folder = module_root.join(key);
+        fs::create_dir_all(&folder).unwrap();
+        let sentinel = folder.join("synthetic-note.txt");
+        fs::write(&sentinel, b"NOT A PCP MODULE\n").unwrap();
+        if spec {
+            let source = folder.join("SOURCE");
+            fs::create_dir_all(&source).unwrap();
+            fs::write(source.join("Specification.md"), b"invalid module header\n").unwrap();
+        }
+        let before = fs::read(root.join(REG)).unwrap();
+        let (out, code) = run(&["module", "remove", REG, key, "--by", "p"]);
+        assert_ne!(code, 0, "{key}: unexpectedly accepted non-module directory: {out}");
+        assert_eq!(fs::read(&sentinel).unwrap(), b"NOT A PCP MODULE\n");
+        assert_eq!(fs::read(root.join(REG)).unwrap(), before, "{key}: register changed on refusal");
+        assert!(events(&root).iter().all(|e| e.get("body").and_then(|b| b.get("event")).and_then(Value::as_str) != Some("MODULE_REMOVED")));
+    }
+}
+
+#[test]
 fn verify_says_why_it_exits_1_and_a_subagent_the_host_cannot_name_is_not_recorded() {
     let root = in_use("verify-reason");
     let before = kinds(&root).len();
