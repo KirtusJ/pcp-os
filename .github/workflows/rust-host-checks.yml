@@ -68,3 +68,13 @@ jobs:
           python3 "$GITHUB_WORKSPACE/clause-tests/tests/clause_fifo_race_regression.py" \
             --binary "$GITHUB_WORKSPACE/PCP_OS_Rust/target/release/pcpos" \
             --method "$GITHUB_WORKSPACE/released-plugin/method"
+
+      - name: Record exact test-build binary digest
+        run: sha256sum target/release/pcpos
+      - name: Retain Linux x86_64 host executable for full-packet acceptance
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pcpos-ci-linux-x86_64
+          path: PCP_OS_Rust/target/release/pcpos
+          retention-days: 1
+          if-no-files-found: error
