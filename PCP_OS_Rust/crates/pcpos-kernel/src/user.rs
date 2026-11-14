@@ -195,8 +195,14 @@ impl Table {
                 caps[object as usize] = self.caps.install(pid, object as u64, rights).ok();
             }
         }
-        let task = self.tasks.admit(name, Worker::Program, 0, now, u64::MAX, budget).ok()?;
-        self.tasks.event(task, TaskEvent::Start, now).ok()?;
+        let task = match self.tasks.admit(name, Worker::Program, 0, now, u64::MAX, budget).and_then(|task| self.tasks.event(task, TaskEvent::Start, now).map(|_| task)) {
+            Ok(task) => task,
+            Err(_) => {
+                // Not a task, so not a process: the memory it was given goes back to the pool now, since nothing else ever would give it back.
+                space.release();
+                return None;
+            }
+        };
         self.procs.push(Process { pid, name: name.to_string(), frame, audit: space.audit(), frames: space.frames(), space: Some(space), fpu: Box::new(arch::FpuArea::clean()), fs_base: 0,
                                   caps, task, end: None, waiting: Waiting::Nothing, output: Vec::new(), written: 0, periods: 0, preempted: 0, calls: 0, settled: None, linux,
                                   census: (0, 0, 0, false), released: 0, idle: 0 });
