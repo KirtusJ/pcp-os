@@ -935,7 +935,16 @@ fn unlisted_method_entries(dir: &Path, expected_files: &BTreeSet<PathBuf>) -> Re
 
 /// Compare a method packet's files with its own manifest, and the manifest with the release this core implements.
 fn method_check(dir: &Path) -> Result<MethodCheck, String> {
-    let raw = fs::read(dir.join("MANIFEST.json")).map_err(|e| format!("cannot read the manifest in {}: {}", dir.display(), e))?;
+    // Files can be special filesystem objects. Opening a FIFO with fs::read
+    // blocks before the later inventory scan sees its type. Reject non-regular
+    // entries first. This preflight is not an atomic filesystem snapshot.
+    let manifest_path = dir.join("MANIFEST.json");
+    let manifest_type = fs::symlink_metadata(&manifest_path)
+        .map_err(|e| format!("cannot inspect the manifest in {}: {}", dir.display(), e))?;
+    if !manifest_type.file_type().is_file() {
+        return Err("the method manifest is not a regular file".to_string());
+    }
+    let raw = fs::read(&manifest_path).map_err(|e| format!("cannot read the manifest in {}: {}", dir.display(), e))?;
     let m = lenient::parse(&raw).ok_or("the manifest is not readable")?;
     let files = match m.get("files") {
         Some(Value::List(l)) => l,
@@ -952,11 +961,17 @@ fn method_check(dir: &Path) -> Result<MethodCheck, String> {
         if !expected_files.insert(PathBuf::from(path)) {
             return Err(format!("the manifest lists {path} more than once"));
         }
-        match fs::read(dir.join(path)) {
-            Ok(b) if sha256_hex(&b) == want => c.equal += 1,
-            Ok(_) => c.differing.push(path.to_string()),
-            // A genuinely missing tool/probe is permitted in a text-only plugin.
-            // Permission failures or I/O errors are not proof of absence.
+        let source_path = dir.join(path);
+        // Only a genuinely nonexistent optional tool/probe can be omitted.
+        // A symlink, FIFO, device, directory, or read failure is not an omission.
+        match fs::symlink_metadata(&source_path) {
+            Ok(meta) if !meta.file_type().is_file() =>
+                c.differing.push(format!("{path}: not a regular file")),
+            Ok(_) => match fs::read(&source_path) {
+                Ok(b) if sha256_hex(&b) == want => c.equal += 1,
+                Ok(_) => c.differing.push(path.to_string()),
+                Err(e) => c.differing.push(format!("{path}: unreadable ({e})")),
+            },
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 c.absent += 1;
                 if !NOT_IN_A_PLUGIN.iter().any(|d| path.starts_with(d)) {
