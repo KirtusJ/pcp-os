@@ -2304,7 +2304,17 @@ fn repair(path: &str) -> Result<String, String> {
     let keep = raw.iter().rposition(|b| *b == b'\n').map(|i| i + 1).unwrap_or(0);
     ledger::verify(&raw[..keep]).map_err(|e| format!("the part before the unfinished line is not intact either ({:?}); nothing was changed", e))?;
     let aside = h.path.with_extension(format!("fragment-{}", sha256_hex(&raw[keep..]).get(..12).unwrap_or("x")));
-    fs::write(&aside, &raw[keep..]).map_err(|e| format!("the fragment could not be saved ({e}); nothing was changed"))?;
+    // Never follow or truncate an existing fragment name: it may be a link
+    // to another file, including the register we are attempting to repair.
+    let mut saved = OpenOptions::new().write(true).create_new(true).open(&aside)
+        .map_err(|e| format!("the fragment sidecar could not be exclusively created ({e}); the register was not changed"))?;
+    saved.write_all(&raw[keep..]).and_then(|_| saved.sync_all())
+        .map_err(|e| format!("the fragment could not be durably saved ({e}); the register was not changed"))?;
+    #[cfg(unix)]
+    if let Some(dir) = aside.parent() {
+        File::open(dir).and_then(|d| d.sync_all())
+            .map_err(|e| format!("the fragment directory could not be synced ({e}); the register was not changed"))?;
+    }
     h.file.set_len(keep as u64).and_then(|_| h.file.sync_all()).map_err(|e| format!("the register could not be shortened: {e}"))?;
     Ok(format!("an unfinished last line of {} byte(s) was moved to {}. The register now ends at its last whole event. Run verify, and record what happened.\n", raw.len() - keep, aside.display()))
 }

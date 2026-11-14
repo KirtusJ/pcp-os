@@ -761,6 +761,40 @@ fn a_person_adds_a_module_beside_the_register_and_it_never_displaces_the_method_
     assert!(code == 0 && out.contains("guards replayed: 0 problem(s)"), "{out}");
 }
 
+#[cfg(unix)]
+#[test]
+fn repairing_an_incomplete_register_refuses_an_alias_of_its_own_fragment() {
+    use std::os::unix::fs::symlink;
+    let root = dir("repair-self-alias");
+    let register = root.join(REG);
+    let mut init = pcpos(&root);
+    init.args(["init", REG, "--principal", "p"]);
+    assert_eq!(feed(init, b"").1, 0);
+    let original = fs::read(&register).unwrap();
+    let fragment = b"{\"seq\":999,\"unfinished\":true";
+    let mut file = fs::OpenOptions::new().append(true).open(&register).unwrap();
+    file.write_all(fragment).unwrap();
+    file.sync_all().unwrap();
+    let before = fs::read(&register).unwrap();
+    let aside = register.with_extension(format!("fragment-{}", &sha256_hex(fragment)[..12]));
+    symlink(&register, &aside).unwrap();
+    let mut command = pcpos(&root);
+    command.args(["repair", REG]);
+    let (out, code) = feed(command, b"");
+    assert_ne!(code, 0, "repair accepted a sidecar linked to its own register: {out}");
+    assert_eq!(fs::read(&register).unwrap(), before, "refused repair must not alter the register");
+    fs::remove_file(&aside).unwrap();
+    let mut command = pcpos(&root);
+    command.args(["repair", REG]);
+    let (out, code) = feed(command, b"");
+    assert_eq!(code, 0, "normal repair must still work: {out}");
+    assert_eq!(fs::read(&register).unwrap(), original);
+    assert_eq!(fs::read(&aside).unwrap(), fragment);
+    let mut command = pcpos(&root);
+    command.args(["verify", REG]);
+    assert_eq!(feed(command, b"").1, 0);
+}
+
 #[test]
 fn verify_says_why_it_exits_1_and_a_subagent_the_host_cannot_name_is_not_recorded() {
     let root = in_use("verify-reason");
