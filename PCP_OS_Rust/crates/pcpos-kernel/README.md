@@ -27,6 +27,28 @@ It has been started only in an emulator (QEMU 8.2.2, without hardware virtualisa
 
 The self-tests cover rollback of a refused group of built-in programs. For the slower frame-exhaustion test, boot with `test=frame-cutoffs` (for example, `PCPOS_APPEND="then=off test=frame-cutoffs" sh run.sh`). It reserves the frame pool, then leaves zero through seven frames available to a built-in program and checks the pool on every return.
 
+## Machine boot report
+
+To receive boot health without parsing the console, attach a second 16550-compatible UART (COM2, I/O 0x2F8) and put `report=json` or `report=cbor` on the loader command line. Leave the option out for ordinary console operation. Configure the receiver to read only the second UART. The first UART still carries diagnostics and user-program output. In QEMU the order of the two `-serial` arguments selects the ports:
+
+```sh
+qemu-system-x86_64 -cpu max -m 128M -kernel target/pcpos-kernel.elf32 \
+  -display none -monitor none -no-reboot -serial file:console.log -serial file:health.jsonl \
+  -append 'then=off report=json' -device isa-debug-exit,iobase=0xf4,iosize=0x04
+```
+
+**JSON** emits one UTF-8 object per LF, with no terminal carriage returns. This is the text form for models and tools. **CBOR** emits a sequence of self-delimiting maps using the existing Rust R1 value encoder. Version 1 uses integer key 70 for `event`, text for the other keys, and 32-byte strings for the two SHA-256 values. JSON gives those digests in full lowercase hex. Both forms carry the same fields and values. No register record is encoded or rehashed for this report. [CBOR Sequences, RFC 8742](https://www.rfc-editor.org/rfc/rfc8742)
+
+Each message carries integer `v=1` and a text `event`. For one boot, expect these three messages in order.
+
+| Event | Fields | Meaning |
+|---|---|---|
+| `boot` | `image`, `match` | Measured SHA-256 of kernel code and read-only data. Match is true or false when the loader supplied an expected digest and null when it supplied none. |
+| `session` | `system`, `admit`, `pass`, `fail` | Register-derived system state (or null if unavailable), whether verification allows the session to start programs, and cumulative counts at entry. Admission is eligibility, regardless of whether a program actually ran. |
+| `stop` | `pass`, `fail`, `replay`, `events`, `head` | Final passed-check count and cumulative failure count, result of reopening and checking the stopped register, its event count and full head digest. Failures can also come from session or recording errors. |
+
+A complete successful run has a complete `stop` with `fail=0` and `replay=true`. A register can replay correctly after failed verification. Missing, truncated, out-of-order or unknown-version messages give an incomplete or unsupported result. An early halt, panic, or disconnected UART can leave the stream empty or partial. The first `report=` option selects the format; an unknown value disables the report. A missing reporting port is noted on the console. For unattended boots, add `checks=brief` to omit individual successful check descriptions on COM1. Every check still runs, individual failures print immediately, and the cumulative totals print at shutdown. This option also works without COM2. Detailed diagnostics and program output remain on COM1. Run `python3 tests/boot_report.py target/pcpos-kernel.elf32` with QEMU and Python's `cbor2` installed to exercise both forms.
+
 ## Rules of this crate
 
 `unsafe` in two files only: `arch.rs` (processor, memory, the copy between kernel and user memory) and `dev.rs` (device registers and device memory). Each use states why it is sound. The crate denies it everywhere and those two files alone lift the denial, so the loader, the system calls, the process table, the session and the drawing code are checked by the compiler in full. A program's memory is read and written only through two functions in `arch.rs` that check the range against the process's own map. Arithmetic overflow stops the kernel in release builds.

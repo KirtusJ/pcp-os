@@ -51,27 +51,57 @@ pub unsafe fn port_out32(port: u16, value: u32) {
 }
 
 const COM1: u16 = 0x3F8;
+const COM2: u16 = 0x2F8;
+
+fn uart_init(port: u16) {
+    outb(port + 1, 0x00);
+    outb(port + 3, 0x80);
+    outb(port, 0x01);
+    outb(port + 1, 0x00);
+    outb(port + 3, 0x03);
+    outb(port + 2, 0xC7);
+    outb(port + 4, 0x0B);
+}
 
 /// Prepare the first serial port: 115200 baud, 8 bits, no parity, one stop bit.
 pub fn serial_init() {
-    outb(COM1 + 1, 0x00);
-    outb(COM1 + 3, 0x80);
-    outb(COM1, 0x01);
-    outb(COM1 + 1, 0x00);
-    outb(COM1 + 3, 0x03);
-    outb(COM1 + 2, 0xC7);
-    outb(COM1 + 4, 0x0B);
+    uart_init(COM1);
 }
 
-/// Write one byte to the serial port, waiting until the port can take it.
-pub fn serial_put(byte: u8) {
+fn uart_put(port: u16, byte: u8) {
     // Bounded: a port that never becomes ready costs the message, not the machine.
     for _ in 0..1_000_000u32 {
-        if inb(COM1 + 5) & 0x20 != 0 {
+        if inb(port + 5) & 0x20 != 0 {
             break;
         }
     }
-    outb(COM1, byte);
+    outb(port, byte);
+}
+
+/// Write a byte to the human and program console.
+pub fn serial_put(byte: u8) {
+    uart_put(COM1, byte);
+}
+
+/// Enable the separate, kernel-only reporting port if its scratch register responds.
+pub fn report_port_init() -> bool {
+    let scratch = COM2 + 7;
+    let saved = inb(scratch);
+    let present = [0x55, 0xaa].iter().all(|&pattern| {
+        outb(scratch, pattern);
+        inb(scratch) == pattern
+    });
+    outb(scratch, saved);
+    if present {
+        uart_init(COM2);
+    }
+    present
+}
+
+pub fn report_bytes(bytes: &[u8]) {
+    for &byte in bytes {
+        uart_put(COM2, byte);
+    }
 }
 
 /// Stop the machine. Under QEMU with the exit device this ends the emulator with a status; otherwise it halts.
