@@ -2644,3 +2644,102 @@ fn main() {
         _ => usage(),
     }
 }
+
+
+#[cfg(test)]
+mod method_inventory_tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn fixture() -> PathBuf {
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let dir = env::temp_dir().join(format!("pcpos-inventory-{}-{nonce}", process::id()));
+        let spec = dir.join("MODULES/01_Core/SOURCE/Specification.md");
+        fs::create_dir_all(spec.parent().unwrap()).unwrap();
+        fs::write(&spec, b"source bytes").unwrap();
+        fs::write(dir.join("MANIFEST.json"), format!(
+            r#"{{"files":[{{"path":"MODULES/01_Core/SOURCE/Specification.md","sha256":"{}"}}]}}"#,
+            sha256_hex(b"source bytes")
+        )).unwrap();
+        dir
+    }
+
+    #[test]
+    fn clean_tree_and_unlisted_module() {
+        let dir = fixture();
+        let clean = method_check(&dir).unwrap();
+        assert_eq!(clean.equal, 1);
+        assert!(clean.unexpected.is_empty());
+        let extra = dir.join("MODULES/99_New/SOURCE/Specification.md");
+        fs::create_dir_all(extra.parent().unwrap()).unwrap();
+        fs::write(&extra, b"unlisted module").unwrap();
+        let altered = method_check(&dir).unwrap();
+        assert_eq!(altered.equal, 1);
+        assert!(altered.unexpected.iter().any(|x| x.contains("99_New")));
+        assert!(!altered.complete());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn unlisted_file_and_empty_directory() {
+        let dir = fixture();
+        fs::write(dir.join("unlisted.txt"), b"extra").unwrap();
+        fs::create_dir_all(dir.join("MODULES/98_Empty")).unwrap();
+        let check = method_check(&dir).unwrap();
+        assert!(check.unexpected.contains(&"unlisted.txt".to_string()));
+        assert!(check.unexpected.contains(&"MODULES/98_Empty/".to_string()));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn symlink_is_not_release_text() {
+        use std::os::unix::fs::symlink;
+        let dir = fixture();
+        let source = dir.join("MODULES/01_Core/SOURCE/Specification.md");
+        fs::rename(&source, dir.join("original-source")).unwrap();
+        symlink(dir.join("original-source"), &source).unwrap();
+        let check = method_check(&dir).unwrap();
+        assert_eq!(check.equal, 1, "the bytes alone still match");
+        assert!(check.unexpected.iter().any(|x| x.ends_with("Specification.md")));
+        assert!(!check.complete());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn unreadable_optional_file_must_not_count_as_omitted() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = fixture();
+        let optional = dir.join("TOOLS/acr.py");
+        fs::create_dir_all(optional.parent().unwrap()).unwrap();
+        fs::write(&optional, b"an optionally omitted file").unwrap();
+        let manifest = format!(
+            r#"{{"files":[{{"path":"MODULES/01_Core/SOURCE/Specification.md","sha256":"{}"}},{{"path":"TOOLS/acr.py","sha256":"{}"}}]}}"#,
+            sha256_hex(b"source bytes"), sha256_hex(b"an optionally omitted file")
+        );
+        fs::write(dir.join("MANIFEST.json"), manifest).unwrap();
+        fs::set_permissions(&optional, fs::Permissions::from_mode(0o000)).unwrap();
+        // A privileged test runner may remain able to read mode 000 files.
+        // Do not misreport that as a negative-control result.
+        if fs::read(&optional).is_err() {
+            let checked = method_check(&dir).unwrap();
+            assert_eq!(checked.absent, 0, "present but unreadable is not absent");
+            assert!(checked.differing.iter().any(|x| x.contains("TOOLS/acr.py")));
+        }
+        fs::set_permissions(&optional, fs::Permissions::from_mode(0o600)).unwrap();
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn complete_requires_no_unlisted_entries() {
+        let mut check = MethodCheck {
+            fingerprint: acr::METHOD_FINGERPRINT.to_string(),
+            listed: 1, equal: 1, absent: 0, absent_text: 0,
+            differing: Vec::new(), unexpected: Vec::new(),
+        };
+        assert!(check.complete());
+        check.unexpected.push("unlisted.txt".to_string());
+        assert!(!check.complete());
+    }
+}
