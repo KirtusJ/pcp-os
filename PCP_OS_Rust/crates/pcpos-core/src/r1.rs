@@ -43,22 +43,41 @@ pub enum R1Error {
     TrailingBytes(usize),
 }
 
-fn head(major: u8, n: u64, out: &mut Vec<u8>) {
+fn emit_head(major: u8, n: u64, mut emit: impl FnMut(&[u8])) {
     let m = major << 5;
     if n < 24 {
-        out.push(m | n as u8);
+        emit(&[m | n as u8]);
     } else if n <= 0xff {
-        out.push(m | 24);
-        out.push(n as u8);
+        emit(&[m | 24, n as u8]);
     } else if n <= 0xffff {
-        out.push(m | 25);
-        out.extend_from_slice(&(n as u16).to_be_bytes());
+        emit(&[m | 25]);
+        emit(&(n as u16).to_be_bytes());
     } else if n <= 0xffff_ffff {
-        out.push(m | 26);
-        out.extend_from_slice(&(n as u32).to_be_bytes());
+        emit(&[m | 26]);
+        emit(&(n as u32).to_be_bytes());
     } else {
-        out.push(m | 27);
-        out.extend_from_slice(&n.to_be_bytes());
+        emit(&[m | 27]);
+        emit(&n.to_be_bytes());
+    }
+}
+
+fn head(major: u8, n: u64, out: &mut Vec<u8>) {
+    emit_head(major, n, |bytes| out.extend_from_slice(bytes));
+}
+
+/// Write one nonnegative integer in shortest CBOR form to a byte sink.
+pub fn emit_uint(n: u64, emit: impl FnMut(&[u8])) {
+    emit_head(0, n, emit);
+}
+
+/// Write text in R1 form. A lowercase hexadecimal SHA-256 digest becomes 32 bytes.
+pub fn emit_text(s: &str, mut emit: impl FnMut(&[u8])) {
+    if let Some(d) = hex_digest(s) {
+        emit_head(2, 32, &mut emit);
+        emit(&d);
+    } else {
+        emit_head(3, s.len() as u64, &mut emit);
+        emit(s.as_bytes());
     }
 }
 
@@ -93,16 +112,7 @@ fn write(v: &Value, out: &mut Vec<u8>) {
         Value::Bool(true) => out.push(0xf5),
         Value::Int(n) if *n >= 0 => head(0, *n as u64, out),
         Value::Int(n) => head(1, !(*n) as u64, out),
-        Value::Str(s) => match hex_digest(s) {
-            Some(d) => {
-                head(2, 32, out);
-                out.extend_from_slice(&d);
-            }
-            None => {
-                head(3, s.len() as u64, out);
-                out.extend_from_slice(s.as_bytes());
-            }
-        },
+        Value::Str(s) => emit_text(s, |bytes| out.extend_from_slice(bytes)),
         Value::List(items) => {
             head(4, items.len() as u64, out);
             for i in items {

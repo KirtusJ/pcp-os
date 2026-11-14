@@ -7,7 +7,7 @@ on:
       - "PCP_OS_Rust/crates/pcpos-kernel/**"
       - "PCP_OS_Rust/crates/pcpos-host/src/boot_report.rs"
       - "PCP_OS_Rust/crates/pcpos-host/src/pcpos.rs"
-      - "PCP_OS_Rust/crates/pcpos-host/tests/boot_report.rs"
+      - "PCP_OS_Rust/crates/pcpos-host/tests/boot_report*.rs"
       - "PCP_OS_Rust/crates/pcpos-host/tests/host.rs"
       - "PCP_OS_Rust/crates/pcpos-core/**"
       - "PCP_OS_Rust/Cargo.*"
@@ -34,7 +34,7 @@ jobs:
         working-directory: PCP_OS_Rust
         run: |
           cargo build --locked --release --bin pcpos
-          cargo test --locked -p pcpos-host --test boot_report
+          cargo test --locked -p pcpos-host --test boot_report --test boot_report_wire
           cargo test --locked -p pcpos-host --test host boot_report
       - name: Boot the kernel and compare both serial encodings with the receiver
         working-directory: PCP_OS_Rust/crates/pcpos-kernel
