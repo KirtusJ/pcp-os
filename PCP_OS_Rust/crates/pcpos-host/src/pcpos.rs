@@ -8,6 +8,9 @@
 //!     pcpos adopt <register> --by L --basis W put ACR in use (a person, acting as themselves)
 //!     pcpos halt <register> --by L [--words W]
 //!     pcpos standard <register> --by L [--second L2] BASELINE|CRITICAL|key=value ...
+//!     pcpos task-limits <register> --by L --max-depth D --max-live L --max-total N [--second L2]
+//!     pcpos task-admit <register> --by L --label NAME [--parent Tn]  reserve a slot before cooperating work starts
+//!     pcpos task-release <register> --by L --id Tn                  relinquish a leaf reservation
 //!     pcpos modules <method directory>        the modules found in a method packet, each with its identity
 //!     pcpos clause <method directory> <module> [section]   the exact text of a provision, or the module's headings
 //!     pcpos workspace <register> --by L [module ...]   the modules this workspace's reviews use (a person; none = Core only)
@@ -453,6 +456,41 @@ impl Tx {
         self.rec.ledger().head().to_string()
     }
 
+    /// A cooperating worker inherits its register, actor and own reservation from pcp-delegate.
+    /// Enforce that binding below both the CLI and MCP submission paths.
+    fn bound_task(&self, actor: &str, kind: &str, mut body: Value) -> Result<Value, &'static str> {
+        if !matches!(kind, "TASK_LIMITS_SET" | "TASK_ADMITTED" | "TASK_RELEASED") { return Ok(body); }
+        if env::var_os("PCP_RECURSION_DESK").is_some() || env::var_os("PCP_RECURSION_PARENT").is_some() {
+            return Err("a delegated desk worker must use its inherited desk");
+        }
+        let context = (env::var_os("PCP_DELEGATE_REGISTER"), env::var_os("PCP_DELEGATE_TASK"), env::var_os("PCP_DELEGATE_ACTOR"));
+        let (file, parent, owner) = match context {
+            (None, None, None) => return Ok(body),
+            (Some(file), Some(parent), Some(owner)) => (file, parent, owner),
+            _ => return Err("incomplete inherited task context"),
+        };
+        if Path::new(&file).canonicalize().ok().as_ref() != Some(&self.h.path) || owner != actor {
+            return Err("a delegated worker must use its inherited register and actor");
+        }
+        let parent = parent.to_str().ok_or("invalid inherited task id")?;
+        let Value::Map(ref mut fields) = body else { return Err("a task operation requires an object"); };
+        match kind {
+            "TASK_ADMITTED" => match fields.get("parent") {
+                None | Some(Value::Null) => { fields.insert("parent".into(), s(parent)); }
+                Some(Value::Str(id)) if id == parent => {}
+                _ => return Err("a delegated worker must use its own admission as parent"),
+            },
+            "TASK_RELEASED" => {
+                let task = fields.get("id").and_then(Value::as_str).and_then(|id| self.state().tasks.get(id));
+                if task.and_then(|t| t.admission.as_ref()).and_then(|a| a.parent.as_deref()) != Some(parent) {
+                    return Err("a delegated worker may release only its direct children's reservations");
+                }
+            }
+            _ => return Err("a delegated worker cannot change the register's task limits"),
+        }
+        Ok(body)
+    }
+
     /// Offer an event. A register that holds an event the guards would refuse is not continued as though
     /// nothing were wrong: only a halt is added to it. A halt is never refused on that ground.
     fn put(&mut self, actor: &str, auth: &str, kind: &str, body: Value) -> Result<Put, String> {
@@ -464,6 +502,10 @@ impl Tx {
                                  self.problems.len(), self.problems[0].seq, self.problems[0].message),
             }));
         }
+        let body = match self.bound_task(actor, kind, body) {
+            Ok(body) => body,
+            Err(why) => return Ok(Put::Refused(acr::Refusal { code: acr::REFUSED, clause: None, message: why.into() })),
+        };
         let prev = self.head();
         match self.rec.submit(&now_utc(), actor, auth, kind, body) {
             Ok(head) => {
@@ -602,6 +644,10 @@ fn status(label: &str, o: &Opened) -> String {
         }
         let _ = writeln!(s, "          (A check the host saw run is its observation of the command and its output. A reported check is the participant's account. Neither says the command tests the claim.)");
     }
+    if let Some(limits) = st.recursion_limits {
+        let _ = writeln!(s, "TASK LIMITS  root depth 0, max depth {}, live {}/{}, lifetime {}/{}",
+                         limits.max_depth, st.recursion_live, limits.max_live, st.recursion_total, limits.max_total);
+    }
     // A task's state is what the record observed, in the record's own words: STARTED until its end is
     // recorded; STOP-ASKED when a stop was requested and no end is recorded (termination unknown).
     let _ = writeln!(s, "TASKS     {:<4} {:<16} {:<8} {:<10} {:<10} {:<10} {:>13}  RESULT", "ID", "LABEL", "WORKER", "BY", "REVIEW", "STATE", "SPENT/BUDGET");
@@ -609,13 +655,15 @@ fn status(label: &str, o: &Opened) -> String {
         let state = match (&t.outcome, t.stop_requested) {
             (Some(x), _) => x.as_str(),
             (None, Some(_)) => "STOP-ASKED",
+            (None, None) if t.admission.is_some() => "ADMITTED",
             (None, None) => "STARTED",
         };
-        let result = match (t.outcome.as_deref(), &t.result) {
-            (Some("DONE"), Some(d)) => format!("read back {}", clip(d, 12)),
-            (Some(_), Some(d)) => format!("reported {}, not accepted", clip(d, 12)),
-            (Some(_), None) => "none".to_string(),
-            (None, _) => "-".to_string(),
+        let result = match (&t.admission, t.outcome.as_deref(), &t.result) {
+            (Some(a), _, _) => format!("reservation depth {} parent {}", a.depth, a.parent.as_deref().unwrap_or("-")),
+            (None, Some("DONE"), Some(d)) => format!("read back {}", clip(d, 12)),
+            (None, Some(_), Some(d)) => format!("reported {}, not accepted", clip(d, 12)),
+            (None, Some(_), None) => "none".to_string(),
+            (None, None, _) => "-".to_string(),
         };
         let _ = writeln!(s, "          {:<4} {:<16} {:<8} {:<10} {:<10} {:<10} {:>13}  {}", id, t.label, t.worker, t.actor, t.review.as_deref().unwrap_or("-"),
                          state, format!("{}/{}", t.spent, t.budget), result);
@@ -1395,6 +1443,7 @@ const MAX_OPEN_REVIEWS: usize = 64;
 fn not_from_a_session(kind: &str, body: &Value) -> Option<&'static str> {
     match kind {
         "ADOPTED" => Some("ACR use is adopted by the person directing the work. Use acr_adopt with their instruction in their own words; this tool does not write ADOPTED"),
+        "TASK_LIMITS_SET" => Some("a directing person sets task limits outside this session with pcpos task-limits"),
         "STANDARD_SET" => Some("a standard is set by a person, acting as themselves, outside this session (pcpos standard)"),
         "SYSTEM_STATE" | "LINK_STATE" | "TASK_ENDED" | "TASK_STARTED" => Some("this event is written by the system from what it observes itself, never on a participant's word"),
         "WORKSPACE_CREATED" | "METHOD_PINNED" | "ENVIRONMENT_RECORDED" | "HOST_EVENT" => Some("this event is written by the host (acr_begin)"),
@@ -1418,6 +1467,10 @@ fn tools() -> Value {
     let tool = |name: &str, d: &str, sc: Value| obj(vec![("name", s(name)), ("description", s(d)), ("inputSchema", sc)]);
     Value::List(vec![
         tool("acr_status", "What the record says now: system, ACR use, standard, what needs a response, reviews, tasks, and what a halt would stop. Read this instead of recalling state.", schema(vec![reg], vec![])),
+        tool("acr_task_admit", "Reserve a governed task in this register before a cooperating launcher starts work. Omit parent for a root. The receipt names its task ID. This does not launch a process.",
+             schema(vec![reg, ("label", "string", "Task label"), ("parent", "string", "Optional governed parent task ID")], vec!["label"])),
+        tool("acr_task_release", "Release an outstanding admission once its children have been released. A release records a reservation change, not observed process termination.",
+             schema(vec![reg, ("id", "string", "Governed task ID")], vec!["id"])),
         tool("acr_verify", "Check the register's hash chain and replay every guard. Reports the full head digest and any recorded event the guards would refuse.", schema(vec![reg], vec![])),
         tool("acr_begin", "Begin the session's register if there is none, and register this session's participant. Changes nothing if both are already done. It does not put ACR in use.", schema(vec![reg], vec![])),
         tool("acr_adopt", "Record that the person directing the work asked for ACR in their own words. basis is their whole last message, copied exactly and unchanged. The adoption is recorded as relayed by you. If the host kept that exact message, the record carries its digest; if not, the status asks the person to confirm. Only a command the person types is recorded as the person's own act.",
@@ -1667,6 +1720,25 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
                 }
             }
         }
+        "acr_task_admit" | "acr_task_release" => {
+            let Value::Map(fields) = args else { return Err("arguments must be an object".into()); };
+            let allowed: &[&str] = if name == "acr_task_admit" { &["register", "label", "parent"] } else { &["register", "id"] };
+            if let Some(k) = fields.keys().find(|k| !allowed.contains(&k.as_str())) {
+                return Err(format!("unknown argument {k}"));
+            }
+            let mut tx = Tx::begin(&se.root, &reg, false)?.ok_or_else(none)?;
+            session_may_write(&tx, se)?;
+            let (kind, body, id) = if name == "acr_task_admit" {
+                let id = tx.state().next_task_id();
+                ("TASK_ADMITTED", obj(vec![("id", s(&id)), ("label", s(arg("label")?)),
+                                           ("parent", text_arg("parent")?.map(s).unwrap_or(Value::Null))]), id)
+            } else {
+                let id = arg("id")?.to_string();
+                ("TASK_RELEASED", obj(vec![("id", s(&id))]), id)
+            };
+            let (_, message) = write_task(&mut tx, &se.actor, "HOST", kind, body, &id)?;
+            Ok(message)
+        }
         "acr_status" => Ok(status(&reg, &open(&se.root, &reg)?.ok_or_else(none)?)),
         "acr_verify" => Ok(verify_text(&open(&se.root, &reg)?.ok_or_else(none)?, 20)),
         "acr_begin" => {
@@ -1745,7 +1817,11 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
                 return Ok(format!("REFUSE (exit code {})\n{MAX_OPEN_REVIEWS} reviews are open. Close one first: a halt names every review it closes in one event, and must always fit.\nNothing was written.\n", acr::REFUSED));
             }
             if name == "acr_offer" {
-                return match acr::guard(tx.state(), kind, body, &se.actor) {
+                let offered = match tx.bound_task(&se.actor, kind, body.clone()) {
+                    Ok(value) => value,
+                    Err(why) => return Ok(format!("REFUSE (exit code {})\n{why}\n", acr::REFUSED)),
+                };
+                return match acr::guard(tx.state(), kind, &offered, &se.actor) {
                     Ok(out) => Ok(format!("ACCEPT\nbody that would be written: {}\n", String::from_utf8_lossy(&out.canonical_json()))),
                     Err(r) => Ok(format!("REFUSE (exit code {}){}\n{}\n", r.code, r.clause.map(|c| format!(" [{c}]")).unwrap_or_default(), r.message)),
                 };
@@ -2397,6 +2473,64 @@ fn module_command(args: &[String]) -> Result<i32, String> {
     }
 }
 
+fn write_task(tx: &mut Tx, actor: &str, auth: &str, kind: &str, body: Value, id: &str) -> Result<(i32, String), String> {
+    match tx.put(actor, auth, kind, body)? {
+        Put::Refused(r) => Ok((i32::from(r.code), refusal_text(&r))),
+        Put::Written { seq, head, prev } => {
+            tx.commit()?;
+            let label = match kind {
+                "TASK_ADMITTED" => format!("ADMITTED {id}"),
+                "TASK_RELEASED" => format!("RELEASED {id}"),
+                _ => "LIMITS SET".into(),
+            };
+            Ok((0, format!("{label}\n{}", receipt(seq, &head, &prev, kind, actor, auth))))
+        }
+    }
+}
+
+fn task_command(args: &[String]) -> Result<i32, String> {
+    let command = args[0].as_str();
+    let allowed: &[&str] = match command {
+        "task-limits" => &["--by", "--second", "--max-depth", "--max-live", "--max-total"],
+        "task-admit" => &["--by", "--parent", "--label"],
+        _ => &["--by", "--id"],
+    };
+    let mut options = BTreeMap::new();
+    for pair in args[2..].chunks(2) {
+        if pair.len() != 2 || !allowed.contains(&pair[0].as_str()) || pair[1].starts_with("--") {
+            return Err(format!("invalid {command} option: {}", pair[0]));
+        }
+        if options.insert(pair[0].as_str(), pair[1].as_str()).is_some() {
+            return Err(format!("duplicate option {}", pair[0]));
+        }
+    }
+    let required = |key: &str| options.get(key).copied().ok_or_else(|| format!("{command} requires {key}"));
+    let actor = required("--by")?;
+    let (root, register) = at_terminal(&args[1], false)?;
+    let mut tx = Tx::begin(&root, &register, false)?.ok_or("there is no register at this path")?;
+    let (kind, body, id) = match command {
+        "task-limits" => {
+            let number = |key: &str| -> Result<Value, String> {
+                Ok(Value::Int(required(key)?.parse::<i64>().map_err(|_| format!("{key} requires a whole number"))?))
+            };
+            ("TASK_LIMITS_SET", obj(vec![("max_depth", number("--max-depth")?), ("max_live", number("--max-live")?),
+                                         ("max_total", number("--max-total")?), ("second", options.get("--second").map(|v| s(v)).unwrap_or(Value::Null))]), String::new())
+        }
+        "task-admit" => {
+            let id = tx.state().next_task_id();
+            ("TASK_ADMITTED", obj(vec![("id", s(&id)), ("label", s(required("--label")?)),
+                                       ("parent", options.get("--parent").map(|v| s(v)).unwrap_or(Value::Null))]), id)
+        }
+        _ => {
+            let id = required("--id")?.to_string();
+            ("TASK_RELEASED", obj(vec![("id", s(&id))]), id)
+        }
+    };
+    let (code, message) = write_task(&mut tx, actor, "DECLARED", kind, body, &id)?;
+    print!("{message}");
+    Ok(code)
+}
+
 fn person(args: &[String]) -> Result<i32, String> {
     let (root, name) = at_terminal(args.get(1).ok_or("a register is named")?, args[0] == "init")?;
     let by = flag(args, "--by").or(flag(args, "--principal")).filter(|l| label_ok(l) && l != "host").ok_or("name the person acting with --by <label> (or --principal for init)")?;
@@ -2472,7 +2606,7 @@ fn person(args: &[String]) -> Result<i32, String> {
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
     let usage = || -> ! {
-        eprintln!("usage: pcpos status|verify <register> | machine [name] | method <directory> | repair <register> | modules <method directory> | clause <method directory> <module> [section] | instrument list | instrument <name> <input as JSON> [register] | workspace <register> --by <label> [--method <directory>] [module ...] | module list <register> | module add <register> <folder or Specification.md> --by <label> [--method <directory>] | module remove <register> <name> --by <label> | init <register> --principal <label> [--name <name>] | adopt <register> --by <label> --basis <words> | halt <register> --by <label> [--words <words>] | standard <register> --by <label> [--second <label>] BASELINE|CRITICAL|key=value... | mcp | hook <event>");
+        eprintln!("usage: pcpos status|verify <register> | machine [name] | method <directory> | repair <register> | modules <method directory> | clause <method directory> <module> [section] | instrument list | instrument <name> <input as JSON> [register] | workspace <register> --by <label> [--method <directory>] [module ...] | module list <register> | module add <register> <folder or Specification.md> --by <label> [--method <directory>] | module remove <register> <name> --by <label> | init <register> --principal <label> [--name <name>] | adopt <register> --by <label> --basis <words> | halt <register> --by <label> [--words <words>] | standard <register> --by <label> [--second <label>] BASELINE|CRITICAL|key=value... | task-limits <register> --by L --max-depth D --max-live L --max-total N [--second L2] | task-admit <register> --by L --label NAME [--parent Tn] | task-release <register> --by L --id Tn | mcp | hook <event>");
         exit(2)
     };
     match args.first().map(String::as_str) {
@@ -2590,6 +2724,10 @@ fn main() {
                 eprintln!("pcpos: {e}");
                 exit(2)
             }
+        },
+        Some("task-limits" | "task-admit" | "task-release") if args.len() >= 2 => match task_command(&args) {
+            Ok(code) => exit(code),
+            Err(e) => { eprintln!("pcpos: {e}"); exit(2) }
         },
         Some("init" | "adopt" | "halt" | "standard" | "workspace") if args.len() >= 2 => match person(&args) {
             Ok(code) => exit(code),
