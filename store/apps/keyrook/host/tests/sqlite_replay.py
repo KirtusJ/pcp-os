@@ -18,6 +18,15 @@ def main():
     with tempfile.TemporaryDirectory(prefix="keyrook-") as work:
         root = Path(work)
         session, fresh = root / "first", root / "fresh"
+        missing, empty_dir = root / "missing", root / "empty"
+        empty_dir.mkdir()
+        cli("stats", missing, 8, success=False)
+        cli("stats", empty_dir, 8, success=False)
+        assert not missing.exists()
+        assert not (empty_dir / "keyrook.redb").exists()
+        cli("export-sqlite", empty_dir, root / "no-session.sqlite", success=False)
+        assert not (empty_dir / "keyrook.redb").exists()
+        assert not (root / "no-session.sqlite").exists()
         cli("new", session)
         cli("new", fresh)
         cli("new", session, success=False)
@@ -38,6 +47,24 @@ def main():
         exported = root / "export.sqlite"
         cli("export-sqlite", session, exported)
         original = exported.read_bytes()
+        # Failed publication must preserve unrelated existing destinations.
+        protected = root / "protected.sqlite"
+        protected.write_bytes(b"untouched existing file")
+        cli("export-sqlite", session, protected, success=False)
+        assert protected.read_bytes() == b"untouched existing file"
+        # Surrogate interrupted export: a stale, incomplete staging file
+        # persists. This is NOT an actual kill of the Rust Keyrook process.
+        stale = root / ".retry.sqlite.keyrook-stage-simulated-kill.sqlite"
+        stale.write_bytes(b"incomplete SQLite export")
+        retry = root / "retry.sqlite"
+        cli("export-sqlite", session, retry)
+        with sqlite3.connect(retry) as reopened:
+            assert reopened.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+            assert reopened.execute("SELECT count(*) FROM episodes").fetchone() == (4,)
+        assert stale.read_bytes() == b"incomplete SQLite export"
+        published = retry.read_bytes()
+        cli("export-sqlite", session, retry, success=False)
+        assert retry.read_bytes() == published
         cli("export-sqlite", fresh, exported, success=False)
         assert exported.read_bytes() == original
         with sqlite3.connect(exported) as sql:
