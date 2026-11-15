@@ -18,6 +18,7 @@ smoltcp = { version = "0.14", optional = true, default-features = false, feature
 smoltcp = { version = "0.14", default-features = false, features = ["medium-ethernet", "proto-ipv4", "proto-dns", "socket-udp"] }
 
 [features]
+local-media = []
 tcp-ip = ["dep:smoltcp"]
 probe-ethernet-modes = ["tcp-ip"]
 dns = ["tcp-ip", "smoltcp/socket-udp", "smoltcp/proto-dns"]

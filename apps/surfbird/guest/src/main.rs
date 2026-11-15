@@ -2,6 +2,8 @@
 #![no_main]
 
 use pcp_game_guest::{exit, ink::Frame, log, sleep_us, time_us, Display};
+#[cfg(feature = "local-media")]
+mod local_media;
 #[cfg(feature = "tcp-ip")]
 mod tcp;
 const ORIGIN_HOST: &str = "fixture.test";
@@ -232,6 +234,15 @@ fn browse_pages(stream: &mut impl Stream) -> Result<(), &'static str> {
 pcp_game_guest::entry!(surf_main);
 #[no_mangle]
 pub extern "C" fn surf_main() -> ! {
+    #[cfg(feature = "local-media")]
+    match local_media::menu() {
+        Ok(true) => exit(0),
+        Ok(false) => {}
+        Err(error) => {
+            record("error", error);
+            exit(1);
+        }
+    }
     match browse() {
         Ok(()) => exit(0),
         Err(e) => {
