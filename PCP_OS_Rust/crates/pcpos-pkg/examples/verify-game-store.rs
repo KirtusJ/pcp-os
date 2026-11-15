@@ -28,6 +28,11 @@ const PACKAGES: &[(&str, &str, &[&str])] = &[
     ),
     ("games", "sunspur-rally", &["dist/sunspur.elf"]),
     ("games", "flux-rink", &["dist/fluxrink.elf"]),
+    ("games", "doom", &["dist/doom.elf"]),
+    ("games", "ultra-omega-barrel", &["dist/omega.elf"]),
+    ("games", "barrel-bowl", &["dist/bowl.elf"]),
+    ("games", "midnight-barrel-express", &["dist/rail.elf"]),
+    ("games", "forklift-certified", &["dist/fork.elf"]),
     ("engines", "heliograph", &["dist/heliograph.elf"]),
 ];
 

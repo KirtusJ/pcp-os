@@ -1,0 +1,107 @@
+{
+  "pcp_index": 1,
+  "owner": "kirtusj",
+  "name": "ultra-omega-barrel",
+  "version": "1.0.0",
+  "kind": "application",
+  "commit": "b7ec0c31c1899811d0667b2cba725e1e48b1c39b",
+  "files": [
+    {
+      "path": "store/games/doom/README.md",
+      "size": 5788,
+      "sha256": "6338ae27be1d4e4fe462238bfd9b4a4e0728392f4d2e96eb7432b80e3c10a561"
+    },
+    {
+      "path": "store/games/doom/evidence/Freedoom-COPYING.txt",
+      "size": 1614,
+      "sha256": "aee389717f56a0b7f990519544d61d27993702727ee071d8440ecffad7273bcd"
+    },
+    {
+      "path": "store/games/doom/prepare.py",
+      "size": 4974,
+      "sha256": "ff03ae983139f3fba695f177a0b12f5d09aaa403d1cdb5379eb3161c6a418344"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/README.md",
+      "size": 932,
+      "sha256": "94fbdb1a8f58d646193439630cc4c47cc5b3b8777288ceee8115ba8319bd7339"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/assets/art/make_sprites.py",
+      "size": 16028,
+      "sha256": "fafb3d96a7e3dd4a58a0a82ccdcc72bdd79d4dc633a09f93e147069aac78166b"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/assets/art/omega-sprites.wad",
+      "size": 64010,
+      "sha256": "8f011732a929017fa01dc38521f0e39b4cfee75b15bc25498e54a70e47263f6f"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/assets/design/make_foundry.py",
+      "size": 9946,
+      "sha256": "36676eb9ae1c701699f477f39a8772e7c670da1c082bf38ed7b910005a5759c7"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/assets/foundry.wad",
+      "size": 186340,
+      "sha256": "47210b88d61bf85e29e1055c91bf3f288c02bf8b5a534f2fd4d9af62bde540a8"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/assets/install.py",
+      "size": 5211,
+      "sha256": "6a3e76b1be9fc3844b02821d93dcd592127debf499f02299ab28dd8bf288d3df"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/assets/music/foundry-score.wad",
+      "size": 11423,
+      "sha256": "956d556193db9a2c0091f2ecd06cf8348fbdb810a1c375640edcd259d711f6b2"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/assets/music/score.py",
+      "size": 8901,
+      "sha256": "2963f51ceef70d718a613fd38b669bec588ca4788ec139c8e4e4cabdb09da1ac"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/assets/omega_arena.py",
+      "size": 3682,
+      "sha256": "8a11fa79c279d0f562e6f206d007507cee343c5f413c74f2e0edf3fd395e73fc"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/dist/omega.elf",
+      "size": 564640,
+      "sha256": "d537bb3eff86beaae2348ebed80b8cae1997dd9739fcecc42492c881d4ed79b1"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/evidence/play.png",
+      "size": 62762,
+      "sha256": "40b7fa52e736d83ca2ff69019fb6d69f9def8646ba7f236d3edaeed98a07aa41"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/source/COPYING",
+      "size": 18092,
+      "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/source/PCP-OS-NOTICE.md",
+      "size": 3036,
+      "sha256": "329d287bf2bac528afc035145886284908ecd139958223c6cff6477e7372e609"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/source/omega-source.tar.gz",
+      "size": 1599153,
+      "sha256": "32d03f3d2002c9eab5c22e41a5c3060a025c46e658ef482c79ffceb8b99efa27"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/source/stage-source.py",
+      "size": 1710,
+      "sha256": "f70f1cfa64e4b67ad40c304334f62f5773a68c5885aaf22bab3bb3de9656de5b"
+    }
+  ],
+  "capabilities": [
+    "console",
+    "display",
+    "keys",
+    "sound"
+  ],
+  "withdrawn": false
+}

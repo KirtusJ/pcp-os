@@ -1,0 +1,177 @@
+{
+  "pcp_index": 1,
+  "owner": "kirtusj",
+  "name": "forklift-certified",
+  "version": "1.0.0",
+  "kind": "application",
+  "commit": "b7ec0c31c1899811d0667b2cba725e1e48b1c39b",
+  "files": [
+    {
+      "path": "store/games/doom/README.md",
+      "size": 5788,
+      "sha256": "6338ae27be1d4e4fe462238bfd9b4a4e0728392f4d2e96eb7432b80e3c10a561"
+    },
+    {
+      "path": "store/games/doom/evidence/Freedoom-COPYING.txt",
+      "size": 1614,
+      "sha256": "aee389717f56a0b7f990519544d61d27993702727ee071d8440ecffad7273bcd"
+    },
+    {
+      "path": "store/games/doom/prepare.py",
+      "size": 4974,
+      "sha256": "ff03ae983139f3fba695f177a0b12f5d09aaa403d1cdb5379eb3161c6a418344"
+    },
+    {
+      "path": "store/games/forklift-certified/README.md",
+      "size": 801,
+      "sha256": "6a0e55de00e93b3eb5142c2018d1ec5df70ecda17adcc6af25a2604911eeed1f"
+    },
+    {
+      "path": "store/games/forklift-certified/assets/dock.py",
+      "size": 21130,
+      "sha256": "d4f96350122db9b49dc7b82d010c85641f803bc1dbec5625ed3f7dd84976d71c"
+    },
+    {
+      "path": "store/games/forklift-certified/assets/dock.wad",
+      "size": 368073,
+      "sha256": "19d9ce9a7ebf5ea76947e8021c05d42bb75115bf3c232f5d01aa070a545c0b34"
+    },
+    {
+      "path": "store/games/forklift-certified/assets/driver.wad",
+      "size": 10301,
+      "sha256": "1d15a5757fba42545aedfba239b187dd0b43d4a4deffff9ce88b301227e0354e"
+    },
+    {
+      "path": "store/games/forklift-certified/assets/fork-sprites.wad",
+      "size": 113755,
+      "sha256": "16bcc89dbd460ea09d6fc0916f418cd8dac6c46da493d2237165e26c64aafba8"
+    },
+    {
+      "path": "store/games/forklift-certified/assets/install_fork.py",
+      "size": 4232,
+      "sha256": "71497c42fc0564d5458f6cb36f5806ef8ddca9af540c9077de7e63a18948e629"
+    },
+    {
+      "path": "store/games/forklift-certified/assets/make_driver.py",
+      "size": 1019,
+      "sha256": "4edf39484299ccd0125308cddf2876a525c7c13c1838d65f74c92d9d791f7bd5"
+    },
+    {
+      "path": "store/games/forklift-certified/assets/make_fork.py",
+      "size": 17104,
+      "sha256": "a577cc22b0edb378294d0ee83617ce27b393e65fc2d47e30dc5738902ddabed6"
+    },
+    {
+      "path": "store/games/forklift-certified/assets/make_permit.py",
+      "size": 4703,
+      "sha256": "ad2708bdc58425fc9384e83b08fd668ca2c421821034ea1742eba196f1b46a30"
+    },
+    {
+      "path": "store/games/forklift-certified/assets/music/fork-music.wad",
+      "size": 29076,
+      "sha256": "49ab72e46f400373631813c4858c1eac7fe3b81e7c061c469139ab79cf262fa5"
+    },
+    {
+      "path": "store/games/forklift-certified/assets/music/fork_score.py",
+      "size": 8685,
+      "sha256": "7f3268a97bfed09944a20bc987c9f7b044e88f0a101adc2893aa666db8a6ea3c"
+    },
+    {
+      "path": "store/games/forklift-certified/assets/permit.wad",
+      "size": 66916,
+      "sha256": "cee798e4dfd67077ff1a08a1ed03b73f7c5aa0b4bd52fdbbc2c532e88912234b"
+    },
+    {
+      "path": "store/games/forklift-certified/dist/fork.elf",
+      "size": 578624,
+      "sha256": "5cd6698cde363726e6e28700bd35550bd0e0f31dc17f23f1f21122843a7d2864"
+    },
+    {
+      "path": "store/games/forklift-certified/evidence/play.png",
+      "size": 45460,
+      "sha256": "757bd9bee775834a94d37b63acb5ea4b549c86510b694375d11a96d4912cf42a"
+    },
+    {
+      "path": "store/games/forklift-certified/source/BUILD.txt",
+      "size": 1215,
+      "sha256": "282faa8e7d050e07afcd9fcdda1a9aea67f1b0927c801b4821a44d83995cc500"
+    },
+    {
+      "path": "store/games/forklift-certified/source/build_pcpos.py",
+      "size": 5108,
+      "sha256": "13c98fddcba00add643d31dc151d529c54e73f70f97e70a4cf38bd19ec4bba60"
+    },
+    {
+      "path": "store/games/forklift-certified/source/fork.patch",
+      "size": 46444,
+      "sha256": "84f712c91506b1cf640dcf2005c69911c9683f15d0faf9adfa5eae0f8e04dc4f"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/assets/art/make_sprites.py",
+      "size": 16028,
+      "sha256": "fafb3d96a7e3dd4a58a0a82ccdcc72bdd79d4dc633a09f93e147069aac78166b"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/assets/art/omega-sprites.wad",
+      "size": 64010,
+      "sha256": "8f011732a929017fa01dc38521f0e39b4cfee75b15bc25498e54a70e47263f6f"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/assets/design/make_foundry.py",
+      "size": 9946,
+      "sha256": "36676eb9ae1c701699f477f39a8772e7c670da1c082bf38ed7b910005a5759c7"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/assets/foundry.wad",
+      "size": 186340,
+      "sha256": "47210b88d61bf85e29e1055c91bf3f288c02bf8b5a534f2fd4d9af62bde540a8"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/assets/install.py",
+      "size": 5211,
+      "sha256": "6a3e76b1be9fc3844b02821d93dcd592127debf499f02299ab28dd8bf288d3df"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/assets/music/foundry-score.wad",
+      "size": 11423,
+      "sha256": "956d556193db9a2c0091f2ecd06cf8348fbdb810a1c375640edcd259d711f6b2"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/assets/music/score.py",
+      "size": 8901,
+      "sha256": "2963f51ceef70d718a613fd38b669bec588ca4788ec139c8e4e4cabdb09da1ac"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/assets/omega_arena.py",
+      "size": 3682,
+      "sha256": "8a11fa79c279d0f562e6f206d007507cee343c5f413c74f2e0edf3fd395e73fc"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/source/COPYING",
+      "size": 18092,
+      "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/source/PCP-OS-NOTICE.md",
+      "size": 3036,
+      "sha256": "329d287bf2bac528afc035145886284908ecd139958223c6cff6477e7372e609"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/source/omega-source.tar.gz",
+      "size": 1599153,
+      "sha256": "32d03f3d2002c9eab5c22e41a5c3060a025c46e658ef482c79ffceb8b99efa27"
+    },
+    {
+      "path": "store/games/ultra-omega-barrel/source/stage-source.py",
+      "size": 1710,
+      "sha256": "f70f1cfa64e4b67ad40c304334f62f5773a68c5885aaf22bab3bb3de9656de5b"
+    }
+  ],
+  "capabilities": [
+    "console",
+    "display",
+    "keys",
+    "sound"
+  ],
+  "withdrawn": false
+}

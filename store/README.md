@@ -26,6 +26,11 @@ The [Night Post flight manual](games/night-post/README.md) covers routes, airbra
 | Games · 3D courier platformer | [Gullpost Express 64](games/gullpost-express-64/) | Explore Lighthouse Island and deliver the final letter. | [Package](index/kirtusj/gu/ll/gullpost-express-64) |
 | Games · racing | [Sunspur Rally](games/sunspur-rally/) | Single-player time trial, x86-64 PCP OS guest. | [Package](index/kirtusj/su/ns/sunspur-rally) |
 | Games · multiplayer sports | [Flux Rink](games/flux-rink/) | Two-player 3D prototype. Stock kernel for shared keyboard; optional cable kernel for linked guests. | [Package](index/kirtusj/fl/ux/flux-rink) |
+| Games · first-person shooter | [Doom](games/doom/) | Play the native Doom port with a local IWAD. | [Package](index/kirtusj/do/om/doom) |
+| Games · episode-one campaign | [Ultra Omega Barrel](games/ultra-omega-barrel/) | Fight the Omega barrel family across episode one. | [Package](index/kirtusj/ul/tr/ultra-omega-barrel) |
+| Games · ten-pin bowling | [Barrel Bowl](games/barrel-bowl/) | Aim and roll barrels through ten scored frames. | [Package](index/kirtusj/ba/rr/barrel-bowl) |
+| Games · railway braking | [Midnight Barrel Express](games/midnight-barrel-express/) | Release the interlocks and brake into Deimos Junction. | [Package](index/kirtusj/mi/dn/midnight-barrel-express) |
+| Games · loading-dock encounter | [Forklift Certified](games/forklift-certified/) | Lure a forklift through three cargo stacks. | [Package](index/kirtusj/fo/rk/forklift-certified) |
 | Engines · 3D rendering | [Heliograph](engines/heliograph/) | Reusable Rust renderer and a native material and performance lab. | [Package](index/kirtusj/he/li/heliograph) |
 
 Use the [native Store launcher](native/README.md) for these entries. The engine's installable artifact is its lab ELF; the renderer crate lives alongside it in the pinned source tree.
@@ -34,7 +39,7 @@ Use the [native Store launcher](native/README.md) for these entries. The engine'
 
 ## Play on PCP OS
 
-From the repository root on a machine with QEMU and the [kernel build toolchain](../PCP_OS_Rust/crates/pcpos-kernel/README.md), run the launcher. It builds and measures the kernel and opens one menu with all six games.
+From the repository root on a machine with QEMU and the [kernel build toolchain](../PCP_OS_Rust/crates/pcpos-kernel/README.md), run the launcher. It builds and measures the kernel and opens one menu with the six Rust games. Doom and its four mods use a local IWAD and the [Doom launcher instructions](games/doom/).
 
 ```sh
 sh store/play-native.sh
@@ -57,6 +62,11 @@ The Store uses the repository's `pcpos-pkg` application entry format. Files in a
 | `kirtusj/sunspur-rally` | [Native racing game](index/kirtusj/su/ns/sunspur-rally) |
 | `kirtusj/flux-rink` | [Native multiplayer game](index/kirtusj/fl/ux/flux-rink) |
 | `kirtusj/heliograph` | [Native engine lab](index/kirtusj/he/li/heliograph) |
+| `kirtusj/doom` | [Doom](index/kirtusj/do/om/doom) |
+| `kirtusj/ultra-omega-barrel` | [Ultra Omega Barrel](index/kirtusj/ul/tr/ultra-omega-barrel) |
+| `kirtusj/barrel-bowl` | [Barrel Bowl](index/kirtusj/ba/rr/barrel-bowl) |
+| `kirtusj/midnight-barrel-express` | [Midnight Barrel Express](index/kirtusj/mi/dn/midnight-barrel-express) |
+| `kirtusj/forklift-certified` | [Forklift Certified](index/kirtusj/fo/rk/forklift-certified) |
 
 For a separately downloaded player, open its package entry above and compare the SHA-256 for the matching `.html` path with the downloaded file. For example, run `Get-FileHash -Algorithm SHA256 ./Night_Post.html` in PowerShell or `sha256sum ./Night_Post.html` on Linux in the download directory.
 

@@ -46,7 +46,7 @@ MCP workers call `acr_instrument` with the same instrument name and input object
 
 Storage that survives a stop, a file system on a disk, a network stack, a mouse, threads, signals, a second processor, messages between processes, a shell, a driver for any real device, a graphics processor driver, start from UEFI. The kernel's files are the ones the loader handed it plus what a program writes while it runs, kept in memory and gone at the stop. The system-call interface is the subset that the programs run so far needed: a program that needs more is told the call does not exist. Two programs have been run on it, Doom and a probe written for the tests. The authority model beyond device capabilities is still data structures with tests.
 
-The game is not here either. `crates/pcpos-kernel/programs/doom/build.sh` fetches nothing by itself: it takes the paths of two source trees (doomgeneric at commit e257a095, Chocolate Doom at commit a2dfd51f, both under the GNU General Public License, version 2) and builds a separate program from them and from six small files in that folder. No part of either project and no game data is in this release, and nothing of them is linked into the kernel.
+The [Doom Store package](../store/games/doom/) supplies the user program and its source. Players supply their own IWAD. The kernel build script in `crates/pcpos-kernel/programs/doom/build.sh` takes two source trees (doomgeneric at commit e257a095 and Chocolate Doom at commit a2dfd51f, both GPL-2.0) and compiles a separate program with six PCP OS platform files. The kernel loads the resulting executable in its own address space.
 
 ## Building
 

@@ -1,6 +1,6 @@
 # Native Store launcher
 
-The launcher is Rust. Games and the Heliograph lab execute as freestanding Rust guests inside PCP OS. These Store releases have no browser player. QEMU, Rust and the [kernel build prerequisites](../../PCP_OS_Rust/crates/pcpos-kernel/README.md) are needed for a source checkout.
+The Rust launcher starts native PCP OS guests. The six original Store games and the Heliograph lab are built with Rust. The Doom family uses the C engine and the PCP OS platform interface. These Store releases have no browser player. QEMU, Rust and the [kernel build prerequisites](../../PCP_OS_Rust/crates/pcpos-kernel/README.md) are needed for a source checkout.
 
 From the repository root, build a stock kernel, then choose a guest. The launcher needs the ELF32 converted image emitted by the kernel's build script. A previously measured PCP OS 0.3.1 ELF32 can also be supplied. `PCPOS_QEMU` may specify an absolute QEMU executable.
 
