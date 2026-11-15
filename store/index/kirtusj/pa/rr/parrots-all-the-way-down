@@ -1,0 +1,22 @@
+{
+  "pcp_index": 1,
+  "owner": "kirtusj",
+  "name": "parrots-all-the-way-down",
+  "version": "0.1.0",
+  "kind": "application",
+  "commit": "e9d8956aa3b001aefc685409c6ce1cf43e121502",
+  "files": [
+    {
+      "path": "store/apps/parrots-all-the-way-down/dist/rdesk.elf",
+      "size": 59008,
+      "sha256": "487962670fa55c8fc91488a6e5d7461ac9885b6f3ee33a78580fbabf21ce9d12"
+    }
+  ],
+  "capabilities": [
+    "console",
+    "display",
+    "keys",
+    "store"
+  ],
+  "withdrawn": false
+}
