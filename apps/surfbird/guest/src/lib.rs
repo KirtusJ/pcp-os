@@ -4,6 +4,8 @@
 //! The hosted reader remains the reference for general HTML and URL semantics.
 #[cfg(any(test, all(feature = "dns", target_os = "none")))]
 pub mod dns_answer;
+#[cfg(any(test, feature = "https-probe"))]
+pub mod https_prefix;
 pub const CAPACITY: usize = 2048;
 pub const START: &str = "/harbour";
 

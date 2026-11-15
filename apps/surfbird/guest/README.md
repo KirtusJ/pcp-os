@@ -4,11 +4,13 @@ A bare-metal Rust ELF sends HTTP/1.1 requests and displays the pages it receives
 
 An optional [local video and stereo audio replay](LOCAL_MEDIA.md) exercises the native framebuffer and sound device with supplied media files.
 
+The opt-in [verified HTTPS watch-page probe](HTTPS.md) uses guest-issued public DNS, TCP and TLS with the original hostname. It checks the HTTP response and HTML prefix and retains separate wrong-name and untrusted-issuer controls.
+
 ## Serial cable
 
 The guest writes HTTP bytes to COM2. QEMU connects its serial backend to a loopback HTTP fixture running on the host. The fixture only learns which link was chosen when it receives the next request. The replay uses `-nic none` and a fixed HTTP Host of `fixture.test`. QEMU owns the TCP connection. [QEMU character device backends](https://www.qemu.org/docs/master/system/invocation.html#character-device-options)
 
-The loader must grant the ELF digest before the process can open the serial device. The Ethernet build uses a separate raw-frame device and runs its own TCP state machine. The DNS build resolves a direct IPv4 address for the local HTTP fixture. Native HTTPS still requires TLS. [Guest device open and I/O](../../../PCP_OS_Rust/crates/pcpos-kernel/src/sys.rs) · [Loader grant](../../../PCP_OS_Rust/crates/pcpos-kernel/src/session.rs)
+The loader must grant the ELF digest before the process can open the serial device. The Ethernet build uses a separate raw-frame device and runs its own TCP state machine. The DNS build resolves a direct IPv4 address for the local HTTP fixture. [Guest device open and I/O](../../../PCP_OS_Rust/crates/pcpos-kernel/src/sys.rs) · [Loader grant](../../../PCP_OS_Rust/crates/pcpos-kernel/src/session.rs)
 
 ## Document and protocol limits
 
