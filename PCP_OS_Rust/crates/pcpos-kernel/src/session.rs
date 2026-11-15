@@ -210,8 +210,12 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
         row += 2;
         #[cfg(feature = "guest-ethernet")]
         if ethernet_grant(start.boot.exact_command_line(), &p.digest) {
-            at(4, row, "Ethernet grant: this program can send and receive raw network frames.", SOFT, ground);
-            row += 1;
+            if let Ok(rule) = dev::virtio_tx::udp_policy::parse(start.boot.command_line.as_str()) {
+                let message = if rule.is_some() { "Ethernet grant: one configured UDP exchange." }
+                              else { "Ethernet grant: this program can send and receive raw network frames." };
+                at(4, row, message, SOFT, ground);
+                row += 1;
+            }
         }
         #[cfg(feature = "game-link")]
         if option(&start.boot.command_line, "grant") != Some("none") && option(&start.boot.command_line, "link_image") == Some(p.digest.as_str()) {
@@ -297,8 +301,12 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
     args.extend(entry.arguments.split_whitespace());
     say!("starting {} ({} bytes, SHA-256 {}){}", entry.name, entry.image.len(), entry.digest, if entry.arguments.is_empty() { String::new() } else { format!(" with: {}", entry.arguments) });
     let none = option(start.boot.command_line.as_str(), "grant") == Some("none");
+    #[cfg(feature = "guest-ethernet")]
+    let udp_rule = dev::virtio_tx::udp_policy::parse(start.boot.exact_command_line().unwrap_or(""));
+    #[cfg(feature = "guest-ethernet")]
+    if let Err(reason) = udp_rule { say!("guest UDP policy rejected: {}", reason); }
     let grants = if none { Grants { console: true, ..Grants::default() } } else { Grants { console: true, display: start.display.is_some(), keys: start.keyboard, files: true, store: true, sound: start.sound,
-        #[cfg(feature = "guest-ethernet")] ethernet: ethernet_grant(start.boot.exact_command_line(), &entry.digest),
+        #[cfg(feature = "guest-ethernet")] ethernet: udp_rule.is_ok() && ethernet_grant(start.boot.exact_command_line(), &entry.digest),
         #[cfg(feature = "game-link")] game_link: option(&start.boot.command_line, "link_image") == Some(entry.digest.as_str()) && arch::game_link_init(), } };
     if none {
         say!("{} is started with the console and no other grant (grant=none)", entry.name);
@@ -308,7 +316,14 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
     let run = || user::run_program(&Program { name: &entry.name, image: entry.image, args: &args, grants, budget: u64::MAX }, world);
     #[cfg(feature = "guest-ethernet")]
     let (result, world) = if grants.ethernet {
-        let (outcome, status) = dev::virtio_tx::guest::during(run);
+        let rule = udp_rule.unwrap();
+        if let Some(configured) = rule {
+            say!("guest UDP policy: {:?}", configured);
+        }
+        let (outcome, status, counts) = dev::virtio_tx::guest::during(rule, run);
+        if let Some(c) = counts {
+            say!("guest UDP counts: tx-pass={} tx-deny={} rx-pass={} rx-drop={}", c.tx_pass, c.tx_deny, c.rx_pass, c.rx_drop);
+        }
         if let Err(reason) = status { say!("guest Ethernet: {}", reason); *failed += 1; }
         outcome
     } else { run() };

@@ -350,7 +350,11 @@ fn write(p: &mut Process, caps: &CapSpace, world: &mut World, fd: u64, addr: u64
             if !f.writable || !p.holds(caps, Object::Ethernet, Rights::APPEND) { return err(EBADF); }
             if !(14..=dev::virtio_tx::guest::MTU).contains(&len) { return err(EINVAL); }
             let Some(bytes) = p.space.as_ref().and_then(|s| s.read(addr as usize, len)) else { return err(EFAULT) };
-            if dev::virtio_tx::guest::send(&bytes).is_ok() { len as u64 } else { err(5) }
+            match dev::virtio_tx::guest::send(&bytes) {
+                Ok(true) => len as u64,
+                Ok(false) => err(EACCES),
+                Err(_) => err(5),
+            }
         }
 
         #[cfg(feature = "game-link")]
