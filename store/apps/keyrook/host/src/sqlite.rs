@@ -113,6 +113,39 @@ fn reserve_staging_file(destination: &Path) -> Result<PathBuf> {
     Err("could not reserve a unique SQLite export staging file".into())
 }
 
+// The staged SQLite file is always a sibling of its destination, so a
+// same-volume rename is possible on Windows even when the target filesystem
+// (such as the PCP D: workspace) does not support hard links.
+#[cfg(windows)]
+fn publish_no_replace(stage: &Path, destination: &Path) -> Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn MoveFileExW(source: *const u16, target: *const u16, flags: u32) -> i32;
+    }
+
+    let source: Vec<u16> = stage.as_os_str().encode_wide().chain(Some(0)).collect();
+    let target: Vec<u16> = destination.as_os_str().encode_wide().chain(Some(0)).collect();
+    // MOVEFILE_WRITE_THROUGH=0x8; deliberately exclude REPLACE_EXISTING=0x1
+    // and COPY_ALLOWED=0x2. See Microsoft Learn, MoveFileExW. The absent
+    // flags make an existing target an error and prevent copy/delete fallback.
+    const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
+    if unsafe { MoveFileExW(source.as_ptr(), target.as_ptr(), MOVEFILE_WRITE_THROUGH) } == 0 {
+        return Err(io::Error::last_os_error().into());
+    }
+    Ok(())
+}
+
+// On Unix a hard-link creation is atomic and fails if the final destination
+// already exists. The caller unlinks the staging name on ordinary completion.
+// Windows uses the no-replace move above and does not require hard-link support.
+#[cfg(not(windows))]
+fn publish_no_replace(stage: &Path, destination: &Path) -> Result<()> {
+    fs::hard_link(stage, destination)?;
+    Ok(())
+}
+
 pub fn export(db: &Database, destination: &Path) -> Result<()> {
     let snapshot = db.begin_read()?;
     let episodes = snapshot.open_table(session::EPISODES)?;
@@ -151,14 +184,51 @@ pub fn export(db: &Database, destination: &Path) -> Result<()> {
             }
             sql.execute("COMMIT")?;
         } // Connection dropped; no SQLite journal is needed for recovery.
-        fs::File::open(&staging)?.sync_all()?;
-        // Unlike rename, hard_link fails if *any* target entry already exists.
-        // It publishes the complete same-filesystem snapshot without replacing.
-        fs::hard_link(&staging, destination)?;
+        // Open with WRITE permission so FlushFileBuffers works on Windows.
+        // Close the handle before renaming: Windows requires no open writer
+        // handles at a move boundary.
+        {
+            let writable = fs::OpenOptions::new().write(true).open(&staging)?;
+            writable.sync_all()?;
+        }
+        publish_no_replace(&staging, destination)?;
         Ok(())
     })();
     // Best-effort local cleanup. A sudden kill leaves an orphan, not a
     // falsely published destination; the unique next path enables retry.
     let _ = fs::remove_file(&staging);
     result
+}
+
+
+#[cfg(test)]
+mod publication_tests {
+    use super::*;
+
+    #[test]
+    fn existing_destination_is_not_replaced_by_a_staged_file() {
+        let name = format!(
+            "keyrook-no-replace-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        );
+        let dir = std::env::temp_dir().join(name);
+        fs::create_dir(&dir).unwrap();
+        let staging = dir.join("stage.sqlite");
+        let destination = dir.join("final.sqlite");
+        fs::write(&staging, b"new snapshot").unwrap();
+        fs::write(&destination, b"original existing file").unwrap();
+        assert!(publish_no_replace(&staging, &destination).is_err());
+        assert_eq!(fs::read(&destination).unwrap(), b"original existing file");
+        assert_eq!(fs::read(&staging).unwrap(), b"new snapshot");
+        fs::remove_file(&destination).unwrap();
+        publish_no_replace(&staging, &destination).unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), b"new snapshot");
+        // On Unix the staging path is a second link; on Windows it was moved.
+        if staging.exists() {
+            fs::remove_file(&staging).unwrap();
+        }
+        fs::remove_file(&destination).unwrap();
+        fs::remove_dir(&dir).unwrap();
+    }
 }
