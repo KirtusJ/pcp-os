@@ -131,6 +131,8 @@ pub(super) fn browse() -> Result<(), &'static str> {
         return Err("invalid fixture network configuration");
     }
     let port = u16::from_be_bytes([boot[0], boot[1]]);
+    #[cfg(feature = "https-probe")]
+    if port != 443 { return Err("HTTPS probe requires port 443"); }
     let seed = u64::from_be_bytes(boot[2..10].try_into().unwrap());
     let port_random = u16::from_be_bytes([boot[10], boot[11]]);
     let mut device = Ethernet {
@@ -145,9 +147,15 @@ pub(super) fn browse() -> Result<(), &'static str> {
         a.push(IpCidr::new(IpAddress::v4(10, 0, 2, 15), 24))
             .unwrap()
     });
-    #[cfg(feature = "dns")]
+    #[cfg(feature = "https-probe")]
+    let destination = {
+        iface.routes_mut().add_default_ipv4_route(smoltcp::wire::Ipv4Address::new(10, 0, 2, 2))
+            .map_err(|_| "IPv4 route table full")?;
+        resolve_https(&mut device, &mut iface)?
+    };
+    #[cfg(all(feature = "dns", not(feature = "https-probe")))]
     let destination = dns::resolve(super::ORIGIN_HOST, &mut device, &mut iface)?;
-    #[cfg(not(feature = "dns"))]
+    #[cfg(not(any(feature = "dns", feature = "https-probe")))]
     let destination = smoltcp::wire::Ipv4Address::new(10, 0, 2, 2);
     let mut rx = [0; 4096];
     let mut tx = [0; 1024];
@@ -183,6 +191,9 @@ pub(super) fn browse() -> Result<(), &'static str> {
         }
     }
     pcp_game_guest::log(b"SURFBIRD TCP established\n");
+    #[cfg(feature = "https-probe")]
+    let result = super::https::watch(&mut conn);
+    #[cfg(not(feature = "https-probe"))]
     let result = browse_pages(&mut conn);
     conn.sockets.get_mut::<tcp::Socket>(handle).close();
     let deadline = time_us() + 1_000_000;
@@ -197,4 +208,28 @@ pub(super) fn browse() -> Result<(), &'static str> {
         sleep_us(1000);
     }
     result
+}
+
+#[cfg(feature = "https-probe")]
+fn resolve_https(device: &mut Ethernet, iface: &mut Interface) -> Result<smoltcp::wire::Ipv4Address, &'static str> {
+    use smoltcp::{socket::dns, wire::{DnsQueryType, Ipv4Address}};
+    let mut queries = [None];
+    let mut socket = dns::Socket::new(&[Ipv4Address::new(10,0,2,3).into()], &mut queries[..]);
+    let query = socket.start_query(iface.context(), super::https::HOST, DnsQueryType::A)
+        .map_err(|_| "DNS start failed")?;
+    let mut storage = [SocketStorage::EMPTY];
+    let mut set = SocketSet::new(&mut storage[..]);
+    let handle = set.add(socket);
+    let deadline = time_us() + 10_000_000;
+    loop {
+        device.poll(iface, &mut set)?;
+        match set.get_mut::<dns::Socket>(handle).get_query_result(query) {
+            Ok(addresses) => return addresses.iter().find_map(|addr| match addr {
+                IpAddress::Ipv4(ip) => Some(*ip),
+                #[allow(unreachable_patterns)] _ => None,
+            }).ok_or("DNS returned no IPv4 address"),
+            Err(dns::GetQueryResultError::Pending) if time_us() < deadline => sleep_us(1000),
+            _ => return Err("public DNS lookup failed"),
+        }
+    }
 }

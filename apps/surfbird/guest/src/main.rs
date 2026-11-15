@@ -6,6 +6,8 @@ use pcp_game_guest::{exit, ink::Frame, log, sleep_us, time_us, Display};
 mod local_media;
 #[cfg(feature = "tcp-ip")]
 mod tcp;
+#[cfg(feature = "https-probe")]
+mod https;
 const ORIGIN_HOST: &str = "fixture.test";
 use surfbird_cable::{body_length, parse, Page, CAPACITY, START};
 
