@@ -8,6 +8,8 @@ mod local_media;
 mod tcp;
 #[cfg(feature = "https-probe")]
 mod https;
+#[cfg(feature = "https-probe")]
+mod watch_view;
 const ORIGIN_HOST: &str = "fixture.test";
 use surfbird_cable::{body_length, parse, Page, CAPACITY, START};
 

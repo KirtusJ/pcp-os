@@ -2,6 +2,8 @@
 
 The `https-probe` ELF requests one public YouTube watch page. It resolves `www.youtube.com` through QEMU's DNS service, routes over the QEMU IPv4 gateway, verifies a TLS 1.3 server handshake, sends a GET and recognizes the status, HTML content type and first element of the response. This gives the native browser an authenticated connection and a document prefix. The guest still needs a compatible HTML, JavaScript and media runtime to play the video. The probe requests no media or player scripts. [Requested watch page](https://www.youtube.com/watch?v=M7lc1UVf-VE) · [YouTube IFrame API](https://developers.google.com/youtube/iframe_api_reference)
 
+The [native document reader](WATCH_DOCUMENT.md) uses the same connection to render the watch title and canonical address.
+
 ## What the guest verifies
 
 The kernel grants raw Ethernet only to the selected ELF digest. The ELF holds the TCP/IP, DNS, TLS and HTTP state. smoltcp asks QEMU's resolver at 10.0.2.3 for the actual IPv4 destination and sends nonlocal packets through 10.0.2.2. QEMU provides unprivileged address translation. The host supplies a local port-randomization seed and starts the emulator. It does not supply a resolved address, peer certificate, TLS plaintext or HTTP response. [QEMU user-mode networking](https://www.qemu.org/docs/master/system/devices/net.html#using-the-user-mode-network-stack)

@@ -18,6 +18,8 @@ use rustls::{
 
 pub(super) const HOST: &str = "www.youtube.com";
 const REQUEST: &[u8] = b"GET /watch?v=M7lc1UVf-VE HTTP/1.1\r\nHost: www.youtube.com\r\nUser-Agent: Surfbird-native-HTTPS-probe/1\r\nAccept: text/html\r\nConnection: close\r\n\r\n";
+static mut DOCUMENT: [u8; surfbird_cable::watch_document::LIMIT] =
+    [0; surfbird_cable::watch_document::LIMIT];
 const CAPACITY: usize = 3 * 1024 * 1024;
 #[repr(C, align(4096))]
 struct Heap {
@@ -78,9 +80,11 @@ fn tls_error(e: rustls::Error) -> &'static str {
     }
 }
 
-pub(super) fn watch(stream: &mut impl Stream) -> Result<(), &'static str> {
+pub(super) fn watch(
+    stream: &mut impl Stream,
+) -> Result<Option<surfbird_cable::watch_document::Document>, &'static str> {
     let mut mode = [0];
-    if !load(b"tls.cfg\0", &mut mode) || mode[0] > 2 {
+    if !load(b"tls.cfg\0", &mut mode) || mode[0] > 3 {
         return Err("invalid HTTPS probe configuration");
     }
     let mut roots = RootCertStore::empty();
@@ -121,7 +125,9 @@ pub(super) fn watch(stream: &mut impl Stream) -> Result<(), &'static str> {
     let (mut requested, mut body) = (false, false);
     let mut http = [0u8; 32768];
     let mut http_len = 0;
-    let deadline = time_us() + 25_000_000;
+    let mut document = None;
+    let mut decoder: Option<surfbird_cable::watch_document::Body> = None;
+    let deadline = time_us() + if mode[0] == 3 { 90_000_000 } else { 25_000_000 };
     while time_us() < deadline {
         let status = tls.process_tls_records(&mut input[..have]);
         let mut discard = status.discard;
@@ -172,6 +178,43 @@ pub(super) fn watch(stream: &mut impl Stream) -> Result<(), &'static str> {
                 while let Some(record) = reader.next_record() {
                     let rec = record.map_err(tls_error)?;
                     discard += rec.discard;
+                    if mode[0] == 3 {
+                        let mut payload = rec.payload;
+                        if decoder.is_none() {
+                            let before = http_len;
+                            let n = payload.len().min(http.len() - http_len);
+                            http[before..before + n].copy_from_slice(&payload[..n]);
+                            http_len += n;
+                            let Some((status, start, framing)) =
+                                surfbird_cable::https_prefix::headers(&http[..http_len])?
+                            else {
+                                if http_len == http.len() {
+                                    return Err("HTTPS response headers too large");
+                                }
+                                continue;
+                            };
+                            // An earlier record cannot contain the entire end marker because
+                            // every record was tested. The offset can straddle the boundary.
+                            payload = &payload[start - before..];
+                            super::record(
+                                "HTTPS",
+                                core::str::from_utf8(status).map_err(|_| "invalid status")?,
+                            );
+                            decoder = Some(surfbird_cable::watch_document::Body::new(framing));
+                        }
+                        let memory = unsafe { &mut *(&raw mut DOCUMENT) };
+                        let body_decoder = decoder.as_mut().ok_or("missing response framing")?;
+                        if let Some(doc) = body_decoder.feed(payload, memory)? {
+                            super::record(
+                                "decoded-prefix-bytes",
+                                &alloc::format!("{}", body_decoder.decoded_bytes()),
+                            );
+                            document = Some(doc);
+                            body = true;
+                            break;
+                        }
+                        continue;
+                    }
                     let n = rec.payload.len().min(http.len() - http_len);
                     http[http_len..http_len + n].copy_from_slice(&rec.payload[..n]);
                     http_len += n;
@@ -194,7 +237,7 @@ pub(super) fn watch(stream: &mut impl Stream) -> Result<(), &'static str> {
             _ => return Err("TLS ended before HTTP body"),
         }
         if body {
-            return Ok(());
+            return Ok(document);
         }
         if discard > have {
             return Err("invalid TLS input accounting");

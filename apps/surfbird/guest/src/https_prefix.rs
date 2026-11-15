@@ -1,7 +1,14 @@
 //! Validate only the status, framing fields and first markup of the fixed watch-page probe.
 pub const DOCTYPE: &[u8] = b"<!DOCTYPE html>";
 
-pub fn read(bytes: &[u8]) -> Result<Option<(&[u8], &[u8])>, &'static str> {
+#[derive(Clone, Copy)]
+pub enum Framing {
+    Chunked,
+    Fixed(usize),
+    UntilClose,
+}
+
+pub fn headers(bytes: &[u8]) -> Result<Option<(&[u8], usize, Framing)>, &'static str> {
     let Some(end) = bytes.windows(4).position(|b| b == b"\r\n\r\n") else {
         return Ok(None);
     };
@@ -68,8 +75,22 @@ pub fn read(bytes: &[u8]) -> Result<Option<(&[u8], &[u8])>, &'static str> {
     if !html || (chunked && length.is_some()) || length.is_some_and(|n| n < DOCTYPE.len()) {
         return Err("invalid HTTPS response framing");
     }
-    let mut body = &bytes[end + 4..];
-    if chunked {
+    let framing = if chunked {
+        Framing::Chunked
+    } else if let Some(n) = length {
+        Framing::Fixed(n)
+    } else {
+        Framing::UntilClose
+    };
+    Ok(Some((status, end + 4, framing)))
+}
+
+pub fn read(bytes: &[u8]) -> Result<Option<(&[u8], &[u8])>, &'static str> {
+    let Some((status, start, framing)) = headers(bytes)? else {
+        return Ok(None);
+    };
+    let mut body = &bytes[start..];
+    if matches!(framing, Framing::Chunked) {
         let Some(at) = body.windows(2).position(|v| v == b"\r\n") else {
             return Ok(None);
         };
