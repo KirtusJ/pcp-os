@@ -19,7 +19,7 @@ These instruments ship inside the Rust host. To browse downloadable applications
 
 | Instrument | When to use it | Input fields |
 | --- | --- | --- |
-| `cryptography.digest` | Compute the SHA-256 of supplied text and optionally compare a claimed digest. | `text`, optional `claimed` |
+| `cryptography.digest` | Compute the SHA-256 of the supplied UTF-8 text and optionally compare a claimed digest. | Only `text` and optional `claimed`. The claim takes 64 ASCII hexadecimal digits in either case, with surrounding whitespace allowed. Malformed claims and unknown fields return an argument error before a check is recorded. |
 | `quality.coverage` | Find claims without findings in a commissioned review and list recorded checks its findings do not cite. | `review` (label), plus the register |
 | `core.calibration` | Check the counts, thresholds and claimed result in a Calibration Record. | `record` (object) |
 
