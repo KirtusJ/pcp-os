@@ -2,24 +2,24 @@
   "kernel_sha256": "d2fae4ef3df316ff4fa0c1a88744e66cc17bd794856979fa55188b8402f7222f",
   "arms": [
     {
-      "guest_sha256": "ae5cfeb92c3592002b5c19eeed6182d837bd339ac846eff2f1454166d8ae73f1",
+      "guest_sha256": "debe43fadb5cb0994c150d19a7b982f6274d980719e1af6db367496c9743dd2c",
       "kernel_measure": "0232c02a8946d66216da0ac65953a246ce3d41d7a966ae31aa83c3335b3259e3",
       "arm": "document",
       "serial": [
         "SURFBIRD TCP established",
         "SURFBIRD certificate chain and hostname verified",
         "SURFBIRD HTTPS HTTP/1.1 200 OK",
-        "SURFBIRD decoded-prefix-bytes 793312",
+        "SURFBIRD decoded-prefix-bytes 785783",
         "SURFBIRD document-title YouTube Developers Live: Embedded Web Player Customization - YouTube",
         "SURFBIRD document-canonical https://www.youtube.com/watch?v=M7lc1UVf-VE",
         "SURFBIRD view title",
         "SURFBIRD view address",
         "SURFBIRD view title"
       ],
-      "pcap_sha256": "6016667d1dbe81939f6618c6945b10f807eb4008658bd193fc1f80b9f382d33c",
-      "public_destination": "142.251.152.4",
+      "pcap_sha256": "582e11e897ce151670efc55607d13cd1253b2c99d7a42a456fcc3e27987e98c6",
+      "public_destination": "142.251.156.4",
       "outgoing_tcp_payload_bytes_including_retransmission": 478,
-      "incoming_tcp_payload_bytes_including_retransmission": 826112,
+      "incoming_tcp_payload_bytes_including_retransmission": 819565,
       "screens": {
         "title.ppm": "217908838851443ec1d7de685b28b1aae0c57033f088b92bc20468497b7559fa",
         "address.ppm": "d70ddf0da7a81f66c836238d8832f25dcd694006ca4455ed80f584d559f742ac",
@@ -27,7 +27,7 @@
       }
     },
     {
-      "guest_sha256": "ae5cfeb92c3592002b5c19eeed6182d837bd339ac846eff2f1454166d8ae73f1",
+      "guest_sha256": "debe43fadb5cb0994c150d19a7b982f6274d980719e1af6db367496c9743dd2c",
       "kernel_measure": "0232c02a8946d66216da0ac65953a246ce3d41d7a966ae31aa83c3335b3259e3",
       "arm": "watch",
       "serial": [
@@ -37,36 +37,36 @@
         "SURFBIRD body <!DOCTYPE html>",
         "SURFBIRD authenticated HTML body prefix received"
       ],
-      "pcap_sha256": "d08a6977d3814eed68a77bc523eed4584a1fece430a231447de76388236ded27",
-      "public_destination": "142.251.151.4",
+      "pcap_sha256": "781a1705fa88d894b1f99d29880fc9d9e87cee10f161c31ca5c331e138619ea2",
+      "public_destination": "142.251.154.4",
       "outgoing_tcp_payload_bytes_including_retransmission": 478,
-      "incoming_tcp_payload_bytes_including_retransmission": 24030
+      "incoming_tcp_payload_bytes_including_retransmission": 25247
     },
     {
-      "guest_sha256": "ae5cfeb92c3592002b5c19eeed6182d837bd339ac846eff2f1454166d8ae73f1",
+      "guest_sha256": "debe43fadb5cb0994c150d19a7b982f6274d980719e1af6db367496c9743dd2c",
       "kernel_measure": "0232c02a8946d66216da0ac65953a246ce3d41d7a966ae31aa83c3335b3259e3",
       "arm": "wrong-host",
       "serial": [
         "SURFBIRD TCP established",
         "SURFBIRD error TLS hostname mismatch"
       ],
-      "pcap_sha256": "5e4f83063f6ae0971eeae8efb6af462c8a54acdadbf8e0f600e6ab7c96eae667",
-      "public_destination": "142.251.151.4",
+      "pcap_sha256": "7f9749db8584593dac0e640e92759ec6af975796b80fdb9a7ec2bd90db5dc562",
+      "public_destination": "142.251.153.4",
       "outgoing_tcp_payload_bytes_including_retransmission": 315,
-      "incoming_tcp_payload_bytes_including_retransmission": 3870
+      "incoming_tcp_payload_bytes_including_retransmission": 3871
     },
     {
-      "guest_sha256": "ae5cfeb92c3592002b5c19eeed6182d837bd339ac846eff2f1454166d8ae73f1",
+      "guest_sha256": "debe43fadb5cb0994c150d19a7b982f6274d980719e1af6db367496c9743dd2c",
       "kernel_measure": "0232c02a8946d66216da0ac65953a246ce3d41d7a966ae31aa83c3335b3259e3",
       "arm": "untrusted",
       "serial": [
         "SURFBIRD TCP established",
         "SURFBIRD error TLS unknown issuer"
       ],
-      "pcap_sha256": "ede89c226434e515897879cd7ffd791eb15710c86250013a9f26d382a99a05f4",
-      "public_destination": "142.251.155.4",
+      "pcap_sha256": "27d313c6d9fc1ad4cd349f6936ff68b80d225f89a3c83ba41791cd90dc5c83ee",
+      "public_destination": "142.251.157.4",
       "outgoing_tcp_payload_bytes_including_retransmission": 257,
-      "incoming_tcp_payload_bytes_including_retransmission": 3869
+      "incoming_tcp_payload_bytes_including_retransmission": 3870
     }
   ],
   "earlier_runs": [
@@ -77,6 +77,10 @@
     {
       "arm": "wrong-host",
       "outcome": "Kernel entered SAFE on the prelaunch keyboard-interrupt test. No guest request ran. The rerun passed all boot checks and refused the hostname."
+    },
+    {
+      "arm": "all four",
+      "outcome": "The preformat guest (ae5cfeb9\u2026) passed every control. A final source-format change affected line metadata and the ELF hash. All four receipts above were regenerated on the exact committed building source."
     }
   ]
 }

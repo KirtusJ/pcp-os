@@ -4,7 +4,7 @@ In the `document` arm, the native Surfbird ELF retrieves the public watch URL ov
 
 ![Title rendered by the guest](evidence/watch-document/title.png)
 
-The observed title was “YouTube Developers Live: Embedded Web Player Customization - YouTube”. The guest received an HTTP 200 and consumed 793,312 decoded body bytes through the TLS record containing the title. QEMU observed 826,112 incoming TCP payload bytes including retransmissions. The [address screen](evidence/watch-document/address.png) preserves the case of the video identifier. The kernel recorded three presented frames, a clean exit and zero milliseconds of sound. These are document-reader frames. [Receipts](evidence/watch-document/results.json)
+The observed title was “YouTube Developers Live: Embedded Web Player Customization - YouTube”. The guest received an HTTP 200 and consumed 785,783 decoded body bytes through the TLS record containing the title. QEMU observed 819,565 incoming TCP payload bytes including retransmissions. The [address screen](evidence/watch-document/address.png) preserves the case of the video identifier. The kernel recorded three presented frames, a clean exit and zero milliseconds of sound. These are document-reader frames. [Receipts](evidence/watch-document/results.json)
 
 ## Replay
 
