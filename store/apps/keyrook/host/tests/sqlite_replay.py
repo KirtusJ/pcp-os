@@ -1,4 +1,5 @@
 """Run with python sqlite_replay.py PATH_TO_KEYROOK. Uses the standard SQLite client."""
+from contextlib import closing
 import json
 import os
 from pathlib import Path
@@ -75,7 +76,7 @@ def main():
         stale.write_bytes(b"incomplete SQLite export")
         retry = root / "retry.sqlite"
         cli("export-sqlite", session, retry)
-        with sqlite3.connect(retry) as reopened:
+        with closing(sqlite3.connect(retry)) as reopened:
             assert reopened.execute("PRAGMA integrity_check").fetchone() == ("ok",)
             assert reopened.execute("SELECT count(*) FROM episodes").fetchone() == (4,)
         assert stale.read_bytes() == b"incomplete SQLite export"
@@ -84,7 +85,7 @@ def main():
         assert retry.read_bytes() == published
         cli("export-sqlite", fresh, exported, success=False)
         assert exported.read_bytes() == original
-        with sqlite3.connect(exported) as sql:
+        with closing(sqlite3.connect(exported)) as sql:
             assert sql.execute("PRAGMA integrity_check").fetchone() == ("ok",)
             assert sql.execute("PRAGMA user_version").fetchone() == (1,)
             assert sql.execute("SELECT count(*) FROM episodes").fetchone() == (4,)
