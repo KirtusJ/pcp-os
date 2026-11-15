@@ -22,7 +22,7 @@ Set `kernel` to the ELF32 boot image. Each invocation requires a new output dire
 
 ## Observed
 
-QEMU 11.1.0, Rust 1.91.1, kernel ELF SHA-256 `d2fae4ef3df316ff4fa0c1a88744e66cc17bd794856979fa55188b8402f7222f`, guest ELF SHA-256 `b87f1185f86961ff8afdb21315c811f0c071c474d09737613146be46cbb98b34`.
+QEMU 11.1.0, Rust 1.91.1, kernel ELF SHA-256 `d2fae4ef3df316ff4fa0c1a88744e66cc17bd794856979fa55188b8402f7222f`, guest ELF SHA-256 `116abc19197bf1905847569f30d1c41877b81a3614297f45ec4a57d641f27eab`.
 
 | Input | Measured output |
 | --- | --- |
@@ -31,3 +31,5 @@ QEMU 11.1.0, Rust 1.91.1, kernel ELF SHA-256 `d2fae4ef3df316ff4fa0c1a88744e66cc1
 | Invalid WAVE block alignment | The guest rejected the track before showing a picture or writing audio. |
 
 Both positive boots reported 3,200 ms of sound, zero underruns, 33 display submissions including the cover, normal process exit and a verified shutdown register. The native guest still needs HTTPS and a compatible Web player to play a YouTube watch page.
+
+During development one concurrent boot failed the kernel's keyboard self-test before launching the guest. Another loaded run exposed a transient reversal in the AC'97 queue estimate after an underrun. The player now holds the last published picture across this condition, yields while filling the device and handles a temporary full-queue result. The acceptance replay fails any run with an underrun, a missed frame, or a changed audio sequence. Running the full-screen capture while the host is busy can also miss a screenshot.

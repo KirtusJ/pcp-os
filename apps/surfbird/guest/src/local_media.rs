@@ -73,30 +73,35 @@ fn play(display: &mut Display, video: &[u8], pcm: &[u8]) -> Result<(), &'static 
             return Err("unsupported audio device");
         }
         // Waiting counts whole DMA pieces (512 stereo frames) plus the partial piece.
-        let played = queued.checked_sub(info[4] as usize).ok_or("invalid audio cursor")?;
+        let played = queued.saturating_sub(info[4] as usize);
         if played == pcm.len() {
             break;
         }
         let index = played / AUDIO_PER_FRAME;
-        if Some(index) != last {
-            show(display, video, index);
-            last = Some(index);
-        }
-        let count = (pcm.len() - queued).min(info[3] as usize).min(8192);
+        let count = (pcm.len() - queued).min(info[3] as usize);
         if count > 0 {
             let n = call(1, fd as usize, pcm[queued..].as_ptr() as usize, count, 0, 0, 0);
-            let n = usize::try_from(n).map_err(|_| "audio write failed")?;
+            // The device can become full between the availability check and write.
+            let n = if n == -11 { 0 } else { usize::try_from(n).map_err(|_| "audio write failed")? };
             if n > count || n % 4 != 0 {
                 return Err("invalid audio write");
             }
             queued += n;
+        }
+        // A restarted AC'97 ring can temporarily report a larger backlog. Keep the
+        // last picture while the playback estimate catches up, without rewinding.
+        if last.is_none_or(|previous| index > previous) {
+            show(display, video, index);
+            last = Some(index);
         }
         display.poll();
         if display.pressed[1] {
             log(b"SURFBIRD media stopped\n");
             return Ok(());
         }
-        sleep_us(2000);
+        // PCP sleeps to the next timer interrupt. Stay responsive to the short
+        // hardware queue while playing, especially when the VM is descheduled.
+        call(24, 0, 0, 0, 0, 0, 0);
     }
     log(b"SURFBIRD media drained\n");
     Ok(())
