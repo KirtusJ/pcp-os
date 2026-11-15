@@ -842,8 +842,8 @@ impl Session {
 
     /// What the host itself saw shell commands do while ACR was in use: the command, its exit status and the
     /// digests of its output. Never the output itself.
-    fn observed_tools(&self) -> String {
-        match Path::new(&self.register).parent().filter(|p| !p.as_os_str().is_empty()) {
+    fn observed_tools(register: &str) -> String {
+        match Path::new(register).parent().filter(|p| !p.as_os_str().is_empty()) {
             Some(d) => format!("{}/observed_tools.jsonl", d.display()),
             None => "observed_tools.jsonl".to_string(),
         }
@@ -1623,23 +1623,24 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
             };
             let mut tx = Tx::begin(&se.root, &reg, false)?.ok_or_else(none)?;
             session_may_write(&tx, se)?;
-            let used: Vec<String> = parse(tx.rec.ledger().bytes().to_vec())?.events.iter().filter(|e| e.get("kind").and_then(Value::as_str) == Some("CHECK_RAN"))
+            let opened = parse(tx.rec.ledger().bytes().to_vec())?;
+            let used: Vec<String> = opened.events.iter().filter(|e| e.get("kind").and_then(Value::as_str) == Some("CHECK_RAN"))
                 .filter_map(|e| e.get("body").and_then(|b| b.get("tool_use_id")).and_then(Value::as_str).map(|x| x.to_string())).collect();
             let floor = match open_review_floor(&tx) {
                 Some((seq, _)) => seq,
                 None => return Ok(format!("REFUSE (exit code {}) [Core 5.1]\nNo review is open. A check is run for a review: commission the review, run the command, then call acr_check.\nNothing was written.\n", acr::REFUSED)),
             };
-            let all = observed_unrecorded(se, &used);
+            let all = observed_unrecorded(se, &reg, &opened, &used);
             // What the host saw before the open review was commissioned was not run for it, and is not offered.
-            let stale = all.iter().any(|v| v.get("command").and_then(Value::as_str) == Some(command) && v.get("at_event").and_then(Value::as_int).map(|n| n <= floor).unwrap_or(true));
+            let stale = all.iter().any(|v| v.get("scoped_command").and_then(Value::as_str) == Some(command) && v.get("at_event").and_then(Value::as_int).map(|n| n <= floor).unwrap_or(true));
             let unrecorded: Vec<Value> = all.into_iter().filter(|v| v.get("at_event").and_then(Value::as_int).map(|n| n > floor).unwrap_or(false)).collect();
-            let seen = match unrecorded.iter().rev().find(|v| v.get("command").and_then(Value::as_str) == Some(command)) {
+            let seen = match unrecorded.iter().rev().find(|v| v.get("scoped_command").and_then(Value::as_str) == Some(command)) {
                 Some(v) => v.clone(),
                 None => {
                     // The exact text matters, and a command is easily passed on with something added. What the host did see is the session's own commands: it is shown them.
                     let mut did = String::new();
                     for v in unrecorded.iter().rev().take(5) {
-                        let _ = writeln!(did, "  {}", clip(v.get("command").and_then(Value::as_str).unwrap_or(""), 400));
+                        let _ = writeln!(did, "  {}", clip(v.get("scoped_command").and_then(Value::as_str).unwrap_or(""), 400));
                     }
                     let did = if did.is_empty() { "The host has seen no shell command here that is not already recorded as a check.\n".to_string() }
                               else { format!("Shell commands the host did see and that are not yet recorded as checks, newest first, each exactly as it was given:\n{did}If one of these is the check you mean, call acr_check with that text.\n") };
@@ -2178,8 +2179,8 @@ fn hook(event: &str, input: &Value) -> Result<String, String> {
             let register = se.root.join(&se.register);
             let keep = register.parent().map(|d| d.to_path_buf()).filter(|d| d != &se.root);
             let (ft, fr) = (flat(&t), flat(&register));
-            let by_name = ft == fr || ft == flat(&se.root.join(se.observed())) || ft == flat(&se.root.join(se.observed_tools())) || keep.as_ref().map(|d| ft.starts_with(flat(d))).unwrap_or(false);
-            let fenced = by_name || resolved == register || resolved == se.root.join(se.observed()) || resolved == se.root.join(se.observed_tools()) || keep.map(|d| resolved.starts_with(&d)).unwrap_or(false)
+            let by_name = ft == fr || ft == flat(&se.root.join(se.observed())) || ft == flat(&se.root.join(Session::observed_tools(&se.register))) || keep.as_ref().map(|d| ft.starts_with(flat(d))).unwrap_or(false);
+            let fenced = by_name || resolved == register || resolved == se.root.join(se.observed()) || resolved == se.root.join(Session::observed_tools(&se.register)) || keep.map(|d| resolved.starts_with(&d)).unwrap_or(false)
                 || resolved.canonicalize().ok().zip(register.canonicalize().ok()).map(|(a, b)| a == b).unwrap_or(false);
             if !fenced {
                 return Ok(String::new());
@@ -2195,8 +2196,8 @@ fn hook(event: &str, input: &Value) -> Result<String, String> {
             if field("tool_name") != "Bash" {
                 return Ok(String::new());
             }
-            let at_event = match open(&se.root, &reg) {
-                Ok(Some(o)) if o.state.in_use() == Use::InUse => o.events.len() as i64,
+            let (at_event, register_head) = match open(&se.root, &reg) {
+                Ok(Some(o)) if o.state.in_use() == Use::InUse => (o.events.len() as i64, o.head),
                 _ => return Ok(String::new()),
             };
             let command = input.get("tool_input").and_then(|t| t.get("command")).and_then(Value::as_str).unwrap_or("");
@@ -2239,10 +2240,13 @@ fn hook(event: &str, input: &Value) -> Result<String, String> {
                 let part = |k: &str| r.and_then(|r| r.get(k)).and_then(Value::as_str).unwrap_or("").to_string();
                 (if interrupted { Value::Null } else { Value::Int(0) }, interrupted, part("stdout"), part("stderr"), "STDOUT_AND_STDERR")
             };
-            let line = obj(vec![("ts", s(&now_utc())), ("tool_use_id", s(&clip(field("tool_use_id"), 200))), ("command", s(command)), ("exit", exit), ("timeout", Value::Bool(timeout)),
+            // Older readers match the top-level "command" without checking register identity.
+            // Use a distinct field so only a reader that understands the binding can claim this row.
+            let line = obj(vec![("ts", s(&now_utc())), ("tool_use_id", s(&clip(field("tool_use_id"), 200))), ("scoped_command", s(command)), ("exit", exit), ("timeout", Value::Bool(timeout)),
                                 ("stdout", s(&sha256_hex(out.as_bytes()))), ("stderr", s(&sha256_hex(err.as_bytes()))), ("output", s(form)), ("output_bytes", Value::Int((out.len() + err.len()) as i64)), ("at_event", Value::Int(at_event)),
+                                ("register_name", s(Path::new(&reg).file_name().and_then(|n| n.to_str()).ok_or("no register name")?)), ("register_head", s(&register_head)),
                                 ("duration_ms", input.get("duration_ms").and_then(Value::as_int).map(Value::Int).unwrap_or(Value::Null))]).canonical_json();
-            if let Some(mut h) = confined(&se.root, &se.observed_tools(), true, true)? {
+            if let Some(mut h) = confined(&se.root, &Session::observed_tools(&se.register), true, true)? {
                 lock(&h, true)?;
                 // The newest observations only: this is a working file beside the record, not the record.
                 let old = read_all(&mut h)?;
@@ -2267,13 +2271,22 @@ const MAX_COMMAND: usize = 16 * 1024;
 const MAX_OBSERVED_TOOLS: usize = 200;
 
 /// What the host saw of shell commands that no check has yet been recorded from, oldest first.
-fn observed_unrecorded(se: &Session, used: &[String]) -> Vec<Value> {
+fn observed_unrecorded(se: &Session, register: &str, opened: &Opened, used: &[String]) -> Vec<Value> {
     let read = || -> Option<Vec<u8>> {
-        let mut h = confined(&se.root, &se.observed_tools(), false, false).ok()??;
+        let mut h = confined(&se.root, &Session::observed_tools(register), false, false).ok()??;
         lock(&h, false).ok()?;
         read_all(&mut h).ok()
     };
     read().unwrap_or_default().split(|b| *b == b'\n').filter(|l| !l.is_empty()).filter_map(|l| Value::parse(l).ok())
+        .filter(|v| {
+            let name = Path::new(register).file_name().and_then(|n| n.to_str());
+            if v.get("register_name").and_then(Value::as_str) != name { return false; }
+            let Some(count) = v.get("at_event").and_then(Value::as_int).and_then(|n| usize::try_from(n).ok()) else { return false };
+            // Sequence numbers start at zero. The next event carries the observed head as its predecessor.
+            let head = if count == opened.events.len() { Some(opened.head.as_str()) }
+                       else { opened.events.get(count).and_then(|e| e.get("prev")).and_then(Value::as_str) };
+            head.is_some() && v.get("register_head").and_then(Value::as_str) == head
+        })
         .filter(|v| !matches!(v.get("tool_use_id").and_then(Value::as_str), Some(id) if used.iter().any(|u| u == id))).collect()
 }
 

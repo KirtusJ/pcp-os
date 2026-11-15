@@ -904,6 +904,29 @@ fn a_check_is_what_the_host_saw_run_or_it_says_it_is_a_report() {
     assert_eq!(fs::read_to_string(root.join(".pcp/observed_tools.jsonl")).unwrap().lines().count(), 2);
 }
 
+#[test]
+fn a_shell_observation_belongs_to_its_register_and_history() {
+    let root = in_use("shell-scope");
+    let peer = ".pcp/peer.jsonl";
+    fs::copy(root.join(REG), root.join(peer)).unwrap();
+    hook(&root, "post-tool", r#"{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_use_id":"t1","tool_input":{"command":"echo A"},"tool_response":{"stdout":"A","stderr":"","interrupted":false}}"#);
+    let cache = fs::read_to_string(root.join(".pcp/observed_tools.jsonl")).unwrap();
+    let observation = Value::parse(cache.trim_end().as_bytes()).unwrap();
+    assert!(observation.get("command").is_none(), "older readers must not match this observation");
+    assert_eq!(observation.get("scoped_command").and_then(Value::as_str), Some("echo A"));
+    let before = fs::read(root.join(peer)).unwrap();
+    let (out, _) = tool(&root, "acr_check", r#"{"register":".pcp/peer.jsonl","command":"echo A"}"#);
+    assert!(out.starts_with("REFUSE"), "{out}");
+    assert_eq!(fs::read(root.join(peer)).unwrap(), before);
+    let mut other = pcpos(&root);
+    other.env("PCPOS_REGISTER", peer).arg("mcp");
+    let (out, _) = feed(other, br#"{"id":1,"jsonrpc":"2.0","method":"tools/call","params":{"name":"acr_check","arguments":{"command":"echo A"}}}
+"#);
+    assert!(out.contains("REFUSE") && fs::read(root.join(peer)).unwrap() == before, "{out}");
+    let (out, _) = tool(&root, "acr_check", r#"{"command":"echo A"}"#);
+    assert!(out.starts_with("WRITTEN"), "{out}");
+}
+
 /// The register's time, as seconds since 1970.
 fn epoch(ts: &str) -> u64 {
     let n = |a: usize, b: usize| ts[a..b].parse::<i64>().unwrap();
