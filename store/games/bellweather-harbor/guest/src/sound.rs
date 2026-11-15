@@ -19,6 +19,8 @@ extern "C" {
 #[derive(Clone, Copy)]
 pub enum Cue {
     Bell,
+    Answer(usize),
+    Sea,
     CastOff,
     Purchase,
     Manager,
@@ -54,10 +56,20 @@ const CHARTER: &[Tone] = &[
     tone(659, 150, 4300),
     tone(784, 220, 4700),
 ];
+const SEA: &[Tone] = &[
+    tone(143, 0, 4500),
+    tone(292, 0, 1600),
+    tone(1732, 360, 1700),
+];
 impl Cue {
     fn score(self) -> (u32, &'static [Tone]) {
         match self {
-            Self::Bell => (240, BELL),
+            // Silence keeps the DMA ring moving between the caller and the reply.
+            // Restarting an empty AC'97 queue can replay an old buffer first.
+            Self::Bell => (1700, BELL),
+            // A full silent DMA ring after the reply also clears its last note.
+            Self::Answer(_) => (1000, &[]),
+            Self::Sea => (1200, SEA),
             Self::CastOff => (180, CAST_OFF),
             Self::Purchase => (180, PURCHASE),
             Self::Manager => (270, MANAGER),
@@ -105,6 +117,30 @@ fn wire_sample(good: usize, at: u32) -> i16 {
     }) as i16
         * 210
 }
+
+fn answer_sample(person: usize, frame: u32) -> i16 {
+    let (period_ms, burst_ms, notes, hz, overtones) = match person {
+        0 => (230, 215, 2, 988, 1697),
+        1 => (110, 75, 3, 228, 571),
+        _ => (165, 90, 2, 1175, 2350),
+    };
+    let second_whistle = person == 2 && frame >= period_ms * 48;
+    let note = if second_whistle {
+        1
+    } else {
+        frame / (period_ms * 48)
+    };
+    let at = frame - note * period_ms * 48;
+    let length = if second_whistle { 315 } else { burst_ms } * 48;
+    if note >= notes || at >= length {
+        return 0;
+    }
+    let tones = [
+        tone(hz, 0, 3700),
+        tone(overtones, 0, if person == 2 { 350 } else { 1650 }),
+    ];
+    sample(&tones, at, length)
+}
 fn sample(tones: &[Tone], at: u32, duration: u32) -> i16 {
     let mut value = 0i32;
     for tone in tones {
@@ -151,14 +187,18 @@ impl Speaker {
         Some(info)
     }
     pub fn play(&mut self, cue: Cue) {
+        if matches!(cue, Cue::Answer(_) | Cue::Sea) && matches!(self.playing, Some(Cue::Wire(_))) {
+            return;
+        }
         if self.fd >= 0 {
             self.playing = Some(cue);
             self.at = 0;
         }
     }
     pub fn frame_ms(&self) -> u64 {
-        // The telegraph replay needs frequent refills of the small DMA queue.
-        if matches!(self.playing, Some(Cue::Wire(_))) {
+        // AC'97 queues at most seven 10.7 ms pieces, including one currently
+        // being played. A 40 ms render interval can starve and replay that DMA ring.
+        if self.playing.is_some() {
             10
         } else {
             40
@@ -188,7 +228,12 @@ impl Speaker {
         {
             let at = self.at + i as u32;
             lr.fill(match cue {
+                Cue::Bell if at < 240 * 48 => sample(BELL, at, 240 * 48),
+                Cue::Bell => 0,
                 Cue::Wire(good) => wire_sample(good, at),
+                Cue::Answer(person) => answer_sample(person, at),
+                Cue::Sea if at < 630 * 48 => sample(SEA, at, 630 * 48),
+                Cue::Sea => 0,
                 _ => sample(tones, at, duration),
             });
         }

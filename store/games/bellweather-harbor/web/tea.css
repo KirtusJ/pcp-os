@@ -1,0 +1,42 @@
+/* The order paper was bound at the quay. The red rule is also the seal color. */
+.tea-invitation{display:flex;align-items:center;border:1px solid #ba9c77;border-radius:3px;background:#f7e8cc;color:#57382f;padding:3px 7px;min-height:38px;margin:6px 0;text-align:left}
+.tea-invitation:hover{background:#fcecd2}.tea-wax,.tea-order{display:inline-flex;align-items:center;justify-content:center;color:#fff0c7;background:#8b3e42;border:1px solid #723237;border-radius:50%;font:700 10px var(--display);height:26px;width:26px;flex:none;margin-right:8px}
+#tea-entry{font:italic 16px/1.15 var(--display)}#tea-entry-action{margin-left:12px;white-space:nowrap;font:700 10px var(--mono)}
+#tea-book{width:min(585px,calc(100vw - 20px));position:fixed;top:50%;bottom:auto;left:0;right:0;margin:0 auto;transform:translateY(-50%);max-height:91vh;overflow:auto;overscroll-behavior:contain;background:#f6eedc;color:#37392f;border-color:#513d3f}
+.tea-mast{display:flex;align-items:center;padding:11px 17px;color:#fff3d6;background:#583a40;border-bottom:3px solid #bc9968}
+.tea-order{width:38px;height:38px;font-size:16px;color:#fae8c2;background:#744048;border-color:#c8a67f;margin-right:12px}
+.tea-mast p,.tea-kicker,.tea-window figcaption{font:700 10px/1.4 var(--mono);text-transform:uppercase;letter-spacing:1.05px}
+.tea-mast p{color:#e7c9a4}.tea-mast h2{font:700 clamp(23px,3.6vw,33px)/1.05 var(--display);letter-spacing:-1.15px}
+#tea-close{color:#fff4d9;background:transparent;border:1px solid #bb9c90;border-radius:3px;padding:7px 9px;min-height:36px;white-space:nowrap;margin-left:auto;font:700 12px var(--body)}
+.tea-page{padding:14px 19px 18px}
+.tea-window{margin:0 0 11px;border:1px solid #685e4b;box-shadow:1px 2px 0 #c4b898;background:#394b46}
+.tea-window canvas{display:block;width:100%;height:auto;max-height:167px;image-rendering:pixelated}
+.tea-window figcaption{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;color:#fff0cf;padding:5px 8px;font-size:10px;letter-spacing:.8px;border-top:1px solid #786d54}
+#tea-count{font-weight:400;letter-spacing:0;color:#e0dfcb;text-transform:none}
+.tea-paper{border:1px solid #b5a689;border-left:4px solid #94524c;color:#363a32;background:#fff7e4;padding:12px 15px;margin:9px 0}
+.tea-kicker{color:#805250}.tea-paper h3{font:700 25px/1.1 var(--display);letter-spacing:-.8px;margin:4px 0 7px}
+.tea-paper p:not(.tea-kicker),#tea-grannies p,#tea-minute,#tea-filed{font:15px/1.46 var(--display)}
+.tea-paper p.tea-fineprint{font:12px/1.5 var(--body);color:#555c4d;margin:9px 0}
+.tea-primary,#tea-claim,#tea-keep{min-height:38px;border-radius:3px;border:1px solid #6d3439;color:#fff4de;background:#753c41;font:700 13px var(--body);padding:7px 11px}
+#tea-claim,#tea-keep{background:#f2e7cc;color:#573e35;border-color:#a58a67}
+#tea-book button:not(:disabled):hover{filter:brightness(.93)}
+#tea-book button:focus,#tea-book summary:focus,.tea-invitation:focus{outline:3px solid #b2582c;outline-offset:2px}
+#tea-book button:disabled{background:#e6deca;color:#666659;border-color:#b3a891}
+.tea-money{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:9px;row-gap:3px;padding:9px 11px;background:#e8e5ce;border:1px solid #aaa68b}
+.tea-money strong{display:block;font:700 22px var(--display);overflow-wrap:anywhere}.tea-money p{grid-column:1/-1;font:11px/1.4 var(--body);color:#535e4f}
+.tea-choice{display:flex;flex-wrap:wrap}.tea-choice button{margin:3px 7px 0 0}
+#tea-receipt:not(:empty){padding:8px 10px;margin:7px 0;border-left:3px solid #a78958;background:#efe2c7;font:14px/1.4 var(--body)}
+.tea-page details{border-top:1px dashed #b3aa90;padding-top:2px;margin:8px 0 0}
+.tea-page summary{cursor:pointer;font:700 14px/1.3 var(--body);padding:8px 0}
+#tea-grannies h4{font:700 17px/1.3 var(--display);margin:6px 0 2px}#tea-grannies h4 small{font:11px var(--mono);margin-left:6px;color:#675e51}
+#tea-grannies p{margin:0 0 7px}#tea-minute{font-style:italic;margin:2px 0 9px}
+#tea-filed{margin:0;padding-left:22px}#tea-filed li{padding:0 0 6px}#tea-filed strong{display:block}
+@media(max-width:410px){.tea-page{padding:11px}.tea-mast{padding:9px 11px}.tea-order{width:27px;height:27px;font-size:11px;margin-right:7px}.tea-mast h2{font-size:23px}.tea-mast p{font-size:8px}.tea-paper{padding:10px}.tea-paper h3{font-size:22px}.tea-invitation{max-width:100%}.tea-window figcaption{font-size:9px}.tea-window canvas{max-height:106px}}
+
+#tea-chair-quote{margin-top:9px;font-style:italic}
+#tea-souvenir-text,#tea-decision p+p{margin-top:7px}
+
+#tea-barter{border-left-color:#52736c;background:#f3f0da}
+#tea-barter .tea-kicker{color:#48615b}
+#tea-barter-terms{font-weight:700}#tea-barter-status:not(:empty),#tea-barter-result:not(:empty){margin:6px 0 0}
+#tea-barter-result{font:700 13px/1.45 var(--body);color:#38594d}

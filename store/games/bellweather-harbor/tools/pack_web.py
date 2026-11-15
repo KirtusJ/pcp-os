@@ -19,6 +19,11 @@ if not wasm.startswith(b"\0asm\1\0\0\0"):
 replacements = {"__BELLWEATHER_WASM_BASE64__": base64.b64encode(wasm).decode("ascii")}
 for marker, filename in [
     ("/*__BELLWEATHER_MARKS__*/", "marks.js"),
+    ("/*__BELLWEATHER_QUAY__*/", "quay.js"),
+    ("/*__BELLWEATHER_TEA__*/", "tea.js"),
+    ("/*__BELLWEATHER_TEA_CSS__*/", "tea.css"),
+    ("/*__BELLWEATHER_QUAY_CSS__*/", "quay.css"),
+    ("/*__BELLWEATHER_QUAY_SOUND__*/", "quay-sound.js"),
     ("/*__BELLWEATHER_FREIGHT_ART__*/", "freight-art.js"),
     ("/*__BELLWEATHER_EXCHANGE__*/", "exchange.js"),
     ("/*__BELLWEATHER_EXCHANGE_CSS__*/", "exchange.css"),

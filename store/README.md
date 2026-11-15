@@ -14,7 +14,7 @@ Download or clone the repository and open [the game shelf](index.html) in your b
 | Game | First move | Browser player | Native guest |
 | --- | --- | --- | --- |
 | **Night Post · Return Mail** | Choose a route and press Space to take flight. Steer a kingfisher over the mail net and drop the letter just before you reach it. | [Night_Post.html](games/night-post/dist/Night_Post.html) | [nightpost.elf](games/night-post/dist/nightpost.elf) |
-| **Bellweather Harbor · The Second Manifest** | Ring the bell. Your first trip lands a crate of salt. Sell it, save it for a contract, or investigate the odd receipt. | [Bellweather_Harbor.html](games/bellweather-harbor/dist/Bellweather_Harbor.html) | [bellweather.elf](games/bellweather-harbor/dist/bellweather.elf) |
+| **Bellweather Harbor · Standing Order Thirteen** | Ring the bell and listen for Nell. Your first trip brings a crate of salt. Visit her on the quay or sell it at the exchange. | [Bellweather_Harbor.html](games/bellweather-harbor/dist/Bellweather_Harbor.html) | [bellweather.elf](games/bellweather-harbor/dist/bellweather.elf) |
 
 The [Night Post flight manual](games/night-post/README.md) covers routes, airbrakes and postmarks. The [Bellweather Harbor guide](games/bellweather-harbor/README.md) covers chartering, trade, manufacturing, and the casebook. Each game directory includes its Rust source, Cargo lockfile and build scripts. Browser saves are local to the browser and file location. Bellweather's logbook can export and import a save when moving between copies.
 
