@@ -1,3 +1,14 @@
 # The guest self-test compares this published vector byte-for-byte.
 PCP_OS_Rust/vectors/machines.tsv text eol=lf
+# These source-built game packages pin the publisher's exact payload bytes across checkouts.
+store/games/doom/** text eol=lf
+store/games/ultra-omega-barrel/** text eol=lf
+store/games/barrel-bowl/** text eol=lf
+store/games/midnight-barrel-express/** text eol=lf
+store/games/forklift-certified/** text eol=lf
 store/**/*.elf binary
+store/**/*.wad binary
+store/**/*.pat binary
+store/**/*.png binary
+store/**/*.tar.gz binary
+store/**/source/*.patch binary

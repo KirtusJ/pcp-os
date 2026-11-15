@@ -1,0 +1,1080 @@
+diff --git a/doomgeneric/Makefile b/doomgeneric/Makefile
+index 6ecd5a8..80764b6 100644
+--- a/doomgeneric/Makefile
++++ b/doomgeneric/Makefile
+@@ -22,7 +22,7 @@ LIBS+=-lm -lc -lX11
+ OBJDIR=build
+ OUTPUT=doomgeneric
+ 
+-SRC_DOOM = dummy.o am_map.o doomdef.o doomstat.o dstrings.o d_event.o d_items.o d_iwad.o d_loop.o d_main.o d_mode.o d_net.o f_finale.o f_wipe.o g_game.o hu_lib.o hu_stuff.o info.o omega.o i_cdmus.o i_endoom.o i_joystick.o i_scale.o i_sound.o i_system.o i_timer.o memio.o m_argv.o m_bbox.o m_cheat.o m_config.o m_controls.o m_fixed.o m_menu.o m_misc.o m_random.o p_ceilng.o p_doors.o p_enemy.o p_floor.o p_inter.o p_lights.o p_map.o p_maputl.o p_mobj.o p_plats.o p_pspr.o p_saveg.o p_setup.o p_sight.o p_spec.o p_switch.o p_telept.o p_tick.o p_user.o r_bsp.o r_data.o r_draw.o r_main.o r_plane.o r_segs.o r_sky.o r_things.o sha1.o sounds.o statdump.o st_lib.o st_stuff.o s_sound.o tables.o v_video.o wi_stuff.o w_checksum.o w_file.o w_main.o w_wad.o z_zone.o w_file_stdc.o i_input.o i_video.o doomgeneric.o doomgeneric_xlib.o
++SRC_DOOM = dummy.o am_map.o doomdef.o doomstat.o dstrings.o d_event.o d_items.o d_iwad.o d_loop.o d_main.o d_mode.o d_net.o f_finale.o f_wipe.o g_game.o hu_lib.o hu_stuff.o info.o omega.o rail.o rail_ui.o rail_scroll.o i_cdmus.o i_endoom.o i_joystick.o i_scale.o i_sound.o i_system.o i_timer.o memio.o m_argv.o m_bbox.o m_cheat.o m_config.o m_controls.o m_fixed.o m_menu.o m_misc.o m_random.o p_ceilng.o p_doors.o p_enemy.o p_floor.o p_inter.o p_lights.o p_map.o p_maputl.o p_mobj.o p_plats.o p_pspr.o p_saveg.o p_setup.o p_sight.o p_spec.o p_switch.o p_telept.o p_tick.o p_user.o r_bsp.o r_data.o r_draw.o r_main.o r_plane.o r_segs.o r_sky.o r_things.o sha1.o sounds.o statdump.o st_lib.o st_stuff.o s_sound.o tables.o v_video.o wi_stuff.o w_checksum.o w_file.o w_main.o w_wad.o z_zone.o w_file_stdc.o i_input.o i_video.o doomgeneric.o doomgeneric_xlib.o
+ OBJS += $(addprefix $(OBJDIR)/, $(SRC_DOOM))
+ 
+ all:	 $(OUTPUT)
+diff --git a/doomgeneric/Makefile.djgpp b/doomgeneric/Makefile.djgpp
+index 77df2a7..5005980 100644
+--- a/doomgeneric/Makefile.djgpp
++++ b/doomgeneric/Makefile.djgpp
+@@ -41,7 +41,7 @@ LIBS+=-lalleg
+ OBJDIR:=djgpp
+ OUTPUT:=doomgen.exe
+ 
+-SRC_DOOM = dummy.o am_map.o doomdef.o doomstat.o dstrings.o d_event.o d_items.o d_iwad.o d_loop.o d_main.o d_mode.o d_net.o f_finale.o f_wipe.o g_game.o hu_lib.o hu_stuff.o info.o omega.o i_cdmus.o i_endoom.o i_joystick.o i_scale.o i_sound.o i_system.o i_timer.o memio.o m_argv.o m_bbox.o m_cheat.o m_config.o m_controls.o m_fixed.o m_menu.o m_misc.o m_random.o p_ceilng.o p_doors.o p_enemy.o p_floor.o p_inter.o p_lights.o p_map.o p_maputl.o p_mobj.o p_plats.o p_pspr.o p_saveg.o p_setup.o p_sight.o p_spec.o p_switch.o p_telept.o p_tick.o p_user.o r_bsp.o r_data.o r_draw.o r_main.o r_plane.o r_segs.o r_sky.o r_things.o sha1.o sounds.o statdump.o st_lib.o st_stuff.o s_sound.o tables.o v_video.o wi_stuff.o w_checksum.o w_file.o w_main.o w_wad.o z_zone.o w_file_stdc.o i_input.o i_video.o doomgeneric.o doomgeneric_allegro.o mus2mid.o i_allegromusic.o i_allegrosound.o
++SRC_DOOM = dummy.o am_map.o doomdef.o doomstat.o dstrings.o d_event.o d_items.o d_iwad.o d_loop.o d_main.o d_mode.o d_net.o f_finale.o f_wipe.o g_game.o hu_lib.o hu_stuff.o info.o omega.o rail.o rail_ui.o rail_scroll.o i_cdmus.o i_endoom.o i_joystick.o i_scale.o i_sound.o i_system.o i_timer.o memio.o m_argv.o m_bbox.o m_cheat.o m_config.o m_controls.o m_fixed.o m_menu.o m_misc.o m_random.o p_ceilng.o p_doors.o p_enemy.o p_floor.o p_inter.o p_lights.o p_map.o p_maputl.o p_mobj.o p_plats.o p_pspr.o p_saveg.o p_setup.o p_sight.o p_spec.o p_switch.o p_telept.o p_tick.o p_user.o r_bsp.o r_data.o r_draw.o r_main.o r_plane.o r_segs.o r_sky.o r_things.o sha1.o sounds.o statdump.o st_lib.o st_stuff.o s_sound.o tables.o v_video.o wi_stuff.o w_checksum.o w_file.o w_main.o w_wad.o z_zone.o w_file_stdc.o i_input.o i_video.o doomgeneric.o doomgeneric_allegro.o mus2mid.o i_allegromusic.o i_allegrosound.o
+ OBJS += $(addprefix $(OBJDIR)/, $(SRC_DOOM))
+ 
+ all:	 $(OUTPUT)
+diff --git a/doomgeneric/Makefile.emscripten b/doomgeneric/Makefile.emscripten
+index 3517b0d..fb4ac02 100644
+--- a/doomgeneric/Makefile.emscripten
++++ b/doomgeneric/Makefile.emscripten
+@@ -19,7 +19,7 @@ LIBS+=-lm -lc $(SDL_LIBS)
+ OBJDIR=build
+ OUTPUT=doomgeneric
+ 
+-SRC_DOOM = dummy.o am_map.o doomdef.o doomstat.o dstrings.o d_event.o d_items.o d_iwad.o d_loop.o d_main.o d_mode.o d_net.o f_finale.o f_wipe.o g_game.o hu_lib.o hu_stuff.o info.o omega.o i_cdmus.o i_endoom.o i_joystick.o i_scale.o i_sound.o i_system.o i_timer.o memio.o m_argv.o m_bbox.o m_cheat.o m_config.o m_controls.o m_fixed.o m_menu.o m_misc.o m_random.o p_ceilng.o p_doors.o p_enemy.o p_floor.o p_inter.o p_lights.o p_map.o p_maputl.o p_mobj.o p_plats.o p_pspr.o p_saveg.o p_setup.o p_sight.o p_spec.o p_switch.o p_telept.o p_tick.o p_user.o r_bsp.o r_data.o r_draw.o r_main.o r_plane.o r_segs.o r_sky.o r_things.o sha1.o sounds.o statdump.o st_lib.o st_stuff.o s_sound.o tables.o v_video.o wi_stuff.o w_checksum.o w_file.o w_main.o w_wad.o z_zone.o w_file_stdc.o i_input.o i_video.o doomgeneric.o doomgeneric_emscripten.o mus2mid.o i_sdlmusic.o i_sdlsound.o
++SRC_DOOM = dummy.o am_map.o doomdef.o doomstat.o dstrings.o d_event.o d_items.o d_iwad.o d_loop.o d_main.o d_mode.o d_net.o f_finale.o f_wipe.o g_game.o hu_lib.o hu_stuff.o info.o omega.o rail.o rail_ui.o rail_scroll.o i_cdmus.o i_endoom.o i_joystick.o i_scale.o i_sound.o i_system.o i_timer.o memio.o m_argv.o m_bbox.o m_cheat.o m_config.o m_controls.o m_fixed.o m_menu.o m_misc.o m_random.o p_ceilng.o p_doors.o p_enemy.o p_floor.o p_inter.o p_lights.o p_map.o p_maputl.o p_mobj.o p_plats.o p_pspr.o p_saveg.o p_setup.o p_sight.o p_spec.o p_switch.o p_telept.o p_tick.o p_user.o r_bsp.o r_data.o r_draw.o r_main.o r_plane.o r_segs.o r_sky.o r_things.o sha1.o sounds.o statdump.o st_lib.o st_stuff.o s_sound.o tables.o v_video.o wi_stuff.o w_checksum.o w_file.o w_main.o w_wad.o z_zone.o w_file_stdc.o i_input.o i_video.o doomgeneric.o doomgeneric_emscripten.o mus2mid.o i_sdlmusic.o i_sdlsound.o
+ OBJS += $(addprefix $(OBJDIR)/, $(SRC_DOOM))
+ 
+ all:	 $(OUTPUT)
+diff --git a/doomgeneric/Makefile.freebsd b/doomgeneric/Makefile.freebsd
+index 6d25651..734835e 100644
+--- a/doomgeneric/Makefile.freebsd
++++ b/doomgeneric/Makefile.freebsd
+@@ -18,7 +18,7 @@ LIBS+=-lm -lc -lX11
+ OBJDIR=build
+ OUTPUT=doomgeneric
+ 
+-SRC_DOOM = dummy.o am_map.o doomdef.o doomstat.o dstrings.o d_event.o d_items.o d_iwad.o d_loop.o d_main.o d_mode.o d_net.o f_finale.o f_wipe.o g_game.o hu_lib.o hu_stuff.o info.o omega.o i_cdmus.o i_endoom.o i_joystick.o i_scale.o i_sound.o i_system.o i_timer.o memio.o m_argv.o m_bbox.o m_cheat.o m_config.o m_controls.o m_fixed.o m_menu.o m_misc.o m_random.o p_ceilng.o p_doors.o p_enemy.o p_floor.o p_inter.o p_lights.o p_map.o p_maputl.o p_mobj.o p_plats.o p_pspr.o p_saveg.o p_setup.o p_sight.o p_spec.o p_switch.o p_telept.o p_tick.o p_user.o r_bsp.o r_data.o r_draw.o r_main.o r_plane.o r_segs.o r_sky.o r_things.o sha1.o sounds.o statdump.o st_lib.o st_stuff.o s_sound.o tables.o v_video.o wi_stuff.o w_checksum.o w_file.o w_main.o w_wad.o z_zone.o w_file_stdc.o i_input.o i_video.o doomgeneric.o doomgeneric_xlib.o
++SRC_DOOM = dummy.o am_map.o doomdef.o doomstat.o dstrings.o d_event.o d_items.o d_iwad.o d_loop.o d_main.o d_mode.o d_net.o f_finale.o f_wipe.o g_game.o hu_lib.o hu_stuff.o info.o omega.o rail.o rail_ui.o rail_scroll.o i_cdmus.o i_endoom.o i_joystick.o i_scale.o i_sound.o i_system.o i_timer.o memio.o m_argv.o m_bbox.o m_cheat.o m_config.o m_controls.o m_fixed.o m_menu.o m_misc.o m_random.o p_ceilng.o p_doors.o p_enemy.o p_floor.o p_inter.o p_lights.o p_map.o p_maputl.o p_mobj.o p_plats.o p_pspr.o p_saveg.o p_setup.o p_sight.o p_spec.o p_switch.o p_telept.o p_tick.o p_user.o r_bsp.o r_data.o r_draw.o r_main.o r_plane.o r_segs.o r_sky.o r_things.o sha1.o sounds.o statdump.o st_lib.o st_stuff.o s_sound.o tables.o v_video.o wi_stuff.o w_checksum.o w_file.o w_main.o w_wad.o z_zone.o w_file_stdc.o i_input.o i_video.o doomgeneric.o doomgeneric_xlib.o
+ OBJS += $(addprefix $(OBJDIR)/, $(SRC_DOOM))
+ 
+ all:	 $(OUTPUT)
+diff --git a/doomgeneric/Makefile.linuxvt b/doomgeneric/Makefile.linuxvt
+index d18ac92..01913c7 100644
+--- a/doomgeneric/Makefile.linuxvt
++++ b/doomgeneric/Makefile.linuxvt
+@@ -21,7 +21,7 @@ LIBS+=-lm -lc
+ OBJDIR=build
+ OUTPUT=doomgeneric
+ 
+-SRC_DOOM = dummy.o am_map.o doomdef.o doomstat.o dstrings.o d_event.o d_items.o d_iwad.o d_loop.o d_main.o d_mode.o d_net.o f_finale.o f_wipe.o g_game.o hu_lib.o hu_stuff.o info.o omega.o i_cdmus.o i_endoom.o i_joystick.o i_scale.o i_sound.o i_system.o i_timer.o memio.o m_argv.o m_bbox.o m_cheat.o m_config.o m_controls.o m_fixed.o m_menu.o m_misc.o m_random.o p_ceilng.o p_doors.o p_enemy.o p_floor.o p_inter.o p_lights.o p_map.o p_maputl.o p_mobj.o p_plats.o p_pspr.o p_saveg.o p_setup.o p_sight.o p_spec.o p_switch.o p_telept.o p_tick.o p_user.o r_bsp.o r_data.o r_draw.o r_main.o r_plane.o r_segs.o r_sky.o r_things.o sha1.o sounds.o statdump.o st_lib.o st_stuff.o s_sound.o tables.o v_video.o wi_stuff.o w_checksum.o w_file.o w_main.o w_wad.o z_zone.o w_file_stdc.o i_input.o i_video.o doomgeneric.o doomgeneric_linuxvt.o mus2mid.o
++SRC_DOOM = dummy.o am_map.o doomdef.o doomstat.o dstrings.o d_event.o d_items.o d_iwad.o d_loop.o d_main.o d_mode.o d_net.o f_finale.o f_wipe.o g_game.o hu_lib.o hu_stuff.o info.o omega.o rail.o rail_ui.o rail_scroll.o i_cdmus.o i_endoom.o i_joystick.o i_scale.o i_sound.o i_system.o i_timer.o memio.o m_argv.o m_bbox.o m_cheat.o m_config.o m_controls.o m_fixed.o m_menu.o m_misc.o m_random.o p_ceilng.o p_doors.o p_enemy.o p_floor.o p_inter.o p_lights.o p_map.o p_maputl.o p_mobj.o p_plats.o p_pspr.o p_saveg.o p_setup.o p_sight.o p_spec.o p_switch.o p_telept.o p_tick.o p_user.o r_bsp.o r_data.o r_draw.o r_main.o r_plane.o r_segs.o r_sky.o r_things.o sha1.o sounds.o statdump.o st_lib.o st_stuff.o s_sound.o tables.o v_video.o wi_stuff.o w_checksum.o w_file.o w_main.o w_wad.o z_zone.o w_file_stdc.o i_input.o i_video.o doomgeneric.o doomgeneric_linuxvt.o mus2mid.o
+ OBJS += $(addprefix $(OBJDIR)/, $(SRC_DOOM))
+ 
+ all:	 $(OUTPUT)
+diff --git a/doomgeneric/Makefile.sdl b/doomgeneric/Makefile.sdl
+index 4566064..de6cd81 100644
+--- a/doomgeneric/Makefile.sdl
++++ b/doomgeneric/Makefile.sdl
+@@ -25,7 +25,7 @@ LIBS+=-lm -lc $(SDL_LIBS)
+ OBJDIR=build
+ OUTPUT=doomgeneric
+ 
+-SRC_DOOM = dummy.o am_map.o doomdef.o doomstat.o dstrings.o d_event.o d_items.o d_iwad.o d_loop.o d_main.o d_mode.o d_net.o f_finale.o f_wipe.o g_game.o hu_lib.o hu_stuff.o info.o omega.o i_cdmus.o i_endoom.o i_joystick.o i_scale.o i_sound.o i_system.o i_timer.o memio.o m_argv.o m_bbox.o m_cheat.o m_config.o m_controls.o m_fixed.o m_menu.o m_misc.o m_random.o p_ceilng.o p_doors.o p_enemy.o p_floor.o p_inter.o p_lights.o p_map.o p_maputl.o p_mobj.o p_plats.o p_pspr.o p_saveg.o p_setup.o p_sight.o p_spec.o p_switch.o p_telept.o p_tick.o p_user.o r_bsp.o r_data.o r_draw.o r_main.o r_plane.o r_segs.o r_sky.o r_things.o sha1.o sounds.o statdump.o st_lib.o st_stuff.o s_sound.o tables.o v_video.o wi_stuff.o w_checksum.o w_file.o w_main.o w_wad.o z_zone.o w_file_stdc.o i_input.o i_video.o doomgeneric.o doomgeneric_sdl.o mus2mid.o i_sdlmusic.o i_sdlsound.o
++SRC_DOOM = dummy.o am_map.o doomdef.o doomstat.o dstrings.o d_event.o d_items.o d_iwad.o d_loop.o d_main.o d_mode.o d_net.o f_finale.o f_wipe.o g_game.o hu_lib.o hu_stuff.o info.o omega.o rail.o rail_ui.o rail_scroll.o i_cdmus.o i_endoom.o i_joystick.o i_scale.o i_sound.o i_system.o i_timer.o memio.o m_argv.o m_bbox.o m_cheat.o m_config.o m_controls.o m_fixed.o m_menu.o m_misc.o m_random.o p_ceilng.o p_doors.o p_enemy.o p_floor.o p_inter.o p_lights.o p_map.o p_maputl.o p_mobj.o p_plats.o p_pspr.o p_saveg.o p_setup.o p_sight.o p_spec.o p_switch.o p_telept.o p_tick.o p_user.o r_bsp.o r_data.o r_draw.o r_main.o r_plane.o r_segs.o r_sky.o r_things.o sha1.o sounds.o statdump.o st_lib.o st_stuff.o s_sound.o tables.o v_video.o wi_stuff.o w_checksum.o w_file.o w_main.o w_wad.o z_zone.o w_file_stdc.o i_input.o i_video.o doomgeneric.o doomgeneric_sdl.o mus2mid.o i_sdlmusic.o i_sdlsound.o
+ OBJS += $(addprefix $(OBJDIR)/, $(SRC_DOOM))
+ 
+ all:	 $(OUTPUT)
+diff --git a/doomgeneric/Makefile.soso b/doomgeneric/Makefile.soso
+index 1996280..3863cd0 100644
+--- a/doomgeneric/Makefile.soso
++++ b/doomgeneric/Makefile.soso
+@@ -22,7 +22,7 @@ LIBS+=
+ OBJDIR=build
+ OUTPUT=fbdoom
+ 
+-SRC_DOOM = dummy.o am_map.o doomdef.o doomstat.o dstrings.o d_event.o d_items.o d_iwad.o d_loop.o d_main.o d_mode.o d_net.o f_finale.o f_wipe.o g_game.o hu_lib.o hu_stuff.o info.o omega.o i_cdmus.o i_endoom.o i_joystick.o i_scale.o i_sound.o i_system.o i_timer.o memio.o m_argv.o m_bbox.o m_cheat.o m_config.o m_controls.o m_fixed.o m_menu.o m_misc.o m_random.o p_ceilng.o p_doors.o p_enemy.o p_floor.o p_inter.o p_lights.o p_map.o p_maputl.o p_mobj.o p_plats.o p_pspr.o p_saveg.o p_setup.o p_sight.o p_spec.o p_switch.o p_telept.o p_tick.o p_user.o r_bsp.o r_data.o r_draw.o r_main.o r_plane.o r_segs.o r_sky.o r_things.o sha1.o sounds.o statdump.o st_lib.o st_stuff.o s_sound.o tables.o v_video.o wi_stuff.o w_checksum.o w_file.o w_main.o w_wad.o z_zone.o w_file_stdc.o i_input.o i_video.o doomgeneric.o doomgeneric_soso.o
++SRC_DOOM = dummy.o am_map.o doomdef.o doomstat.o dstrings.o d_event.o d_items.o d_iwad.o d_loop.o d_main.o d_mode.o d_net.o f_finale.o f_wipe.o g_game.o hu_lib.o hu_stuff.o info.o omega.o rail.o rail_ui.o rail_scroll.o i_cdmus.o i_endoom.o i_joystick.o i_scale.o i_sound.o i_system.o i_timer.o memio.o m_argv.o m_bbox.o m_cheat.o m_config.o m_controls.o m_fixed.o m_menu.o m_misc.o m_random.o p_ceilng.o p_doors.o p_enemy.o p_floor.o p_inter.o p_lights.o p_map.o p_maputl.o p_mobj.o p_plats.o p_pspr.o p_saveg.o p_setup.o p_sight.o p_spec.o p_switch.o p_telept.o p_tick.o p_user.o r_bsp.o r_data.o r_draw.o r_main.o r_plane.o r_segs.o r_sky.o r_things.o sha1.o sounds.o statdump.o st_lib.o st_stuff.o s_sound.o tables.o v_video.o wi_stuff.o w_checksum.o w_file.o w_main.o w_wad.o z_zone.o w_file_stdc.o i_input.o i_video.o doomgeneric.o doomgeneric_soso.o
+ OBJS += $(addprefix $(OBJDIR)/, $(SRC_DOOM))
+ 
+ all:	 $(OUTPUT)
+diff --git a/doomgeneric/Makefile.sosox b/doomgeneric/Makefile.sosox
+index 62db4c4..6eb2d15 100644
+--- a/doomgeneric/Makefile.sosox
++++ b/doomgeneric/Makefile.sosox
+@@ -22,7 +22,7 @@ LIBS+=-L../../microwindows/src/lib -lnano-X
+ OBJDIR=build
+ OUTPUT=doom
+ 
+-SRC_DOOM = dummy.o am_map.o doomdef.o doomstat.o dstrings.o d_event.o d_items.o d_iwad.o d_loop.o d_main.o d_mode.o d_net.o f_finale.o f_wipe.o g_game.o hu_lib.o hu_stuff.o info.o omega.o i_cdmus.o i_endoom.o i_joystick.o i_scale.o i_sound.o i_system.o i_timer.o memio.o m_argv.o m_bbox.o m_cheat.o m_config.o m_controls.o m_fixed.o m_menu.o m_misc.o m_random.o p_ceilng.o p_doors.o p_enemy.o p_floor.o p_inter.o p_lights.o p_map.o p_maputl.o p_mobj.o p_plats.o p_pspr.o p_saveg.o p_setup.o p_sight.o p_spec.o p_switch.o p_telept.o p_tick.o p_user.o r_bsp.o r_data.o r_draw.o r_main.o r_plane.o r_segs.o r_sky.o r_things.o sha1.o sounds.o statdump.o st_lib.o st_stuff.o s_sound.o tables.o v_video.o wi_stuff.o w_checksum.o w_file.o w_main.o w_wad.o z_zone.o w_file_stdc.o i_input.o i_video.o doomgeneric.o doomgeneric_sosox.o
++SRC_DOOM = dummy.o am_map.o doomdef.o doomstat.o dstrings.o d_event.o d_items.o d_iwad.o d_loop.o d_main.o d_mode.o d_net.o f_finale.o f_wipe.o g_game.o hu_lib.o hu_stuff.o info.o omega.o rail.o rail_ui.o rail_scroll.o i_cdmus.o i_endoom.o i_joystick.o i_scale.o i_sound.o i_system.o i_timer.o memio.o m_argv.o m_bbox.o m_cheat.o m_config.o m_controls.o m_fixed.o m_menu.o m_misc.o m_random.o p_ceilng.o p_doors.o p_enemy.o p_floor.o p_inter.o p_lights.o p_map.o p_maputl.o p_mobj.o p_plats.o p_pspr.o p_saveg.o p_setup.o p_sight.o p_spec.o p_switch.o p_telept.o p_tick.o p_user.o r_bsp.o r_data.o r_draw.o r_main.o r_plane.o r_segs.o r_sky.o r_things.o sha1.o sounds.o statdump.o st_lib.o st_stuff.o s_sound.o tables.o v_video.o wi_stuff.o w_checksum.o w_file.o w_main.o w_wad.o z_zone.o w_file_stdc.o i_input.o i_video.o doomgeneric.o doomgeneric_sosox.o
+ OBJS += $(addprefix $(OBJDIR)/, $(SRC_DOOM))
+ 
+ all:	 $(OUTPUT)
+diff --git a/doomgeneric/Makefile.win b/doomgeneric/Makefile.win
+index 8aa78e9..ae53dc3 100644
+--- a/doomgeneric/Makefile.win
++++ b/doomgeneric/Makefile.win
+@@ -22,7 +22,7 @@ LIBS+=-lm -lgdi32
+ OBJDIR=build
+ OUTPUT=doomgeneric.exe
+ 
+-SRC_DOOM = dummy.o am_map.o doomdef.o doomstat.o dstrings.o d_event.o d_items.o d_iwad.o d_loop.o d_main.o d_mode.o d_net.o f_finale.o f_wipe.o g_game.o hu_lib.o hu_stuff.o info.o omega.o i_cdmus.o i_endoom.o i_joystick.o i_scale.o i_sound.o i_system.o i_timer.o memio.o m_argv.o m_bbox.o m_cheat.o m_config.o m_controls.o m_fixed.o m_menu.o m_misc.o m_random.o p_ceilng.o p_doors.o p_enemy.o p_floor.o p_inter.o p_lights.o p_map.o p_maputl.o p_mobj.o p_plats.o p_pspr.o p_saveg.o p_setup.o p_sight.o p_spec.o p_switch.o p_telept.o p_tick.o p_user.o r_bsp.o r_data.o r_draw.o r_main.o r_plane.o r_segs.o r_sky.o r_things.o sha1.o sounds.o statdump.o st_lib.o st_stuff.o s_sound.o tables.o v_video.o wi_stuff.o w_checksum.o w_file.o w_main.o w_wad.o z_zone.o w_file_stdc.o i_input.o i_video.o doomgeneric.o doomgeneric_win.o
++SRC_DOOM = dummy.o am_map.o doomdef.o doomstat.o dstrings.o d_event.o d_items.o d_iwad.o d_loop.o d_main.o d_mode.o d_net.o f_finale.o f_wipe.o g_game.o hu_lib.o hu_stuff.o info.o omega.o rail.o rail_ui.o rail_scroll.o i_cdmus.o i_endoom.o i_joystick.o i_scale.o i_sound.o i_system.o i_timer.o memio.o m_argv.o m_bbox.o m_cheat.o m_config.o m_controls.o m_fixed.o m_menu.o m_misc.o m_random.o p_ceilng.o p_doors.o p_enemy.o p_floor.o p_inter.o p_lights.o p_map.o p_maputl.o p_mobj.o p_plats.o p_pspr.o p_saveg.o p_setup.o p_sight.o p_spec.o p_switch.o p_telept.o p_tick.o p_user.o r_bsp.o r_data.o r_draw.o r_main.o r_plane.o r_segs.o r_sky.o r_things.o sha1.o sounds.o statdump.o st_lib.o st_stuff.o s_sound.o tables.o v_video.o wi_stuff.o w_checksum.o w_file.o w_main.o w_wad.o z_zone.o w_file_stdc.o i_input.o i_video.o doomgeneric.o doomgeneric_win.o
+ OBJS += $(addprefix $(OBJDIR)/, $(SRC_DOOM))
+ 
+ all:	 $(OUTPUT)
+diff --git a/doomgeneric/d_main.c b/doomgeneric/d_main.c
+index 0cfa8df..a71d566 100644
+--- a/doomgeneric/d_main.c
++++ b/doomgeneric/d_main.c
+@@ -21,6 +21,7 @@
+ 
+ 
+ #include "omega.h"
++#include "rail.h"
+ #include <ctype.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+@@ -1759,6 +1760,14 @@ void D_DoomMain (void)
+     }
+ 
+     Omega_Init();
++    Rail_Init();
++    if (M_CheckParm("-express"))
++    {
++        startepisode = 1;
++        startmap = 9;
++        startloadgame = -1;
++        autostart = true;
++    }
+     DEH_printf("M_Init: Init miscellaneous info.\n");
+     M_Init ();
+ 
+diff --git a/doomgeneric/g_game.c b/doomgeneric/g_game.c
+index 4510920..40d3fe8 100644
+--- a/doomgeneric/g_game.c
++++ b/doomgeneric/g_game.c
+@@ -18,6 +18,7 @@
+ 
+ 
+ #include "omega.h"
++#include "rail.h"
+ #include <string.h>
+ #include <stdlib.h>
+ #include <math.h>
+@@ -1541,6 +1542,7 @@ char	savename[256];
+ 
+ void G_LoadGame (char* name) 
+ { 
++    if (Rail_BlockSave()) return;
+     M_StringCopy(savename, name, sizeof(savename));
+     gameaction = ga_loadgame; 
+ } 
+@@ -1605,6 +1607,7 @@ G_SaveGame
+ ( int	slot,
+   char*	description )
+ {
++    if (Rail_BlockSave()) return;
+     savegameslot = slot;
+     M_StringCopy(savedescription, description, sizeof(savedescription));
+     sendsave = true;
+@@ -1616,6 +1619,7 @@ void G_DoSaveGame (void)
+     char *temp_savegame_file;
+     char *recovery_savegame_file;
+ 
++    if (Rail_BlockSave()) { gameaction = ga_nothing; return; }
+     recovery_savegame_file = NULL;
+     temp_savegame_file = P_TempSaveGameFile();
+     savegame_file = P_SaveGameFile(savegameslot);
+diff --git a/doomgeneric/hu_stuff.c b/doomgeneric/hu_stuff.c
+index 2451c3a..c30aecc 100644
+--- a/doomgeneric/hu_stuff.c
++++ b/doomgeneric/hu_stuff.c
+@@ -45,6 +45,8 @@
+ // Locally used constants, shortcuts.
+ //
+ #include "omega.h"
++#include "rail.h"
++#include "rail_ui.h"
+ 
+ static char *omega_titles[] = {
+     "E1M1: The Loading Bay", "E1M2: Pressure Test", "E1M3: Split Shift",
+@@ -368,6 +370,8 @@ void HU_Start(void)
+         s = HU_TITLE_CHEX;
+     }
+ 
++    if (Rail_Active()) s = "E1M9: Midnight Barrel Express";
++
+     // dehacked substitution to get modified level name
+ 
+     s = DEH_String(s);
+@@ -392,6 +396,7 @@ void HU_Start(void)
+ void HU_Drawer(void)
+ {
+ 
++    if (Rail_Active()) Rail_Draw();
+     HUlib_drawSText(&w_message);
+     HUlib_drawIText(&w_chat);
+     if (automapactive)
+diff --git a/doomgeneric/info.c b/doomgeneric/info.c
+index a6f9d18..f104461 100644
+--- a/doomgeneric/info.c
++++ b/doomgeneric/info.c
+@@ -43,7 +43,7 @@ char *sprnames[] = {
+     "POL3","POL1","POL6","GOR2","GOR3","GOR4","GOR5","SMIT","COL1","COL2",
+     "COL3","COL4","CAND","CBRA","COL6","TRE1","TRE2","ELEC","CEYE","FSKU",
+     "COL5","TBLU","TGRN","TRED","SMBT","SMGT","SMRT","HDB1","HDB2","HDB3",
+-    "HDB4","HDB5","HDB6","POB1","POB2","BRS1","TLMP","TLP2","MINI","HUSK","OMEG", NULL
++    "HDB4","HDB5","HDB6","POB1","POB2","BRS1","TLMP","TLP2","MINI","HUSK","OMEG","COND","BRAK","BRKM", NULL
+ };
+ 
+ 
+diff --git a/doomgeneric/info.h b/doomgeneric/info.h
+index fa8b2fb..2ace9c8 100644
+--- a/doomgeneric/info.h
++++ b/doomgeneric/info.h
+@@ -164,7 +164,7 @@ typedef enum
+     SPR_BRS1,
+     SPR_TLMP,
+     SPR_TLP2,
+-    SPR_MINI, SPR_HUSK, SPR_OMEG,
++    SPR_MINI, SPR_HUSK, SPR_OMEG, SPR_COND, SPR_BRAK, SPR_BRKM,
+     NUMSPRITES
+ 
+ } spritenum_t;
+@@ -1143,7 +1143,8 @@ typedef enum
+     S_OMEGA_HUSK = S_OMEGA_MINI + 13,
+     S_OMEGA_BOSS = S_OMEGA_HUSK + 13,
+     S_OMEGA_DRUM_BREAK = S_OMEGA_BOSS + 13,
+-    NUMSTATES = S_OMEGA_DRUM_BREAK + 6
++    S_RAIL_COND = S_OMEGA_DRUM_BREAK + 6, S_RAIL_BRAKE = S_RAIL_COND + 8,
++    S_RAIL_CREW = S_RAIL_BRAKE + 3, S_RAIL_IDLE_CREW = S_RAIL_CREW + 8, NUMSTATES
+ } statenum_t;
+ 
+ 
+@@ -1302,6 +1303,7 @@ typedef enum {
+     MT_MISC86,
+     MT_OMEGA_MINI, MT_OMEGA_SHOTMINI, MT_OMEGA_HEIR_MINI,
+     MT_OMEGA_HUSK, MT_OMEGA_HEIR_HUSK, MT_OMEGA_BOSS, MT_OMEGA_DRUM,
++    MT_RAIL_COND, MT_RAIL_HANDLE, MT_RAIL_CREW, MT_RAIL_GUNNER,
+     NUMMOBJTYPES
+ 
+ } mobjtype_t;
+diff --git a/doomgeneric/m_menu.c b/doomgeneric/m_menu.c
+index 6df9655..fd1bb0b 100644
+--- a/doomgeneric/m_menu.c
++++ b/doomgeneric/m_menu.c
+@@ -52,6 +52,7 @@
+ #include "s_sound.h"
+ 
+ #include "doomstat.h"
++#include "rail.h"
+ 
+ // Data.
+ #include "sounds.h"
+@@ -584,6 +585,11 @@ void M_LoadSelect(int choice)
+ //
+ void M_LoadGame (int choice)
+ {
++    if (Rail_BlockSave())
++    {
++        M_StartMessage("USE A VM CHECKPOINT FOR THIS TRAIN.",NULL,false);
++        return;
++    }
+     if (netgame)
+     {
+ 	M_StartMessage(DEH_String(LOADNET),NULL,false);
+@@ -649,6 +655,11 @@ void M_SaveSelect(int choice)
+ //
+ void M_SaveGame (int choice)
+ {
++    if (Rail_BlockSave())
++    {
++        M_StartMessage("USE A VM CHECKPOINT FOR THIS TRAIN.",NULL,false);
++        return;
++    }
+     if (!usergame)
+     {
+ 	M_StartMessage(DEH_String(SAVEDEAD),NULL,false);
+@@ -680,6 +691,11 @@ void M_QuickSaveResponse(int key)
+ 
+ void M_QuickSave(void)
+ {
++    if (Rail_BlockSave())
++    {
++        M_StartMessage("USE A VM CHECKPOINT FOR THIS TRAIN.",NULL,false);
++        return;
++    }
+     if (!usergame)
+     {
+ 	S_StartSound(NULL,sfx_oof);
+@@ -718,6 +734,11 @@ void M_QuickLoadResponse(int key)
+ 
+ void M_QuickLoad(void)
+ {
++    if (Rail_BlockSave())
++    {
++        M_StartMessage("USE A VM CHECKPOINT FOR THIS TRAIN.",NULL,false);
++        return;
++    }
+     if (netgame)
+     {
+ 	M_StartMessage(DEH_String(QLOADNET),NULL,false);
+diff --git a/doomgeneric/p_inter.c b/doomgeneric/p_inter.c
+index 5c728e0..8adfa46 100644
+--- a/doomgeneric/p_inter.c
++++ b/doomgeneric/p_inter.c
+@@ -21,6 +21,7 @@
+ 
+ // Data.
+ #include "omega.h"
++#include "rail.h"
+ #include "doomdef.h"
+ #include "dstrings.h"
+ #include "sounds.h"
+@@ -741,6 +742,7 @@ P_KillMobj
+     // during the death frame of a thing.
+     switch (target->type)
+     {
++      case MT_RAIL_CREW:
+       case MT_OMEGA_MINI:
+       case MT_OMEGA_HEIR_MINI:
+       case MT_WOLFSS:
+@@ -748,6 +750,7 @@ P_KillMobj
+ 	item = MT_CLIP;
+ 	break;
+ 	
++      case MT_RAIL_GUNNER:
+       case MT_OMEGA_SHOTMINI:
+       case MT_SHOTGUY:
+ 	item = MT_SHOTGUN;
+@@ -792,6 +795,7 @@ P_DamageMobj
+     fixed_t	thrust;
+     int		temp;
+ 	
++    if (Rail_Active() && Rail_Phase() >= RAIL_BRAKE) return;
+     if ( !(target->flags & MF_SHOOTABLE) )
+ 	return;	// shouldn't happen...
+ 		
+diff --git a/doomgeneric/p_mobj.c b/doomgeneric/p_mobj.c
+index d93b4d7..66911e0 100644
+--- a/doomgeneric/p_mobj.c
++++ b/doomgeneric/p_mobj.c
+@@ -17,6 +17,7 @@
+ //
+ 
+ #include "omega.h"
++#include "rail.h"
+ #include <stdio.h>
+ 
+ #include "i_system.h"
+@@ -480,7 +481,8 @@ void P_MobjThinker (mobj_t* mobj)
+ 	if (! (mobj->flags & MF_COUNTKILL) )
+ 	    return;
+ 
+-	if (!respawnmonsters || Omega_NoRespawn(mobj->type))
++	if (!respawnmonsters || Omega_NoRespawn(mobj->type)
++            || mobj->type == MT_RAIL_CREW || mobj->type == MT_RAIL_GUNNER)
+ 	    return;
+ 
+ 	mobj->movecount++;
+@@ -800,7 +802,9 @@ void P_SpawnMapThing (mapthing_t* mthing)
+ 		 mthing->type,
+ 		 mthing->x, mthing->y);
+ 		
+-    i = Omega_MapActor(i,mthing);
++    if (Rail_Active() && i == MT_POSSESSED) i = MT_RAIL_CREW;
++    else if (Rail_Active() && i == MT_SHOTGUY) i = MT_RAIL_GUNNER;
++    else i = Omega_MapActor(i,mthing);
+ 
+     // don't spawn keycards and players in deathmatch
+     if (deathmatch && mobjinfo[i].flags & MF_NOTDMATCH)
+diff --git a/doomgeneric/p_setup.c b/doomgeneric/p_setup.c
+index 00306e8..022c733 100644
+--- a/doomgeneric/p_setup.c
++++ b/doomgeneric/p_setup.c
+@@ -35,6 +35,7 @@
+ 
+ #include "doomdef.h"
+ #include "p_local.h"
++#include "rail.h"
+ 
+ #include "s_sound.h"
+ 
+@@ -827,6 +828,7 @@ P_SetupLevel
+ 	
+     // set up world state
+     P_SpawnSpecials ();
++    Rail_LevelStart();
+ 	
+     // build subsector connect matrix
+     //	UNUSED P_ConnectSubsectors ();
+diff --git a/doomgeneric/p_tick.c b/doomgeneric/p_tick.c
+index 2289350..891354a 100644
+--- a/doomgeneric/p_tick.c
++++ b/doomgeneric/p_tick.c
+@@ -20,6 +20,7 @@
+ 
+ #include "z_zone.h"
+ #include "p_local.h"
++#include "rail.h"
+ 
+ #include "doomstat.h"
+ 
+@@ -143,6 +144,7 @@ void P_Ticker (void)
+ 	    P_PlayerThink (&players[i]);
+ 			
+     P_RunThinkers ();
++    Rail_Ticker();
+     P_UpdateSpecials ();
+     P_RespawnSpecials ();
+ 
+diff --git a/doomgeneric/p_user.c b/doomgeneric/p_user.c
+index 73c0dc9..6d09e58 100644
+--- a/doomgeneric/p_user.c
++++ b/doomgeneric/p_user.c
+@@ -25,6 +25,7 @@
+ #include "d_event.h"
+ 
+ #include "p_local.h"
++#include "rail.h"
+ 
+ #include "doomstat.h"
+ 
+@@ -254,6 +255,8 @@ void P_PlayerThink (player_t* player)
+ 	return;
+     }
+     
++    Rail_CabControls(player);
++
+     // Move around.
+     // Reactiontime is used to prevent movement
+     //  for a bit after a teleport.
+diff --git a/doomgeneric/r_plane.c b/doomgeneric/r_plane.c
+index ea1611c..779c564 100644
+--- a/doomgeneric/r_plane.c
++++ b/doomgeneric/r_plane.c
+@@ -31,6 +31,9 @@
+ 
+ #include "r_local.h"
+ #include "r_sky.h"
++#include "rail_scroll.h"
++
++static fixed_t rail_planeoffset;
+ 
+ 
+ 
+@@ -148,7 +151,7 @@ R_MapPlane
+     length = FixedMul (distance,distscale[x1]);
+     angle = (viewangle + xtoviewangle[x1])>>ANGLETOFINESHIFT;
+     ds_xfrac = viewx + FixedMul(finecosine[angle], length);
+-    ds_yfrac = -viewy - FixedMul(finesine[angle], length);
++    ds_yfrac = -viewy - FixedMul(finesine[angle], length) - rail_planeoffset;
+ 
+     if (fixedcolormap)
+ 	ds_colormap = fixedcolormap;
+@@ -414,6 +417,7 @@ void R_DrawPlanes (void)
+ 	}
+ 	
+ 	// regular flat
++        rail_planeoffset = RailScroll_FlatOffset(pl->picnum);
+         lumpnum = firstflat + flattranslation[pl->picnum];
+ 	ds_source = W_CacheLumpNum(lumpnum, PU_STATIC);
+ 	
+diff --git a/doomgeneric/rail.c b/doomgeneric/rail.c
+new file mode 100644
+index 0000000..e0614c2
+--- /dev/null
++++ b/doomgeneric/rail.c
+@@ -0,0 +1,306 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++// Midnight Barrel Express. Speeds are meters/second; integrate at 35 Hz.
++#include <math.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include "rail.h"
++#include "rail_scroll.h"
++#include "doomstat.h"
++#include "p_local.h"
++#include "omega.h"
++#include "m_argv.h"
++#include "i_system.h"
++#include "w_wad.h"
++#include "s_sound.h"
++#include "sounds.h"
++#include "g_game.h"
++
++extern void A_Look(mobj_t *);
++extern void A_Chase(mobj_t *);
++extern void A_FaceTarget(mobj_t *);
++extern void A_Pain(mobj_t *);
++extern void A_Fall(mobj_t *);
++extern void A_PosAttack(mobj_t *);
++
++enum { START_METERS = 220, ZONE = 13, INITIAL_SPEED = 20, UNITS_PER_METER = 20 };
++static const double deceleration = 1.20;
++static const int panels[2][2]={{-84,-272},{84,160}};
++static int enabled;
++static struct {
++    int phase, locks[2], attempts, braking, use_held, require_release, chuff, hiss, end_ticks;
++    double speed, distance, travel;
++    mobj_t *handle, *conductor;
++} line;
++
++int Rail_Active(void) { return enabled && omega_mode && gameepisode == 1 && gamemap == 9 && gamemission == doom; }
++int Rail_Phase(void) { return line.phase; }
++int Rail_TicketReady(void) { return line.phase==RAIL_PARKED && line.end_ticks==0; }
++int Rail_Interlock(int i) { return i>=0 && i<2 && line.locks[i]; }
++int Rail_Speed(void) { return (int)ceil(line.speed*3.6-0.00001); }
++int Rail_Distance(void)
++{
++    // A stop just outside the zone must display outside it on the verdict.
++    if (line.phase==RAIL_OVER) return (int)floor(line.distance);
++    if (line.phase==RAIL_SHORT) return (int)ceil(line.distance);
++    return line.distance>=0 ? (int)(line.distance+0.5):(int)(line.distance-0.5);
++}
++int Rail_Zone(void) { return ZONE; }
++int Rail_StopDistance(void) { return (int)(line.speed*line.speed/(2*deceleration)+0.5); }
++int Rail_Braking(void) { return line.braking; }
++int Rail_Travel(void) { return (int)line.travel; }
++int Rail_Attempts(void) { return line.attempts; }
++int Rail_CabX(void) { return 0; }
++int Rail_CabY(void) { return 726; }
++int Rail_LeverX(int i) { return i>=0 && i<2 ? panels[i][0] : 0; }
++int Rail_LeverY(int i) { return i>=0 && i<2 ? panels[i][1] : 0; }
++
++int Rail_BlockSave(void)
++{
++    if (!Rail_Active()) return 0;
++    players[consoleplayer].message = "USE A VM CHECKPOINT FOR THIS TRAIN.";
++    return 1;
++}
++
++static void state(int id, int sprite, int frame, int ticks, void (*act)(mobj_t *), int next)
++{
++    states[id] = (state_t){sprite,frame,ticks,{NULL},next,0,0};
++    states[id].action.acp1 = (actionf_p1)act;
++}
++
++static void assets(const char *sprite,int count)
++{
++    char name[9];
++    int i;
++    for (i=0;i<count;++i)
++    {
++        snprintf(name,sizeof(name),"%s%c0",sprite,'A'+i);
++        if (W_CheckNumForName(name)<0) I_Error("-express: missing %s from rail IWAD",name);
++    }
++}
++
++void Rail_Init(void)
++{
++    static char sounds[][9] = {"DSRWHIST","DSRLOCK","DSRBRAKE","DSRBELL","DSRWHEEL"};
++    int i;
++    enabled = M_CheckParm("-express") != 0;
++    if (!enabled) return;
++    if (!omega_mode) I_Error("-express requires -omega");
++    assets("COND",8);
++    assets("BRAK",3);
++    assets("BRKM",6);
++    for (i=0;i<(int)arrlen(sounds);++i)
++        if (W_CheckNumForName(sounds[i])<0) I_Error("-express: missing %s from rail IWAD",sounds[i]);
++
++    for (i=0;i<8;++i)
++        state(S_RAIL_COND+i,SPR_COND,i,-1,NULL,S_RAIL_COND+i);
++    state(S_RAIL_COND,SPR_COND,0,22,NULL,S_RAIL_COND+1);
++    state(S_RAIL_COND+1,SPR_COND,1,14,NULL,S_RAIL_COND+2);
++    state(S_RAIL_COND+2,SPR_COND,2,14,NULL,S_RAIL_COND);
++    state(S_RAIL_COND+3,SPR_COND,3,24,NULL,S_RAIL_COND);
++    state(S_RAIL_COND+4,SPR_COND,4,8,NULL,S_RAIL_COND+5);
++    state(S_RAIL_COND+5,SPR_COND,5,12,NULL,S_RAIL_COND+6);
++    for (i=0;i<3;++i)
++        state(S_RAIL_BRAKE+i,SPR_BRAK,i,-1,NULL,S_RAIL_BRAKE+i);
++    state(S_RAIL_CREW,SPR_BRKM,0,10,A_Look,S_RAIL_CREW);
++    state(S_RAIL_CREW+1,SPR_BRKM,0,5,A_Chase,S_RAIL_CREW+2);
++    state(S_RAIL_CREW+2,SPR_BRKM,1,5,A_Chase,S_RAIL_CREW+1);
++    state(S_RAIL_CREW+3,SPR_BRKM,2,12,A_FaceTarget,S_RAIL_CREW+4);
++    state(S_RAIL_CREW+4,SPR_BRKM,2|FF_FULLBRIGHT,16,A_PosAttack,S_RAIL_CREW+1);
++    state(S_RAIL_CREW+5,SPR_BRKM,3,4,A_Pain,S_RAIL_CREW+1);
++    state(S_RAIL_CREW+6,SPR_BRKM,4,6,A_Fall,S_RAIL_CREW+7);
++    state(S_RAIL_CREW+7,SPR_BRKM,5,-1,NULL,S_RAIL_CREW+7);
++    state(S_RAIL_IDLE_CREW,SPR_BRKM,0,-1,NULL,S_RAIL_IDLE_CREW);
++
++    mobjinfo[MT_RAIL_COND] = mobjinfo[MT_MISC0];
++    mobjinfo[MT_RAIL_COND].doomednum=-1;
++    mobjinfo[MT_RAIL_COND].spawnstate=S_RAIL_COND;
++    mobjinfo[MT_RAIL_COND].flags=MF_NOBLOCKMAP;
++    mobjinfo[MT_RAIL_COND].height=43*FRACUNIT;
++    mobjinfo[MT_RAIL_HANDLE] = mobjinfo[MT_RAIL_COND];
++    mobjinfo[MT_RAIL_HANDLE].spawnstate=S_RAIL_BRAKE;
++    mobjinfo[MT_RAIL_CREW] = mobjinfo[MT_OMEGA_MINI];
++    mobjinfo[MT_RAIL_CREW].spawnhealth=18;
++    mobjinfo[MT_RAIL_CREW].speed=6;
++    mobjinfo[MT_RAIL_CREW].spawnstate=S_RAIL_CREW;
++    mobjinfo[MT_RAIL_CREW].seestate=S_RAIL_CREW+1;
++    mobjinfo[MT_RAIL_CREW].painstate=S_RAIL_CREW+5;
++    mobjinfo[MT_RAIL_CREW].missilestate=S_RAIL_CREW+3;
++    mobjinfo[MT_RAIL_CREW].deathstate=S_RAIL_CREW+6;
++    mobjinfo[MT_RAIL_GUNNER]=mobjinfo[MT_RAIL_CREW];
++}
++
++void Rail_LevelStart(void)
++{
++    memset(&line,0,sizeof(line));
++    if (!Rail_Active()) return;
++    line.speed=INITIAL_SPEED;
++    line.distance=START_METERS;
++    line.handle=P_SpawnMobj(Rail_CabX()*FRACUNIT,Rail_CabY()*FRACUNIT,ONFLOORZ,MT_RAIL_HANDLE);
++    line.conductor=P_SpawnMobj(40*FRACUNIT,744*FRACUNIT,ONFLOORZ,MT_RAIL_COND);
++    RailScroll_Update(0);
++    S_StartSound(NULL,sfx_rwhist);
++    printf("RAIL: departure, 72 km/h; two open interlocks\n");
++}
++
++void Rail_CabControls(player_t *p)
++{
++    if (!Rail_Active() || line.phase<RAIL_BRAKE) return;
++    // The brake is a fixed workstation; let the operator look around.
++    p->cmd.forwardmove=p->cmd.sidemove=0;
++    p->mo->momx=p->mo->momy=0;
++    p->cmd.buttons &= ~BT_ATTACK;
++    p->psprites[ps_weapon].state=p->psprites[ps_flash].state=NULL;
++}
++
++static int reachable(mobj_t *p,int x,int y)
++{
++    fixed_t dx=x*FRACUNIT-p->x,dy=y*FRACUNIT-p->y;
++    double u=(double)dx/FRACUNIT,v=(double)dy/FRACUNIT;
++    unsigned a=p->angle >> ANGLETOFINESHIFT;
++    // Inside arm's length a lever remains usable even if the operator turns.
++    return u*u+v*v<=68*68 && (u*u+v*v<=24*24 || u*finecosine[a]+v*finesine[a]>=0);
++}
++
++static void pull(mobj_t *p)
++{
++    int i;
++    for (i=0;i<2;++i)
++        if (reachable(p,panels[i][0],panels[i][1]))
++        {
++            if (line.locks[i]) return;
++            line.locks[i]=1;
++            S_StartSound(NULL,sfx_rlock);
++            players[consoleplayer].message=i==0 ? "CARGO INTERLOCK ENGAGED." : "TENDER INTERLOCK ENGAGED.";
++            if (line.locks[0] && line.locks[1])
++            {
++                line.phase=RAIL_ARMED;
++                P_SetMobjState(line.conductor,S_RAIL_COND+3);
++            }
++            printf("RAIL: interlock %d latched\n",i+1);
++            return;
++        }
++}
++
++static void take_brake(void)
++{
++    thinker_t *th;
++    line.phase=RAIL_BRAKE;
++    line.speed=INITIAL_SPEED;
++    line.distance=START_METERS;
++    line.braking=0;
++    line.require_release=1;
++    line.hiss=0;
++    ++line.attempts;
++    // Lucky sold tickets with a free cab ride. Nobody told him that meant work.
++    P_SetMobjState(line.conductor,S_RAIL_COND+4);
++    P_SetMobjState(line.handle,S_RAIL_BRAKE);
++    for (th=thinkercap.next;th!=&thinkercap;th=th->next)
++        if (th->function.acp1==(actionf_p1)P_MobjThinker)
++        {
++            mobj_t *m=(mobj_t *)th;
++            if ((m->type==MT_RAIL_CREW || m->type==MT_RAIL_GUNNER) && m->health>0)
++            {
++                m->target=NULL;
++                P_SetMobjState(m,S_RAIL_IDLE_CREW);
++            }
++        }
++    S_StartSound(NULL,sfx_rwhist);
++    printf("RAIL: handle taken, approach %d; 220 m to signal\n",line.attempts);
++}
++
++static void stop(int outcome)
++{
++    line.phase=outcome;
++    line.speed=0;
++    line.braking=0;
++    P_SetMobjState(line.handle,S_RAIL_BRAKE+2);
++    if (outcome==RAIL_PARKED)
++    {
++        P_SetMobjState(line.conductor,S_RAIL_COND+7);
++        S_StartSound(NULL,sfx_rbell);
++        line.end_ticks=(23*TICRATE+5)/10; // Let Lucky wave for 2.3 seconds.
++    }
++    else
++    {
++        P_SetMobjState(line.conductor,S_RAIL_COND+6);
++        S_StartSound(NULL,sfx_rbrake);
++    }
++    printf("RAIL: %s, signal %+d m, attempt %d\n",outcome==RAIL_PARKED ? "safe stop" :
++           outcome==RAIL_SHORT ? "stopped short":"overshot",Rail_Distance(),line.attempts);
++}
++
++static void advance(double meters)
++{
++    int beat;
++    line.travel+=meters*UNITS_PER_METER;
++    beat=Rail_Travel()/264;
++    if (beat!=line.chuff)
++    {
++        line.chuff=beat;
++        S_StartSound(NULL,sfx_rwheel);
++    }
++    RailScroll_Update(Rail_Travel());
++}
++
++static void approach(int use)
++{
++    double previous=line.speed,dt=1.0/TICRATE,meters;
++    if (!use) line.require_release=0;
++    if (line.hiss>0) --line.hiss;
++    if (use && !line.require_release)
++    {
++        if (!line.braking)
++        {
++            P_SetMobjState(line.handle,S_RAIL_BRAKE+1);
++            if (!line.hiss)
++            {
++                S_StartSound(line.handle,sfx_rbrake);
++                line.hiss=22;
++            }
++        }
++        line.braking=1;
++        line.speed=fmax(0,previous-deceleration*dt);
++        if (line.speed==0) dt=previous/deceleration;
++    }
++    else
++    {
++        if (line.braking) P_SetMobjState(line.handle,S_RAIL_BRAKE);
++        line.braking=0;
++    }
++    // Lucky wanted one average speed painted on the gauge. Nice try, conductor.
++    meters=(previous+line.speed)*0.5*dt;
++    line.distance-=meters;
++    advance(meters);
++    if (line.distance < -ZONE) stop(RAIL_OVER);
++    else if (line.speed==0) stop(line.distance>ZONE ? RAIL_SHORT:RAIL_PARKED);
++}
++
++void Rail_Ticker(void)
++{
++    int use,edge;
++    player_t *p;
++    if (!Rail_Active()) return;
++    p=&players[consoleplayer];
++    use=(p->cmd.buttons&BT_USE)!=0;
++    edge=use && !line.use_held;
++    line.use_held=use;
++    if (line.phase<=RAIL_ARMED)
++    {
++        advance(INITIAL_SPEED/(double)TICRATE);
++        if (!edge || !p->mo || p->health<=0) return;
++        if (reachable(p->mo,Rail_CabX(),Rail_CabY()))
++        {
++            if (line.phase==RAIL_ARMED) take_brake();
++            else p->message="TWO INTERLOCKS REQUIRED BEFORE BRAKING.";
++        }
++        else pull(p->mo);
++    }
++    else if (line.phase==RAIL_BRAKE) approach(use);
++    else if (edge && line.phase!=RAIL_PARKED) take_brake();
++    else if (line.phase==RAIL_PARKED)
++    {
++        if (line.end_ticks>0) --line.end_ticks;
++        else if (edge) G_DeferedInitNew(gameskill,1,9);
++    }
++}
+diff --git a/doomgeneric/rail.h b/doomgeneric/rail.h
+new file mode 100644
+index 0000000..ff28b50
+--- /dev/null
++++ b/doomgeneric/rail.h
+@@ -0,0 +1,27 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#ifndef DOOM_RAIL_H
++#define DOOM_RAIL_H
++#include "p_mobj.h"
++#include "d_player.h"
++enum rail_phase { RAIL_RIDE, RAIL_ARMED, RAIL_BRAKE, RAIL_SHORT, RAIL_OVER, RAIL_PARKED };
++int Rail_Active(void);
++int Rail_Phase(void);
++int Rail_TicketReady(void);
++int Rail_Interlock(int i);
++int Rail_Speed(void);         // km/h
++int Rail_Distance(void);      // signed meters to signal center
++int Rail_Zone(void);          // meters on either side of center
++int Rail_StopDistance(void);  // full service from current speed, meters
++int Rail_Braking(void);
++int Rail_Travel(void);        // monotonically increasing scenery units
++int Rail_Attempts(void);
++int Rail_CabX(void);
++int Rail_CabY(void);
++int Rail_LeverX(int i);
++int Rail_LeverY(int i);
++void Rail_Init(void);
++void Rail_LevelStart(void);
++void Rail_Ticker(void);
++void Rail_CabControls(player_t *p);
++int Rail_BlockSave(void);
++#endif
+diff --git a/doomgeneric/rail_scroll.c b/doomgeneric/rail_scroll.c
+new file mode 100644
+index 0000000..df79029
+--- /dev/null
++++ b/doomgeneric/rail_scroll.c
+@@ -0,0 +1,52 @@
++/* The train stays in map coordinates. Only scenery tagged by its map moves. */
++#include "doomdef.h"
++#include "r_data.h"
++#include "rail_scroll.h"
++
++enum { LANDSCAPE_TAG = 771, SIGNAL_TAG = 772 };
++static int track_flat = -1;
++static int ballast_flat = -1;
++static int track_offset;
++
++void RailScroll_Update(int travel)
++{
++    int i, j;
++    if (track_flat < 0)
++    {
++        track_flat = R_FlatNumForName("RLTRACK");
++        ballast_flat = R_FlatNumForName("RLGRAVL");
++    }
++    track_offset = (travel & 63) * FRACUNIT;
++
++    for (i = 0; i < numlines; ++i)
++    {
++        line_t *line = &lines[i];
++        int distance;
++        if (line->tag == SIGNAL_TAG)
++            distance = travel;
++        else if (line->tag == LANDSCAPE_TAG)
++            distance = travel / 4;
++        else
++            continue;
++
++        for (j = 0; j < 2; ++j)
++        {
++            const vertex_t *start = j ? line->v2 : line->v1;
++            int direction, origin;
++            if (line->sidenum[j] < 0)
++                continue;
++            direction = line->dy > 0 ? 1 : -1;
++            if (j)
++                direction = -direction;
++            origin = start->y / FRACUNIT;
++            /* Mask before conversion to fixed_t, including long journeys. */
++            sides[line->sidenum[j]].textureoffset =
++                ((direction * (origin + (distance & 1023))) & 1023) * FRACUNIT;
++        }
++    }
++}
++
++int RailScroll_FlatOffset(int picnum)
++{
++    return picnum == track_flat || picnum == ballast_flat ? track_offset : 0;
++}
+diff --git a/doomgeneric/rail_scroll.h b/doomgeneric/rail_scroll.h
+new file mode 100644
+index 0000000..0cdf577
+--- /dev/null
++++ b/doomgeneric/rail_scroll.h
+@@ -0,0 +1,8 @@
++#ifndef RAIL_SCROLL_H
++#define RAIL_SCROLL_H
++
++/* Travel is the train's odometer in integral map units. */
++void RailScroll_Update(int travel);
++int RailScroll_FlatOffset(int picnum);
++
++#endif
+diff --git a/doomgeneric/rail_ui.c b/doomgeneric/rail_ui.c
+new file mode 100644
+index 0000000..fa45799
+--- /dev/null
++++ b/doomgeneric/rail_ui.c
+@@ -0,0 +1,147 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++// Local railway instruments. The odometer is driven by the train simulation.
++#include <math.h>
++#include <stdio.h>
++#include "rail.h"
++#include "rail_ui.h"
++#include "doomstat.h"
++#include "p_local.h"
++#include "v_video.h"
++#include "w_wad.h"
++#include "z_zone.h"
++
++enum { INK=7, DARK=5, MUTED=144, AMBER=248, CREAM=49, GREEN=114, RED=174, EDGE=141 };
++static const unsigned char letters[26][7] = {
++    {14,17,17,31,17,17,17},{30,17,17,30,17,17,30},
++    {14,17,16,16,16,17,14},{30,17,17,17,17,17,30},
++    {31,16,16,30,16,16,31},{31,16,16,30,16,16,16},
++    {14,17,16,23,17,17,14},{17,17,17,31,17,17,17},
++    {14,4,4,4,4,4,14},{7,2,2,2,2,18,12},
++    {17,18,20,24,20,18,17},{16,16,16,16,16,16,31},
++    {17,27,21,21,17,17,17},{17,25,25,21,19,19,17},
++    {14,17,17,17,17,17,14},{30,17,17,30,16,16,16},
++    {14,17,17,17,21,18,13},{30,17,17,30,20,18,17},
++    {15,16,16,14,1,1,30},{31,4,4,4,4,4,4},
++    {17,17,17,17,17,17,14},{17,17,17,17,17,10,4},
++    {17,17,17,17,21,27,17},{17,17,10,4,10,17,17},
++    {17,17,10,4,4,4,4},{31,1,2,4,8,16,31}
++};
++static const unsigned char digits[10][7] = {
++    {14,17,19,21,25,17,14},{4,12,4,4,4,4,14},
++    {14,17,1,2,4,8,31},{30,1,1,14,1,1,30},
++    {2,6,10,18,31,2,2},{31,16,16,30,1,1,30},
++    {14,16,16,30,17,17,14},{31,1,2,4,8,8,8},
++    {14,17,17,14,17,17,14},{14,17,17,15,1,1,14}
++};
++
++static void glyph(int x, int y, int c, int ink, int scale)
++{
++    static const unsigned char slash[7] = {1,1,2,4,8,16,16};
++    static const unsigned char dash[7] = {0,0,0,14,0,0,0};
++    static const unsigned char bang[7] = {4,4,4,4,4,0,4};
++    const unsigned char *rows;
++    int i, j;
++    if (c >= 'A' && c <= 'Z') rows = letters[c-'A'];
++    else if (c >= '0' && c <= '9') rows = digits[c-'0'];
++    else if (c == '/') rows = slash;
++    else if (c == '-') rows = dash;
++    else if (c == '!') rows = bang;
++    else return;
++    for (i=0; i<7; ++i)
++        for (j=0; j<5; ++j)
++            if (rows[i] & (16 >> j))
++                V_DrawFilledBox(x+j*scale,y+i*scale,scale,scale,ink);
++}
++
++static void text_at(int x, int y, const char *s, int ink, int scale)
++{
++    for (; *s; ++s, x+=6*scale) glyph(x,y,*s,ink,scale);
++}
++
++static void needle(int x, int y, int length, int speed)
++{
++    // A dial marked to 90 leaves a little headroom for the idiot in the hat.
++    double a=(145.0+(speed>90?90:speed)*(250.0/90.0))*0.01745329251994;
++    int j;
++    for (j=0;j<=length;++j)
++        V_DrawFilledBox(x+(int)round(j*cos(a)),y+(int)round(j*sin(a)),2,2,AMBER);
++    V_DrawFilledBox(x-1,y-1,4,4,CREAM);
++}
++
++static void stamp(void)
++{
++    char number[30];
++    int distance=Rail_Distance();
++    V_DrawPatch(0,0,W_CacheLumpName("RLTICKET",PU_CACHE));
++    if (distance==0) snprintf(number,sizeof(number),"ON MARK");
++    else snprintf(number,sizeof(number),"%d M %s",distance>0?distance:-distance,
++                  distance>0?"SHORT":"PAST");
++    text_at(24,155,number,INK,2);
++    snprintf(number,sizeof(number),"%d",Rail_Attempts());
++    text_at(175,155,number,INK,2);
++    text_at(182,183,"SPACE TO RIDE AGAIN",CREAM,1);
++}
++
++static void gauges(int phase)
++{
++    int dist=Rail_Distance(), predicted=Rail_StopDistance(), speed=Rail_Speed();
++    char data[30];
++    const char *t = phase==RAIL_PARKED ? "PARKED" : Rail_Braking() ? "APPLIED" : "COAST";
++    V_DrawPatch(0,147,W_CacheLumpName("RLPANEL",PU_CACHE));
++    needle(49,180,17,speed);
++    snprintf(data,sizeof(data),"%02d",speed);
++    text_at(78,177,data,CREAM,1);
++    snprintf(data,sizeof(data),"%d M",dist);
++    text_at(110,168,data,CREAM,2);
++    text_at(230,170,t,Rail_Braking()?AMBER:GREEN,1);
++    // When the distance to the signal matches the stopping distance,
++    // the two values describe the same point along the track.
++    snprintf(data,sizeof(data),"NEED %d M",predicted);
++    text_at(230,182,data,MUTED,1);
++    if (phase==RAIL_PARKED)
++    {
++        V_DrawFilledBox(4,3,160,18,INK);
++        V_DrawVertLine(4,3,18,GREEN);
++        text_at(10,9,"DEIMOS JUNCTION / ARRIVED",CREAM,1);
++        return;
++    }
++    V_DrawFilledBox(4,3,234,18,INK);
++    V_DrawVertLine(4,3,18,AMBER);
++    if (phase==RAIL_SHORT || phase==RAIL_OVER)
++    {
++        text_at(10,9,phase==RAIL_SHORT ? "STOPPED SHORT / SPACE TO RETRY" :
++                                      "PASSED SIGNAL / SPACE TO RETRY",AMBER,1);
++    }
++    else text_at(10,9,"HOLD SPACE TO BRAKE / RELEASE TO COAST",CREAM,1);
++}
++
++void Rail_Draw(void)
++{
++    int phase, first, second;
++    const char *label;
++    if (!Rail_Active()) return;
++    phase=Rail_Phase();
++    if (Rail_TicketReady()) { stamp(); return; }
++    if (phase>=RAIL_BRAKE)
++    {
++        gauges(phase);
++        return;
++    }
++    first=Rail_Interlock(0); second=Rail_Interlock(1);
++    // Lucky spent a whole paycheck on engraved signage. I still don't trust him.
++    if (leveltime<58 && !(players[displayplayer].cmd.forwardmove ||
++            players[displayplayer].cmd.sidemove || players[displayplayer].cmd.buttons))
++    {
++        V_DrawPatch(0,0,W_CacheLumpName("RLTITLE",PU_CACHE));
++        return;
++    }
++    label=first && second ? "CAB / TAKE BRAKE HANDLE" :
++          !first ? "CARGO CAR / PORT SWITCH" : "TENDER / STARBOARD SWITCH";
++    V_DrawFilledBox(3,3,180,24,DARK);
++    V_DrawVertLine(3,3,24,AMBER);
++    text_at(8,6,"EXPRESS 07",MUTED,1);
++    text_at(8,17,label,CREAM,1);
++    text_at(98,6,"LOCKS",MUTED,1);
++    V_DrawFilledBox(135,6,7,7,first?GREEN:EDGE);
++    V_DrawFilledBox(146,6,7,7,second?GREEN:EDGE);
++}
+diff --git a/doomgeneric/rail_ui.h b/doomgeneric/rail_ui.h
+new file mode 100644
+index 0000000..292e504
+--- /dev/null
++++ b/doomgeneric/rail_ui.h
+@@ -0,0 +1,5 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++#ifndef RAIL_UI_H
++#define RAIL_UI_H
++void Rail_Draw(void);
++#endif
+diff --git a/doomgeneric/sounds.c b/doomgeneric/sounds.c
+index 527995a..744bfe0 100644
+--- a/doomgeneric/sounds.c
++++ b/doomgeneric/sounds.c
+@@ -226,5 +226,7 @@ sfxinfo_t S_sfx[] =
+   SOUND("skeatk", 70),
+   SOUND("radio",  60),
+   SOUND("shell",  64),
++  SOUND("rwhist", 65), SOUND("rlock", 65), SOUND("rbrake", 65),
++  SOUND("rbell", 65), SOUND("rwheel", 80),
+ };
+ 
+diff --git a/doomgeneric/sounds.h b/doomgeneric/sounds.h
+index 50a28a4..f0f4964 100644
+--- a/doomgeneric/sounds.h
++++ b/doomgeneric/sounds.h
+@@ -222,6 +222,7 @@ typedef enum
+     sfx_skeatk,
+     sfx_radio,
+     sfx_shell,
++    sfx_rwhist, sfx_rlock, sfx_rbrake, sfx_rbell, sfx_rwheel,
+     NUMSFX
+ } sfxenum_t;
+ 

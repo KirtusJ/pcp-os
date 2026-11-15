@@ -1,6 +1,6 @@
 # Native Store launcher
 
-The launcher is Rust. Games and the Heliograph lab execute as freestanding Rust guests inside PCP OS. These Store releases have no browser player. QEMU, Rust and the [kernel build prerequisites](../../PCP_OS_Rust/crates/pcpos-kernel/README.md) are needed for a source checkout.
+The Rust launcher starts native PCP OS guests. The six original Store games and the Heliograph lab are built with Rust. The Doom family uses the C engine and the PCP OS platform interface. These Store releases have no browser player. QEMU, Rust and the [kernel build prerequisites](../../PCP_OS_Rust/crates/pcpos-kernel/README.md) are needed for a source checkout.
 
 From the repository root, build a stock kernel, then choose a guest. The launcher needs the ELF32 converted image emitted by the kernel's build script. A previously measured PCP OS 0.3.1 ELF32 can also be supplied. `PCPOS_QEMU` may specify an absolute QEMU executable.
 
@@ -10,6 +10,10 @@ cargo run --locked --release --manifest-path store/native/Cargo.toml -- PCP_OS_R
 ```
 
 Use `gullpost` for the 2D courier or `gull64` for Lighthouse Island. Use `fluxrink` for the rink or `heliograph` for the rendering lab. Press Enter at the OS menu. Escape returns from each program and P at the OS menu powers down. The launcher loads the versioned Store ELF, measures the kernel's code and read-only pages, requests 32 MiB of VGA memory for Heliograph's resolution ladder and gives QEMU short module names.
+
+## Doom guests
+
+Supply a third argument with the local IWAD for `doom`, `ultra-omega-barrel`, `barrel-bowl`, `midnight-barrel-express` or `forklift-certified`. The launcher measures the kernel and starts the selected game with its own guest arguments. For mods it builds the private WAD with Python before boot. [Downloads, supported data, controls and engine builds](../games/doom/)
 
 ## Linked Flux Rink
 

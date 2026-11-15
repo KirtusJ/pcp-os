@@ -13,16 +13,21 @@ PCP OS runs Adversarial Claim Review (ACR) and keeps a verifiable register of wh
 
 ## Games
 
-Night Post and Bellweather Harbor also ship offline browser players. Download a browser player from its GitHub file page using **Download raw file**, then open the HTML locally. For native play, the [launcher guide](store/README.md#play-on-pcp-os) covers the six games.
+Night Post and Bellweather Harbor also ship offline browser players. Download a browser player from its GitHub file page using **Download raw file**, then open the HTML locally. For native play, the [launcher guide](store/README.md#play-on-pcp-os) covers the original six guests. [Doom and its four mods](store/games/doom/) use a separately supplied IWAD.
 
 | Game | What you do | Play and inspect |
 | --- | --- | --- |
 | **Night Post · Return Mail** | Fly a coastal mail route and drop letters into nets aboard passing ships. | [Browser player](store/games/night-post/dist/Night_Post.html) · [Manual](store/games/night-post/README.md) · [Package](store/index/kirtusj/ni/gh/night-post) (`kirtusj/night-post`) |
 | **Bellweather Harbor · The Second Manifest** | Run a harbor, trade cargo and investigate discrepancies in the shipping records. | [Browser player](store/games/bellweather-harbor/dist/Bellweather_Harbor.html) · [Manual](store/games/bellweather-harbor/README.md) · [Package](store/index/kirtusj/be/ll/bellweather-harbor) (`kirtusj/bellweather-harbor`) |
-| **Gullpost Express** · native | Deliver a mailbag across three coastal routes and collect postage stamps. | [Game](store/games/gullpost-express/) · [Package](store/index/kirtusj/gu/ll/gullpost-express) |
-| **Gullpost Express 64** · native | Explore Lighthouse Island and deliver the final letter. | [Game](store/games/gullpost-express-64/) · [Package](store/index/kirtusj/gu/ll/gullpost-express-64) |
-| **Sunspur Rally** · native | Drive a desert time trial through five gates. | [Game](store/games/sunspur-rally/) · [Package](store/index/kirtusj/su/ns/sunspur-rally) |
-| **Flux Rink** · native multiplayer prototype | Play a two-player 3D air-hockey match locally or across two linked QEMU guests. | [Game](store/games/flux-rink/) · [Package](store/index/kirtusj/fl/ux/flux-rink) |
+| **Gullpost Express** · native | Deliver a mailbag across three coastal routes and collect postage stamps. | [Game](store/games/gullpost-express/) · [Package](store/index/kirtusj/gu/ll/gullpost-express) (`kirtusj/gullpost-express`) |
+| **Gullpost Express 64** · native | Explore Lighthouse Island and deliver the final letter. | [Game](store/games/gullpost-express-64/) · [Package](store/index/kirtusj/gu/ll/gullpost-express-64) (`kirtusj/gullpost-express-64`) |
+| **Sunspur Rally** · native | Drive a desert time trial through five gates. | [Game](store/games/sunspur-rally/) · [Package](store/index/kirtusj/su/ns/sunspur-rally) (`kirtusj/sunspur-rally`) |
+| **Flux Rink** · native multiplayer prototype | Play a two-player 3D air-hockey match locally or across two linked QEMU guests. | [Game](store/games/flux-rink/) · [Package](store/index/kirtusj/fl/ux/flux-rink) (`kirtusj/flux-rink`) |
+| **Doom** · native | Play the native Doom port with a local IWAD. | [Game](store/games/doom/) · [Package](store/index/kirtusj/do/om/doom) (`kirtusj/doom`) |
+| **Ultra Omega Barrel** · native | Fight the Omega barrel family across episode one. | [Game](store/games/ultra-omega-barrel/) · [Package](store/index/kirtusj/ul/tr/ultra-omega-barrel) (`kirtusj/ultra-omega-barrel`) |
+| **Barrel Bowl** · native | Aim and roll barrels through ten scored frames. | [Game](store/games/barrel-bowl/) · [Package](store/index/kirtusj/ba/rr/barrel-bowl) (`kirtusj/barrel-bowl`) |
+| **Midnight Barrel Express** · native | Release the interlocks and brake into Deimos Junction. | [Game](store/games/midnight-barrel-express/) · [Package](store/index/kirtusj/mi/dn/midnight-barrel-express) (`kirtusj/midnight-barrel-express`) |
+| **Forklift Certified** · native | Lure a forklift through three cargo stacks. | [Game](store/games/forklift-certified/) · [Package](store/index/kirtusj/fo/rk/forklift-certified) (`kirtusj/forklift-certified`) |
 
 ## Native rendering engines
 

@@ -72,39 +72,41 @@ fn measurement(b: &[u8]) -> io::Result<String> {
     image.extend_from_slice(r);
     Ok(sha256_hex(&image))
 }
-struct Temp(PathBuf);
+struct Temp {
+    path: PathBuf,
+    guest: &'static str,
+}
 impl Drop for Temp {
     fn drop(&mut self) {
-        let _ = fs::remove_file(self.0.join("kernel.elf32"));
-        for file in [
-            "fluxrink.elf",
-            "sunspur.elf",
-            "heliograph.elf",
-            "gullpost.elf",
-            "gull64.elf",
-        ] {
-            let _ = fs::remove_file(self.0.join(file));
+        for file in ["kernel.elf32", self.guest, "doom1.wad"] {
+            let _ = fs::remove_file(self.path.join(file));
         }
-        let _ = fs::remove_dir(&self.0);
+        let _ = fs::remove_dir(&self.path);
     }
 }
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = env::args().skip(1).collect();
     if args.len() < 2 || args.len() > 4 {
         return Err(
-            "Usage: pcp-native-store KERNEL {gullpost|gull64|sunspur|fluxrink|heliograph} [host|peer PORT]".into(),
+            "Usage: pcp-native-store KERNEL GAME [IWAD | host|peer PORT]".into(),
         );
     }
-    let (shelf, file) = match args[1].as_str() {
-        "gullpost" => ("games/gullpost-express", "gullpost.elf"),
-        "gull64" => ("games/gullpost-express-64", "gull64.elf"),
-        "sunspur" => ("games/sunspur-rally", "sunspur.elf"),
-        "fluxrink" => ("games/flux-rink", "fluxrink.elf"),
-        "heliograph" => ("engines/heliograph", "heliograph.elf"),
+    let (shelf, file, doom_options) = match args[1].as_str() {
+        "gullpost" => ("games/gullpost-express", "gullpost.elf", None),
+        "gull64" => ("games/gullpost-express-64", "gull64.elf", None),
+        "sunspur" => ("games/sunspur-rally", "sunspur.elf", None),
+        "fluxrink" => ("games/flux-rink", "fluxrink.elf", None),
+        "heliograph" => ("engines/heliograph", "heliograph.elf", None),
+        "doom" => ("games/doom", "doom.elf", Some("")),
+        "ultra-omega-barrel" => ("games/ultra-omega-barrel", "omega.elf", Some("-omega")),
+        "barrel-bowl" => ("games/barrel-bowl", "bowl.elf", Some("-omega -bowl -warp 1 9")),
+        "midnight-barrel-express" => ("games/midnight-barrel-express", "rail.elf", Some("-omega -express -warp 1 9")),
+        "forklift-certified" => ("games/forklift-certified", "fork.elf", Some("-omega -forklift -warp 1 9")),
         _ => return Err("Unknown Store guest".into()),
     };
     let link = match &args[2..] {
-        [] => None,
+        [] if doom_options.is_none() => None,
+        [_] if doom_options.is_some() => None,
         [role, port] if file == "fluxrink.elf" && matches!(role.as_str(), "host" | "peer") => {
             let port: u16 = port.parse()?;
             if port == 0 {
@@ -112,6 +114,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             Some((role, port))
         }
+        _ if doom_options.is_some() => return Err("Supply the path to your local IWAD".into()),
         _ => return Err("Cable mode requires fluxrink, host or peer, and a port".into()),
     };
     let store = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
@@ -124,9 +127,31 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
     ));
     fs::create_dir(&dir)?;
-    let tmp = Temp(dir);
-    fs::write(tmp.0.join("kernel.elf32"), kernel)?;
-    fs::write(tmp.0.join(file), &payload)?;
+    let tmp = Temp { path: dir, guest: file };
+    fs::write(tmp.path.join("kernel.elf32"), kernel)?;
+    fs::write(tmp.path.join(file), &payload)?;
+    let mut modules = file.to_owned();
+    if let Some(options) = doom_options {
+        let wad = tmp.path.join("doom1.wad");
+        if args[1] == "doom" {
+            fs::copy(&args[2], &wad)?;
+        } else {
+            let python = env::var_os("PCPOS_PYTHON").unwrap_or_else(|| {
+                if cfg!(windows) { "python".into() } else { "python3".into() }
+            });
+            let status = Command::new(python)
+                .arg("-B")
+                .arg(store.join("games/doom/prepare.py"))
+                .args(&args[1..3])
+                .arg(&wad)
+                .status()?;
+            if !status.success() {
+                return Err("Could not prepare the local game data".into());
+            }
+        }
+        let arguments = format!("{options} -iwad doom1.wad");
+        modules = format!("{file} {},doom1.wad", arguments.trim_start());
+    }
     let exe = env::var_os("PCPOS_QEMU").unwrap_or_else(|| "qemu-system-x86_64".into());
     let mut vm = Command::new(&exe);
     if let Some(share) = Path::new(&exe)
@@ -137,7 +162,37 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         vm.arg("-L").arg(share);
     }
     let mut boot = format!("image={measured}");
-    vm.current_dir(&tmp.0).args([
+    if doom_options.is_some() {
+        boot += &format!(" auto={file} then=off");
+        let driver = match env::var_os("PCPOS_AUDIO") {
+            Some(selected) => selected.to_string_lossy().into_owned(),
+            None => {
+                let help = Command::new(&exe).args(["-audiodev", "help"]).output()?;
+                let available = format!("{}\n{}", String::from_utf8_lossy(&help.stdout),
+                                        String::from_utf8_lossy(&help.stderr));
+                ["dsound", "coreaudio", "pipewire", "pa", "sdl", "alsa"]
+                    .into_iter()
+                    .find(|driver| available.lines().any(|line| line.trim() == *driver))
+                    .unwrap_or("none")
+                    .to_owned()
+            }
+        };
+        if !driver.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') || driver.is_empty() {
+            return Err("PCPOS_AUDIO must name one QEMU audio backend".into());
+        }
+        if driver != "none" {
+            vm.args(["-audiodev", &format!("{driver},id=doom")]);
+            let help = Command::new(&exe).args(["-device", "help"]).output()?;
+            let devices = format!("{}\n{}", String::from_utf8_lossy(&help.stdout),
+                                  String::from_utf8_lossy(&help.stderr));
+            for device in ["AC97", "adlib"] {
+                if devices.contains(&format!("\"{device}\"")) {
+                    vm.args(["-device", &format!("{device},audiodev=doom")]);
+                }
+            }
+        }
+    }
+    vm.current_dir(&tmp.path).args([
         "-cpu",
         "max",
         "-m",
@@ -152,7 +207,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "-kernel",
         "kernel.elf32",
         "-initrd",
-        file,
+        &modules,
         "-serial",
         "stdio",
         "-device",
@@ -174,7 +229,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     vm.arg("-append").arg(boot);
     let status = vm.status()?;
-    if status.code() != Some(33) {
+    if status.code() != Some(33) && !(doom_options.is_some() && status.success()) {
         return Err(format!("QEMU exited with {status}").into());
     }
     Ok(())
