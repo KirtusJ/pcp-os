@@ -134,6 +134,21 @@ impl Memory {
 mod tests {
     use super::*;
     #[test] fn permutation() {for x in 0..=65535 {assert_eq!(stage(stage(x,37,false),37,true),x);}}
+    #[test]
+    fn independent_workers_partition_public_pairs_without_double_counting_keys() {
+        let public = Challenge { bits: 8, pairs: [(0xee0e,0x6346),(0xfc3a,0x8e9a),(0x45c3,0x0338)] };
+        for method in [0,1] {
+            let all=attack(&public,3,method);
+            let left=attack_range(&public,0,128,0,method);
+            let right=attack_range(&public,128,256,0,method);
+            assert_eq!(all.key,Some((57,194)));
+            assert_eq!((left.candidates,right.candidates),(0,1));
+            assert_eq!(all.key,right.key);
+            assert_eq!(left.work+right.work,all.work+u64::from(method)*256);
+        }
+        let impossible=Challenge { bits:8,pairs:[(0xee0e,0x6346),(0xee0e,0x6347),(0x45c3,0x0338)] };
+        assert_eq!(attack(&impossible,0,1).candidates,0);
+    }
     #[test] fn curriculum_and_delegation() {
         for bits in [4,6,8] {
             let mut memory=Memory::default();

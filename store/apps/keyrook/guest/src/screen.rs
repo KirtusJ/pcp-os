@@ -115,10 +115,20 @@ pub fn draw(px: &mut [u32], p: &Profile, pairs: &Challenge, last: &Episode,
     f.text(26, 361, "LEARNED SELECTION", 1, MUTED);
     let learned = if memory.runs == [0,0] { "UNTRAINED" } else { policy_name(memory.choose()) };
     f.text(26, 378, learned, 2, PAPER);
-    f.text(278, 335, "EXHAUSTIVE TRIALS", 1, MUTED);
-    num(f, 278, 352, u64::from(memory.runs[0]), 2, PAPER);
-    f.text(278, 379, "MEET IN MIDDLE TRIALS", 1, MUTED);
-    num(f, 278, 395, u64::from(memory.runs[1]), 2, PAPER);
+    f.text(26, 402, "PAIRED TRIALS", 1, MUTED);
+    num(f, 116, 402, u64::from(memory.runs[0].min(memory.runs[1])), 1, PAPER);
+    f.text(258, 335, "MEAN STAGES / RECOVERY", 1, MUTED);
+    for i in 0..2 {
+        let y = 360 + i as i32 * 31;
+        f.text(258, y, policy_name(i as u8), 1, MUTED);
+        let wins = u64::from(memory.wins[i]);
+        if wins == 0 {
+            f.text(374, y-3, "-", 2, PAPER);
+        } else {
+            let mean = memory.work[i]/wins + u64::from(memory.work[i]%wins >= wins.div_ceil(2));
+            num(f, 374, y-3, mean, if mean < 1_000_000 { 2 } else { 1 }, PAPER);
+        }
+    }
     f.text(515, 335, "RUN MODE", 1, MUTED);
     f.text(515, 351, if mode == 2 { "LEARNED" } else { policy_name(mode) }, 2, PAPER);
     f.text(515, 384, saved, 1, MINT);
