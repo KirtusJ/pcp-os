@@ -202,10 +202,17 @@ class Workspace:
                 pass
 
     def repair(self):
-        """Remove an incomplete final line left by an interrupted write. Complete lines are never touched."""
-        raw = self.register_path.read_bytes()
-        if not raw or raw.endswith(b"\n"):
-            return 0
-        keep = raw[:raw.rfind(b"\n") + 1]
-        atomic_write(self.register_path, keep)
-        return len(raw) - len(keep)
+        """Remove an incomplete final line under the same cooperative lock as append."""
+        lock = self._lock()
+        try:
+            raw = self.register_path.read_bytes()
+            if not raw or raw.endswith(b"\n"):
+                return 0
+            keep = raw[:raw.rfind(b"\n") + 1]
+            atomic_write(self.register_path, keep)
+            return len(raw) - len(keep)
+        finally:
+            try:
+                lock.unlink()
+            except OSError:
+                pass
