@@ -1,5 +1,7 @@
 """Run with python sqlite_replay.py PATH_TO_KEYROOK. Uses the standard SQLite client."""
+from contextlib import closing
 import json
+import os
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -15,15 +17,40 @@ def main():
         assert completed.returncode == (0 if success else 2), (args, completed.stderr)
         return completed.stdout if success else completed.stderr
 
-    with tempfile.TemporaryDirectory(prefix="keyrook-") as work:
+    # Set KEYROOK_TEST_ROOT to a writable directory on the PCP D: volume
+    # for an actual Windows/WinSQLite/no-hard-link filesystem replay.
+    # KEYROOK_REQUIRE_D=1 fails instead of silently using another volume.
+    root_override = os.environ.get("KEYROOK_TEST_ROOT")
+    if os.environ.get("KEYROOK_REQUIRE_D") == "1":
+        if os.name != "nt":
+            raise RuntimeError("D: drive replay requires actual Windows")
+        if not root_override or Path(root_override).drive.upper() != "D:":
+            raise RuntimeError("set KEYROOK_TEST_ROOT to a writable D: directory")
+    if root_override and not Path(root_override).is_dir():
+        raise RuntimeError("KEYROOK_TEST_ROOT is not an existing directory")
+    with tempfile.TemporaryDirectory(prefix="keyrook-", dir=root_override) as work:
         root = Path(work)
         session, fresh = root / "first", root / "fresh"
+        missing, empty_dir = root / "missing", root / "empty"
+        empty_dir.mkdir()
+        cli("stats", missing, 8, success=False)
+        cli("stats", empty_dir, 8, success=False)
+        assert not missing.exists()
+        assert not (empty_dir / "keyrook.redb").exists()
+        cli("export-sqlite", empty_dir, root / "no-session.sqlite", success=False)
+        assert not (empty_dir / "keyrook.redb").exists()
+        assert not (root / "no-session.sqlite").exists()
         cli("new", session)
         cli("new", fresh)
         cli("new", session, success=False)
         empty = {"runs": [0, 0], "wins": [0, 0], "work": [0, 0], "next": 0}
         assert json.loads(cli("stats", fresh, 8)) == empty
         assert json.loads(cli("stats", session, 8)) == empty
+        # Pin the actual volume used by this invocation. A successful export
+        # below on D: exercises the Windows same-volume no-replace move.
+        if os.environ.get("KEYROOK_REQUIRE_D") == "1":
+            assert root.drive.upper() == "D:"
+
         results = []
         for seed, depth, strategy in [(0, 0, 0), (42, 2, 1), (31415, 3, 1)]:
             row = json.loads(cli("train", session, 8, seed, depth))
@@ -38,9 +65,27 @@ def main():
         exported = root / "export.sqlite"
         cli("export-sqlite", session, exported)
         original = exported.read_bytes()
+        # Failed publication must preserve unrelated existing destinations.
+        protected = root / "protected.sqlite"
+        protected.write_bytes(b"untouched existing file")
+        cli("export-sqlite", session, protected, success=False)
+        assert protected.read_bytes() == b"untouched existing file"
+        # Surrogate interrupted export: a stale, incomplete staging file
+        # persists. This is NOT an actual kill of the Rust Keyrook process.
+        stale = root / ".retry.sqlite.keyrook-stage-simulated-kill.sqlite"
+        stale.write_bytes(b"incomplete SQLite export")
+        retry = root / "retry.sqlite"
+        cli("export-sqlite", session, retry)
+        with closing(sqlite3.connect(retry)) as reopened:
+            assert reopened.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+            assert reopened.execute("SELECT count(*) FROM episodes").fetchone() == (4,)
+        assert stale.read_bytes() == b"incomplete SQLite export"
+        published = retry.read_bytes()
+        cli("export-sqlite", session, retry, success=False)
+        assert retry.read_bytes() == published
         cli("export-sqlite", fresh, exported, success=False)
         assert exported.read_bytes() == original
-        with sqlite3.connect(exported) as sql:
+        with closing(sqlite3.connect(exported)) as sql:
             assert sql.execute("PRAGMA integrity_check").fetchone() == ("ok",)
             assert sql.execute("PRAGMA user_version").fetchone() == (1,)
             assert sql.execute("SELECT count(*) FROM episodes").fetchone() == (4,)

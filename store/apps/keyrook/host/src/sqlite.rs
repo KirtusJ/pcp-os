@@ -3,8 +3,11 @@ use redb::{Database, ReadableDatabase, ReadableTable};
 use std::{
     ffi::{c_char, c_int, c_void, CStr, CString},
     fs,
-    path::Path,
+    io,
+    path::{Path, PathBuf},
     ptr,
+    sync::atomic::{AtomicU64, Ordering},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 type Callback =
@@ -74,46 +77,158 @@ impl Drop for Connection {
     }
 }
 
+static EXPORT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+fn reserve_staging_file(destination: &Path) -> Result<PathBuf> {
+    // A new name for every attempt avoids reusing the journal of an
+    // interrupted SQLite transaction.
+    let parent = destination
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let name = destination
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or("SQLite export destination must have a UTF-8 filename")?;
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+    let sequence = EXPORT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    for attempt in 0..64 {
+        let stage = parent.join(format!(
+            ".{name}.keyrook-stage-{}-{nanos}-{sequence}-{attempt}.sqlite",
+            std::process::id()
+        ));
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&stage)
+        {
+            Ok(file) => {
+                drop(file);
+                return Ok(stage);
+            }
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Err("could not reserve a unique SQLite export staging file".into())
+}
+
+// The staged SQLite file is always a sibling of its destination, so a
+// same-volume rename is possible on Windows even when the target filesystem
+// (such as the PCP D: workspace) does not support hard links.
+#[cfg(windows)]
+fn publish_no_replace(stage: &Path, destination: &Path) -> Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn MoveFileExW(source: *const u16, target: *const u16, flags: u32) -> i32;
+    }
+
+    let source: Vec<u16> = stage.as_os_str().encode_wide().chain(Some(0)).collect();
+    let target: Vec<u16> = destination.as_os_str().encode_wide().chain(Some(0)).collect();
+    // MOVEFILE_WRITE_THROUGH=0x8; deliberately exclude REPLACE_EXISTING=0x1
+    // and COPY_ALLOWED=0x2. See Microsoft Learn, MoveFileExW. The absent
+    // flags make an existing target an error and prevent copy/delete fallback.
+    const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
+    if unsafe { MoveFileExW(source.as_ptr(), target.as_ptr(), MOVEFILE_WRITE_THROUGH) } == 0 {
+        return Err(io::Error::last_os_error().into());
+    }
+    Ok(())
+}
+
+// On Unix a hard-link creation is atomic and fails if the final destination
+// already exists. The caller unlinks the staging name on ordinary completion.
+// Windows uses the no-replace move above and does not require hard-link support.
+#[cfg(not(windows))]
+fn publish_no_replace(stage: &Path, destination: &Path) -> Result<()> {
+    fs::hard_link(stage, destination)?;
+    Ok(())
+}
+
 pub fn export(db: &Database, destination: &Path) -> Result<()> {
     let snapshot = db.begin_read()?;
     let episodes = snapshot.open_table(session::EPISODES)?;
     let stats = snapshot.open_table(session::STATS)?;
-    // Claim a new file exclusively. An existing session export or unrelated database is preserved.
-    fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(destination)?;
+    // The final destination never exists until SQLite COMMIT and close.
+    // A process kill can leave an orphan staging DB and its journal. Retry
+    // uses a fresh name rather than opening a possibly hot old journal.
+    let staging = reserve_staging_file(destination)?;
     let result = (|| -> Result<()> {
-        let sql = Connection::open(destination)?;
-        sql.execute("BEGIN IMMEDIATE;
-            PRAGMA user_version=1;
-            CREATE TABLE episodes(bits INTEGER NOT NULL, seed INTEGER NOT NULL, depth INTEGER NOT NULL,
-                strategy INTEGER NOT NULL, verified INTEGER NOT NULL, work INTEGER NOT NULL,
-                nodes INTEGER NOT NULL, candidates INTEGER NOT NULL, PRIMARY KEY(bits,seed));
-            CREATE TABLE stats(bits INTEGER NOT NULL, strategy INTEGER NOT NULL, runs INTEGER NOT NULL,
-                wins INTEGER NOT NULL, work INTEGER NOT NULL, next INTEGER NOT NULL, PRIMARY KEY(bits,strategy));")?;
-        for row in episodes.iter()? {
-            let (key, value) = row?;
-            let (bits, seed) = key.value();
-            let (depth, policy, verified, work, nodes, candidates) = value.value();
-            sql.execute(&format!("INSERT INTO episodes VALUES({bits},{seed},{depth},{policy},{},{work},{nodes},{candidates})", u8::from(verified)))?;
-        }
-        for bits in [4, 6, 8] {
-            let m = session::memory(&stats, bits)?;
-            for i in 0..2 {
+        {
+            let sql = Connection::open(&staging)?;
+            sql.execute("PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; BEGIN IMMEDIATE;
+                PRAGMA user_version=1;
+                CREATE TABLE episodes(bits INTEGER NOT NULL, seed INTEGER NOT NULL, depth INTEGER NOT NULL,
+                    strategy INTEGER NOT NULL, verified INTEGER NOT NULL, work INTEGER NOT NULL,
+                    nodes INTEGER NOT NULL, candidates INTEGER NOT NULL, PRIMARY KEY(bits,seed));
+                CREATE TABLE stats(bits INTEGER NOT NULL, strategy INTEGER NOT NULL, runs INTEGER NOT NULL,
+                    wins INTEGER NOT NULL, work INTEGER NOT NULL, next INTEGER NOT NULL, PRIMARY KEY(bits,strategy));")?;
+            for row in episodes.iter()? {
+                let (key, value) = row?;
+                let (bits, seed) = key.value();
+                let (depth, policy, verified, work, nodes, candidates) = value.value();
                 sql.execute(&format!(
-                    "INSERT INTO stats VALUES({bits},{i},{},{},{},{})",
-                    m.runs[i],
-                    m.wins[i],
-                    m.work[i],
-                    m.choose()
+                    "INSERT INTO episodes VALUES({bits},{seed},{depth},{policy},{},{work},{nodes},{candidates})",
+                    u8::from(verified)
                 ))?;
             }
+            for bits in [4, 6, 8] {
+                let m = session::memory(&stats, bits)?;
+                for i in 0..2 {
+                    sql.execute(&format!(
+                        "INSERT INTO stats VALUES({bits},{i},{},{},{},{})",
+                        m.runs[i], m.wins[i], m.work[i], m.choose()
+                    ))?;
+                }
+            }
+            sql.execute("COMMIT")?;
+        } // Connection dropped; no SQLite journal is needed for recovery.
+        // Open with WRITE permission so FlushFileBuffers works on Windows.
+        // Close the handle before renaming: Windows requires no open writer
+        // handles at a move boundary.
+        {
+            let writable = fs::OpenOptions::new().write(true).open(&staging)?;
+            writable.sync_all()?;
         }
-        sql.execute("COMMIT")
+        publish_no_replace(&staging, destination)?;
+        Ok(())
     })();
-    if result.is_err() {
-        fs::remove_file(destination)?;
-    }
+    // Best-effort local cleanup. A sudden kill leaves an orphan, not a
+    // falsely published destination; the unique next path enables retry.
+    let _ = fs::remove_file(&staging);
     result
+}
+
+
+#[cfg(test)]
+mod publication_tests {
+    use super::*;
+
+    #[test]
+    fn existing_destination_is_not_replaced_by_a_staged_file() {
+        let name = format!(
+            "keyrook-no-replace-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        );
+        let dir = std::env::temp_dir().join(name);
+        fs::create_dir(&dir).unwrap();
+        let staging = dir.join("stage.sqlite");
+        let destination = dir.join("final.sqlite");
+        fs::write(&staging, b"new snapshot").unwrap();
+        fs::write(&destination, b"original existing file").unwrap();
+        assert!(publish_no_replace(&staging, &destination).is_err());
+        assert_eq!(fs::read(&destination).unwrap(), b"original existing file");
+        assert_eq!(fs::read(&staging).unwrap(), b"new snapshot");
+        fs::remove_file(&destination).unwrap();
+        publish_no_replace(&staging, &destination).unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), b"new snapshot");
+        // On Unix the staging path is a second link; on Windows it was moved.
+        if staging.exists() {
+            fs::remove_file(&staging).unwrap();
+        }
+        fs::remove_file(&destination).unwrap();
+        fs::remove_dir(&dir).unwrap();
+    }
 }

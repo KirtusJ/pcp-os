@@ -66,6 +66,53 @@ pub fn stats(db: &Database, bits: u8) -> Result<Memory> {
     memory(&db.begin_read()?.open_table(STATS)?, bits)
 }
 
+fn has_legacy_episodes(dir: &Path) -> Result<bool> {
+    for bits in [4, 6, 8] {
+        let legacy = dir.join(format!("v1-{bits}"));
+        if legacy.is_dir() {
+            for entry in fs::read_dir(legacy)? {
+                if entry?.file_name().to_string_lossy().starts_with("episode-") {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+    Ok(false)
+}
+
+pub fn open_existing(dir: &Path) -> Result<Database> {
+    // A read never creates absent data or silently reports an absent session
+    // as a valid zero-run database. Valid initialized sessions use redb::open.
+    // Actual v1 episode directories are the one exception: migrate their
+    // existing data transactionally, preserving the earlier CLI behavior.
+    let file = dir.join(FILE_NAME);
+    if file.is_file() {
+        if file.metadata()?.len() == 0 {
+            return Err(format!("Keyrook session not initialized: {}", file.display()).into());
+        }
+        let db = Database::open(&file)?;
+        let tx = db.begin_read()?;
+        let version = match tx.open_table(VERSION) {
+            Ok(table) => table.get(0)?.map(|v| v.value()),
+            Err(_) => None,
+        };
+        drop(tx);
+        match version {
+            Some(1) => return Ok(db),
+            Some(_) => return Err("unsupported Keyrook session version".into()),
+            None if has_legacy_episodes(dir)? => {
+                drop(db);
+                return open(dir);
+            }
+            None => return Err("Keyrook session has no committed schema".into()),
+        }
+    }
+    if has_legacy_episodes(dir)? {
+        return open(dir);
+    }
+    Err(format!("Keyrook session not initialized: {}", file.display()).into())
+}
+
 fn migrate_directory(tx: &WriteTransaction, dir: &Path, bits: u8) -> Result<()> {
     let legacy = dir.join(format!("v1-{bits}"));
     if !legacy.try_exists()? {
@@ -119,6 +166,25 @@ pub fn open(dir: &Path) -> Result<Database> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stats_read_never_creates_a_missing_database() {
+        let dir = std::env::temp_dir().join(format!("keyrook-read-{}", std::process::id()));
+        fs::create_dir(&dir).unwrap();
+        assert!(open_existing(&dir).is_err());
+        assert!(!dir.join(FILE_NAME).exists());
+        {
+            let db = open(&dir).unwrap();
+            assert_eq!(stats(&db, 8).unwrap().runs, [0, 0]);
+        }
+        {
+            let db = open_existing(&dir).unwrap();
+            assert_eq!(stats(&db, 8).unwrap().runs, [0, 0]);
+        }
+        fs::remove_file(dir.join(FILE_NAME)).unwrap();
+        fs::remove_dir(dir).unwrap();
+    }
+
     #[test]
     fn an_uncommitted_training_episode_cannot_change_the_next_policy() {
         let dir = std::env::temp_dir().join(format!("keyrook-rollback-{}", std::process::id()));
