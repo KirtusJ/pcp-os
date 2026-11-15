@@ -106,7 +106,13 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     let mut world = World { files: files.iter().map(|f| (f.0.clone(), f.1)).collect(), store: Vec::new(), volume: None,
                             epoch_at_start: epoch(y, mo, d, h, mi, s).saturating_sub(arch::ticks() / arch::TICKS_PER_SECOND), unanswered: Vec::new() };
     let line = start.boot.command_line.as_str();
-    if !safe && option(line, "store") == Some("ide0") {
+    if !safe && line.split_whitespace().any(|w| w == "store=ide0") {
+        let exact = start.boot.exact_command_line();
+        if exact.is_none() || line.split_whitespace().filter(|w| w.starts_with("store=")).count() != 1 {
+            say!("requested user store could not be recovered: ambiguous boot option; no program started");
+            *failed += 1;
+            return tasks;
+        }
         match crate::store::mount() {
             Ok((volume, files)) => {
                 say!("user store mounted on primary IDE master: {} file(s)", files.len());

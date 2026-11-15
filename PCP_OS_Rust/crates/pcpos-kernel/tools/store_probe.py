@@ -43,10 +43,10 @@ def replay(args, root):
     if args.bios_dir:
         qemu += ["-L", str(args.bios_dir.resolve())]
 
-    def boot(label, action, *, denied=False, invalid=False):
+    def boot(label, action, *, denied=False, invalid=False, extra=""):
         guest = f"action{action}.elf"
         serial = root / (label + ".serial")
-        line = f"auto={guest} then=off store=ide0" + (" grant=none" if denied else "")
+        line = f"auto={guest} then=off store=ide0" + (" grant=none" if denied else "") + extra
         cmd = qemu + ["-accel", "tcg", "-cpu", "max", "-m", "256M", "-nic", "none",
                       "-display", "none", "-vga", "none", "-monitor", "none", "-no-reboot",
                       "-icount", "shift=4,align=off,sleep=off", "-kernel", kernel,
@@ -76,6 +76,9 @@ def replay(args, root):
     boot("oversized-checkpoint", 7)
     boot("cold-new-after-refusals", 4)
     new = disk.read_bytes()
+    boot("refuse-ambiguous-boot-option", 4, invalid=True, extra=" store=other")
+    if disk.read_bytes() != new:
+        raise RuntimeError("ambiguous boot request changed the disk")
     # Generation 3 is in slot zero. Replay sectors in protocol order over the
     # earlier disk to simulate a lost payload write and a torn commit sector.
     candidate = bytearray(old)
