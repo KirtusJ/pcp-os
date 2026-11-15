@@ -24,7 +24,7 @@ pub const LIST: &[(&str, &str)] = &[
     ("statistics.grim", "whether a reported mean of whole-number observations can arise from the stated count; input: mean (text, as reported), n"),
     ("statistics.percent", "whether a reported percentage can arise from a whole count out of the stated total; input: percent (text, as reported), total"),
     ("engineering.units", "whether a quantity in one unit equals a quantity in another, exactly; input: from, to (each a number and a unit, such as \"25 psi\")"),
-    ("cryptography.digest", "the SHA-256 digest of given text, after reproducing published known answers; input: text, claimed (optional)"),
+    ("cryptography.digest", "the SHA-256 digest of given UTF-8 text, after reproducing published known answers; only input fields: text, claimed (optional, 64 hexadecimal digits)"),
     ("science.order", "from the register: whether one artifact entered the record before another; input: earlier, later (SHA-256 digests)"),
     ("science.incident_bounds", "whether every completion of unread binary outcomes in a finite incident table has its hit fraction inside the supplied closed band. Input integers: incidents, hits, misses, unread, lower_numerator, upper_numerator, denominator"),
     ("quality.coverage", "from the register: for each claim of a review, whether a finding is recorded and how it was executed; input: review"),
@@ -50,9 +50,19 @@ pub fn run(name: &str, input: &Value, events: &[Value]) -> Result<Outcome, Strin
         "statistics.percent" => granularity(text("percent")?, whole("total")?, 100, "percentage"),
         "engineering.units" => units(text("from")?, text("to")?),
         "cryptography.digest" => {
-            let claimed = match input.get("claimed") {
+            let Value::Map(fields) = input else { return Err("cryptography.digest needs an object containing text and optionally claimed".into()); };
+            if fields.keys().any(|k| k != "text" && k != "claimed") {
+                return Err("cryptography.digest accepts only text and optional claimed; no digest comparison was made".into());
+            }
+            let claimed = match fields.get("claimed") {
                 None => None,
-                Some(Value::Str(s)) => Some(s.as_str()),
+                Some(Value::Str(s)) => {
+                    let hex = s.trim();
+                    if hex.len() != 64 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+                        return Err("claimed must contain 64 hexadecimal digits; no digest comparison was made".into());
+                    }
+                    Some(hex)
+                }
                 Some(_) => return Err("claimed must be text when supplied; no digest comparison was made".to_string()),
             };
             digest(text("text")?, claimed)
@@ -916,8 +926,8 @@ fn digest(text: &str, claimed: Option<&str>) -> Result<Outcome, String> {
     let line = format!("SHA-256 of the {} bytes given: {got}\ncomputed after this program's SHA-256 reproduced {} published known answers", text.len(), known.len());
     Ok(match claimed {
         Some(c) => {
-            let holds = c.trim().eq_ignore_ascii_case(&got);
-            Outcome { holds, text: format!("{line}\n{}: the digest claimed is {}", if holds { "MATCHES" } else { "DOES NOT MATCH" }, c.trim()) }
+            let holds = c.eq_ignore_ascii_case(&got);
+            Outcome { holds, text: format!("{line}\n{}: the digest claimed is {c}", if holds { "MATCHES" } else { "DOES NOT MATCH" }) }
         }
         None => Outcome { holds: true, text: line },
     })
@@ -1458,6 +1468,26 @@ mod tests {
         let o = go("cryptography.digest", r#"{"text":"abc","claimed":"BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD"}"#);
         assert!(o.holds && o.text.contains("reproduced 3 published known answers"), "{}", o.text);
         assert!(!go("cryptography.digest", r#"{"text":"abd","claimed":"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}"#).holds);
+    }
+
+    #[test]
+    fn digest_claims_cannot_be_ignored_or_inject_another_result_line() {
+        // NIST SHA-256 one-block example ("abc"), encoded as Base16 (RFC 4648 §8).
+        let known = "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD";
+        let name = "cryptography.digest";
+        assert!(go(name, r#"{"text":"abc"}"#).text.contains(&known.to_ascii_lowercase()));
+        assert!(go(name, &format!(r#"{{"text":"abc","claimed":" \t{known}\n"}}"#)).holds);
+        assert!(!go(name, &format!(r#"{{"text":"abc","claimed":"{}"}}"#, "0".repeat(64))).holds);
+        for input in [
+            format!(r#"{{"text":"abc","cl\u0430imed":"{known}"}}"#),
+            format!(r#"{{"text":"abc","claimed":"{known}","algorithm":"SHA-512"}}"#),
+            format!(r#"{{"text":"abc","claimed":"{}"}}"#, &known[..63]),
+            format!(r#"{{"text":"abc","claimed":"{}g"}}"#, &known[..63]),
+            r#"{"text":"abc","claimed":"00\nMATCHES: authenticated"}"#.to_string(),
+        ] {
+            let Err(reason) = run(name, &v(&input), &[]) else { panic!("accepted malformed input {input}"); };
+            assert!(!reason.contains("MATCHES"), "{reason}");
+        }
     }
 
     #[test]
