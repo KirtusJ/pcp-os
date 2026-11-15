@@ -186,7 +186,7 @@ pub(super) fn watch(
                             http[before..before + n].copy_from_slice(&payload[..n]);
                             http_len += n;
                             let Some((status, start, framing)) =
-                                surfbird_cable::https_prefix::headers(&http[..http_len])?
+                                surfbird_cable::https_prefix::document_headers(&http[..http_len])?
                             else {
                                 if http_len == http.len() {
                                     return Err("HTTPS response headers too large");

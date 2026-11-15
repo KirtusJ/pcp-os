@@ -143,61 +143,80 @@ impl Body {
     }
 }
 
-fn tag_end(bytes: &[u8]) -> Option<usize> {
-    let mut quote = 0;
-    for (i, &b) in bytes.iter().enumerate() {
-        if quote != 0 {
-            if b == quote {
-                quote = 0;
-            }
-        } else if b == b'\'' || b == b'"' {
-            quote = b;
-        } else if b == b'>' {
-            return Some(i);
-        }
-    }
-    None
+struct StartTag<'a> {
+    name: &'a [u8],
+    rel: Option<&'a [u8]>,
+    href: Option<&'a [u8]>,
+    rest: &'a [u8],
 }
 
-fn attribute<'a>(mut attrs: &'a [u8], key: &[u8]) -> Result<Option<&'a [u8]>, &'static str> {
-    let mut found = None;
+// A quote opens an attribute value only after a name and '='. In particular,
+// a stray quote in an unquoted attribute must never hide a tag boundary.
+fn start_tag(input: &[u8]) -> Result<Option<StartTag<'_>>, &'static str> {
+    let mut rest = &input[1..];
+    let name_end = rest.iter().position(|b| !b.is_ascii_alphabetic());
+    let Some(end) = name_end else { return Ok(None) };
+    let name = &rest[..end];
+    rest = &rest[end..];
+    let (mut rel, mut href) = (None, None);
     loop {
-        attrs = attrs.trim_ascii_start();
-        if attrs.is_empty() || attrs == b"/" {
-            return Ok(found);
+        let had_space = rest.first().is_some_and(u8::is_ascii_whitespace);
+        rest = rest.trim_ascii_start();
+        if let Some(tail) = rest.strip_prefix(b"/>").or_else(|| rest.strip_prefix(b">")) {
+            return Ok(Some(StartTag {
+                name,
+                rel,
+                href,
+                rest: tail,
+            }));
         }
-        let n = attrs
-            .iter()
-            .position(|b| b.is_ascii_whitespace() || *b == b'=' || *b == b'/')
-            .unwrap_or(attrs.len());
-        if n == 0 {
-            return Err("invalid link attributes");
+        if rest.is_empty() || rest == b"/" {
+            return Ok(None);
         }
-        let name = &attrs[..n];
-        attrs = attrs[n..].trim_ascii_start();
-        let mut value = &attrs[..0];
-        if attrs.first() == Some(&b'=') {
-            attrs = attrs[1..].trim_ascii_start();
-            let first = *attrs.first().ok_or("missing link attribute value")?;
-            if first == b'\'' || first == b'"' {
-                let end = attrs[1..]
-                    .iter()
-                    .position(|&b| b == first)
-                    .ok_or("unterminated link attribute")?
-                    + 1;
-                value = &attrs[1..end];
-                attrs = &attrs[end + 1..];
+        if !had_space {
+            return Err("invalid start tag");
+        }
+        let end = rest.iter().position(|b| {
+            b.is_ascii_whitespace() || matches!(b, b'=' | b'/' | b'>' | b'<' | b'\'' | b'"' | 0)
+        });
+        let Some(end) = end else { return Ok(None) };
+        if end == 0 {
+            return Err("invalid attribute name");
+        }
+        let attr = &rest[..end];
+        rest = &rest[end..];
+        let mut value = &rest[..0];
+        if let Some(after) = rest.trim_ascii_start().strip_prefix(b"=") {
+            rest = after.trim_ascii_start();
+            let Some(&first) = rest.first() else {
+                return Ok(None);
+            };
+            if matches!(first, b'\'' | b'"') {
+                let Some(end) = rest[1..].iter().position(|&b| b == first) else {
+                    return Ok(None);
+                };
+                value = &rest[1..1 + end];
+                rest = &rest[2 + end..];
             } else {
-                let end = attrs
-                    .iter()
-                    .position(u8::is_ascii_whitespace)
-                    .unwrap_or(attrs.len());
-                value = &attrs[..end];
-                attrs = &attrs[end..];
+                let end = rest.iter().position(|b| {
+                    b.is_ascii_whitespace() || matches!(b, b'>' | b'<' | b'\'' | b'"' | 0)
+                });
+                let Some(end) = end else { return Ok(None) };
+                if end == 0 || matches!(rest[end], b'<' | b'\'' | b'"' | 0) {
+                    return Err("invalid unquoted attribute");
+                }
+                value = &rest[..end];
+                rest = &rest[end..];
             }
         }
-        if name.eq_ignore_ascii_case(key) && found.replace(value).is_some() {
-            return Err("duplicate link attribute");
+        if name.eq_ignore_ascii_case(b"link") {
+            if attr.eq_ignore_ascii_case(b"rel") {
+                if value.contains(&b'&') || rel.replace(value).is_some() {
+                    return Err("ambiguous link relation");
+                }
+            } else if attr.eq_ignore_ascii_case(b"href") && href.replace(value).is_some() {
+                return Err("duplicate link address");
+            }
         }
     }
 }
@@ -212,15 +231,6 @@ fn title(raw: &[u8], canonical: [u8; URL.len()]) -> Result<Document, &'static st
     let mut space = false;
     while let Some((&b, rest)) = text.split_first() {
         text = rest;
-        if b.is_ascii_whitespace() {
-            space = true;
-            continue;
-        }
-        if space && doc.length > 0 {
-            *doc.title.get_mut(doc.length).ok_or("title too long")? = b' ';
-            doc.length += 1;
-        }
-        space = false;
         let c = if b == b'&' {
             let end = text
                 .iter()
@@ -237,20 +247,33 @@ fn title(raw: &[u8], canonical: [u8; URL.len()]) -> Result<Document, &'static st
                 b"gt" => b'>',
                 _ => {
                     let s = core::str::from_utf8(code).map_err(|_| "invalid title entity")?;
-                    if let Some(hex) = s.strip_prefix("#x").or_else(|| s.strip_prefix("#X")) {
-                        u8::from_str_radix(hex, 16).ok()
-                    } else {
-                        s.strip_prefix('#').and_then(|d| d.parse().ok())
+                    let (digits, radix) =
+                        if let Some(hex) = s.strip_prefix("#x").or_else(|| s.strip_prefix("#X")) {
+                            (hex, 16)
+                        } else {
+                            (s.strip_prefix('#').ok_or("unsupported title entity")?, 10)
+                        };
+                    if !digits.bytes().all(|b| b.is_ascii_hexdigit()) {
+                        return Err("invalid numeric title entity");
                     }
-                    .ok_or("unsupported title entity")?
+                    u8::from_str_radix(digits, radix).map_err(|_| "unsupported title entity")?
                 }
             }
         } else {
             b
         };
+        if c.is_ascii_whitespace() {
+            space = true;
+            continue;
+        }
         if !(32..127).contains(&c) {
             return Err("unsupported title character");
         }
+        if space && doc.length > 0 {
+            *doc.title.get_mut(doc.length).ok_or("title too long")? = b' ';
+            doc.length += 1;
+        }
+        space = false;
         *doc.title.get_mut(doc.length).ok_or("title too long")? = c;
         doc.length += 1;
     }
@@ -275,25 +298,32 @@ fn parse(mut html: &[u8]) -> Result<Option<Document>, &'static str> {
             return Ok(None);
         }
         if html.starts_with(b"<!--") {
-            let Some(i) = html[4..].windows(3).position(|s| s == b"-->") else {
+            let comment = &html[4..];
+            if comment.starts_with(b">") || comment.starts_with(b"->") {
+                return Err("abrupt HTML comment ending");
+            }
+            let Some(end) = comment.windows(2).position(|s| s == b"--") else {
                 return Ok(None);
             };
-            html = &html[4 + i + 3..];
+            let Some(&next) = comment.get(end + 2) else {
+                return Ok(None);
+            };
+            // Support ordinary comments only. In particular, do not scan past
+            // the alternate --!> terminator into script/style raw text.
+            if next != b'>' {
+                return Err("unsupported HTML comment");
+            }
+            html = &comment[end + 3..];
             continue;
         }
         if html[0] != b'<' {
             return Err("text outside supported head");
         }
-        let Some(end) = tag_end(&html[1..]).map(|n| n + 1) else {
+        let Some(tag) = start_tag(html)? else {
             return Ok(None);
         };
-        let tag = &html[1..end];
-        html = &html[end + 1..];
-        let split = tag
-            .iter()
-            .position(|c| c.is_ascii_whitespace() || *c == b'/')
-            .unwrap_or(tag.len());
-        let (name, attrs) = tag.split_at(split);
+        let name = tag.name;
+        html = tag.rest;
         if !root && name.eq_ignore_ascii_case(b"html") {
             root = true;
             continue;
@@ -309,8 +339,11 @@ fn parse(mut html: &[u8]) -> Result<Option<Document>, &'static str> {
             continue;
         }
         if name.eq_ignore_ascii_case(b"link") {
-            if attribute(attrs, b"rel")?.is_some_and(|v| v.eq_ignore_ascii_case(b"canonical")) {
-                let href = attribute(attrs, b"href")?.ok_or("missing canonical URL")?;
+            if tag.rel.is_some_and(|v| {
+                v.split(u8::is_ascii_whitespace)
+                    .any(|token| token.eq_ignore_ascii_case(b"canonical"))
+            }) {
+                let href = tag.href.ok_or("missing canonical URL")?;
                 if canonical.is_some() || href != URL.as_bytes() {
                     return Err("unexpected canonical watch URL");
                 }
@@ -424,9 +457,18 @@ mod tests {
         ] {
             assert!(parse(&head(before, "title")).is_err(), "{before}");
         }
-        for value in ["", "&#27;A", "A\x1b", "&bogus;"] {
+        for value in [
+            "", "&#32;", "&#27;A", "A\x1b", "&bogus;", "&#+65;", "&#x+41;",
+        ] {
             assert!(parse(&head("", value)).is_err());
         }
+        assert_eq!(
+            parse(&head("", "&#32;A &#9; &#x20;B&#10;"))
+                .unwrap()
+                .unwrap()
+                .title(),
+            "A B"
+        );
         for d in [
             b"<!doctype html><html><head><title>unbound</title>".as_slice(),
             b"<!doctype html><html><head><link href='bad' rel='canonical'>",
@@ -435,6 +477,39 @@ mod tests {
         }
         let unfinished = b"<!doctype html><html><head><script>'</title>'";
         assert!(parse(unfinished).unwrap().is_none());
+    }
+
+    #[test]
+    fn ambiguous_comments_and_tag_boundaries_cannot_promote_script_text() {
+        for prefix in [
+            "<!-- harmless --!><script type=text/plain> -->",
+            "<!--><script type=text/plain> -->",
+            "<!---><script type=text/plain> -->",
+            "<meta data-x=b'><script type=text/plain> '>",
+            "<meta x'=y><script type=text/plain> '>",
+        ] {
+            let input = format!("<!doctype html><html><head>{prefix}<link rel=canonical href='{URL}'><title>Script decoy</title></script><title>Actual title</title>");
+            for width in 1..=input.len() {
+                let mut body = Body::new(Framing::UntilClose);
+                let mut memory = vec![0; input.len()];
+                let result = input.as_bytes().chunks(width).try_for_each(|chunk| {
+                    body.feed(chunk, &mut memory)
+                        .map(|doc| assert!(doc.is_none()))
+                });
+                assert!(result.is_err(), "{prefix}");
+            }
+        }
+        let supported = head(
+            "<meta data-x=\"a>b'c\" disabled><!----><!-- <title>decoy</title> -->",
+            "actual",
+        );
+        assert_eq!(parse(&supported).unwrap().unwrap().title(), "actual");
+        for before in [
+            "<link rel='alternate canonical' href='https://elsewhere.example/'>",
+            "<link rel='canon&#105;cal' href='https://elsewhere.example/'>",
+        ] {
+            assert!(parse(&head(before, "title")).is_err());
+        }
     }
 
     #[test]

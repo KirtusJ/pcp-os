@@ -8,7 +8,7 @@ pub enum Framing {
     UntilClose,
 }
 
-pub fn headers(bytes: &[u8]) -> Result<Option<(&[u8], usize, Framing)>, &'static str> {
+fn headers(bytes: &[u8], document: bool) -> Result<Option<(&[u8], usize, Framing)>, &'static str> {
     let Some(end) = bytes.windows(4).position(|b| b == b"\r\n\r\n") else {
         return Ok(None);
     };
@@ -42,13 +42,27 @@ pub fn headers(bytes: &[u8]) -> Result<Option<(&[u8], usize, Framing)>, &'static
         }
         let value = field[at + 1..].trim_ascii();
         if name.eq_ignore_ascii_case(b"Content-Type") {
+            let mut parts = value.split(|&c| c == b';');
             if html
-                || !value
-                    .split(|&c| c == b';')
+                || !parts
                     .next()
-                    .is_some_and(|v| v.trim_ascii().eq_ignore_ascii_case(b"text/html"))
+                    .unwrap()
+                    .trim_ascii()
+                    .eq_ignore_ascii_case(b"text/html")
             {
                 return Err("invalid HTML content type");
+            }
+            // The document tokenizer reads ASCII syntax from UTF-8 bytes.
+            // Require an authoritative transport charset instead of guessing
+            // from bytes that could have a different meaning under e.g. UTF-16.
+            if document {
+                let charset = parts.next().unwrap_or_default().trim_ascii();
+                if parts.next().is_some()
+                    || !(charset.eq_ignore_ascii_case(b"charset=utf-8")
+                        || charset.eq_ignore_ascii_case(b"charset=\"utf-8\""))
+                {
+                    return Err("explicit UTF-8 HTML charset required");
+                }
             }
             html = true;
         } else if name.eq_ignore_ascii_case(b"Transfer-Encoding") {
@@ -85,8 +99,12 @@ pub fn headers(bytes: &[u8]) -> Result<Option<(&[u8], usize, Framing)>, &'static
     Ok(Some((status, end + 4, framing)))
 }
 
+pub fn document_headers(bytes: &[u8]) -> Result<Option<(&[u8], usize, Framing)>, &'static str> {
+    headers(bytes, true)
+}
+
 pub fn read(bytes: &[u8]) -> Result<Option<(&[u8], &[u8])>, &'static str> {
-    let Some((status, start, framing)) = headers(bytes)? else {
+    let Some((status, start, framing)) = headers(bytes, false)? else {
         return Ok(None);
     };
     let mut body = &bytes[start..];
@@ -120,6 +138,21 @@ pub fn read(bytes: &[u8]) -> Result<Option<(&[u8], &[u8])>, &'static str> {
 mod tests {
     extern crate std;
     use super::*;
+    #[test]
+    fn document_requires_an_unambiguous_transport_charset() {
+        for content in [
+            "text/html",
+            "text/html; charset=utf-16le",
+            "text/html; charset=utf-8; charset=utf-16",
+        ] {
+            let response =
+                std::format!("HTTP/1.1 200 OK\r\nContent-Type: {content}\r\n\r\n<!doctype html>");
+            assert!(document_headers(response.as_bytes()).is_err());
+            assert!(read(response.as_bytes()).unwrap().is_some());
+        }
+        let response = b"HTTP/1.1 200 OK\r\nContent-Type: text/html; Charset=\"UTF-8\"\r\n\r\n";
+        assert!(document_headers(response).unwrap().is_some());
+    }
     #[test]
     fn requires_the_complete_prefix_across_records() {
         for source in [b"HTTP/1.1 200 OK\r\nContent-type: text/html; charset=utf-8\r\nContent-Length: 15\r\n\r\n<!doctype html>".as_slice(),

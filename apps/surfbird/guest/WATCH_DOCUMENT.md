@@ -4,7 +4,7 @@ In the `document` arm, the native Surfbird ELF retrieves the public watch URL ov
 
 ![Title rendered by the guest](evidence/watch-document/title.png)
 
-The observed title was “YouTube Developers Live: Embedded Web Player Customization - YouTube”. The guest received an HTTP 200 and consumed 785,783 decoded body bytes through the TLS record containing the title. QEMU observed 819,565 incoming TCP payload bytes including retransmissions. The [address screen](evidence/watch-document/address.png) preserves the case of the video identifier. The kernel recorded three presented frames, a clean exit and zero milliseconds of sound. These are document-reader frames. [Receipts](evidence/watch-document/results.json)
+The observed title was “YouTube Developers Live: Embedded Web Player Customization - YouTube”. The guest received an HTTP 200 and consumed 851,220 decoded body bytes through the TLS record containing the title. QEMU observed 886,166 incoming TCP payload bytes including retransmissions. The [address screen](evidence/watch-document/address.png) preserves the case of the video identifier. The kernel recorded three presented frames, a clean exit and zero milliseconds of sound. These are document-reader frames. [Receipts](evidence/watch-document/results.json)
 
 ## Replay
 
@@ -18,9 +18,9 @@ The harness boots an isolated QEMU instance and records its encrypted Ethernet t
 
 ## What the reader accepts
 
-The guest checks the server name, certificate path, HTTP status, HTML content type, identity content encoding and framing. It decodes fixed-length, close-delimited or plain chunked body data across TLS records. It stops after a usable head prefix. The profile caps headers at 32 KiB, decoded body storage at 2 MiB, candidate scans at eight and the printable ASCII title at 144 bytes. The canonical link must precede the title and match the requested address exactly. Standard title entities for common punctuation and printable ASCII numeric references are decoded. [HTTP/1.1 framing](https://www.rfc-editor.org/rfc/rfc9112.html#section-6) · [Reader and tests](src/watch_document.rs)
+The guest checks the server name, certificate path, HTTP status, HTML content type with an explicit UTF-8 charset, identity content encoding and framing. It decodes fixed-length, close-delimited or plain chunked body data across TLS records. It stops after a usable head prefix. The profile caps headers at 32 KiB, decoded body storage at 2 MiB, candidate scans at eight and the printable ASCII title at 144 bytes. The canonical link must precede the title and match the requested address exactly. Standard title entities for common punctuation and printable ASCII numeric references are decoded. [HTTP/1.1 framing](https://www.rfc-editor.org/rfc/rfc9112.html#section-6) · [Reader and tests](src/watch_document.rs)
 
-The restricted grammar recognizes explicit HTML and head elements, links, metadata, comments and ordinary script/style raw text. It skips inline code. Unsupported head structures, escaped script syntax, compression, chunk extensions and unsupported titles cause the read to fail. The guest requests one watch document and renders its verified metadata. The remaining document, subresources, DOM, scripts, media and player controls are outside this mode. A readable title alone establishes neither video availability nor playback.
+The restricted grammar recognizes explicit HTML and head elements, links, metadata, comments and ordinary script/style raw text. It skips inline code. The reader rejects ambiguous comment endings, malformed start-tag boundaries, and character references in link relations. It recognizes canonical links within a space-separated relation list. Unsupported head structures, escaped script syntax, compression, chunk extensions and unsupported titles also cause the read to fail. The guest requests one watch document and renders its verified metadata. The remaining document, subresources, DOM, scripts, media and player controls are outside this mode. A readable title alone establishes neither video availability nor playback.
 
 ## A route to native playback
 
