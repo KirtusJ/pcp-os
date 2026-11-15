@@ -1,6 +1,6 @@
 mod session;
 mod sqlite;
-use keyrook_core::{attack, fixture, Challenge, Memory};
+use keyrook_core::{attack, fixture, Challenge};
 use std::{env, fs, path::Path};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -63,12 +63,7 @@ fn run(args: &[String]) -> Result<()> {
         }
         [cmd, dir, b] if cmd == "stats" => {
             let b = bits(b)?;
-            let path = Path::new(dir);
-            let m = if path.try_exists()? {
-                session::stats(&session::open(path)?, b)?
-            } else {
-                Memory::default()
-            };
+            let m = session::stats(&session::open_existing(Path::new(dir))?, b)?;
             println!(
                 "{{\"runs\":{:?},\"wins\":{:?},\"work\":{:?},\"next\":{}}}",
                 m.runs,
@@ -91,10 +86,7 @@ fn run(args: &[String]) -> Result<()> {
         }
         [cmd, dir, file] if cmd == "export-sqlite" => {
             let path = Path::new(dir);
-            if !path.is_dir() {
-                return Err("session directory does not exist".into());
-            }
-            sqlite::export(&session::open(path)?, Path::new(file))?;
+            sqlite::export(&session::open_existing(path)?, Path::new(file))?;
             println!("Exported {file}");
         }
         _ => return Err(HELP.into()),
