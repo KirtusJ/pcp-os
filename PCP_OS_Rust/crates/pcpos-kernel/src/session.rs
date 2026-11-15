@@ -49,9 +49,6 @@ struct Entry {
     digest: String,
 }
 
-/// The mode the kernel draws its own screens in.
-const OWN_MODE: (u32, u32) = (1024, 768);
-
 fn option<'a>(line: &'a str, key: &str) -> Option<&'a str> {
     line.split_whitespace().find_map(|w| w.strip_prefix(key).and_then(|r| r.strip_prefix('=')))
 }
@@ -138,10 +135,18 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     }
     // The menu.
     let mut chosen = 0usize;
+    let mut details = false;
+    let display = start.display.unwrap();
+    ui::set_scale(if option(line, "ui_scale") == Some("2") && display.width >= 1280 && display.height >= 960 { 2 } else { 1 });
+    say!("desktop: {}x{} at {}x UI scale", display.width, display.height, ui::scale());
     arch::interrupts_on();
     dev::keys_forget();
     loop {
-        draw_menu(start, &programs, &files, rec, chosen, &message, world.store.len());
+        if details {
+            draw_menu(start, &programs, &files, rec, chosen, &message, world.store.len());
+        } else {
+            draw_desktop(start, &programs, chosen, &message);
+        }
         let key = wait_key();
         match key {
             (0x48, _) if chosen > 0 => chosen -= 1,
@@ -156,6 +161,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
                 dev::keys_forget();
             }
             (0x13, false) => register_view(rec),
+            (0x20, false) => details = !details,
             (0x19, false) | (0x01, false) => break,
             _ => {}
         }
@@ -164,6 +170,52 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     ui::clear(ui::GROUND);
     ui::at(2, 2, "PCP OS is stopping. Its register is being closed and verified.", ui::TEXT, ui::GROUND);
     tasks
+}
+
+fn draw_desktop(start: &Start, programs: &[Entry], chosen: usize, message: &str) {
+    use ui::{at, GROUND, PANEL, SOFT, TEXT};
+    ui::clear(GROUND);
+    let (cols, rows) = ui::grid();
+    ui::emblem(20, 16, 36, GROUND);
+    at(7, 1, "PCP OS", TEXT, GROUND);
+    if start.failed != 0 {
+        at(2, 3, "SAFE: verification failed. Programs are disabled.", ui::BAD, GROUND);
+    }
+    let visible = rows.saturating_sub(12).max(1) as usize;
+    let first = (chosen + 1).saturating_sub(visible);
+    if programs.is_empty() {
+        at(2, 5, "No programs loaded", SOFT, GROUND);
+    }
+    for (i, p) in programs.iter().enumerate().skip(first).take(visible) {
+        let row = 5 + (i - first) as u32;
+        let width = cols.saturating_sub(4).min(44);
+        let bg = if i == chosen { PANEL } else { GROUND };
+        ui::fill(2 * ui::CELL_W, row * ui::CELL_H, width * ui::CELL_W, ui::CELL_H, bg);
+        if i == chosen { ui::fill(2 * ui::CELL_W, row * ui::CELL_H, 3, ui::CELL_H, ui::TEAL); }
+        at(3, row, &p.name.chars().take(width.saturating_sub(2) as usize).collect::<String>(), TEXT, bg);
+    }
+    if let Some(_entry) = programs.get(chosen).filter(|_| start.failed == 0) {
+        let none = option(&start.boot.command_line, "grant") == Some("none");
+        let access = if none { "Access: console only" } else if start.sound {
+            "Access: console, display, keyboard, files, store, sound"
+        } else { "Access: console, display, keyboard, files and store" };
+        at(2, rows - 7, access, SOFT, GROUND);
+        #[cfg(feature = "guest-ethernet")]
+        if !none && ethernet_grant(start.boot.exact_command_line(), &_entry.digest) {
+            at(2, rows - 6, "Access: raw Ethernet frames", ui::AMBER, GROUND);
+        }
+        #[cfg(feature = "game-link")]
+        if !none && option(&start.boot.command_line, "link_image") == Some(_entry.digest.as_str()) {
+            at(2, rows - 5, "Access: second serial port", ui::AMBER, GROUND);
+        }
+    }
+    if !message.is_empty() {
+        at(2, rows - 4, message.lines().next().unwrap_or(""), ui::AMBER, GROUND);
+    }
+    let keys = if programs.is_empty() || start.failed != 0 {
+        "D details   R register   P off"
+    } else { "Up/Down choose   Enter open   D details   R register   P off" };
+    at(2, rows - 2, keys, TEXT, GROUND);
 }
 
 /// The next key pressed: (its number, whether it is of the second group). Releases are passed over.
@@ -250,7 +302,7 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
         }
     }
     ui::fill(0, (rows - 2) * ui::CELL_H, cols * ui::CELL_W, 2 * ui::CELL_H, PANEL);
-    at(2, rows - 2, "Up/Down choose    Enter start    R register    P power off", TEXT, PANEL);
+    at(2, rows - 2, "Up/Down choose    Enter start    D desktop    R register    P off", TEXT, PANEL);
     at(2, rows - 1, "Ctrl+Alt+Delete stops a running program and returns here. No program can take that key.", SOFT, PANEL);
 }
 
@@ -319,8 +371,8 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
     let (sound_ms, dry) = ((sound1 - sound0) / (dev::SOUND_RATE as u64 * 4 / 1000), dry1 - dry0);
     let (_, fm_written, fm_late) = dev::fm_state();
     // The display is the kernel's again, in the kernel's own mode.
-    if start.display.is_some() {
-        dev::display_set(OWN_MODE.0, OWN_MODE.1);
+    if let Some(desktop) = start.display {
+        dev::display_set(desktop.width, desktop.height);
         dev::display_show(0);
     }
     let message = match result {
