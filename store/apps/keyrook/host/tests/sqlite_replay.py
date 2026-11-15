@@ -64,6 +64,10 @@ def main():
         cli("train", session, 4, 0, 1)
         exported = root / "export.sqlite"
         cli("export-sqlite", session, exported)
+        long_target = root / ("x" * 240 + ".sqlite")
+        cli("export-sqlite", session, long_target)
+        with closing(sqlite3.connect(long_target)) as db:
+            assert db.execute("pragma integrity_check").fetchone() == ("ok",)
         original = exported.read_bytes()
         # Failed publication must preserve unrelated existing destinations.
         protected = root / "protected.sqlite"

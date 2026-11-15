@@ -86,7 +86,7 @@ fn reserve_staging_file(destination: &Path) -> Result<PathBuf> {
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    let name = destination
+    destination
         .file_name()
         .and_then(|s| s.to_str())
         .ok_or("SQLite export destination must have a UTF-8 filename")?;
@@ -94,7 +94,7 @@ fn reserve_staging_file(destination: &Path) -> Result<PathBuf> {
     let sequence = EXPORT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     for attempt in 0..64 {
         let stage = parent.join(format!(
-            ".{name}.keyrook-stage-{}-{nanos}-{sequence}-{attempt}.sqlite",
+            ".keyrook-stage-{}-{nanos}-{sequence}-{attempt}.sqlite",
             std::process::id()
         ));
         match fs::OpenOptions::new()
