@@ -80,6 +80,7 @@ impl Drop for Temp {
             "fluxrink.elf",
             "sunspur.elf",
             "heliograph.elf",
+            "keyrook.elf",
             "rdesk.elf",
             "gullpost.elf",
             "gull64.elf",
@@ -93,7 +94,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = env::args().skip(1).collect();
     if args.len() < 2 || args.len() > 4 {
         return Err(
-            "Usage: pcp-native-store KERNEL {gullpost|gull64|sunspur|fluxrink|heliograph|parrots-all-the-way-down} [host|peer PORT]".into(),
+            "Usage: pcp-native-store KERNEL {gullpost|gull64|sunspur|fluxrink|heliograph|keyrook|parrots-all-the-way-down} [host|peer PORT]".into(),
         );
     }
     let (shelf, file) = match args[1].as_str() {
@@ -102,6 +103,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "sunspur" => ("games/sunspur-rally", "sunspur.elf"),
         "fluxrink" => ("games/flux-rink", "fluxrink.elf"),
         "heliograph" => ("engines/heliograph", "heliograph.elf"),
+        "keyrook" => ("apps/keyrook", "keyrook.elf"),
         "parrots-all-the-way-down" => ("apps/parrots-all-the-way-down", "rdesk.elf"),
         _ => return Err("Unknown Store guest".into()),
     };
