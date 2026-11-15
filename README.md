@@ -8,6 +8,7 @@ PCP OS runs Adversarial Claim Review (ACR) and keeps a verifiable register of wh
 | Run a calculation or check | [Built-in apps](#built-in-apps) | Discover the host’s executable instruments with `pcpos instrument list`. Agents can also call `acr_instrument` with `{"instrument":"list"}`. |
 | Choose the rules for a review | [Method modules](#method-modules) | Read the specification for Core and each selected specialist. `pcpos modules <method-directory>` lists the modules supplied to that host. |
 | Find a downloadable application | [Store package index](store/README.md#package-index) · [Games](#games) | Each published package entry identifies its version, payload files and hashes. The package catalog identifies each runtime. |
+| Govern recursive workers | [Parrots all the way Down](store/apps/parrots-all-the-way-down/) · [Package](store/index/kirtusj/pa/rr/parrots-all-the-way-down) (`kirtusj/parrots-all-the-way-down`) | Set depth, live-worker and lifetime budgets. Inspect the native queue or admit a real process with the hosted adapter. |
 | Open a web page from a terminal or agent | [Surfbird hosted reader](https://github.com/KirtusJ/surfbird) | Use the shared terminal and machine session. Send hosted changes to the standalone repository. |
 | Run Surfbird on the PCP-OS graphical display | [Native guest and QEMU replay](apps/surfbird/guest/) · [Integration and hosted pin](apps/surfbird/) | Follow numbered links with the guest keyboard. The Ethernet build uses DNS and TCP to reach a local HTTP fixture. |
 
@@ -30,7 +31,7 @@ Night Post and Bellweather Harbor also ship offline browser players. Download a 
 
 ## Native rendering engines
 
-**Heliograph** is a Rust 3D software renderer with an interactive material lab, used by Flux Rink. [Engine, native lab and benchmarks](store/engines/heliograph/) · [Package](store/index/kirtusj/he/li/heliograph) · [Native Store launcher](store/native/README.md)
+**Heliograph** is a Rust 3D software renderer with an interactive material lab, used by Flux Rink. [Engine, native lab and benchmarks](store/engines/heliograph/) · [Package](store/index/kirtusj/he/li/heliograph) (`kirtusj/heliograph`) · [Native Store launcher](store/native/README.md)
 
 ## Built-in apps
 

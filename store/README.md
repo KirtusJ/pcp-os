@@ -3,6 +3,7 @@
 | What you want to do | Where to start |
 | --- | --- |
 | Run a Science, Mathematics, Statistics, Engineering or review instrument | [Host instrument catalog and CLI/MCP examples](instruments/README.md) |
+| Manage recursive jobs and admissions | [Parrots all the way Down](apps/parrots-all-the-way-down/) · native help desk, hosted worker launcher and machine commands |
 | Get a packaged application or verify its files | [Package index](#package-index) |
 | Train agents on toy ciphers or split a challenge across workers | [Keyrook native arena and hosted tools](apps/keyrook/) |
 | Choose a review module or read its specification | [Released method modules](../README.md#method-modules) |
@@ -27,6 +28,7 @@ The [Night Post flight manual](games/night-post/README.md) covers routes, airbra
 | Games · 3D courier platformer | [Gullpost Express 64](games/gullpost-express-64/) | Explore Lighthouse Island and deliver the final letter. | [Package](index/kirtusj/gu/ll/gullpost-express-64) |
 | Games · racing | [Sunspur Rally](games/sunspur-rally/) | Single-player time trial, x86-64 PCP OS guest. | [Package](index/kirtusj/su/ns/sunspur-rally) |
 | Games · multiplayer sports | [Flux Rink](games/flux-rink/) | Two-player 3D prototype. Stock kernel for shared keyboard; optional cable kernel for linked guests. | [Package](index/kirtusj/fl/ux/flux-rink) |
+| Applications · worker supervision | [Parrots all the way Down](apps/parrots-all-the-way-down/) | Native queue with parentage, limits and branch cancellation. Hosted source includes a process launcher. | [Package](index/kirtusj/pa/rr/parrots-all-the-way-down) |
 | Engines · 3D rendering | [Heliograph](engines/heliograph/) | Reusable Rust renderer and a native material and performance lab. | [Package](index/kirtusj/he/li/heliograph) |
 
 Use the [native Store launcher](native/README.md) for these entries. The engine's installable artifact is its lab ELF; the renderer crate lives alongside it in the pinned source tree.
@@ -58,6 +60,7 @@ The Store uses the repository's `pcpos-pkg` application entry format. Files in a
 | `kirtusj/gullpost-express-64` | [Package entry](index/kirtusj/gu/ll/gullpost-express-64) |
 | `kirtusj/sunspur-rally` | [Native racing game](index/kirtusj/su/ns/sunspur-rally) |
 | `kirtusj/flux-rink` | [Native multiplayer game](index/kirtusj/fl/ux/flux-rink) |
+| `kirtusj/parrots-all-the-way-down` | [Native recursion help desk](index/kirtusj/pa/rr/parrots-all-the-way-down) |
 | `kirtusj/heliograph` | [Native engine lab](index/kirtusj/he/li/heliograph) |
 
 For a separately downloaded player, open its package entry above and compare the SHA-256 for the matching `.html` path with the downloaded file. For example, run `Get-FileHash -Algorithm SHA256 ./Night_Post.html` in PowerShell or `sha256sum ./Night_Post.html` on Linux in the download directory.

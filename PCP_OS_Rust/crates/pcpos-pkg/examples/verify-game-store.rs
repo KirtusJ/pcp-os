@@ -30,6 +30,7 @@ const PACKAGES: &[(&str, &str, &[&str])] = &[
     ("games", "flux-rink", &["dist/fluxrink.elf"]),
     ("engines", "heliograph", &["dist/heliograph.elf"]),
     ("apps", "keyrook", &["dist/keyrook.elf"]),
+    ("apps", "parrots-all-the-way-down", &["dist/rdesk.elf"]),
 ];
 
 fn read(path: &Path) -> Result<Vec<u8>, String> {
