@@ -1,6 +1,6 @@
 # Native Store launcher
 
-The launcher is Rust. Games and the Heliograph lab execute as freestanding Rust guests inside PCP OS. These Store releases have no browser player. QEMU, Rust and the [kernel build prerequisites](../../PCP_OS_Rust/crates/pcpos-kernel/README.md) are needed for a source checkout.
+The launcher is Rust. The recursion help desk, games and Heliograph lab execute as freestanding Rust guests inside PCP OS. These Store releases have no browser player. QEMU, Rust and the [kernel build prerequisites](../../PCP_OS_Rust/crates/pcpos-kernel/README.md) are needed for a source checkout.
 
 From the repository root, build a stock kernel, then choose a guest. The launcher needs the ELF32 converted image emitted by the kernel's build script. A previously measured PCP OS 0.3.1 ELF32 can also be supplied. `PCPOS_QEMU` may specify an absolute QEMU executable.
 
@@ -9,7 +9,7 @@ sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
 cargo run --locked --release --manifest-path store/native/Cargo.toml -- PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 sunspur
 ```
 
-Use `gullpost` for the 2D courier or `gull64` for Lighthouse Island. Use `fluxrink` for the rink or `heliograph` for the rendering lab. Press Enter at the OS menu. Escape returns from each program and P at the OS menu powers down. The launcher loads the versioned Store ELF, measures the kernel's code and read-only pages, requests 32 MiB of VGA memory for Heliograph's resolution ladder and gives QEMU short module names.
+Use `parrots-all-the-way-down` for the [recursion help desk](../apps/parrots-all-the-way-down/). Use `gullpost` for the 2D courier or `gull64` for Lighthouse Island. Use `fluxrink` for the rink or `heliograph` for the rendering lab. Press Enter at the OS menu. Escape returns from each program and P at the OS menu powers down. The launcher loads the versioned Store ELF, measures the kernel's code and read-only pages, requests 32 MiB of VGA memory for Heliograph's resolution ladder and gives QEMU short module names.
 
 ## Linked Flux Rink
 

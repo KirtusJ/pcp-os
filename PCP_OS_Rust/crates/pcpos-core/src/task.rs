@@ -275,3 +275,39 @@ impl<const N: usize> TaskTable<N> {
         c
     }
 }
+
+/// Register-wide limits for a tree of admitted tasks. A root is at depth zero.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RecursionLimits {
+    /// Greatest admitted distance from a root.
+    pub max_depth: u16,
+    /// Maximum number of simultaneously outstanding admissions.
+    pub max_live: u16,
+    /// Maximum cumulative admissions, including finished or cancelled tasks.
+    pub max_total: u32,
+}
+
+impl RecursionLimits {
+    /// Check the configured limits. A depth of zero allows roots only.
+    pub fn validate(self) -> Result<(), &'static str> {
+        if self.max_live == 0 || self.max_total == 0 {
+            return Err("live and total limits must be positive");
+        }
+        Ok(())
+    }
+
+    /// Check one proposed admission against the counts immediately before it.
+    pub fn admit(self, depth: u32, live: u32, total: u32) -> Result<(), &'static str> {
+        self.validate()?;
+        if total >= self.max_total {
+            return Err("total node limit reached");
+        }
+        if live >= u32::from(self.max_live) {
+            return Err("live node limit reached");
+        }
+        if depth > u32::from(self.max_depth) {
+            return Err("depth limit reached");
+        }
+        Ok(())
+    }
+}
