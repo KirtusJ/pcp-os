@@ -1,0 +1,10 @@
+[package]
+name = "keyrook"
+version = "0.1.0"
+edition = "2021"
+publish = false
+default-run = "keyrook"
+
+[dependencies]
+keyrook-core = { path = "../core" }
+redb = "4.6"

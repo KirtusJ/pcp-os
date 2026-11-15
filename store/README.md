@@ -4,6 +4,7 @@
 | --- | --- |
 | Run a Science, Mathematics, Statistics, Engineering or review instrument | [Host instrument catalog and CLI/MCP examples](instruments/README.md) |
 | Get a packaged application or verify its files | [Package index](#package-index) |
+| Train agents on toy ciphers or split a challenge across workers | [Keyrook native arena and hosted tools](apps/keyrook/) |
 | Choose a review module or read its specification | [Released method modules](../README.md#method-modules) |
 | Play a game | [Offline browser shelf](index.html) or [native-only games and engine](#native-only-store) |
 
@@ -50,6 +51,7 @@ The Store uses the repository's `pcpos-pkg` application entry format. Files in a
 
 | Application | Listing |
 | --- | --- |
+| `kirtusj/keyrook` | [Native cryptography arena](index/kirtusj/ke/yr/keyrook) · [Worker protocol](apps/keyrook/#external-workers) |
 | `kirtusj/night-post` | [Package entry](index/kirtusj/ni/gh/night-post) |
 | `kirtusj/bellweather-harbor` | [Package entry](index/kirtusj/be/ll/bellweather-harbor) |
 | `kirtusj/gullpost-express` | [Package entry](index/kirtusj/gu/ll/gullpost-express) |

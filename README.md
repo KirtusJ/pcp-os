@@ -11,6 +11,10 @@ PCP OS runs Adversarial Claim Review (ACR) and keeps a verifiable register of wh
 | Open a web page from a terminal or agent | [Surfbird hosted reader](https://github.com/KirtusJ/surfbird) | Use the shared terminal and machine session. Send hosted changes to the standalone repository. |
 | Run Surfbird on the PCP-OS graphical display | [Native guest and QEMU replay](apps/surfbird/guest/) · [Integration and hosted pin](apps/surfbird/) | Follow numbered links with the guest keyboard. The Ethernet build uses DNS and TCP to reach a local HTTP fixture. |
 
+## Cryptography applications
+
+**[Keyrook](store/apps/keyrook/)** runs recursive workers against synthetic cipher challenges. Train two attack strategies in the native graphical arena or divide a public challenge among external workers with the hosted Rust tools. [Store entry](store/index/kirtusj/ke/yr/keyrook)
+
 ## Games
 
 Night Post and Bellweather Harbor also ship offline browser players. Download a browser player from its GitHub file page using **Download raw file**, then open the HTML locally. For native play, the [launcher guide](store/README.md#play-on-pcp-os) covers the six games.
