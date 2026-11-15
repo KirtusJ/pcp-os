@@ -998,6 +998,37 @@ fn a_mistyped_digest_claim_cannot_be_recorded_as_a_passing_check() {
 }
 
 #[test]
+fn mcp_instrument_arguments_cannot_discard_a_misplaced_claim() {
+    let root = in_use("outer-digest-claim");
+    let before = fs::read(root.join(REG)).unwrap();
+    let zeros = "0".repeat(64);
+    let outer = format!(r#"{{"instrument":"cryptography.digest","input":{{"text":"abc"}},"claimed":"{zeros}","record":true}}"#);
+    for invalid in [outer.as_str(), r#"{"instrument":"list","unexpected":true}"#] {
+        let (message, error) = tool(&root, "acr_instrument", invalid);
+        assert!(error && message.contains("argument"), "{message}");
+        assert_eq!(fs::read(root.join(REG)).unwrap(), before);
+    }
+
+    let nested = format!(r#"{{"register":"{REG}","instrument":"cryptography.digest","input":{{"text":"abc","claimed":"{zeros}"}},"name":"challenge","record":true}}"#);
+    let (message, error) = tool(&root, "acr_instrument", &nested);
+    assert!(!error && message.starts_with("WRITTEN"), "{message}");
+    let event = events(&root).pop().unwrap();
+    assert_eq!(event.get("kind").and_then(Value::as_str), Some("CHECK_RAN"));
+    let body = event.get("body").unwrap();
+    assert_eq!(body.get("exit").and_then(Value::as_int), Some(1));
+    assert_eq!(body.get("name").and_then(Value::as_str), Some("challenge"));
+
+    let mut server = pcpos(&root);
+    server.arg("mcp");
+    let (response, code) = feed(server, b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}\n");
+    assert_eq!(code, 0);
+    let response = Value::parse(response.as_bytes()).unwrap();
+    let Some(Value::List(tools)) = response.get("result").and_then(|r| r.get("tools")) else { panic!("no tools in {response:?}") };
+    let instrument = tools.iter().find(|t| t.get("name").and_then(Value::as_str) == Some("acr_instrument")).unwrap();
+    assert_eq!(instrument.get("inputSchema").unwrap().get("additionalProperties"), Some(&Value::Bool(false)));
+}
+
+#[test]
 fn digest_checks_refuse_unrecognized_fields_and_malformed_hex_before_recording() {
     let root = in_use("digest-claim-input");
     let before = fs::read(root.join(REG)).unwrap();

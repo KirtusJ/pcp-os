@@ -1409,12 +1409,25 @@ fn not_from_a_session(kind: &str, body: &Value) -> Option<&'static str> {
 
 const NO_TOOL: &str = "no tool named ";
 
+type ToolArgument = (&'static str, &'static str, &'static str);
+const REGISTER_ARGUMENT: ToolArgument = ("register", "string", "Optional. Path of the register, relative to the served directory. Omit it to use the session's register.");
+const INSTRUMENT_ARGUMENTS: [ToolArgument; 5] = [
+    REGISTER_ARGUMENT,
+    ("instrument", "string", "Use list for the available instrument names and their inputs, or choose a name from that list"),
+    ("input", "object", "The instrument's input, for example {\"expression\": \"sum(k, 1, 100, k) = 5500\"}"),
+    ("name", "string", "Optional. A label for the check"),
+    ("record", "boolean", "Optional. false computes and writes nothing"),
+];
+
 fn tools() -> Value {
-    let schema = |props: Vec<(&str, &str, &str)>, required: Vec<&str>| {
-        obj(vec![("type", s("object")), ("properties", Value::Map(props.into_iter().map(|(k, t, d)| (k.to_string(), obj(vec![("type", s(t)), ("description", s(d))]))).collect())),
-                 ("required", Value::List(required.into_iter().map(s).collect()))])
+    let schema_fields = |props: Vec<ToolArgument>, required: Vec<&str>| {
+        vec![("type", s("object")), ("properties", Value::Map(props.into_iter().map(|(k, t, d)| (k.to_string(), obj(vec![("type", s(t)), ("description", s(d))]))).collect())),
+             ("required", Value::List(required.into_iter().map(s).collect()))]
     };
-    let reg = ("register", "string", "Optional. Path of the register, relative to the served directory. Omit it to use the session's register.");
+    let schema = |props, required| obj(schema_fields(props, required));
+    let reg = REGISTER_ARGUMENT;
+    let mut instrument_schema = schema_fields(INSTRUMENT_ARGUMENTS.to_vec(), vec!["instrument"]);
+    instrument_schema.push(("additionalProperties", Value::Bool(false)));
     let tool = |name: &str, d: &str, sc: Value| obj(vec![("name", s(name)), ("description", s(d)), ("inputSchema", sc)]);
     Value::List(vec![
         tool("acr_status", "What the record says now: system, ACR use, standard, what needs a response, reviews, tasks, and what a halt would stop. Read this instead of recalling state.", schema(vec![reg], vec![])),
@@ -1436,7 +1449,7 @@ fn tools() -> Value {
         tool("acr_check", "Record a check on what the host itself saw. First run the command with the shell tool; then call this with exactly the same command text. The server finds the host's own observation of that command (its exit status and the digests of its output) and records the check as HOST_OBSERVED_TOOL. If the host saw no such command, nothing is recorded: a command you could not run is not a check, and the claim that needed it is UNRESOLVED (Core 5.1). Whether the command tests the claim's criterion remains your assessment.",
              schema(vec![reg, ("command", "string", "The command, exactly as it was given to the shell tool"), ("expect_exit", "integer", "Optional. The exit status that would mean the expectation was met; 0 if omitted"), ("name", "string", "Optional. A label for the check")], vec!["command"])),
         tool("acr_instrument", "Call with instrument \"list\" to see the checks this host can run and the input each takes. Each instrument computes one property inside the program, with no shell. With an open review the result can be recorded as a check this program ran and cited by a finding. State why the computed property is the criterion in that review.",
-             schema(vec![reg, ("instrument", "string", "Use list for the available instrument names and their inputs, or choose a name from that list"), ("input", "object", "The instrument's input, for example {\"expression\": \"sum(k, 1, 100, k) = 5500\"}"), ("name", "string", "Optional. A label for the check"), ("record", "boolean", "Optional. false computes and writes nothing")], vec!["instrument"])),
+             obj(instrument_schema)),
         tool("acr_kernel", "The method's kernel text, whole: the operating floor and the findings table, copied without change from the Core Specification, with the SHA-256 of the file. Read it before the first step of a review, and again after your context is reset. This needs no file tool. It does not put ACR in use.", schema(vec![], vec![])),
         tool("acr_events", "The exact body of every event a review writes, in the order a review uses them; each was accepted by the guards when the package was built. Read it before your first acr_submit. This needs no file tool. It does not put ACR in use.", schema(vec![], vec![])),
         tool("acr_machine", "The whole table of one state machine (SYSTEM, USE, REVIEW, OBJECTION, OBLIGATION, TASK, DELIVERY, LINK): for each state and event, what follows or '-' if not accepted.",
@@ -1574,6 +1587,10 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
             }
         }
         "acr_instrument" => {
+            let Value::Map(fields) = args else { return Err("acr_instrument arguments must be an object".to_string()) };
+            if fields.keys().any(|key| !INSTRUMENT_ARGUMENTS.iter().any(|(name, _, _)| key == name)) {
+                return Err("unknown acr_instrument argument. Put instrument-specific fields inside input".to_string());
+            }
             let which = arg("instrument")?;
             if which == "list" {
                 let mut out = String::from("Instruments this program runs itself. Each computes one property and nothing else (Core 14.1):\n");
