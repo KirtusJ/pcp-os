@@ -141,7 +141,7 @@ def run(args):
                 "-nic", "none", "-no-reboot", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
                 "-audiodev", "wav,id=sound,path=capture.wav,out.frequency=48000,out.channels=2",
                 "-device", "AC97,audiodev=sound", "-serial", "file:serial.log", "-monitor", "stdio",
-                "-kernel", "kernel.elf32", "-initrd", "surf.elf,clip.ppm,clip.wav", "-append", "image="+measure])
+                "-kernel", "kernel.elf32", "-initrd", "surf.elf,clip.ppm,clip.wav", "-append", "auto=surf.elf then=off image="+measure])
     serial = work / "serial.log"
     requested_frames = list(range(IMAGES)) if args.all_frames else [3, 11, 19, 27]
     def wait(vm, mark):
@@ -150,7 +150,7 @@ def run(args):
             data = serial.read_text(errors="replace") if serial.exists() else ""
             if mark in data:
                 return
-            if vm.poll() is not None or ("SURFBIRD error" in data and args.case == "play"):
+            if vm.poll() is not None or "it is in SAFE" in data or ("SURFBIRD error" in data and args.case == "play"):
                 break
             time.sleep(.012)
         raise RuntimeError(f"missing {mark} in {work}: {data[-550:]}")
@@ -160,9 +160,6 @@ def run(args):
     with (work / "stderr.log").open("wb") as errors:
         vm = subprocess.Popen(cmd, cwd=work, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=errors)
         try:
-            wait(vm, "a program that cannot be admitted")
-            time.sleep(.45)
-            monitor(vm, "sendkey ret 60")
             if args.case == "play":
                 wait(vm, "SURFBIRD media ready")
                 monitor(vm, "sendkey spc 50")
@@ -173,8 +170,6 @@ def run(args):
             else:
                 wait(vm, "SURFBIRD error invalid local stereo track")
             wait(vm, "frames shown (")
-            time.sleep(.35)
-            monitor(vm, "sendkey p 60")
             check(vm.wait(timeout=12) == 33, "abnormal exit")
         finally:
             if vm.poll() is None:
