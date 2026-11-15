@@ -8,6 +8,7 @@
 use pcpos_core::sha256_hex;
 use pcpos_core::value::Value;
 
+mod cipher_trial;
 mod protected_bins;
 
 /// What an instrument found: whether the property it computes holds, and the account of it in words.
@@ -25,6 +26,7 @@ pub const LIST: &[(&str, &str)] = &[
     ("statistics.percent", "whether a reported percentage can arise from a whole count out of the stated total; input: percent (text, as reported), total"),
     ("engineering.units", "whether a quantity in one unit equals a quantity in another, exactly; input: from, to (each a number and a unit, such as \"25 psi\")"),
     ("cryptography.digest", "the SHA-256 digest of given text, after reproducing published known answers; input: text, claimed (optional)"),
+    ("cryptography.cipher_trial", "test whether four public block pairs uniquely recover a 16-bit teaching key, and measure one fixed-key XOR differential; input: rounds (1, 2, 4, 8), optional delta (1..65535)"),
     ("science.order", "from the register: whether one artifact entered the record before another; input: earlier, later (SHA-256 digests)"),
     ("science.incident_bounds", "whether every completion of unread binary outcomes in a finite incident table has its hit fraction inside the supplied closed band. Input integers: incidents, hits, misses, unread, lower_numerator, upper_numerator, denominator"),
     ("quality.coverage", "from the register: for each claim of a review, whether a finding is recorded and how it was executed; input: review"),
@@ -57,6 +59,7 @@ pub fn run(name: &str, input: &Value, events: &[Value]) -> Result<Outcome, Strin
             };
             digest(text("text")?, claimed)
         }
+        "cryptography.cipher_trial" => cipher_trial::run(input),
         "science.order" => order(text("earlier")?, text("later")?, events),
         "science.incident_bounds" => incident_bounds(input),
         "quality.coverage" => coverage(text("review")?, events),

@@ -43,6 +43,7 @@ These instruments ship in the Rust host. Run `pcpos instrument list` to see what
 | Statistics | `statistics.percent` | Tests whether a reported percentage could arise from a whole count out of the stated total. |
 | Engineering | `engineering.units` | Compares physical quantities after conversion to compatible units. |
 | Cryptography | `cryptography.digest` | Computes SHA-256 for supplied text and optionally compares a claimed digest. |
+| Cryptography | `cryptography.cipher_trial` | Tries all 65,536 keys against four public block pairs and measures an XOR differential of a teaching cipher. |
 | Quality assurance | `quality.coverage` | Reports finding coverage for the claims of a commissioned review. |
 | Core | `core.calibration` | Checks the internal consistency of a Calibration Record and the claim made from its counts. |
 
