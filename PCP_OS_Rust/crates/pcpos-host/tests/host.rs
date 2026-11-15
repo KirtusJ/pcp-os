@@ -324,6 +324,57 @@ fn a_typed_command_is_recorded_by_the_host_and_a_typed_halt_is_enforced_by_the_g
     assert_eq!(typed(&root, "pcp-os:halt", ""), "", "nothing is in use: nothing more is recorded");
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn a_waiting_writer_rechecks_the_file_it_locked() {
+    use std::os::unix::fs::MetadataExt;
+    use std::time::{Duration, Instant};
+
+    let root = dir("changed-while-waiting");
+    let outside = dir("moved-register");
+    tool(&root, "acr_begin", "{}");
+    let named = root.join(REG);
+    let before = fs::read(&named).unwrap();
+    let held = fs::File::open(&named).unwrap();
+    held.lock().unwrap();
+    let original = held.metadata().unwrap();
+    let mut command = pcpos(&root);
+    let mut child = command.arg("mcp").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+    writeln!(child.stdin.take().unwrap(), "{}", r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"acr_submit","arguments":{"kind":"NOTE","body":{"text":"waiting"}}}}"#).unwrap();
+    let descriptors = format!("/proc/{}/fd", child.id());
+    let started = Instant::now();
+    loop {
+        if fs::read_dir(&descriptors).unwrap().flatten().filter_map(|e| fs::metadata(e.path()).ok())
+            .any(|m| m.dev() == original.dev() && m.ino() == original.ino()) {
+            break;
+        }
+        assert!(started.elapsed() < Duration::from_secs(5), "writer did not open the held register");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let moved = outside.join("moved.jsonl");
+    fs::rename(&named, &moved).unwrap();
+    fs::write(&named, &before).unwrap();
+    held.unlock().unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    let reply = Value::parse(&output.stdout).unwrap();
+    assert_eq!(reply.get("result").unwrap().get("isError"), Some(&Value::Bool(true)));
+    assert_eq!(fs::read(&moved).unwrap(), before);
+    assert_eq!(fs::read(&named).unwrap(), before);
+    assert!(tool(&root, "acr_submit", r#"{"kind":"NOTE","body":{}}"#).0.starts_with("WRITTEN"));
+}
+
+#[test]
+fn the_largest_configured_lock_wait_still_opens_a_free_register() {
+    let root = dir("maximum-lock-wait");
+    tool(&root, "acr_begin", "{}");
+    let mut c = pcpos(&root);
+    c.env("PCPOS_LOCK_WAIT", u64::MAX.to_string()).args(["verify", REG]);
+    let (text, code) = feed(c, b"");
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("guards replayed: 0 problem(s)"));
+}
+
 #[test]
 fn a_write_names_the_head_it_extends_and_many_writers_leave_one_intact_chain() {
     let root = dir("writers");

@@ -217,6 +217,7 @@ const MAX_ARTIFACT: u64 = 64 * 1024 * 1024;
 struct Handle {
     file: File,
     path: PathBuf,
+    requested: PathBuf,
 }
 
 /// Open a file named by a caller, inside `root` (which is canonical). The name is checked, and then the
@@ -300,53 +301,64 @@ fn confined_file(root: &Path, given: &str, write: bool, create: bool, single_nam
         o.custom_flags(O_NOFOLLOW);
     }
     let file = o.open(&leaf).map_err(|e| format!("cannot open {given}: {e}"))?;
-    let m = file.metadata().map_err(|e| format!("{given}: {e}"))?;
-    if !m.is_file() {
-        return Err(format!("{given} is not a regular file"));
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        if single_name && m.nlink() != 1 {
-            return Err(format!("{given} has more than one name; a register has exactly one"));
-        }
-        let again = fs::symlink_metadata(&leaf).map_err(|e| format!("{given}: {e}"))?;
-        if again.file_type().is_symlink() || again.dev() != m.dev() || again.ino() != m.ino() {
-            return Err(format!("{given} changed while it was being opened"));
-        }
-    }
-    if !leaf.canonicalize().map(|c| c.starts_with(root)).unwrap_or(false) {
-        return Err(outside());
-    }
-    // Where the system can say where the opened object really is, ask it: this is the object that will be
-    // read and written, whatever the names did while it was being opened.
-    #[cfg(target_os = "linux")]
-    {
-        use std::os::fd::AsRawFd;
-        if let Ok(real) = fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd())) {
-            if !real.starts_with(root) {
-                return Err(outside());
-            }
-        }
-    }
+    let handle = Handle { file, path: leaf, requested: p };
+    handle.check_location(single_name)?;
     if !exists {
         // A new name is durable only once its directory is.
         if let Ok(d) = File::open(&dir) {
             let _ = d.sync_all();
         }
     }
-    Ok(Some(Handle { file, path: leaf }))
+    Ok(Some(handle))
+}
+
+impl Handle {
+    /// Check the caller's original path, including its parents, against the object actually opened.
+    fn check_location(&self, single_name: bool) -> Result<(), String> {
+        let path = &self.requested;
+        let given = path.display();
+        let meta = self.file.metadata().map_err(|e| format!("{given}: {e}"))?;
+        let named = fs::symlink_metadata(path).map_err(|e| format!("{given}: {e}"))?;
+        if !meta.is_file() || !named.is_file() {
+            return Err(format!("{given} is not a regular file; a link is not followed"));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if single_name && meta.nlink() != 1 {
+                return Err(format!("{given} has more than one name or has been unlinked; a register has exactly one"));
+            }
+            if named.dev() != meta.dev() || named.ino() != meta.ino() {
+                return Err(format!("{given} changed after it was opened"));
+            }
+        }
+        if path.canonicalize().ok().as_deref() != Some(self.path.as_path()) {
+            return Err(format!("{given} changed after it was opened"));
+        }
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::fd::AsRawFd;
+            if let Ok(real) = fs::read_link(format!("/proc/self/fd/{}", self.file.as_raw_fd())) {
+                if real != self.path {
+                    return Err(format!("{given} changed after it was opened"));
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// One writer at a time, and no reader in the middle of a write. The wait is bounded: a held lock is reported, not waited out.
 fn lock(h: &Handle, exclusive: bool) -> Result<(), String> {
     let wait = env::var("PCPOS_LOCK_WAIT").ok().and_then(|x| x.parse::<u64>().ok()).unwrap_or(10);
-    let deadline = Instant::now() + Duration::from_secs(wait);
+    let start = Instant::now();
+    let limit = Duration::from_secs(wait);
     loop {
         let r = if exclusive { h.file.try_lock() } else { h.file.try_lock_shared() };
         match r {
-            Ok(()) => return Ok(()),
-            Err(TryLockError::WouldBlock) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
+            // A file lock follows the open file even when its name has been replaced while we waited.
+            Ok(()) => return h.check_location(true),
+            Err(TryLockError::WouldBlock) if start.elapsed() < limit => std::thread::sleep(Duration::from_millis(20)),
             Err(TryLockError::WouldBlock) => return Err(format!("{} is locked by another program; nothing was read or written", h.path.display())),
             Err(TryLockError::Error(e)) => return Err(format!("cannot lock {}: {}", h.path.display(), e)),
         }
