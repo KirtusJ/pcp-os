@@ -1,0 +1,26 @@
+Midnight Barrel Express
+=======================
+
+This directory holds the sources that produce rail.elf for PCP OS.
+On x86-64 Linux, install Python 3.8+, GNU make, GCC, GNU binutils, tar
+and gzip. From this directory run
+
+  sh build-musl.sh
+  python3 build_pcpos.py --cc ./toolchain/bin/musl-gcc \
+    --engine engine/doomgeneric --chocolate chocolate-doom \
+    --port pcpos-port rail.elf
+
+The distributed binary uses GCC 14.2.0 and musl 1.2.5. Choose a path
+without spaces for the musl toolchain. If an existing x86-64 musl-gcc
+supports static PIE and rcrt1, specify it via --cc to skip rebuilding musl.
+
+On PCP OS run rail.elf -omega -express -warp 1 9 -iwad doom1.wad.
+For a Linux X11 build, install the X11 development headers, run
+'make -C engine/doomgeneric CC=gcc', then use the same game options.
+The installer install_rail.py builds the private game data from the
+released Omega campaign IWAD, the train map, sprites, ticket and music.
+
+engine/ contains all engine changes. omega.patch applies to the original
+Doomgeneric source, and rail.patch applies to the resulting Omega engine.
+OMEGA-BUILD.txt identifies upstream versions, platform files, and licenses.
+The Midnight Barrel Express engine changes are released under GNU GPL version 2 or later.

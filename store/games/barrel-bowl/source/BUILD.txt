@@ -1,0 +1,29 @@
+Barrel Bowl
+===========
+
+This directory holds the engine sources used to build bowl.elf. Both the
+Omega campaign and Barrel Bowl are compiled into the program. The game
+package runs the original engine for campaign checkpoint compatibility.
+
+To rebuild bowl.elf on x86-64 Linux, run these commands from this directory.
+Install Python 3.8+, GNU make, GCC, GNU binutils, tar and gzip first.
+
+  sh build-musl.sh
+  python3 build_pcpos.py --cc ./toolchain/bin/musl-gcc \
+    --engine engine/doomgeneric --chocolate chocolate-doom \
+    --port pcpos-port bowl.elf
+
+The distributed binary uses GCC 14.2.0 and musl 1.2.5. Choose a path
+without spaces for the musl toolchain directory. To use a prebuilt
+x86-64 musl-gcc supporting static PIE with rcrt1, pass it to --cc.
+On PCP OS launch bowl.elf with -omega -bowl -warp 1 9 -iwad doom1.wad,
+where doom1.wad is the result of applying install_bowl.py to the campaign
+IWAD. For a desktop X11 engine, use 'make -C engine/doomgeneric CC=gcc'
+on Linux with X11 development headers and launch with the same options.
+
+The engine/ tree includes both sets of changes. omega.patch records the
+campaign changes to upstream doomgeneric, while bowl.patch records the
+later bowling changes to the campaign engine. See OMEGA-BUILD.txt for
+upstream source identities and licenses. The bowling engine changes are
+released under GNU GPL version 2 or later. The game data installer, map,
+graphics, score and audio sources accompany the game package.

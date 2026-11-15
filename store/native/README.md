@@ -11,6 +11,10 @@ cargo run --locked --release --manifest-path store/native/Cargo.toml -- PCP_OS_R
 
 Use `gullpost` for the 2D courier or `gull64` for Lighthouse Island. Use `fluxrink` for the rink or `heliograph` for the rendering lab. Press Enter at the OS menu. Escape returns from each program and P at the OS menu powers down. The launcher loads the versioned Store ELF, measures the kernel's code and read-only pages, requests 32 MiB of VGA memory for Heliograph's resolution ladder and gives QEMU short module names.
 
+## Doom guests
+
+Supply a third argument with the local IWAD for `doom`, `ultra-omega-barrel`, `barrel-bowl`, `midnight-barrel-express` or `forklift-certified`. The launcher measures the kernel and starts the selected game with its own guest arguments. For mods it builds the private WAD with Python before boot. [Downloads, supported data, controls and engine builds](../games/doom/)
+
 ## Linked Flux Rink
 
 Build the opt-in kernel in its own staging directory. Save the image separately from the stock image. On Windows, preserve LF in the published machine table, which the kernel compares byte-for-byte during startup.
