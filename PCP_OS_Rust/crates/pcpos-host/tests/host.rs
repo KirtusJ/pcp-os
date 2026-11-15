@@ -1042,3 +1042,96 @@ fn an_instrument_is_run_by_the_program_and_recorded_as_a_check_it_ran() {
     let (out, _) = tool(&quiet, "acr_instrument", r#"{"instrument":"engineering.units","input":{"from":"1 in","to":"25.4 mm"}}"#);
     assert!(out.contains("EQUAL to the last digit given") && out.contains("No review is open") && kinds(&quiet).len() == k, "{out}");
 }
+
+// Regression: a flag's *value* cannot swallow the same text in another argument.
+#[test]
+fn terminal_standard_and_workspace_preserve_exact_positional_values() {
+    let standard_root = dir("standard-collision");
+    let run_standard = |args: &[&str]| {
+        let mut c = pcpos(&standard_root);
+        c.args(args);
+        feed(c, b"")
+    };
+    assert_eq!(run_standard(&["init", "r.jsonl", "--principal", "CRITICAL"]).1, 0);
+    assert_eq!(run_standard(&["standard", "r.jsonl", "--by", "CRITICAL", "CRITICAL"]).1, 0);
+    let standard_events = ledger::verify(&fs::read(standard_root.join("r.jsonl")).unwrap()).unwrap().0;
+    let body = standard_events.last().unwrap().get("body").unwrap();
+    assert_eq!(body.get("method").and_then(Value::as_str), Some("NATIVE_ONLY"));
+    assert_eq!(body.get("human_adoption"), Some(&Value::Bool(true)));
+    assert_eq!(body.get("dual_authorization"), Some(&Value::Bool(true)));
+
+    let workspace_root = dir("workspace-collision");
+    let method = small_method(&workspace_root);
+    let mut init = with_method(&workspace_root, &method);
+    init.args(["init", REG, "--principal", "science"]);
+    assert_eq!(feed(init, b"").1, 0);
+    let mut set = with_method(&workspace_root, &method);
+    set.args(["workspace", REG, "--by", "science", "science"]);
+    assert_eq!(feed(set, b"").1, 0);
+    let last = events(&workspace_root).pop().unwrap();
+    assert_eq!(last.get("body").unwrap().get("event").and_then(Value::as_str), Some("WORKSPACE_PROFILE"));
+    let modules = last.get("body").unwrap().get("modules").unwrap();
+    match modules {
+        Value::List(found) => assert!(found.iter().any(|m| m.get("id").and_then(Value::as_str) == Some("acr.science"))),
+        other => panic!("expected module list, got {other:?}"),
+    }
+}
+
+#[test]
+fn terminal_standard_rejects_malformed_fields_without_changing_register() {
+    for token in ["human_adoption=tru", "dual_authorization=treu", "static_tasks=tru",
+                  "offline_only=TRUE", "method=NATIVE-ONLy", "model_findings=MECHANICAL-ONLY"] {
+        let root = dir("bad-standard-token");
+        let mut init = pcpos(&root);
+        init.args(["init", "r.jsonl", "--principal", "principal"]);
+        assert_eq!(feed(init, b"").1, 0);
+        let before = fs::read(root.join("r.jsonl")).unwrap();
+        let mut c = pcpos(&root);
+        c.args(["standard", "r.jsonl", "--by", "principal", "CRITICAL", token]);
+        assert_ne!(feed(c, b"").1, 0, "{token} should not be silently accepted");
+        assert_eq!(fs::read(root.join("r.jsonl")).unwrap(), before, "{token} altered the register");
+    }
+}
+
+#[test]
+fn module_remove_uses_exact_installed_identity_and_does_not_delete_unknown_folders() {
+    let root = dir("remove-exact-identity");
+    let method = small_method(&root);
+    let run = |args: &[&str]| {
+        let mut c = with_method(&root, &method);
+        c.args(args);
+        feed(c, b"")
+    };
+    assert_eq!(run(&["init", REG, "--principal", "p"]).1, 0);
+    for name in ["alpha-beta", "alpha_beta", "Upper", "marker"] {
+        let input = root.join(format!("source-{name}"));
+        fs::create_dir_all(&input).unwrap();
+        fs::write(input.join("Specification.md"), format!("**Component:** `local.{name}`, Version 1.0\n\nSynthetic input.\n")).unwrap();
+        let path = input.to_str().unwrap();
+        assert_eq!(run(&["module", "add", REG, path, "--by", "p"]).1, 0, "add {name}");
+    }
+    let modules = root.join(".pcp/modules");
+    let before = fs::read(root.join(REG)).unwrap();
+    assert_ne!(run(&["module", "remove", REG, "acr.marker", "--by", "p"]).1, 0);
+    assert_eq!(fs::read(root.join(REG)).unwrap(), before);
+    assert!(modules.join("marker/SOURCE/Specification.md").is_file());
+
+    assert_eq!(run(&["module", "remove", REG, "alpha-beta", "--by", "p"]).1, 0);
+    assert!(!modules.join("alpha-beta").exists());
+    assert!(modules.join("alpha_beta/SOURCE/Specification.md").is_file());
+    let e = events(&root).pop().unwrap();
+    assert_eq!(e.get("body").unwrap().get("event").and_then(Value::as_str), Some("MODULE_REMOVED"));
+    assert_eq!(e.get("body").unwrap().get("module").unwrap().get("id").and_then(Value::as_str), Some("local.alpha-beta"));
+
+    assert_eq!(run(&["module", "remove", REG, "Upper", "--by", "p"]).1, 0);
+    assert!(!modules.join("Upper").exists());
+    assert!(modules.join("alpha_beta").exists());
+
+    let orphan = modules.join("notes-not-a-module");
+    fs::create_dir_all(&orphan).unwrap();
+    fs::write(orphan.join("private.txt"), b"synthetic sentinel").unwrap();
+    let before = fs::read(root.join(REG)).unwrap();
+    assert_ne!(run(&["module", "remove", REG, "notes-not-a-module", "--by", "p"]).1, 0);
+    assert_eq!(fs::read(root.join(REG)).unwrap(), before);
+    assert_eq!(fs::read(orphan.join("private.txt")).unwrap(), b"synthetic sentinel");
+}

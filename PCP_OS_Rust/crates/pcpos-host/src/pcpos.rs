@@ -2283,6 +2283,42 @@ fn flag(args: &[String], name: &str) -> Option<String> {
     args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
 }
 
+/// Only a value in the position *after* a known option belongs to that option.
+/// An unrelated positional value can equal a person's name or a method path.
+fn positional_values<'a>(args: &'a [String], permitted: &[&str]) -> Result<Vec<&'a str>, String> {
+    let mut words = Vec::new();
+    let mut seen = Vec::new();
+    let mut i = 2;
+    while i < args.len() {
+        let word = args[i].as_str();
+        if word.starts_with("--") {
+            if !permitted.contains(&word) {
+                return Err(format!("{word} is not a recognized option for this command"));
+            }
+            if seen.contains(&word) {
+                return Err(format!("{word} is supplied more than once"));
+            }
+            if args.get(i + 1).map(|v| v.starts_with("--")).unwrap_or(true) {
+                return Err(format!("{word} needs a value"));
+            }
+            seen.push(word);
+            i += 2;
+        } else {
+            words.push(word);
+            i += 1;
+        }
+    }
+    Ok(words)
+}
+
+fn exact_boolean(name: &str, value: &str) -> Result<bool, String> {
+    match value {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        _ => Err(format!("{name} expects 'true' or 'false', got {value:?}")),
+    }
+}
+
 /// A register named at a terminal: its own directory is the directory served.
 fn at_terminal(path: &str, create: bool) -> Result<(PathBuf, String), String> {
     let p = Path::new(path);
@@ -2370,17 +2406,31 @@ fn module_command(args: &[String]) -> Result<i32, String> {
             event(&mut tx, "MODULE_ADDED", obj(vec![("id", s(&id)), ("version", s(&version)), ("sha256", s(&sha256_hex(&bytes)))])).map(|p| (tx, p))?
         }
         "remove" => {
-            let want = what.to_ascii_lowercase().replace('-', "_");
-            let want = want.strip_prefix("acr.").or_else(|| want.strip_prefix("local.")).unwrap_or(&want).to_string();
-            if !label_ok(&want) || !home.join(&want).is_dir() {
-                return Err(format!("{what} is not an added module here. A module of the method text is not removed"));
+            // Installation preserves case, '-' and '_'. They are separate identities,
+            // and an explicit acr.* name never aliases a local.* module.
+            let want = match what.strip_prefix("local.") {
+                Some(key) => key,
+                None if what.starts_with("acr.") => return Err(format!("{what} names a released method module, not a removable local module")),
+                None => what.as_str(),
+            };
+            if !label_ok(want) {
+                return Err(format!("{what} is not a valid local module identifier"));
             }
-            let found = modules_in(&se).into_iter().find(|m| m.added && m.key == want);
             let mut tx = Tx::begin(&se.root, &name, false)?.ok_or(format!("there is no register at {}", args[2]))?;
-            fs::remove_dir_all(home.join(&want)).map_err(|e| format!("the module could not be removed: {e}"))?;
+            if !tx.problems.is_empty() {
+                return Err("the register does not verify; nothing was removed".to_string());
+            }
+            // Resolve under the transaction lock. A label-shaped directory is
+            // not evidence of an installed module and must not be deleted.
+            let found = modules_in(&se).into_iter().find(|m| m.added && m.key == want)
+                .ok_or_else(|| format!("{what} is not an installed local module; nothing was removed"))?;
+            let target = home.join(want);
+            if fs::symlink_metadata(&target).map(|m| m.file_type().is_symlink()).unwrap_or(false) {
+                return Err(format!("{what} is a linked module directory; nothing was removed"));
+            }
+            fs::remove_dir_all(target).map_err(|e| format!("the module could not be removed: {e}"))?;
             println!("removed the added module {want}. Reviews already commissioned with it keep its digest in the record.");
-            let m = found.map(|m| m.record()).unwrap_or_else(|| obj(vec![("id", s(&format!("local.{want}")))]));
-            event(&mut tx, "MODULE_REMOVED", m).map(|p| (tx, p))?
+            event(&mut tx, "MODULE_REMOVED", found.record()).map(|p| (tx, p))?
         }
         _ => return Err("usage".to_string()),
     };
@@ -2415,7 +2465,7 @@ fn person(args: &[String]) -> Result<i32, String> {
         "adopt" => tx.put(&by, "DECLARED", "ADOPTED", obj(vec![("by", s(&by)), ("basis", s(&clip(&flag(args, "--basis").ok_or("give the instruction with --basis")?, 2000))), ("observed", s("ENTERED_AT_A_TERMINAL"))]))?,
         "halt" => tx.put(&by, "DECLARED", "HALTED", obj(vec![("by", s(&by)), ("words", flag(args, "--words").map(|w| s(&clip(&w, 2000))).unwrap_or(Value::Null))]))?,
         "workspace" => {
-            let names: Vec<&str> = args.iter().skip(2).filter(|a| !a.starts_with("--") && Some(*a) != flag(args, "--by").as_ref() && Some(*a) != flag(args, "--method").as_ref()).map(String::as_str).collect();
+            let names = positional_values(args, &["--by", "--method"])?;
             if let Some(m) = flag(args, "--method") {
                 se.method = Some(PathBuf::from(m));
             }
@@ -2424,16 +2474,25 @@ fn person(args: &[String]) -> Result<i32, String> {
         "standard" => {
             let mut st = tx.state().standard();
             let mut tasks: Vec<Value> = Vec::new();
-            for a in args.iter().skip(2).filter(|a| !a.starts_with("--") && Some(*a) != flag(args, "--by").as_ref() && Some(*a) != flag(args, "--second").as_ref()) {
-                match (a.as_str(), a.split_once('=')) {
+            for a in positional_values(args, &["--by", "--second"])? {
+                match (a, a.split_once('=')) {
                     ("BASELINE", _) => st = Standard::BASELINE,
                     ("CRITICAL", _) => st = Standard::CRITICAL,
-                    (_, Some(("method", v))) => st.method = if v == "NATIVE_ONLY" { Method::NativeOnly } else { Method::NativeOrPinned },
-                    (_, Some(("model_findings", v))) => st.model_findings = match v { "MECHANICAL_ONLY" => ModelFindings::MechanicalOnly, "HUMAN_CLOSES" => ModelFindings::HumanCloses, _ => ModelFindings::AsMethod },
-                    (_, Some(("human_adoption", v))) => st.human_adoption = v == "true",
-                    (_, Some(("dual_authorization", v))) => st.dual_authorization = v == "true",
-                    (_, Some(("static_tasks", v))) => st.static_tasks = v == "true",
-                    (_, Some(("offline_only", v))) => st.offline_only = v == "true",
+                    (_, Some(("method", v))) => st.method = match v {
+                        "NATIVE_ONLY" => Method::NativeOnly,
+                        "NATIVE_OR_PINNED" => Method::NativeOrPinned,
+                        _ => return Err(format!("method expects NATIVE_ONLY or NATIVE_OR_PINNED, got {v:?}")),
+                    },
+                    (_, Some(("model_findings", v))) => st.model_findings = match v {
+                        "MECHANICAL_ONLY" => ModelFindings::MechanicalOnly,
+                        "HUMAN_CLOSES" => ModelFindings::HumanCloses,
+                        "AS_METHOD" => ModelFindings::AsMethod,
+                        _ => return Err(format!("model_findings expects MECHANICAL_ONLY, HUMAN_CLOSES or AS_METHOD, got {v:?}")),
+                    },
+                    (_, Some(("human_adoption", v))) => st.human_adoption = exact_boolean("human_adoption", v)?,
+                    (_, Some(("dual_authorization", v))) => st.dual_authorization = exact_boolean("dual_authorization", v)?,
+                    (_, Some(("static_tasks", v))) => st.static_tasks = exact_boolean("static_tasks", v)?,
+                    (_, Some(("offline_only", v))) => st.offline_only = exact_boolean("offline_only", v)?,
                     (_, Some(("tasks", v))) => tasks = v.split(',').filter(|t| !t.is_empty()).map(s).collect(),
                     _ => return Err(format!("{a} is not a standard or a field of one")),
                 }
@@ -2465,6 +2524,43 @@ fn person(args: &[String]) -> Result<i32, String> {
         Put::Refused(r) => {
             print!("{}", refusal_text(&r));
             Ok(acr::REFUSED as i32)
+        }
+    }
+}
+
+#[cfg(test)]
+mod cli_identity_tests {
+    use super::{exact_boolean, positional_values};
+
+    fn words(parts: &[&str]) -> Vec<String> {
+        parts.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn options_do_not_consume_equal_but_independent_operands() {
+        let args = words(&["standard", "register", "--by", "CRITICAL", "CRITICAL"]);
+        assert_eq!(positional_values(&args, &["--by", "--second"]).unwrap(), ["CRITICAL"]);
+        let args = words(&["workspace", "register", "--by", "science", "--method", "/method", "science"]);
+        assert_eq!(positional_values(&args, &["--by", "--method"]).unwrap(), ["science"]);
+    }
+
+    #[test]
+    fn options_reject_unknown_duplicate_or_missing_values() {
+        for args in [
+            words(&["standard", "register", "--by", "person", "--other", "x"]),
+            words(&["standard", "register", "--by", "person", "--by", "other"]),
+            words(&["standard", "register", "--by"]),
+        ] {
+            assert!(positional_values(&args, &["--by", "--second"]).is_err());
+        }
+    }
+
+    #[test]
+    fn boolean_values_are_never_guessed() {
+        assert_eq!(exact_boolean("flag", "true"), Ok(true));
+        assert_eq!(exact_boolean("flag", "false"), Ok(false));
+        for wrong in ["TRUE", "tru", "treu", "0", ""] {
+            assert!(exact_boolean("flag", wrong).is_err());
         }
     }
 }
