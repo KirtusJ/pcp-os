@@ -1,0 +1,24 @@
+name: Doom log acceptance controls
+
+on:
+  pull_request:
+    paths:
+      - "PCP_OS_Rust/crates/pcpos-kernel/tests/run_tests.py"
+      - "PCP_OS_Rust/crates/pcpos-kernel/tests/doom_oracles.py"
+      - "PCP_OS_Rust/crates/pcpos-kernel/tests/test_doom_oracles.py"
+      - ".github/workflows/doom-oracle-controls.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-oracles:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Compile the QEMU harness and independent checks
+        run: python3 -m py_compile PCP_OS_Rust/crates/pcpos-kernel/tests/run_tests.py PCP_OS_Rust/crates/pcpos-kernel/tests/doom_oracles.py PCP_OS_Rust/crates/pcpos-kernel/tests/test_doom_oracles.py
+      - name: Run positive and adverse synthetic log controls
+        run: python3 -m unittest discover -s PCP_OS_Rust/crates/pcpos-kernel/tests -p 'test_doom_oracles.py' -v

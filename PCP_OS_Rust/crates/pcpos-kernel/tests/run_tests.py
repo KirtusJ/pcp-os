@@ -11,6 +11,7 @@ pictures. Nothing here is a measurement on hardware: the processor is emulated i
 """
 import hashlib, json, math, os, shutil, socket, struct, subprocess, sys, time, wave
 from pathlib import Path
+from doom_oracles import sound_runs_ok, unanswered_requests
 
 KERNEL, PROGRAMS, DATA, OUT = (Path(a).resolve() for a in sys.argv[1:5])
 QUICK = len(sys.argv) > 5 and sys.argv[5] == "quick"
@@ -253,6 +254,7 @@ def _(ck):
     dry = [int(l.split("ran out of sound ")[1].split()[0]) for l in log.splitlines() if "ran out of sound" in l]
     late = [int(l.split("the latest ")[1].split()[0]) for l in log.splitlines() if "the latest " in l]
     ck("music register writes were never more than 100 ms late", late and max(late) <= 100, late)
+    ck("the sound device did not underrun on either play session", sound_runs_ok(dry, expected_runs=2), dry)
     return {"seconds_with_sound": loud, "seconds_recorded": len(lev), "sound_ran_dry_each_run": dry, "music_latest_ms": late, "pictures": sorted(p.name for p in m.dir.glob("*.png"))}
 
 @test("Doom, Freedoom data, left to itself for %d seconds: no fault, nothing lost" % (60 if QUICK else 240))
@@ -267,7 +269,9 @@ def _(ck):
     e = ended(log, "doom.elf"); ck("its memory all came back", " free before and " in e and e.split(" free before and ")[0].split()[-1] == e.split(" free before and ")[1].split()[0], e[-160:])
     try: idle = int(e.split("idled ")[1].split("%")[0]); shown = int(e.split(" frames shown")[0].split()[-1]); secs = int(e.split(" after ")[1].split(" s")[0])
     except Exception: idle = shown = secs = 0
-    return {"game_data": wad.name, "seconds": secs, "pictures_shown": shown, "processor_idle_percent": idle, "unanswered_calls": [l for l in log.splitlines() if "does not answer" in l][:1]}
+    unanswered = unanswered_requests(log)
+    ck("no unanswered request appears in the full soak log", not unanswered, unanswered[:3])
+    return {"game_data": wad.name, "seconds": secs, "pictures_shown": shown, "processor_idle_percent": idle, "unanswered_calls": unanswered[:1]}
 
 @test("Doom with no display: it says so and exits, and the kernel goes on")
 def _(ck):
