@@ -1,6 +1,6 @@
 """Shared primitives: canonical JSON, digests, durable writes, time, portable names, errors."""
 from __future__ import annotations
-import hashlib, json, os, re, sys, time
+import hashlib, json, os, re, sys, tempfile, time
 from pathlib import Path
 
 # ---- exit codes (REFERENCE/Exit_Codes.csv) -----------------------------------
@@ -113,17 +113,21 @@ def atomic_write(path, data: bytes):
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp%d" % os.getpid())
+    # mkstemp creates an unpredictable, exclusively opened regular file. The
+    # previous name (.tmp<PID>) could be pre-created as a symlink and followed.
+    tmp = None
     try:
-        with open(tmp, "wb") as f:
+        fd, name = tempfile.mkstemp(prefix="." + path.name + ".tmp-", dir=path.parent)
+        tmp = Path(name)
+        with os.fdopen(fd, "wb") as f:
             f.write(data); f.flush(); os.fsync(f.fileno())
         os.replace(tmp, path)
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+    finally:
+        if tmp is not None:
+            try:
+                tmp.unlink()
+            except FileNotFoundError:
+                pass
     _fsync_dir(path.parent)
 
 
