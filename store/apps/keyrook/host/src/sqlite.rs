@@ -125,6 +125,9 @@ fn publish_no_replace(stage: &Path, destination: &Path) -> Result<()> {
         fn MoveFileExW(source: *const u16, target: *const u16, flags: u32) -> i32;
     }
 
+    let stage = fs::canonicalize(stage)?;
+    let destination = stage.parent().ok_or("missing staging directory")?
+        .join(destination.file_name().ok_or("missing export filename")?);
     let source: Vec<u16> = stage.as_os_str().encode_wide().chain(Some(0)).collect();
     let target: Vec<u16> = destination.as_os_str().encode_wide().chain(Some(0)).collect();
     // MOVEFILE_WRITE_THROUGH=0x8; deliberately exclude REPLACE_EXISTING=0x1
