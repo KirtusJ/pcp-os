@@ -2294,9 +2294,39 @@ fn at_terminal(path: &str, create: bool) -> Result<(PathBuf, String), String> {
     Ok((dir.canonicalize().map_err(|e| format!("{}: {}", dir.display(), e))?, name))
 }
 
+/// Keep the historical fragment name when available. Never open an occupied name, even to retry a
+/// repair: it may be a link, an unrelated file, or a partial copy left after an earlier failure.
+fn save_fragment(register: &Path, bytes: &[u8]) -> std::io::Result<PathBuf> {
+    let extension = format!("fragment-{}", &sha256_hex(bytes)[..12]);
+    let mut aside = register.with_extension(&extension);
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    // A recovered line can contain private register data. Restrict access at creation, before writing.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = match options.open(&aside) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
+            aside = register.with_extension(format!("{extension}-{}-{stamp}", std::process::id()));
+            options.open(&aside)?
+        }
+        Err(e) => return Err(e),
+    };
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    // On Unix the new directory entry is a separate persistence step from the file contents.
+    #[cfg(unix)]
+    File::open(aside.parent().unwrap_or(Path::new(".")))?.sync_all()?;
+    Ok(aside)
+}
+
 /// Set aside an unfinished last line, which an interrupted write can leave. Nothing that was stored whole is
 /// touched: the fragment is moved to a file beside the register and the register ends at its last whole event.
-fn repair(path: &str) -> Result<String, String> {
+fn repair(path: &str, sync_register: impl FnOnce(&File) -> std::io::Result<()>) -> Result<String, String> {
     let (root, name) = at_terminal(path, false)?;
     let mut h = confined(&root, &name, true, false)?.ok_or(format!("there is no register at {path}"))?;
     lock(&h, true)?;
@@ -2306,9 +2336,14 @@ fn repair(path: &str) -> Result<String, String> {
     }
     let keep = raw.iter().rposition(|b| *b == b'\n').map(|i| i + 1).unwrap_or(0);
     ledger::verify(&raw[..keep]).map_err(|e| format!("the part before the unfinished line is not intact either ({:?}); nothing was changed", e))?;
-    let aside = h.path.with_extension(format!("fragment-{}", sha256_hex(&raw[keep..]).get(..12).unwrap_or("x")));
-    fs::write(&aside, &raw[keep..]).map_err(|e| format!("the fragment could not be saved ({e}); nothing was changed"))?;
-    h.file.set_len(keep as u64).and_then(|_| h.file.sync_all()).map_err(|e| format!("the register could not be shortened: {e}"))?;
+    let aside = save_fragment(&h.path, &raw[keep..]).map_err(|e| format!("the fragment could not be saved ({e}); the register was not shortened"))?;
+    h.file.set_len(keep as u64).map_err(|e| format!(
+        "saved the unfinished fragment to {}. The host could not shorten the register ({e}). Run verify before retrying repair", aside.display()
+    ))?;
+    sync_register(&h.file).map_err(|e| format!(
+        "saved the unfinished fragment to {}. The register was shortened to {keep} bytes, but the final sync failed ({e}). Its durability is unknown. Run verify on the register",
+        aside.display()
+    ))?;
     Ok(format!("an unfinished last line of {} byte(s) was moved to {}. The register now ends at its last whole event. Run verify, and record what happened.\n", raw.len() - keep, aside.display()))
 }
 
@@ -2576,7 +2611,7 @@ fn main() {
                 exit(6)
             }
         },
-        Some("repair") if args.len() == 2 => match repair(&args[1]) {
+        Some("repair") if args.len() == 2 => match repair(&args[1], File::sync_all) {
             Ok(t) => print!("{t}"),
             Err(e) => {
                 eprintln!("pcpos: {e}");
@@ -2622,5 +2657,41 @@ fn main() {
             }
         }
         _ => usage(),
+    }
+}
+
+#[cfg(test)]
+mod repair_tests {
+    use super::*;
+
+    #[test]
+    fn repair_reports_the_saved_fragment_when_the_final_sync_fails() {
+        let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let dir = env::temp_dir().join(format!("pcpos-repair-final-sync-{}-{nonce}", std::process::id()));
+        fs::create_dir(&dir).unwrap();
+        let register = dir.join("register.jsonl");
+        let mut ledger = ledger::Ledger::new();
+        ledger.append("2026-11-14T00:00:00Z", "test", "DECLARED", "X_TEST", obj(vec![])).unwrap();
+        let prefix = ledger.bytes();
+        let tail = b"unfinished";
+        fs::write(&register, [prefix, tail].concat()).unwrap();
+        let preferred = register.with_extension(format!("fragment-{}", &sha256_hex(tail)[..12]));
+        fs::write(&preferred, b"earlier backup").unwrap();
+
+        let error = repair(register.to_str().unwrap(), |file| {
+            assert_eq!(file.metadata().unwrap().len(), prefix.len() as u64);
+            Err(std::io::Error::other("injected final sync failure"))
+        }).unwrap_err();
+        let saved: Vec<_> = fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path())
+            .filter(|p| p != &register && p != &preferred).collect();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(fs::read(&saved[0]).unwrap(), tail);
+        assert_eq!(fs::read(&preferred).unwrap(), b"earlier backup");
+        assert_eq!(fs::read(&register).unwrap(), prefix);
+        fs::remove_dir_all(dir).unwrap();
+
+        assert!(error.contains(&saved[0].display().to_string()), "{error}");
+        assert!(error.contains(&format!("was shortened to {} bytes", prefix.len())), "{error}");
+        assert!(error.contains("durability is unknown") && error.contains("injected final sync failure"), "{error}");
     }
 }
