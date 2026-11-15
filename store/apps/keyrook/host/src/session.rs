@@ -66,28 +66,49 @@ pub fn stats(db: &Database, bits: u8) -> Result<Memory> {
     memory(&db.begin_read()?.open_table(STATS)?, bits)
 }
 
-pub fn open_existing(dir: &Path) -> Result<Database> {
-    // Read commands may use an initialized redb session or migrate actual
-    // legacy episodes. They must not create an empty database in an empty
-    // directory, or treat a missing session as valid zero-run statistics.
-    let file = dir.join(FILE_NAME);
-    if file.is_file() {
-        if file.metadata()?.len() == 0 {
-            return Err(format!("Keyrook session not initialized: {}", file.display()).into());
-        }
-        // open() checks the schema and can finish a previously interrupted
-        // legacy migration; it does not create a new file at this point.
-        return open(dir);
-    }
+fn has_legacy_episodes(dir: &Path) -> Result<bool> {
     for bits in [4, 6, 8] {
         let legacy = dir.join(format!("v1-{bits}"));
         if legacy.is_dir() {
             for entry in fs::read_dir(legacy)? {
                 if entry?.file_name().to_string_lossy().starts_with("episode-") {
-                    return open(dir);
+                    return Ok(true);
                 }
             }
         }
+    }
+    Ok(false)
+}
+
+pub fn open_existing(dir: &Path) -> Result<Database> {
+    // A read never creates absent data or silently reports an absent session
+    // as a valid zero-run database. Valid initialized sessions use redb::open.
+    // Actual v1 episode directories are the one exception: migrate their
+    // existing data transactionally, preserving the earlier CLI behavior.
+    let file = dir.join(FILE_NAME);
+    if file.is_file() {
+        if file.metadata()?.len() == 0 {
+            return Err(format!("Keyrook session not initialized: {}", file.display()).into());
+        }
+        let db = Database::open(&file)?;
+        let tx = db.begin_read()?;
+        let version = match tx.open_table(VERSION) {
+            Ok(table) => table.get(0)?.map(|v| v.value()),
+            Err(_) => None,
+        };
+        drop(tx);
+        match version {
+            Some(1) => return Ok(db),
+            Some(_) => return Err("unsupported Keyrook session version".into()),
+            None if has_legacy_episodes(dir)? => {
+                drop(db);
+                return open(dir);
+            }
+            None => return Err("Keyrook session has no committed schema".into()),
+        }
+    }
+    if has_legacy_episodes(dir)? {
+        return open(dir);
     }
     Err(format!("Keyrook session not initialized: {}", file.display()).into())
 }
