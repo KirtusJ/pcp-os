@@ -19,6 +19,7 @@ mod worker_wire;
 #[cfg(feature = "virtio-register-probe")]
 mod register_wire;
 mod session;
+mod store;
 mod sys;
 mod ui;
 mod user;
@@ -514,7 +515,7 @@ fn script_drain() -> bool {
 /// when this is called and when it returns. None of these runs is a task in the kernel's register.
 fn asynchronous(failed: &mut u32) {
     use user::{End, Grants, Program, Start, World};
-    let world = || World { files: alloc::vec::Vec::new(), store: alloc::vec::Vec::new(), epoch_at_start: 0, unanswered: alloc::vec::Vec::new() };
+    let world = || World { files: alloc::vec::Vec::new(), store: alloc::vec::Vec::new(), volume: None, epoch_at_start: 0, unanswered: alloc::vec::Vec::new() };
     let grants = Grants { console: true, keys: true, ..Grants::default() };
     let loaded = |name: &str, label: &str, keys: &[u8], after: u64| -> (Result<user::Process, &'static str>, usize, usize, u64) {
         let free0 = user::frames_free();
@@ -834,7 +835,7 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     say!("kernel heap: {} bytes in use, {} bytes ever carved; frames: {} of {} free, {} handed out and {} given back since the start", live, carved, pool_free, pool_frames, taken, given);
     if failed == 0 {
         #[cfg(not(feature = "guest-ethernet"))]
-        say!("ALL SELF-TESTS PASS. Present: user mode and preemptive processes; programs loaded from the loader's files; a display, a keyboard, sound and music where the machine has ones this kernel drives. Not present: storage that outlasts power, a mouse, network, a second processor.");
+        say!("ALL SELF-TESTS PASS. Present: user mode and preemptive processes; programs loaded from the loader's files; a display, a keyboard, sound and music where the machine has ones this kernel drives. An explicitly mounted user store supports fsync. Not present: a mouse, network, a second processor.");
         #[cfg(feature = "guest-ethernet")]
         say!("ALL SELF-TESTS PASS. Guest Ethernet support is compiled in. Access requires a matching image grant and a supported NIC.");
     } else {

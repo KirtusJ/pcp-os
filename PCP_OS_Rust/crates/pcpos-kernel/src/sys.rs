@@ -19,6 +19,7 @@ use pcpos_core::cap::{CapSpace, Rights};
 
 const EPERM: i64 = 1;
 const ENOENT: i64 = 2;
+const EIO: i64 = 5;
 const EBADF: i64 = 9;
 const EAGAIN: i64 = 11;
 const ENOMEM: i64 = 12;
@@ -815,6 +816,21 @@ pub fn call(t: &mut Table, i: usize, frame: &Frame) -> Outcome {
             },
             None => err(EBADF),
         }),
+        74 if world.volume.is_some() => {
+            match file(p, a[0]) {
+                None => return ret(err(EBADF)),
+                Some(open) if !matches!(open.node, Node::Stored(_) | Node::Directory) =>
+                    return ret(err(EINVAL)),
+                _ => {}
+            }
+            if !p.holds(caps, Object::Store, Rights::APPEND) { return ret(err(EACCES)); }
+            let volume = world.volume.as_mut().unwrap();
+            ret(match volume.commit(&world.store) {
+                Ok(()) => 0,
+                Err(crate::store::Failure::Full) => err(ENOSPC),
+                Err(crate::store::Failure::Io) => err(EIO),
+            })
+        }
         79 => ret(if a[1] >= 2 && put(p, a[0], b"/\0") { 2 } else { err(EINVAL) }),
         82 => {
             // rename: of a file in the store.
@@ -828,6 +844,7 @@ pub fn call(t: &mut Table, i: usize, frame: &Frame) -> Outcome {
             if !world.store.iter().any(|f| f.0 == from) {
                 return ret(err(ENOENT));
             }
+            if from == to { return ret(0); }
             world.store.retain(|f| f.0 != to);
             if let Some(f) = world.store.iter_mut().find(|f| f.0 == from) {
                 f.0 = to;

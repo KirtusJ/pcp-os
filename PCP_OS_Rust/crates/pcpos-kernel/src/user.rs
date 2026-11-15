@@ -143,8 +143,9 @@ impl Process {
 pub struct World {
     /// The loader's files by name.
     pub files: Vec<(String, &'static [u8])>,
-    /// Files programs wrote, by name. They are in the kernel's memory and are gone when the machine is switched off.
+    /// Files programs wrote, by name. An explicitly mounted volume can checkpoint them.
     pub store: Vec<(String, Vec<u8>)>,
+    pub volume: Option<crate::store::Volume>,
     /// Seconds since 1970 when the tick count was zero, by the machine's clock.
     pub epoch_at_start: u64,
     /// Calls a program made that this kernel does not answer: (number, times).
@@ -190,7 +191,7 @@ fn new_table(world: World) -> Table {
 }
 
 fn empty_world() -> World {
-    World { files: Vec::new(), store: Vec::new(), epoch_at_start: 0, unanswered: Vec::new() }
+    World { files: Vec::new(), store: Vec::new(), volume: None, epoch_at_start: 0, unanswered: Vec::new() }
 }
 
 impl Table {

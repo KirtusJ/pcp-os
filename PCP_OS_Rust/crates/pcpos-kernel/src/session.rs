@@ -103,9 +103,23 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
         }
     }
     let (y, mo, d, h, mi, s) = arch::clock();
-    let mut world = World { files: files.iter().map(|f| (f.0.clone(), f.1)).collect(), store: Vec::new(),
+    let mut world = World { files: files.iter().map(|f| (f.0.clone(), f.1)).collect(), store: Vec::new(), volume: None,
                             epoch_at_start: epoch(y, mo, d, h, mi, s).saturating_sub(arch::ticks() / arch::TICKS_PER_SECOND), unanswered: Vec::new() };
     let line = start.boot.command_line.as_str();
+    if !safe && option(line, "store") == Some("ide0") {
+        match crate::store::mount() {
+            Ok((volume, files)) => {
+                say!("user store mounted on primary IDE master: {} file(s)", files.len());
+                world.volume = Some(volume);
+                world.store = files;
+            }
+            Err(()) => {
+                say!("requested user store could not be recovered; no program started");
+                *failed += 1;
+                return tasks;
+            }
+        }
+    }
     let mut message = String::new();
     if safe {
         say!("the kernel did not verify itself ({} self-test(s) failed): it is in SAFE and starts no program", start.failed);
@@ -241,7 +255,7 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
     if let Some(d) = start.display {
         at(4, row, &format!("display: {}, {} page(s); keyboard: PS/2; sound: {}", if d.kind == dev::DisplayKind::Bochs { "Bochs interface, any mode" } else { "mode set by the loader" }, d.pages, if start.sound { "present" } else { "none" }), SOFT, GROUND);
         row += 1;
-        at(4, row, &format!("store: {} file(s) written by programs, kept until power off", stored), SOFT, GROUND);
+        at(4, row, &format!("store: {} user file(s)", stored), SOFT, GROUND);
     }
     row += 2;
     if !message.is_empty() {
