@@ -1,5 +1,7 @@
 //! One TLS 1.3 request from the freestanding guest to an official public watch page.
 extern crate alloc;
+#[path = "p256_wire.rs"]
+mod p256_wire;
 use super::Stream;
 use alloc::sync::Arc;
 use core::{
@@ -85,7 +87,11 @@ pub(super) fn watch(stream: &mut impl Stream) -> Result<(), &'static str> {
     if mode[0] != 2 {
         roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     }
-    let provider = Arc::new(rustls_rustcrypto::provider());
+    let mut provider = rustls_rustcrypto::provider();
+    // The prerelease provider's X25519 completion does not reject all-zero shared
+    // secrets as RFC 8446 section 7.4.2 requires. Its P-256 path validates SEC1 points.
+    p256_wire::restrict(&mut provider)?;
+    let provider = Arc::new(provider);
     let roots = Arc::new(roots);
     let wrong_name_check = if mode[0] == 1 {
         Some(
@@ -169,7 +175,9 @@ pub(super) fn watch(stream: &mut impl Stream) -> Result<(), &'static str> {
                     let n = rec.payload.len().min(http.len() - http_len);
                     http[http_len..http_len + n].copy_from_slice(&rec.payload[..n]);
                     http_len += n;
-                    if let Some((status, markup)) = surfbird_cable::https_prefix::read(&http[..http_len])? {
+                    if let Some((status, markup)) =
+                        surfbird_cable::https_prefix::read(&http[..http_len])?
+                    {
                         log(b"SURFBIRD HTTPS ");
                         log(status);
                         log(b"\nSURFBIRD body ");

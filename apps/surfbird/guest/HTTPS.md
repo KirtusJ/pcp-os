@@ -10,6 +10,8 @@ Rustls uses WebPKI's ordinary server-auth verification against the roots in the 
 
 The program uses a bounded 3 MiB allocation arena for one connection. The kernel reclaims it on exit. It collects up to 32 KiB for response headers and the first bytes of the body, recognizes an unencoded HTML response with a literal HTML doctype and then closes the connection. It handles a first HTTP chunk large enough to hold that prefix. It does not follow redirects, parse arbitrary HTML, or download the rest of the document.
 
+Upstream explicitly advises against production use of the prerelease cryptography provider. For this experiment the guest advertises only P-256, accepts the TLS uncompressed 65-byte key-share encoding, and delegates point validation and key agreement to the provider. Review found that the provider's X25519 code would accept a computed all-zero shared secret. TLS requires its rejection. The P-256 provider can terminate the process if its random source fails during ephemeral-key generation. Neither case permits an unverified GET in this probe. [Provider source](https://docs.rs/rustls-rustcrypto/0.1.0-pre.0/src/rustls_rustcrypto/kx.rs.html) · [TLS 1.3 key-share encoding](https://www.rfc-editor.org/rfc/rfc8446.html#section-4.2.8.2) · [TLS 1.3 shared secrets](https://www.rfc-editor.org/rfc/rfc8446.html#section-7.4.2)
+
 ## Reproduce
 
 Build the [guest Ethernet kernel](TCP.md) and the Surfbird guest on a toolchain supporting `x86_64-unknown-none`. Run these commands from this directory. The harness uses public network access on an isolated QEMU NIC and needs Python 3. Each run creates a new directory.
@@ -31,3 +33,5 @@ The harness saves the encrypted packet capture, guest serial, image identity and
 | Empty trust store | Same SNI and requested name. The handshake ends with unknown issuer before application data is sent. |
 
 The initial 8 KiB header cap was too small for the observed page. Initial experiments with SNI removed returned an untrusted default certificate, which could not isolate the hostname comparison. Some emulator boots stopped in the kernel's existing keyboard self-test before the guest ran. The harness preserves each failed run and requires actual guest/network evidence for a successful receipt.
+
+The three [receipts](evidence/https/results.json) and [watch](evidence/https/watch.pcap), [name](evidence/https/wrong-host.pcap) and [issuer](evidence/https/untrusted.pcap) packet captures were obtained with the same guest ELF, SHA-256 `49680c952864a129545e2ad7e88f72aa56885904404e1f5c0d68c9a5ff81f522`. The frame checker matches the outgoing DNS question, resolver reply transaction and returned address against the later guest TCP destination. The QEMU run used Rust 1.91.1, QEMU 11.1.0, and kernel ELF SHA-256 `d2fae4ef3df316ff4fa0c1a88744e66cc17bd794856979fa55188b8402f7222f`.

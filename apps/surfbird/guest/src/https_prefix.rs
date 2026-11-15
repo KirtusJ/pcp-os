@@ -5,8 +5,11 @@ pub fn read(bytes: &[u8]) -> Result<Option<(&[u8], &[u8])>, &'static str> {
     let Some(end) = bytes.windows(4).position(|b| b == b"\r\n\r\n") else {
         return Ok(None);
     };
-    let mut lines = bytes[..end].split(|&b| b == b'\n');
-    let status = lines.next().unwrap_or_default().trim_ascii_end();
+    let mut lines = bytes[..end + 2].split_inclusive(|&b| b == b'\n');
+    let status = lines
+        .next()
+        .and_then(|l| l.strip_suffix(b"\r\n"))
+        .ok_or("invalid HTTP status line ending")?;
     if status.get(..13) != Some(b"HTTP/1.1 200 ")
         || !status[13..].iter().all(|c| (32..127).contains(c))
     {
@@ -14,11 +17,22 @@ pub fn read(bytes: &[u8]) -> Result<Option<(&[u8], &[u8])>, &'static str> {
     }
     let (mut html, mut chunked, mut length) = (false, false, None);
     for field in lines {
+        let field = field
+            .strip_suffix(b"\r\n")
+            .ok_or("invalid HTTPS field line ending")?;
         let at = field
             .iter()
             .position(|&b| b == b':')
             .ok_or("invalid HTTPS header")?;
         let name = &field[..at];
+        if name.is_empty()
+            || !name.iter().copied().all(super::token_byte)
+            || !field[at + 1..]
+                .iter()
+                .all(|&b| b == b'\t' || (32..127).contains(&b))
+        {
+            return Err("invalid HTTPS field");
+        }
         let value = field[at + 1..].trim_ascii();
         if name.eq_ignore_ascii_case(b"Content-Type") {
             if html
@@ -83,6 +97,7 @@ pub fn read(bytes: &[u8]) -> Result<Option<(&[u8], &[u8])>, &'static str> {
 
 #[cfg(test)]
 mod tests {
+    extern crate std;
     use super::*;
     #[test]
     fn requires_the_complete_prefix_across_records() {
@@ -100,5 +115,25 @@ mod tests {
             b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nTransfer-Encoding: chunked\r\n\r\n1\r\n<!DOCTYPE html>"] {
             assert!(read(source).is_err());
         }
+    }
+    #[test]
+    fn requires_valid_field_names_and_line_endings() {
+        for field in [
+            "Content-Length : 0",
+            " Transfer-Encoding: gzip",
+            ": 0",
+            "X: a\u{000b}b",
+            "X: a\nIgnored: b",
+        ] {
+            let response = std::format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n{field}\r\n\r\n<!DOCTYPE html>"
+            );
+            assert!(read(response.as_bytes()).is_err());
+        }
+        let empty_reason = b"HTTP/1.1 200 \r\nContent-Type: text/html\r\n\r\n<!DOCTYPE html>";
+        assert_eq!(
+            read(empty_reason),
+            Ok(Some((b"HTTP/1.1 200 ".as_slice(), DOCTYPE)))
+        );
     }
 }
