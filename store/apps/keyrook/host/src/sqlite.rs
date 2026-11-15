@@ -86,7 +86,7 @@ fn reserve_staging_file(destination: &Path) -> Result<PathBuf> {
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    let name = destination
+    destination
         .file_name()
         .and_then(|s| s.to_str())
         .ok_or("SQLite export destination must have a UTF-8 filename")?;
@@ -94,7 +94,7 @@ fn reserve_staging_file(destination: &Path) -> Result<PathBuf> {
     let sequence = EXPORT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     for attempt in 0..64 {
         let stage = parent.join(format!(
-            ".{name}.keyrook-stage-{}-{nanos}-{sequence}-{attempt}.sqlite",
+            ".keyrook-stage-{}-{nanos}-{sequence}-{attempt}.sqlite",
             std::process::id()
         ));
         match fs::OpenOptions::new()
@@ -125,6 +125,9 @@ fn publish_no_replace(stage: &Path, destination: &Path) -> Result<()> {
         fn MoveFileExW(source: *const u16, target: *const u16, flags: u32) -> i32;
     }
 
+    let stage = fs::canonicalize(stage)?;
+    let destination = stage.parent().ok_or("missing staging directory")?
+        .join(destination.file_name().ok_or("missing export filename")?);
     let source: Vec<u16> = stage.as_os_str().encode_wide().chain(Some(0)).collect();
     let target: Vec<u16> = destination.as_os_str().encode_wide().chain(Some(0)).collect();
     // MOVEFILE_WRITE_THROUGH=0x8; deliberately exclude REPLACE_EXISTING=0x1
