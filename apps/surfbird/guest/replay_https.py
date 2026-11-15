@@ -4,12 +4,14 @@ import argparse
 import hashlib
 import ipaddress
 import json
-from pathlib import Path
 import secrets
 import shutil
 import struct
 import subprocess
 import sys
+import time
+from pathlib import Path
+
 from packet_trace import GUEST_IP, GUEST_MAC, frames
 
 
@@ -131,6 +133,93 @@ def packet_evidence(path):
     }
 
 
+def browse_document(cmd, work, err):
+    with subprocess.Popen(
+        cmd, cwd=work, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=err
+    ) as vm:
+
+        def send(command):
+            vm.stdin.write((command + "\n").encode("ascii"))
+            vm.stdin.flush()
+
+        def wait_until(condition, message, timeout):
+            end = time.monotonic() + timeout
+            while time.monotonic() < end:
+                log = work / "serial.log"
+                serial = log.read_text(errors="replace") if log.exists() else ""
+                if condition(serial):
+                    return
+                if (
+                    vm.poll() is not None
+                    or "it is in SAFE" in serial
+                    or "SURFBIRD error" in serial
+                ):
+                    break
+                time.sleep(0.025)
+            raise RuntimeError(f"{message}: {serial[-1000:]}")
+
+        try:
+            for mark, count, name, key in [
+                ("view title", 1, "title.ppm", "1"),
+                ("view address", 1, "address.ppm", "b"),
+                ("view title", 2, "back.ppm", "esc"),
+            ]:
+                wait_until(
+                    lambda s, mark=mark, count=count: (
+                        s.count("SURFBIRD " + mark + "\n") >= count
+                    ),
+                    mark,
+                    160,
+                )
+                send("screendump " + name)
+                pic = work / name
+                wait_until(
+                    lambda _, pic=pic: (
+                        pic.is_file() and pic.stat().st_size >= 640 * 360 * 3
+                    ),
+                    name,
+                    10,
+                )
+                send("sendkey " + key + " 50")
+            vm.wait(timeout=15)
+            return vm
+        finally:
+            if vm.poll() is None:
+                vm.kill()
+                vm.wait()
+
+
+def verify_document(work, serial, returncode):
+    from verify_watch_screen import check_screens
+
+    require(
+        returncode == 33 and "surf.elf ended DONE: exit 0" in serial,
+        "document guest exit",
+    )
+    require(
+        "SURFBIRD certificate chain and hostname verified" in serial
+        and "SURFBIRD HTTPS HTTP/1.1 200 " in serial,
+        "missing server identity/status",
+    )
+    titles = [
+        s.removeprefix("SURFBIRD document-title ")
+        for s in serial.splitlines()
+        if s.startswith("SURFBIRD document-title ")
+    ]
+    require(len(titles) == 1 and titles[0].strip(), "missing parsed document title")
+    canonical = "https://www.youtube.com/watch?v=M7lc1UVf-VE"
+    require(
+        "SURFBIRD document-canonical " + canonical + "\n" in serial,
+        "unexpected canonical URL",
+    )
+    require(
+        [s for s in serial.splitlines() if s.startswith("SURFBIRD view ")]
+        == ["SURFBIRD view title", "SURFBIRD view address", "SURFBIRD view title"],
+        "navigation sequence",
+    )
+    check_screens(work, titles[0], canonical)
+
+
 def run(a):
     work = a.output.resolve()
     work.mkdir(parents=True, exist_ok=False)
@@ -146,7 +235,7 @@ def run(a):
     ).strip()
     (work / "net.cfg").write_bytes((443).to_bytes(2, "big") + secrets.token_bytes(10))
     (work / "tls.cfg").write_bytes(
-        bytes([["watch", "wrong-host", "untrusted"].index(a.arm)])
+        bytes([["watch", "wrong-host", "untrusted", "document"].index(a.arm)])
     )
     cmd = [a.qemu]
     if a.firmware:
@@ -170,7 +259,7 @@ def run(a):
         "-serial",
         "file:serial.log",
         "-monitor",
-        "none",
+        "stdio" if a.arm == "document" else "none",
         "-netdev",
         "user,id=public,ipv6=off",
         "-device",
@@ -185,9 +274,17 @@ def run(a):
         f"auto=surf.elf then=off image={measure} net_image={pin}",
     ]
     with (work / "stderr.log").open("wb") as err:
-        result = subprocess.run(
-            cmd, cwd=work, stdout=subprocess.DEVNULL, stderr=err, timeout=150
-        )
+        if a.arm == "document":
+            result = browse_document(cmd, work, err)
+        else:
+            result = subprocess.run(
+                cmd,
+                cwd=work,
+                stdout=subprocess.DEVNULL,
+                stderr=err,
+                timeout=150,
+                check=False,
+            )
     serial = (work / "serial.log").read_text(errors="replace")
     require(
         "it is in SAFE" not in serial,
@@ -203,7 +300,9 @@ def run(a):
         "kernel's register of its own start, verification and stop verifies" in serial,
         "boot register",
     )
-    if a.arm == "watch":
+    if a.arm == "document":
+        verify_document(work, serial, result.returncode)
+    elif a.arm == "watch":
         require(
             any(line.startswith("SURFBIRD HTTPS HTTP/1.1 200 ") for line in lines),
             "expected authenticated HTTP 200",
@@ -235,6 +334,11 @@ def run(a):
         "pcap_sha256": hashlib.sha256((work / "guest.pcap").read_bytes()).hexdigest(),
         **pkt,
     }
+    if a.arm == "document":
+        receipt["screens"] = {
+            name: hashlib.sha256((work / name).read_bytes()).hexdigest()
+            for name in ["title.ppm", "address.ppm", "back.ppm"]
+        }
     (work / "result.json").write_text(json.dumps(receipt, indent=2) + "\n")
 
 
@@ -246,6 +350,8 @@ if __name__ == "__main__":
     p.add_argument("--qemu", default="qemu-system-x86_64")
     p.add_argument("--firmware", type=Path)
     p.add_argument(
-        "--arm", choices=("watch", "wrong-host", "untrusted"), default="watch"
+        "--arm",
+        choices=("watch", "wrong-host", "untrusted", "document"),
+        default="watch",
     )
     run(p.parse_args())

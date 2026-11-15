@@ -6,6 +6,8 @@
 pub mod dns_answer;
 #[cfg(any(test, feature = "https-probe"))]
 pub mod https_prefix;
+#[cfg(any(test, feature = "https-probe"))]
+pub mod watch_document;
 pub const CAPACITY: usize = 2048;
 pub const START: &str = "/harbour";
 

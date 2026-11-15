@@ -211,6 +211,14 @@ pub(super) fn browse() -> Result<(), &'static str> {
         }
         sleep_us(1000);
     }
+    #[cfg(feature = "https-probe")]
+    {
+        if let Some(document) = result? {
+            super::watch_view::show(&document);
+        }
+        Ok(())
+    }
+    #[cfg(not(feature = "https-probe"))]
     result
 }
 

@@ -4,7 +4,7 @@ A bare-metal Rust ELF sends HTTP/1.1 requests and displays the pages it receives
 
 An optional [local video and stereo audio replay](LOCAL_MEDIA.md) exercises the native framebuffer and sound device with supplied media files.
 
-The opt-in [verified HTTPS watch-page probe](HTTPS.md) uses guest-issued public DNS, TCP and TLS with the original hostname. It checks the HTTP response and HTML prefix and retains separate wrong-name and untrusted-issuer controls.
+The opt-in [verified HTTPS watch-page probe](HTTPS.md) uses guest-issued public DNS, TCP and TLS with the original hostname. It checks the HTTP response and HTML prefix and retains separate wrong-name and untrusted-issuer controls. Its [document reader](WATCH_DOCUMENT.md) displays the published page title and canonical address with native keyboard navigation.
 
 ## Serial cable
 
