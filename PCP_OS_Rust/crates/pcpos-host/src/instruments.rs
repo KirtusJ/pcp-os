@@ -9,6 +9,7 @@ use pcpos_core::sha256_hex;
 use pcpos_core::value::Value;
 
 mod protected_bins;
+pub mod plot;
 
 /// What an instrument found: whether the property it computes holds, and the account of it in words.
 pub struct Outcome {
@@ -29,6 +30,7 @@ pub const LIST: &[(&str, &str)] = &[
     ("science.incident_bounds", "whether every completion of unread binary outcomes in a finite incident table has its hit fraction inside the supplied closed band. Input integers: incidents, hits, misses, unread, lower_numerator, upper_numerator, denominator"),
     ("quality.coverage", "from the register: for each claim of a review, whether a finding is recorded and how it was executed; input: review"),
     ("core.calibration", "whether a Calibration Record's counts agree with each other and its thresholds and claim say no more than its counts; input: record"),
+    ("visualization.ranges", "render the supplied exact points and ranges as SVG and compare its SHA-256 with expected_svg_sha256; input: plot, expected_svg_sha256; use pcpos plot or acr_plot for the graphic"),
 ];
 
 /// Run one instrument. `events` is the register as it stands, for the instruments that read it.
@@ -36,6 +38,7 @@ pub fn run(name: &str, input: &Value, events: &[Value]) -> Result<Outcome, Strin
     let text = |k: &str| input.get(k).and_then(Value::as_str).ok_or(format!("this instrument needs {k}, as text"));
     let whole = |k: &str| input.get(k).and_then(Value::as_int).filter(|n| *n > 0).ok_or(format!("this instrument needs {k}, a whole number above zero"));
     match name {
+        "visualization.ranges" => plot::check(input),
         "mathematics.exact" => exact(text("expression")?),
         "mathematics.protected_bins" => protected_bins::compare(input),
         "mathematics.statement" => {

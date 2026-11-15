@@ -1,5 +1,7 @@
 # PCP OS | Notice
 
+The hosted SVG plot uses Plotters' `plotters-svg` and `plotters-backend` under the MIT license. The exact integer calculation uses `num-bigint`, `num-integer`, `num-traits` and their build dependency `autocfg` under MIT or Apache-2.0. Their authors retain their respective rights. The Rust workspace lockfile identifies the versions and release checksums. These dependencies apply to the host.
+
 **Proprietary material. All rights reserved.** Copyright (c) 2026 Kirtus Justus.
 
 This workspace is early development material of PCP OS. It is supplied only under license; holding a copy grants nothing. The creator is Kirtus Justus. The programs were drafted with an AI system (Claude, Anthropic) at the creator's direction; no endorsement by Anthropic is implied.
