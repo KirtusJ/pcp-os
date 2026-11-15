@@ -1624,7 +1624,10 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
             let mut tx = Tx::begin(&se.root, &reg, false)?.ok_or_else(none)?;
             session_may_write(&tx, se)?;
             let used: Vec<String> = parse(tx.rec.ledger().bytes().to_vec())?.events.iter().filter(|e| e.get("kind").and_then(Value::as_str) == Some("CHECK_RAN"))
-                .filter_map(|e| e.get("body").and_then(|b| b.get("tool_use_id")).and_then(Value::as_str).map(|x| x.to_string())).collect();
+                .filter_map(|e| e.get("body"))
+                // A participant report may name the same tool use without consuming the host observation.
+                .filter(|b| b.get("observed").and_then(Value::as_str) == Some("HOST_OBSERVED_TOOL"))
+                .filter_map(|b| b.get("tool_use_id").and_then(Value::as_str).map(str::to_owned)).collect();
             let floor = match open_review_floor(&tx) {
                 Some((seq, _)) => seq,
                 None => return Ok(format!("REFUSE (exit code {}) [Core 5.1]\nNo review is open. A check is run for a review: commission the review, run the command, then call acr_check.\nNothing was written.\n", acr::REFUSED)),
