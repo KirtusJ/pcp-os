@@ -66,6 +66,32 @@ pub fn stats(db: &Database, bits: u8) -> Result<Memory> {
     memory(&db.begin_read()?.open_table(STATS)?, bits)
 }
 
+pub fn open_existing(dir: &Path) -> Result<Database> {
+    // Read commands may use an initialized redb session or migrate actual
+    // legacy episodes. They must not create an empty database in an empty
+    // directory, or treat a missing session as valid zero-run statistics.
+    let file = dir.join(FILE_NAME);
+    if file.is_file() {
+        if file.metadata()?.len() == 0 {
+            return Err(format!("Keyrook session not initialized: {}", file.display()).into());
+        }
+        // open() checks the schema and can finish a previously interrupted
+        // legacy migration; it does not create a new file at this point.
+        return open(dir);
+    }
+    for bits in [4, 6, 8] {
+        let legacy = dir.join(format!("v1-{bits}"));
+        if legacy.is_dir() {
+            for entry in fs::read_dir(legacy)? {
+                if entry?.file_name().to_string_lossy().starts_with("episode-") {
+                    return open(dir);
+                }
+            }
+        }
+    }
+    Err(format!("Keyrook session not initialized: {}", file.display()).into())
+}
+
 fn migrate_directory(tx: &WriteTransaction, dir: &Path, bits: u8) -> Result<()> {
     let legacy = dir.join(format!("v1-{bits}"));
     if !legacy.try_exists()? {
@@ -119,6 +145,25 @@ pub fn open(dir: &Path) -> Result<Database> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stats_read_never_creates_a_missing_database() {
+        let dir = std::env::temp_dir().join(format!("keyrook-read-{}", std::process::id()));
+        fs::create_dir(&dir).unwrap();
+        assert!(open_existing(&dir).is_err());
+        assert!(!dir.join(FILE_NAME).exists());
+        {
+            let db = open(&dir).unwrap();
+            assert_eq!(stats(&db, 8).unwrap().runs, [0, 0]);
+        }
+        {
+            let db = open_existing(&dir).unwrap();
+            assert_eq!(stats(&db, 8).unwrap().runs, [0, 0]);
+        }
+        fs::remove_file(dir.join(FILE_NAME)).unwrap();
+        fs::remove_dir(dir).unwrap();
+    }
+
     #[test]
     fn an_uncommitted_training_episode_cannot_change_the_next_policy() {
         let dir = std::env::temp_dir().join(format!("keyrook-rollback-{}", std::process::id()));
