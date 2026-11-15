@@ -42,11 +42,11 @@ def _no_const(name):
     raise ValueError("non-finite number %s" % name)
 
 
-def strict_loads(data):
+def strict_loads(data, *, parse_float=float):
     """Parse JSON, rejecting duplicate keys and non-finite numbers. The same parser validates and loads."""
     if isinstance(data, bytes):
         data = data.decode("utf-8")
-    return json.loads(data, object_pairs_hook=_no_dupes, parse_constant=_no_const)
+    return json.loads(data, object_pairs_hook=_no_dupes, parse_constant=_no_const, parse_float=parse_float)
 
 
 def no_floats(obj, where="value"):

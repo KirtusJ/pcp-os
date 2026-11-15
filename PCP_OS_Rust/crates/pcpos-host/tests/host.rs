@@ -158,6 +158,35 @@ fn the_caller_does_not_choose_the_actor_and_cannot_write_as_a_person_or_as_the_s
 }
 
 #[test]
+fn oversized_mcp_lines_never_dispatch_and_the_next_request_survives() {
+    let root = dir("large-mcp-line");
+    let limit = 8 * 1024 * 1024;
+    let begin = br#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"acr_begin"}}"#;
+    let ping = br#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#;
+    let mut wire = ping.to_vec();
+    wire.resize(limit - 1, b' ');
+    wire.push(b'\n'); // the delimiter counts toward the limit
+    wire.extend_from_slice(begin);
+    wire.resize(limit * 4, b' ');
+    wire.push(b'\n');
+    wire.extend_from_slice(ping);
+    wire.resize(wire.len() + limit - ping.len(), b' '); // exact limit, followed by EOF
+    let mut host = pcpos(&root);
+    host.arg("mcp");
+    let (out, code) = feed(host, &wire);
+    assert_eq!(code, 0, "{out}");
+    let replies: Vec<_> = out.lines().map(|line| Value::parse(line.as_bytes()).unwrap()).collect();
+    assert_eq!(replies.len(), 3);
+    for i in [0, 2] {
+        assert_eq!(replies[i].get("id"), Some(&Value::Int(1)));
+        assert!(replies[i].get("result").is_some());
+    }
+    assert_eq!(replies[1].get("id"), Some(&Value::Null));
+    assert_eq!(replies[1].get("error").unwrap().get("code"), Some(&Value::Int(-32600)));
+    assert!(!root.join(REG).exists(), "oversized acr_begin created a register");
+}
+
+#[test]
 fn mcp_reports_the_depth_limit_of_the_complete_request() {
     use pcpos_core::value::MAX_DEPTH;
 
@@ -350,6 +379,89 @@ fn a_write_names_the_head_it_extends_and_many_writers_leave_one_intact_chain() {
     let mut c = pcpos(&root);
     c.args(["verify", REG]);
     assert_eq!(feed(c, b"").1, 0);
+}
+
+#[test]
+fn a_notification_or_peer_response_never_dispatches_or_receives_a_reply_on_recovery() {
+    let root = dir("one-way");
+    tool(&root, "acr_begin", "{}");
+    let before = fs::read(root.join(REG)).unwrap();
+    let nested = format!("{}0{}", "[".repeat(38), "]".repeat(38));
+    let mut lines = Vec::new();
+    for extra in ["0", "0.5", "1e2", "9223372036854775808", &nested] {
+        lines.push(format!(r#"{{"jsonrpc":"2.0","method":"notifications/initialized","params":{{"_meta":{{"level":{extra}}}}}}}"#));
+        lines.push(format!(r#"{{"jsonrpc":"2.0","method":"tools/call","params":{{"name":"acr_halt","arguments":{{"x":{extra}}}}}}}"#));
+        lines.push(format!(r#"{{"jsonrpc":"2.0","id":"peer","result":{{"x":{extra}}}}}"#));
+        lines.push(format!(r#"{{"jsonrpc":"2.0","id":4,"error":{{"code":-1,"message":"error","data":{extra}}}}}"#));
+    }
+    let rejected = [
+        (r#"{"jsonrpc":"1.0","method":"ping","params":{"x":1.5}}"#, -32600, "null"),
+        (r#"{"jsonrpc":"2.0","id":null,"method":"ping","params":{"x":1.5}}"#, -32600, "null"),
+        (r#"{"jsonrpc":"2.0","id":5,"method":"ping","params":{"x":1.5}}"#, -32600, "5"),
+        (r#"{"jsonrpc":"1.0","jsonrpc":"2.0","method":"ping","params":{"x":1.5}}"#, -32600, "null"),
+        (r#"{"jsonrpc":"2.0","method":"ping","params":{"x":1.}}"#, -32700, "null"),
+        (r#"{"jsonrpc":"2.0","method":"ping","params":{"x":"\u+123"}}"#, -32700, "null"),
+    ];
+    for (line, _, _) in &rejected { lines.push((*line).to_string()); }
+    lines.push(r#"{"jsonrpc":"2.0","id":"ready","method":"ping"}"#.to_string());
+    lines.push(String::new());
+    let mut cmd = pcpos(&root);
+    cmd.arg("mcp");
+    let (out, code) = feed(cmd, lines.join("\n").as_bytes());
+    assert_eq!(code, 0);
+    assert_eq!(fs::read(root.join(REG)).unwrap(), before, "a one-way message changed the register");
+    let replies: Vec<_> = out.lines().map(|line| Value::parse(line.as_bytes()).unwrap()).collect();
+    assert_eq!(replies.len(), rejected.len() + 1, "{out}");
+    for ((_, code, id), reply) in rejected.iter().zip(&replies) {
+        assert_eq!(reply.get("error").and_then(|e| e.get("code")), Some(&Value::Int(*code)));
+        assert_eq!(reply.get("id"), Some(&Value::parse(id.as_bytes()).unwrap()));
+    }
+    assert_eq!(replies.last().unwrap().get("id"), Some(&Value::Str("ready".into())));
+    assert!(replies.last().unwrap().get("result").is_some());
+}
+
+#[test]
+fn malformed_mcp_requests_do_not_begin_a_register() {
+    let root = dir("invalid-rpc");
+    let mut cases = Vec::new();
+    let begin = r#"{"name":"acr_begin"}"#;
+    for version in ["", r#""jsonrpc":"1.0","#, r#""jsonrpc":2,"#] {
+        cases.push((format!(r#"{{{version}"id":7,"method":"tools/call","params":{begin}}}"#), "7", -32600));
+    }
+    for id in ["null", "true", "[]", "{}", "1.5", "1e2", "9223372036854775808", r#"1,"id":2"#] {
+        cases.push((format!(r#"{{"jsonrpc":"2.0","id":{id},"method":"tools/call","params":{begin}}}"#), "null", -32600));
+    }
+    for args in ["null", r#""text""#, "true", "1", "[]"] {
+        cases.push((format!(r#"{{"jsonrpc":"2.0","id":"caller","method":"tools/call","params":{{"name":"acr_begin","arguments":{args}}}}}"#),
+                    r#""caller""#, -32602));
+    }
+    cases.push((r#"{"jsonrpc":"2.0","id":9,"method":"ping","params":[]}"#.into(), "9", -32602));
+    cases.push((r#"{"jsonrpc":"2.0","id":9,"method":42}"#.into(), "9", -32600));
+    cases.push((r#"{"jsonrpc":"2.0","id":9,"method":"ping","other":1.5}"#.into(), "9", -32600));
+    let mut input = String::new();
+    for (line, _, _) in &cases {
+        input.push_str(line);
+        input.push('\n');
+    }
+    for response in [r#"{"jsonrpc":"2.0","id":3,"result":{}}"#, r#"{"jsonrpc":"2.0","id":4,"error":{"code":-1,"message":"x"}}"#] {
+        input.push_str(response);
+        input.push('\n');
+    }
+    input.push_str(r#"{"jsonrpc":"2.0","method":"tools/call","params":{"name":"acr_begin"}}"#);
+    input.push_str("\n{\"jsonrpc\":\"2.0\",\"id\":-4,\"method\":\"ping\"}\n");
+    let mut command = pcpos(&root);
+    command.arg("mcp");
+    let (out, code) = feed(command, input.as_bytes());
+    assert_eq!(code, 0);
+    assert!(!root.join(REG).exists(), "an invalid call created a register");
+    let replies: Vec<_> = out.lines().map(|l| Value::parse(l.as_bytes()).unwrap()).collect();
+    assert_eq!(replies.len(), cases.len() + 1);
+    for ((line, id, code), reply) in cases.iter().zip(&replies) {
+        assert_eq!(reply.get("id"), Some(&Value::parse(id.as_bytes()).unwrap()), "{line}");
+        assert_eq!(reply.get("error").and_then(|e| e.get("code")), Some(&Value::Int(*code)), "{line}");
+    }
+    assert!(replies.last().unwrap().get("result").is_some());
+    assert_eq!(replies.last().unwrap().get("id"), Some(&Value::Int(-4)));
 }
 
 #[test]
