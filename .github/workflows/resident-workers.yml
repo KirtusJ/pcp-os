@@ -40,12 +40,56 @@ jobs:
             --model "$RUNNER_TEMP/inputs/stories260K.bin" --reference "$RUNNER_TEMP/inputs/run.c" \
             --out "$RUNNER_TEMP/fixture"
           sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
-      - name: Boot the 24 guests and challenge the complete tree twice
+      - name: Start the session cohort and observe two complete rounds
         run: |
           python3 examples/resident-workers/supervise.py \
             --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
             --worker "$RUNNER_TEMP/fixture/resident.elf" --oracle "$RUNNER_TEMP/fixture/oracle.json" \
-            --run "$RUNNER_TEMP/cohort" --cycles 2 --interval 5
+            --run "$RUNNER_TEMP/cohort" --cycles 16 --interval 60 >"$RUNNER_TEMP/residency.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/residency.pid"
+          python3 - <<'PY'
+          import json, os, time
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          for _ in range(240):
+              status = root / 'cohort/readback.json'
+              if status.exists() and json.loads(status.read_text())['cycle'] >= 2:
+                  break
+              os.kill(int((root / 'residency.pid').read_text()), 0)
+              time.sleep(1)
+          else:
+              raise SystemExit('two complete rounds were not received')
+          PY
+          mkdir -p "$RUNNER_TEMP/initial/cohort" "$RUNNER_TEMP/initial/fixture"
+          cp "$RUNNER_TEMP"/cohort/*.serial "$RUNNER_TEMP"/cohort/*.json* "$RUNNER_TEMP/initial/cohort/"
+          cp "$RUNNER_TEMP/fixture/oracle.json" "$RUNNER_TEMP/initial/fixture/"
+      - name: Publish the two-round snapshot while the supervisor continues
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: director-3-two-live-rounds
+          path: ${{ runner.temp }}/initial/
+          if-no-files-found: error
+      - name: Keep the complete native cohort resident and verify each minute
+        timeout-minutes: 18
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, os, time
+          root = Path(os.environ['RUNNER_TEMP'])
+          log = root / 'cohort/events.jsonl'
+          for _ in range(1050):
+              events = [json.loads(row) for row in log.read_text().splitlines()]
+              if events[-1]['event'] == 'finished' and events[-1].get('cycles', 16) == 16:
+                  status = json.loads((root / 'cohort/readback.json').read_text())
+                  if status['cycle'] != 16:
+                      raise SystemExit('cohort ended before round 16')
+                  break
+              if events[-1]['event'] in ('failed', 'stopped'):
+                  raise SystemExit(str(events[-1]))
+              time.sleep(1)
+          else:
+              raise SystemExit('missing final native round')
+          PY
       - name: Retain serials, emulator diagnostics and readbacks
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
