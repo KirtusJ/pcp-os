@@ -173,8 +173,14 @@ def run_test(image: str, result: dict) -> None:
             assert size(directory / "grandchild.tick") > child_tick_before, (
                 "invalid stop oracle: the child was not making progress immediately before stop"
             )
+            grandchild_id = host_grandchild_identity(name)
+            assert not original_process_terminated(grandchild_id)
             cmd("docker", "kill", "--signal", "KILL", name)
             wait_for(lambda: not state(name)["State"]["Running"], "Docker state stopped", 10)
+            wait_for(
+                lambda: original_process_terminated(grandchild_id),
+                "original host grandchild PID terminated after Docker stop", 10,
+            )
             time.sleep(0.3)
             before = size(directory / "grandchild.tick")
             time.sleep(0.6)
@@ -183,6 +189,9 @@ def run_test(image: str, result: dict) -> None:
             result["stop_boundary"] = {
                 "observed": True,
                 "worker_sets_new_session": (directory / "grandchild-setsid").exists(),
+                "original_host_pid": grandchild_id["pid"],
+                "original_host_start_tick": grandchild_id["start_tick"],
+                "same_process_identity_gone_or_zombie": original_process_terminated(grandchild_id),
                 "worker_heartbeat_before_stop": before,
                 "worker_heartbeat_after_observation": after,
                 "container_running_after_stop": state(name)["State"]["Running"],
@@ -212,10 +221,16 @@ def run_test(image: str, result: dict) -> None:
             assert size(directory / "grandchild.tick") > child_tick_before, (
                 "invalid abort oracle: child had stopped before fault injection"
             )
+            grandchild_id = host_grandchild_identity(name)
+            assert not original_process_terminated(grandchild_id)
             (directory / "parent-crash").write_bytes(b"inject SIGABRT")
             wait_for(
                 lambda: not state(name)["State"]["Running"],
                 "Docker stopping after Rust parent SIGABRT", 12,
+            )
+            wait_for(
+                lambda: original_process_terminated(grandchild_id),
+                "original host grandchild PID terminated after Rust parent abort", 10,
             )
             exit_code = int(state(name)["State"]["ExitCode"])
             assert exit_code != 0, f"unexpected successful parent exit: {exit_code}"
@@ -231,6 +246,9 @@ def run_test(image: str, result: dict) -> None:
                 "parent_fault_injection": "controller marker triggers Rust process::abort",
                 "nonzero_container_exit_code": exit_code,
                 "setsid_grandchild": (directory / "grandchild-setsid").exists(),
+                "original_host_pid": grandchild_id["pid"],
+                "original_host_start_tick": grandchild_id["start_tick"],
+                "same_process_identity_gone_or_zombie": original_process_terminated(grandchild_id),
                 "grandchild_heartbeat_after_container_stop": after,
                 "grandchild_heartbeat_did_not_advance": after == before,
                 "container_running_after_abort": state(name)["State"]["Running"],
