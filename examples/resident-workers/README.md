@@ -1,0 +1,19 @@
+# Supervise resident PCP OS inference workers
+
+This Linux QA runner boots 24 distinct x86-64 PCP OS guests and keeps their numerical workers resident. Each parent emits the child requests. The local QEMU supervisor verifies the requests and starts their virtual machines. Repeated challenges check that a worker can still perform inference after its children start. Each VM has 32 MiB of guest RAM, a 4 MiB TCG translation cache, a virtual keyboard, and networking disabled. Allow additional host memory for the emulator and firmware.
+
+Supply a PCP OS kernel ELF with multiboot support, a compatible resident worker ELF, and 16 reference outputs computed from the same model. The known compatible private session fixture is identified by archive SHA-256 `bcef11c8a1f9fb85e20b0215830bd7d1df676bb64f4be229b791055ed3a1f387`. Its kernel ELF, worker ELF and reference outputs have SHA-256 values `ec70c7fbd70b08cfc4d5672131d61dbc84f0e4a885d7563c5f5ba8b8430bb8b8`, `c14bc81c25d5d7012a88532a854e42583378c2285734d650667dc4a52cf297c8` and `7fb50b43c445058fe3d983a718aa73d65b7ba91d305c60c731b17fcff1cc9df1`, respectively. Verify your inputs against their source before running. The worker embeds the 260K-parameter TinyStories transformer and accepts 16 indexed prompts. Each answer contains three generated token IDs. [Model and reference architecture](https://github.com/karpathy/llama2.c)
+
+Run from the repository root with Python 3.9+ and QEMU (tested with 10.0.13). Recompute the reference first with the fixture's NumPy script from its `oracle` directory. Use a new output directory for every run. Keep the supervisor in the foreground for continued checks.
+
+```sh
+python3 examples/resident-workers/supervise.py \
+  --kernel /path/to/worker-kernel.elf32 --worker /path/to/resident.elf \
+  --oracle /path/to/oracle/oracle.json --run /path/to/new-run
+```
+
+Use `--qemu` and `--firmware` for a nonstandard QEMU installation. Supply `--once` for a single cycle followed by shutdown. The default interval between complete challenge cycles is 60 seconds. Interrupt or terminate the supervisor for orderly shutdown.
+
+The supervisor checks the measured kernel, admitted worker, argument values, the parent ticket and the exact child list on startup. At each subsequent cycle it queries the VM UUID, sends a fresh key, consumes only new serial bytes, compares the response to the supplied reference, and checks all running states again. QMP requests and replies carry matching IDs. [QMP specification](https://www.qemu.org/docs/master/interop/qmp-spec.html)
+
+Inspect `events.jsonl` for admissions, completed cycles, failures and shutdowns. `readback.json` records the last completed cycle with its time, identities and serial digests. Serial files and QEMU diagnostics remain available when startup or a later cycle fails. The supervisor reaps the QEMU processes it started when it exits normally, encounters a failed check, or handles an interrupt or termination signal. Forced host termination and gaps between observations can interrupt coverage. A completed readback measures fixed-prompt inference and topology. Protocol comprehension, unrestricted text generation, nested hardware virtualization and daily-driver fitness require separate observations.
