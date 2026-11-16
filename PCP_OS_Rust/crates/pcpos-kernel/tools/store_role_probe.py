@@ -55,6 +55,7 @@ def qemu_case(
     disks: list[tuple[int, Path]],
     action: int,
     expected_exit: int,
+    boot_suffix: str = "",
 ) -> tuple[str, list[str]]:
     guest = directory / f"action{action}.elf"
     serial = directory / (label + ".serial")
@@ -65,7 +66,7 @@ def qemu_case(
         "-icount", "shift=4,align=off,sleep=off",
         "-kernel", str(args.kernel.resolve()),
         "-initrd", str(guest),
-        "-append", f"auto=action{action}.elf then=off store=ide0",
+        "-append", f"auto=action{action}.elf then=off store=ide0{boot_suffix}",
         "-serial", "file:" + str(serial),
         "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
     ]
