@@ -1,8 +1,9 @@
 """Check that incomplete, stale and unauthenticated test observations cannot pass."""
 from pathlib import Path
 import tempfile
+import time
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import supervise as sup
 
@@ -41,10 +42,52 @@ class WorkerReadback(unittest.TestCase):
             m.child = Mock()
             m.child.poll.return_value = None
             with self.assertRaises(TimeoutError):
-                m.through_ready(.01)
+                m.through_ready(time.monotonic() + .01)
             m.serial.write_bytes(b"READY 1\n")
             with self.assertRaisesRegex(RuntimeError, "truncated"):
-                m.through_ready(.1)
+                m.through_ready(time.monotonic() + .1)
+
+    def test_queued_matching_output_is_rejected_before_keypress(self):
+        with tempfile.TemporaryDirectory() as d:
+            m = object.__new__(sup.Machine)
+            m.node, m.live, m.command = 1, Mock(), Mock()
+            m.serial = Path(d) / "serial"
+            m.serial.write_bytes(b"READY 1\n")
+            m.position = m.serial.stat().st_size
+            with m.serial.open("ab") as stream:
+                stream.write(b"CHALLENGE 2\nLM tokens 10 11 12\nREADY 1\n")
+            with self.assertRaisesRegex(RuntimeError, "unsolicited"):
+                m.challenge(2, self.oracle)
+            m.command.assert_not_called()
+
+    def test_serial_progress_idle_and_overall_deadlines(self):
+        cases = [
+            ([b"start\n", b"model\n", b"READY 1\n"], 3, 6, None),
+            ([b"start\n", b"model\n"], 2, 10, "serial idle"),
+            ([b"x"] * 8, 3, 5, "overall deadline"),
+        ]
+        for updates, idle, limit, error in cases:
+            with self.subTest(error=error), tempfile.TemporaryDirectory() as d:
+                m = object.__new__(sup.Machine)
+                m.node, m.position, m.child = 1, 0, Mock()
+                m.child.poll.return_value = None
+                m.serial = Path(d) / "serial"
+                clock = 0
+
+                def advance(_):
+                    nonlocal clock
+                    if clock < len(updates):
+                        with m.serial.open("ab") as serial:
+                            serial.write(updates[clock])
+                    clock += 1
+
+                with patch.object(sup.time, "monotonic", side_effect=lambda: clock), patch.object(sup.time, "sleep", advance):
+                    if error:
+                        with self.assertRaisesRegex(TimeoutError, error):
+                            m.through_ready(limit, idle)
+                    else:
+                        self.assertEqual(m.through_ready(limit, idle), b"".join(updates).decode())
+                        self.assertEqual(m.position, m.serial.stat().st_size)
 
     def test_reject_different_machine_or_stopped_emulator(self):
         m = object.__new__(sup.Machine)
@@ -64,10 +107,10 @@ class WorkerReadback(unittest.TestCase):
 
     def test_guest_loss_during_collection_is_visible(self):
         m = object.__new__(sup.Machine)
-        m.node, m.child = 7, Mock()
+        m.node, m.position, m.child = 7, 0, Mock()
         m.child.poll.return_value = 9
         with self.assertRaisesRegex(ConnectionError, "emulator exited"):
-            m.through_ready(.2)
+            m.through_ready(time.monotonic() + .2)
 
 
 if __name__ == "__main__":

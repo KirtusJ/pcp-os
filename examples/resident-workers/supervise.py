@@ -50,7 +50,7 @@ def snapshot(path, contents):
 class Machine:
     """Own the child and its private stdio channel for the entire run."""
 
-    def __init__(self, node, args, run, cleanup, startup_timeout, response_timeout, attempt):
+    def __init__(self, node, args, run, cleanup, startup_deadline, response_timeout, attempt):
         self.node = node
         self.response_timeout = response_timeout
         self.uuid = str(uuid.uuid4())
@@ -67,8 +67,8 @@ class Machine:
         cleanup.callback(self.close)
         self.selector = cleanup.enter_context(selectors.DefaultSelector())
         self.selector.register(self.child.stdout, selectors.EVENT_READ)
-        require("QMP" in self.message(time.monotonic() + startup_timeout), f"guest {node}: QMP greeting")
-        self.command("qmp_capabilities")
+        require("QMP" in self.message(startup_deadline), f"guest {node}: QMP greeting")
+        self.command("qmp_capabilities", deadline=startup_deadline)
 
     def close(self):
         if self.child.poll() is None:
@@ -99,7 +99,7 @@ class Machine:
         observed = "running at poll" if status is None else f"exit status {status}"
         return f"guest {self.node}: {self.last_command}: {reason}; emulator {observed}"
 
-    def command(self, name, **arguments):
+    def command(self, name, *, deadline=None, **arguments):
         self.last_command = name
         self.sequence += 1
         packet = {"execute": name, "id": self.sequence, "arguments": arguments}
@@ -109,8 +109,9 @@ class Machine:
         except BrokenPipeError as error:
             raise ConnectionError(self.failure_details("broken pipe")) from error
         require(written == len(wire), f"guest {self.node}: incomplete QMP request")
-        deadline = time.monotonic() + self.response_timeout
-        while True:
+        response_deadline = time.monotonic() + self.response_timeout
+        deadline = response_deadline if deadline is None else min(response_deadline, deadline)
+        while time.monotonic() < deadline:
             try:
                 response = self.message(deadline)
             except TimeoutError as error:
@@ -120,43 +121,54 @@ class Machine:
             require(response.get("id") == self.sequence and "return" in response,
                     f"guest {self.node}: unexpected QMP response {response}")
             return response["return"]
+        raise TimeoutError(self.failure_details("response timeout"))
 
-    def live(self):
-        require(self.command("query-uuid")["UUID"] == self.uuid, f"guest {self.node}: UUID changed")
-        require(self.command("query-status")["running"] is True, f"guest {self.node}: stopped VM")
+    def live(self, deadline=None):
+        require(self.command("query-uuid", deadline=deadline)["UUID"] == self.uuid, f"guest {self.node}: UUID changed")
+        require(self.command("query-status", deadline=deadline)["running"] is True, f"guest {self.node}: stopped VM")
 
-    def through_ready(self, timeout):
-        deadline = time.monotonic() + timeout
+    def through_ready(self, deadline, idle_timeout=None):
+        last_change = time.monotonic()
+        length = self.position
         end_marker = f"READY {self.node}\n".encode()
         while time.monotonic() < deadline:
             if self.child.poll() is not None:
-                raise ConnectionError(f"guest {self.node}: emulator exited")
+                raise ConnectionError(f"guest {self.node}: emulator exited with status {self.child.returncode}")
             if self.serial.exists():
                 with self.serial.open("rb") as stream:
-                    require(stream.seek(0, 2) >= self.position, f"guest {self.node}: serial log truncated")
-                    stream.seek(self.position)
-                    raw = stream.read(SERIAL_LIMIT + 1)
-                require(len(raw) <= SERIAL_LIMIT, f"guest {self.node}: serial output limit")
-                data = raw.replace(b"\r\n", b"\n")
-                require(b" ended FAILED" not in data and b" ended DONE" not in data,
-                        f"guest {self.node}: worker exited")
-                if data.endswith(end_marker):
-                    self.position += len(raw)
-                    return data.decode("ascii")
+                    size = stream.seek(0, os.SEEK_END)
+                    require(size >= length, f"guest {self.node}: serial log truncated")
+                    require(size - self.position <= SERIAL_LIMIT, f"guest {self.node}: serial output limit")
+                    if size > length:
+                        stream.seek(self.position)
+                        raw = stream.read(size - self.position)
+                        require(len(raw) == size - self.position, f"guest {self.node}: serial log truncated")
+                        length = size
+                        last_change = time.monotonic()
+                        data = raw.replace(b"\r\n", b"\n")
+                        require(b" ended FAILED" not in data and b" ended DONE" not in data,
+                                f"guest {self.node}: worker exited")
+                        if data.endswith(end_marker):
+                            self.position = size
+                            return data.decode("ascii")
+            if idle_timeout is not None and time.monotonic() - last_change >= idle_timeout:
+                raise TimeoutError(f"guest {self.node}: serial idle at {length} bytes before READY")
             time.sleep(0.04)
-        raise TimeoutError(f"guest {self.node}: fresh READY missing")
+        raise TimeoutError(f"guest {self.node}: overall deadline at {length} serial bytes before READY")
 
     def challenge(self, prompt, oracle):
         self.live()
+        require(self.serial.stat().st_size == self.position,
+                f"guest {self.node}: unsolicited serial output before challenge")
         self.command("send-key", keys=[{"type": "qcode", "data": KEYS[prompt]}], **{"hold-time": 25})
-        reply = self.through_ready(self.response_timeout)
+        reply = self.through_ready(time.monotonic() + self.response_timeout)
         tokens = " ".join(str(t) for t in oracle[prompt])
         require(reply == f"CHALLENGE {prompt}\nLM tokens {tokens}\nREADY {self.node}\n",
                 f"guest {self.node}: response mismatch for prompt {prompt}")
         return {"prompt": prompt, "tokens": oracle[prompt], "serial_sha256": sha(self.serial.read_bytes())}
 
 
-def verify_start(machine, serial, parent, incoming, salt, kernel_hash, elf_hash, oracle):
+def verify_start(machine, serial, parent, incoming, salt, kernel_hash, elf_hash, oracle, deadline=None):
     node = machine.node
     ticket = (incoming * 31 + node * 13 + salt + 1) % 1000003
     children = [n for n in range(2, len(PARENTS)) if PARENTS[n] == node]
@@ -172,7 +184,7 @@ def verify_start(machine, serial, parent, incoming, salt, kernel_hash, elf_hash,
     wanted += [f"SPAWN {child} PARENT {node} TICKET {ticket}" for child in children]
     wanted += [f"READY {node}"]
     require(serial[start.end():].splitlines()[1:] == wanted, f"guest {node}: guest dispatch or model result")
-    machine.live()
+    machine.live(deadline=deadline)
     return ticket, children
 
 
@@ -258,11 +270,12 @@ def supervise(opt, log):
                     incoming = initial
                 attempt = attempts[node] = attempts.get(node, 0) + 1
                 resources = ExitStack()
+                startup_deadline = time.monotonic() + opt.startup_timeout
                 try:
                     machine = Machine(node, args + ["-initrd", f"resident.elf {node} {incoming} {salt}"],
-                                      run, resources, opt.startup_timeout, opt.response_timeout, attempt)
-                    serial = machine.through_ready(opt.startup_timeout)
-                    admitted = verify_start(machine, serial, parent, incoming, salt, kernel_hash, elf_hash, oracle)
+                                      run, resources, startup_deadline, opt.response_timeout, attempt)
+                    serial = machine.through_ready(startup_deadline, opt.startup_idle_timeout)
+                    admitted = verify_start(machine, serial, parent, incoming, salt, kernel_hash, elf_hash, oracle, startup_deadline)
                     require(machine.uuid not in used_uuids, "duplicate VM UUID")
                 except (OSError, RuntimeError, ValueError) as error:
                     resources.close()
@@ -320,11 +333,14 @@ def main():
     parser.add_argument("--interval", type=int, default=60)
     parser.add_argument("--repairs", type=int, default=0, help="maximum branch restart attempts per run")
     parser.add_argument("--startup-timeout", type=int, default=DEFAULT_STARTUP_TIMEOUT)
+    parser.add_argument("--startup-idle-timeout", type=int, help="seconds without new serial bytes while waiting for startup READY")
     parser.add_argument("--response-timeout", type=int, default=DEFAULT_RESPONSE_TIMEOUT)
     parser.add_argument("--once", action="store_true", help="run one complete readback and shut down")
     opt = parser.parse_args()
     if min(opt.interval, opt.startup_timeout, opt.response_timeout) < 1:
         parser.error("interval and timeouts must be positive")
+    if opt.startup_idle_timeout is not None and opt.startup_idle_timeout < 1:
+        parser.error("startup idle timeout must be positive")
     if opt.repairs < 0:
         parser.error("repairs cannot be negative")
     opt.run.mkdir(mode=0o700, exist_ok=False)
