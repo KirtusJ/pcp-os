@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import re
 import shutil
+import signal
 import struct
 import subprocess
 import tempfile
@@ -151,11 +152,18 @@ class Guest:
         self.serial = serial
         self.timeout = timeout
         self.cursor = 0
+        self.kill_requested = False
 
     def key(self, name):
         self.process.stdin.write(f"sendkey {name} 35\n".encode("ascii"))
         self.process.stdin.flush()
         time.sleep(.10)
+
+    def interrupt(self):
+        require(self.process.poll() is None, "guest exited before interruption")
+        self.process.kill()
+        self.kill_requested = True
+        require(self.process.wait(timeout=8) == -signal.SIGKILL, "unexpected exit during interruption")
 
     def submit(self, command):
         for char in command:
@@ -239,13 +247,16 @@ def boot(args, output, name, pins, guid, results):
     with stderr.open("xb") as errors:
         process = subprocess.Popen(options, cwd=output, stdin=subprocess.PIPE,
                                    stdout=subprocess.DEVNULL, stderr=errors)
+    guest = Guest(process, serial, args.timeout)
     try:
-        guest = Guest(process, serial, args.timeout)
         guest.enter_desktop(launch)
         yield guest
     finally:
-        record["stopped_by_harness"] = process.poll() is None
-        if record["stopped_by_harness"]:
+        running = process.poll() is None
+        record["stopped_by_harness"] = running or guest.kill_requested
+        if guest.kill_requested:
+            record["kill_requested"] = True
+        if running:
             process.terminate()
             try:
                 process.wait(timeout=8)
@@ -303,35 +314,51 @@ def exercise(args, output, results):
         guest.submit("edit lark print changed then run lark")
         guest.wait(STAGED)
         first_events = [STAGED, SAVED, STAGED]
-        if args.decision == "stop":
+        if args.decision == "interrupt":
+            check_trace(guest.serial, first_events)
+            guest.interrupt()
+        else:
+            if args.decision == "stop":
+                guest.key("alt-s")
+                guest.wait(ACCEPTED)
+                guest.key("alt-a")
+                guest.wait(STOPPED)
+                first_events.extend((ACCEPTED, STOPPED))
+            else:
+                guest.key("alt-d")
+                results["denial_receipt"] = guest.verify_output("denied", "Request denied", tag=screen.TOOL_TAG)
+            guest.key("alt-a")
+            # The new proposal acknowledges later input before any intentional application read.
+            guest.submit("edit lark print barrier")
+            guest.wait(STAGED)
+            first_events.append(STAGED)
+            check_trace(guest.serial, first_events)
             guest.key("alt-s")
             guest.wait(ACCEPTED)
-            guest.key("alt-a")
             guest.wait(STOPPED)
-            first_events.extend((ACCEPTED, STOPPED))
-        else:
-            guest.key("alt-d")
-            results["denial_receipt"] = guest.verify_output("denied", "Request denied", tag=screen.TOOL_TAG)
-        guest.key("alt-a")
-        # The new proposal acknowledges later input before any intentional application read.
-        guest.submit("edit lark print barrier")
-        guest.wait(STAGED)
-        first_events.append(STAGED)
-        check_trace(guest.serial, first_events)
-        guest.key("alt-s")
-        guest.wait(ACCEPTED)
-        guest.wait(STOPPED)
-        check_trace(guest.serial, first_events + [ACCEPTED, STOPPED])
-        guest.submit("run lark")
-        guest.wait(RAN)
-        if frames is not None:
-            frames["after_" + args.decision] = guest.verify_output("after-" + args.decision, "original")
-    check_trace(output / "first.serial", first_events + [ACCEPTED, STOPPED, RAN])
+            check_trace(guest.serial, first_events + [ACCEPTED, STOPPED])
+            guest.submit("run lark")
+            guest.wait(RAN)
+            if frames is not None:
+                frames["after_" + args.decision] = guest.verify_output("after-" + args.decision, "original")
+            first_events.extend((ACCEPTED, STOPPED, RAN))
+    check_trace(output / "first.serial", first_events)
     after_decision = checkpoint(disk, offset, b"print original")
     observations["after_" + args.decision] = after_decision
     require(after_decision == original, f"{args.decision} changed application store")
     with boot(args, output, "cold", pins, guid, results) as guest:
         guest.key("alt-a")
+        cold_events = []
+        if args.decision == "interrupt":
+            # A fresh prompt proves the guest consumed the late approval before the explicit run.
+            guest.submit("edit lark print barrier")
+            guest.wait(STAGED)
+            guest.key("alt-s")
+            guest.wait(ACCEPTED)
+            guest.wait(STOPPED)
+            cold_events.extend((STAGED, ACCEPTED, STOPPED))
+            check_trace(guest.serial, cold_events)
+            require(checkpoint(disk, offset, b"print original") == original, "late approval changed the store")
         guest.submit("run lark")
         guest.wait(RAN)
         if frames is not None:
@@ -345,7 +372,7 @@ def exercise(args, output, results):
         guest.wait(RAN)
         if frames is not None:
             frames["fresh_approval"] = guest.verify_output("approved-replacement", "replacement")
-    check_trace(output / "cold.serial", [RAN, STAGED, SAVED, RAN])
+    check_trace(output / "cold.serial", cold_events + [RAN, STAGED, SAVED, RAN])
     observations["fresh_approval"] = checkpoint(disk, offset, b"print replacement")
     require(observations["fresh_approval"]["generation"] > original["generation"], "replacement was not committed")
 
@@ -355,8 +382,8 @@ def main():
     for flag in ("manifest", "disk", "kernel", "desktop", "worker", "output"):
         parser.add_argument("--" + flag, type=Path, required=True)
     parser.add_argument("--fixture-sha256", help="verify only the copied regions against this independent SHA-256")
-    parser.add_argument("--decision", choices=("stop", "deny"), default="stop",
-                        help="cancel with Alt+S or refuse with Alt+D and verify the visible denial receipt")
+    parser.add_argument("--decision", choices=("stop", "deny", "interrupt"), default="stop",
+                        help="cancel with Alt+S, refuse with Alt+D, or interrupt QEMU while consent is pending")
     parser.add_argument("--check-screen", action="store_true", help="verify visible output on the fixed 960x540 preview")
     parser.add_argument("--qemu", default="qemu-system-x86_64")
     parser.add_argument("--objcopy", default="objcopy")
