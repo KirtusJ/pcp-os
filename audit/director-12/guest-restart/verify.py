@@ -372,10 +372,10 @@ def sparse_future_attempt(image: str, kernel: Path, measurement: str, evidence_d
         request = secrets.token_hex(12)
         name = "d12-noncontiguous-" + secrets.token_hex(5)
         (directory / "start-3.txt").write_text(
-            f"REQUEST={request};ATTEMPT=3;START\\n", encoding="ascii"
+            f"REQUEST={request};ATTEMPT=3;START\n", encoding="ascii"
         )
         (directory / "end-3.txt").write_text(
-            f"REQUEST={request};ATTEMPT=3;QEMU_EXIT=33;END\\n", encoding="ascii"
+            f"REQUEST={request};ATTEMPT=3;QEMU_EXIT=33;END\n", encoding="ascii"
         )
         try:
             policy = start(image, name, directory, kernel, measurement, request, fault=False)
