@@ -1,0 +1,72 @@
+name: Director 13 independent Surfbird ELF layout characterization
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/director-13-elf-audit.yml'
+      - 'audit/director-13/network/elf_layout.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare-elf:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout current PR source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Checkout historically accepted source independently
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 1cff81e4b935dc72a95a669a5214508ab8712efc
+          path: historic
+          persist-credentials: false
+      - name: Pin the historical compiler for both guest builds
+        run: |
+          rustup toolchain install 1.91.1 --profile minimal \
+            --target x86_64-unknown-none
+          rustup default 1.91.1
+          rustc -Vv
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends binutils lld
+      - name: Compile source-pinned Ethernet and serial guests
+        run: |
+          mkdir -p "$RUNNER_TEMP/d13-elf/current" "$RUNNER_TEMP/d13-elf/historic"
+          for root in . historic; do
+            label=current
+            if test "$root" = historic; then label=historic; fi
+            cargo build --locked --release --target x86_64-unknown-none \
+              --manifest-path "$root/apps/surfbird/guest/Cargo.toml" --features tcp-ip
+            cp "$root/apps/surfbird/guest/target/x86_64-unknown-none/release/surfcable" \
+              "$RUNNER_TEMP/d13-elf/$label/ethernet.elf"
+            cargo build --locked --release --target x86_64-unknown-none \
+              --manifest-path "$root/apps/surfbird/guest/Cargo.toml"
+            cp "$root/apps/surfbird/guest/target/x86_64-unknown-none/release/surfcable" \
+              "$RUNNER_TEMP/d13-elf/$label/serial.elf"
+          done
+      - name: Independently parse ELF64 headers, program and relocation sections
+        run: |
+          for label in current historic; do
+            python3 audit/director-13/network/elf_layout.py \
+              --ethernet "$RUNNER_TEMP/d13-elf/$label/ethernet.elf" \
+              --serial "$RUNNER_TEMP/d13-elf/$label/serial.elf" \
+              --output "$RUNNER_TEMP/d13-elf/$label/layout.json"
+            for kind in ethernet serial; do
+              readelf -hW -lW -SW -rW "$RUNNER_TEMP/d13-elf/$label/$kind.elf" \
+                > "$RUNNER_TEMP/d13-elf/$label/$kind.readelf.txt"
+            done
+          done
+      - name: Retain metadata only, no runnable binaries
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: director-13-surfbird-elf-structure
+          path: |
+            ${{ runner.temp }}/d13-elf/*/layout.json
+            ${{ runner.temp }}/d13-elf/*/*.readelf.txt
+          if-no-files-found: warn
+          retention-days: 7
