@@ -51,4 +51,57 @@ python3 PCP_OS_Rust/crates/pcpos-kernel/tools/store_bound_probe.py \
 
 The accompanying `.github/workflows/ide-volume-pin.yml` builds and runs the historical default path **separately** before the feature-gated candidate, using only CI-created temporary disks. The host may install QEMU/compiler packages using network access; QEMU guests run with no NIC.
 
-**Evidence status: authored sources only until the exact-head workflow finishes and its decoded log has been examined.** No actual source was merged, flashed, installed or granted a permission. No physical or private PCP-OS storage device was used.
+## Independently inspected executable receipts
+
+The original test submission [run 43817842255](https://github.com/KirtusJ/pcp-os/actions/runs/43817842255)
+failed **before the kernel ran**: a test fixture's alternate volume ID
+had 31 rather than 32 hexadecimal digits; the parser rejected it and
+a positive fixture then attempted to unwrap the negative result. This
+was a **test-data defect**, not evidence that a genuine 128-bit disk ID
+was rejected. The 32-digit fixture was corrected in both test sources.
+The older historical role test was also left separate.
+
+The [successful CI run 43817995284](https://github.com/KirtusJ/pcp-os/actions/runs/43817995284)
+at corrected head `0e61cddcbf5c336b35951a20c2e11e4b6b8cf359`
+ran all **18 host Rust ID tests in ordinary and optimized profiles**,
+built the historical/default kernel **separately** from the optional
+`store-id-gate` kernel, and executed both QEMU matrices.
+
+Then the [expanded exact-source run 43818444515](https://github.com/KirtusJ/pcp-os/actions/runs/43818444515),
+[job 133135726540](https://github.com/KirtusJ/pcp-os/actions/runs/43818444515/job/133135726540),
+tested `906e80fb3e85fd15232220850b062e29188cd299` with
+**18/18 ID tests in both profiles**, and source-bound actual
+QEMU `-kernel` test guests. The same run observed:
+
+- Historical **v1** fixture: `primary-marked-store` write/cold-read
+  success, safe refusal for an unmarked GPT-like primary and a missing
+  IDE0, **and the original wrong-primary cloned-marker write**.
+- Feature-gated **v2**: exact ID allows creation and cold-read;
+  different-ID primary, wrong selected ID, missing, duplicate, uppercase,
+  short or zero ID, ambiguous `store=` tokens and legacy v1 marker
+  **refuse without a file write**.
+- Two additionally tested selectors, an ID alone with **no `store=`**
+  and an ID with unsupported `store=another`, **refused with an explicit
+  message** instead of launching a user program on an unsuspected
+  volatile-RAM backend.
+- **Exact-cloned ID/sector on the wrong IDE0 remains accepted** and
+  receives the write. This is still **EXPECTED ADVERSE**. The original
+  intended store at IDE1 remained unchanged.
+
+The host-inspected kernel ELF32 SHA-256 identities in that run were
+`60fcf96ad5fffc5481b0283f948d76df5a5f80bca4da2d6f11a121c089db5026`
+for the **historical default** and
+`8e7934629683ddfc9bb3e77813e12d53683f41c250cc0efb4fa5fd97d261cdfe`
+for the **opt-in** kernel. The tests are executed on *disposable*
+QEMU primary-master IDE disk image files only, with real host-file
+byte/hash readback. The displayed `PASS` from the harness means the
+expected **negative clone outcome was retained**, not that device
+identity or safe disk installation passed.
+
+**After this result, documentation/CI trigger edits are separately
+recorded as revisions. The result above is tied to the exact executed
+source SHA, not silently to any newer untested commit.** No
+source was merged, flashed, installed or granted a permission.
+No real hardware, encrypted volume, physical boot disk, 64-bit-LBA
+transport, removable hotplug or PT-private release was tested.
+
