@@ -1,4 +1,4 @@
-name: Director 3 resident Core recovery
+name: Director 3 resident Core handover
 
 on:
   pull_request:
@@ -87,7 +87,7 @@ jobs:
       - name: Publish the independently replayable first round
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: director-3-core-first-round
+          name: director-3-handover-first-round
           path: ${{ runner.temp }}/d3-round-one/
           if-no-files-found: error
           retention-days: 14
@@ -117,7 +117,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: director-3-core-session
+          name: director-3-handover-session
           path: |
             receipts/**/*.serial
             receipts/**/*.stderr
