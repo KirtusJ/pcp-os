@@ -78,3 +78,44 @@ jobs:
           path: captures/
           if-no-files-found: warn
           retention-days: 14
+
+  native_register:
+    name: Native PCP OS register pixels (no installed VM)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Pin the independently authored display checker
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: 12de565d3c56baffd609f6c1957b69b150867072
+          path: checker
+      - name: Build Director 10 candidate kernel and capture native QEMU frames
+        env:
+          PCPOS_KERNEL_STAGE: ${{ runner.temp }}/register-kernel
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 binutils lld
+          rustup target add x86_64-unknown-none
+          rustup component add rust-src
+          sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          kernel=PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
+          measurement=$(python3 PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py "$kernel")
+          echo "TESTED_KERNEL_SHA256 $(sha256sum "$kernel")"
+          echo "TESTED_KERNEL_MEASUREMENT $measurement"
+          python3 os-docs/display-acceptance/register/native_guest.py \
+            --kernel "$kernel" --measurement "$measurement" \
+            --font PCP_OS_Rust/crates/pcpos-kernel/src/font.rs \
+            --output captures/register
+      - name: Retain original QMP native P6 frames and adverse-case results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-register-optical-800-and-1024
+          path: captures/register/
+          if-no-files-found: warn
+          retention-days: 14
