@@ -38,7 +38,8 @@ class ObservedDevice:
     bus_path: str
     capacity_512: int
     gpt_lba_bytes: int
-    media_id: str
+    volume_marker: str
+    uefi_media_id: int  # UEFI Block I/O UINT32 media-change value, NOT on-disk ID
     preflight_digest: str
     condition: MediaCondition
     read_only: bool = False
@@ -63,7 +64,8 @@ class FreshInstallPlan:
     bus_path: str
     capacity_512: int
     gpt_lba_bytes: int
-    media_id: str
+    volume_marker: str
+    uefi_media_id: int  # UEFI Block I/O UINT32 media-change value, NOT on-disk ID
     preflight_digest: str
     image_bytes: int
     image_sha256: str
@@ -99,17 +101,18 @@ def assess_fresh_install(inventory: Inventory, plan: FreshInstallPlan) -> Prefli
     if not inventory.devices:
         return _hold("no-observed-block-devices")
     if any((not d.handle or not d.bus_path or d.generation < 1 or
-            d.capacity_512 <= 0 or d.capacity_512 > MAX_U64)
+            d.capacity_512 <= 0 or d.capacity_512 > MAX_U64 or
+            type(d.uefi_media_id) is not int or not (0 <= d.uefi_media_id < (1 << 32)))
            for d in inventory.devices):
         return _hold("incomplete-or-invalid-device-observation")
     # Duplicate handles/paths are an ambiguous enumeration, even if identifiers
     # differ; duplicate media IDs remain ambiguous even when paths differ.
     handles = [d.handle for d in inventory.devices if d.present]
     paths = [d.bus_path for d in inventory.devices if d.present]
-    media_ids = [d.media_id for d in inventory.devices if d.present and d.media_id]
+    volume_markers = [d.volume_marker for d in inventory.devices if d.present and d.volume_marker]
     if len(handles) != len(set(handles)) or len(paths) != len(set(paths)):
         return _hold("duplicate-device-handle-or-path")
-    if len(media_ids) != len(set(media_ids)):
+    if len(volume_markers) != len(set(volume_markers)):
         return _hold("duplicate-media-id")
     # A second writable block device is ambiguous for the initial narrow
     # installer profile even if its transport is currently unsupported.
@@ -130,6 +133,10 @@ def assess_fresh_install(inventory: Inventory, plan: FreshInstallPlan) -> Prefli
         return _hold("selection-not-only-writable-supported-target")
     if d.generation != plan.generation or d.bus_path != plan.bus_path:
         return _hold("device-generation-or-path-changed")
+    # UEFI MediaId is a firmware-provided change token, not a disk GUID.
+    # It is meaningful only for the UEFI Block I/O transport that produced it.
+    if type(plan.uefi_media_id) is not int or d.uefi_media_id != plan.uefi_media_id:
+        return _hold("uefi-media-id-changed-or-invalid")
     if d.capacity_512 != plan.capacity_512 or d.gpt_lba_bytes != plan.gpt_lba_bytes:
         return _hold("device-geometry-changed")
     if d.gpt_lba_bytes not in SUPPORTED_GPT_LBA_BYTES:
@@ -145,9 +152,10 @@ def assess_fresh_install(inventory: Inventory, plan: FreshInstallPlan) -> Prefli
         return _hold("durable-install-flush-not-advertised")
     if d.condition != MediaCondition.FULL_ZERO_SCAN_REPORTED:
         return _hold("target-not-reported-fully-blank")
-    # A virgin blank disk has no on-media ID. Do not demand one as a
-    # prerequisite for fresh setup; an ID alone would never grant authority.
-    if d.media_id != plan.media_id:
+    # A virgin blank disk has no on-media marker. Do not demand one as a
+    # prerequisite for fresh setup; a marker alone never grants authority.
+    # This is distinct from UEFI MediaId, which is a firmware change token.
+    if d.volume_marker != plan.volume_marker:
         return _hold("media-id-mismatched")
     if (not _digest_looks_sha256(d.preflight_digest) or
             d.preflight_digest != plan.preflight_digest):
