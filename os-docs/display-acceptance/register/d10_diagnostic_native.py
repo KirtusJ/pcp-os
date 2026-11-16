@@ -264,10 +264,12 @@ def one_boot(kernel, measurement, font, root, width, height, vram, mode, timeout
             report["frames"]["launcher"] = sha(launcher.read_bytes())
             monitor.key("r")
             wait_serial(guest, serial, b"D10_REGISTER_RAW_END bytes=", timeout)
-            marker = (
-                b"D10_REGISTER_INJECT offset=0"
-                if mode == "register-corrupt" else b"D10_REGISTER_UNMODIFIED"
-            )
+            marker = {
+                "register-corrupt": b"D10_REGISTER_INJECT offset=0",
+                "register-chain-break": b"D10_REGISTER_INJECT_CHAIN offset=",
+                "register-tail-change": b"D10_REGISTER_INJECT_TAIL offset=",
+                "register-snapshot": b"D10_REGISTER_UNMODIFIED",
+            }[mode]
             wait_serial(guest, serial, marker, timeout)
             live_serial = serial.read_bytes()
             raw = parse_snapshot(live_serial)
@@ -316,7 +318,12 @@ def one_boot(kernel, measurement, font, root, width, height, vram, mode, timeout
             report["unpaired_surrogate_refused_by_python"] = True
             report["i64_overflow_refused_by_python"] = True
             report["excessive_nesting_refused_by_python"] = True
+            # The following mutations are constructed by this independent
+            # host-side parser, using only original serial-framed JSONL bytes.
+            # They do not trust the guest's computed head as an oracle.
+            modified = None
             if mode == "register-corrupt":
+                modified = bytes(damaged)
                 inject = re.findall(
                     rb"D10_REGISTER_INJECT offset=0 before=([0-9a-f]{2}) after=([0-9a-f]{2})",
                     live_serial,
@@ -325,6 +332,61 @@ def one_boot(kernel, measurement, font, root, width, height, vram, mode, timeout
                     f"{raw[0]:02x}".encode(), f"{damaged[0]:02x}".encode()
                 ):
                     raise ValueError("actual in-guest byte mutation not correlated")
+            elif mode == "register-chain-break":
+                first_end = raw.index(b"\n")
+                label = b'"label":"kernel"'
+                if raw[:first_end].count(label) != 1:
+                    raise ValueError("synthetic first event has no unique kernel label")
+                at = raw.index(label, 0, first_end) + len(b'"label":"k')
+                if raw[at] != 0x65:
+                    raise ValueError("kernel-label byte is not expected ASCII e")
+                altered = bytearray(raw)
+                altered[at] = 0x45
+                modified = bytes(altered)
+                marker_check = f"D10_REGISTER_INJECT_CHAIN offset={at} before=65 after=45".encode()
+                if live_serial.count(marker_check) != 1:
+                    raise ValueError("guest chain-change offset/bytes not correlated")
+                # First line MUST still parse and be canonical: the refusal
+                # is for the successor's unchanged predecessor, not syntax.
+                first = modified[:first_end]
+                event = json.loads(first.decode("ascii"), object_pairs_hook=no_duplicate_pairs)
+                canonical = json.dumps(event, sort_keys=True, ensure_ascii=True,
+                                       separators=(",", ":")).encode("ascii")
+                if canonical != first or event.get("body", {}).get("label") != "kErnel":
+                    raise ValueError("chain-break case lost canonical first event")
+                if not expect_failure(modified):
+                    raise ValueError("independent chain parser accepted broken predecessor")
+                report["canonical_early_change_refused_by_python"] = True
+            elif mode == "register-tail-change":
+                last_start = raw[:-1].rfind(b"\n") + 1
+                tail = raw[last_start:-1]
+                needle = b'"outcome":"LOST"'
+                if tail.count(needle) != 1:
+                    raise ValueError("synthetic final event does not have one LOST outcome")
+                at = last_start + tail.index(needle) + len(b'"outcome":"')
+                if raw[at:at + 4] != b"LOST":
+                    raise ValueError("terminal outcome is not expected LOST")
+                altered = bytearray(raw)
+                altered[at:at + 4] = b"DONE"
+                modified = bytes(altered)
+                marker_check = f"D10_REGISTER_INJECT_TAIL offset={at} before=LOST after=DONE".encode()
+                if live_serial.count(marker_check) != 1:
+                    raise ValueError("guest terminal change offset/bytes not correlated")
+                mutant_count, mutant_head = read_register(modified)
+                if mutant_count != count or mutant_head == head:
+                    raise ValueError("terminal mutation did not produce new valid anchored head")
+                report["valid_terminal_mutation_new_head"] = mutant_head
+                report["prior_original_head_is_not_independent_external_commitment"] = True
+
+            if modified is not None:
+                report["modified_copy_length"] = len(modified)
+                report["modified_copy_sha256"] = sha(modified)
+                report["only_detached_copy_changed"] = True
+                (root / "view-modified-copy.jsonl").write_bytes(modified)
+
+            if mode in ("register-corrupt", "register-chain-break"):
+                if mode == "register-corrupt" and not expect_failure(modified):
+                    raise AssertionError("independent parser accepted malformed record")
                 refusal = "THE KERNEL'S REGISTER: verification failed"
                 observed, frame = wait_image(
                     monitor, root, "register",
@@ -334,8 +396,16 @@ def one_boot(kernel, measurement, font, root, width, height, vram, mode, timeout
                 )
                 report["expected_guest_error_heading"] = refusal
                 report["refusal_observed_from_guest_pixels"] = True
-                # Require the raw negative in this native build, but do not
-                # claim that a production disk was corrupted.
+                if mode == "register-chain-break":
+                    error = "BrokenChain(2)"
+                    if not exact_glyphs(frame, (20, 40), error, font, TEXT):
+                        raise ValueError("native guest error is not BrokenChain(2)")
+                    report["expected_guest_verifier_error"] = error
+                else:
+                    error = "Parse(1, UnexpectedByte(0))"
+                    if not exact_glyphs(frame, (20, 40), error, font, TEXT):
+                        raise ValueError("native guest error is not first-byte parse refusal")
+                    report["expected_guest_verifier_error"] = error
                 if exact_glyphs(
                     frame, (20, 20),
                     f"THE KERNEL'S REGISTER: {count} events, chain intact",
@@ -343,7 +413,10 @@ def one_boot(kernel, measurement, font, root, width, height, vram, mode, timeout
                 ):
                     raise ValueError("invalid-ledger native screen falsely claims success")
             else:
-                expected = "HEAD " + head
+                displayed_head = (
+                    mutant_head if mode == "register-tail-change" else head
+                )
+                expected = "HEAD " + displayed_head
                 observed, frame = wait_image(
                     monitor, root, "register",
                     lambda f: f[0] == (width, height) and exact_glyphs(
@@ -352,9 +425,10 @@ def one_boot(kernel, measurement, font, root, width, height, vram, mode, timeout
                 )
                 if len(expected) != 69:
                     raise AssertionError("not a full SHA-256 display")
-                report["same_view_raw_ledger"] = True
+                report["same_view_raw_ledger"] = mode == "register-snapshot"
                 report["full_head_pixels_match_independent_ledger"] = True
-                wrong = head[:-1] + ("0" if head[-1] != "0" else "1")
+                report["displayed_head_from_independent_bytes"] = displayed_head
+                wrong = displayed_head[:-1] + ("0" if displayed_head[-1] != "0" else "1")
                 if exact_glyphs(frame, (20, 40), "HEAD " + wrong, font, TEAL):
                     raise AssertionError("wrong final hex digit falsely accepted")
                 report["wrong_last_digit_rejected_by_raster"] = True
@@ -519,6 +593,8 @@ def main():
         (800, 600, 4, "register-snapshot"),
         (1024, 768, 16, "register-snapshot"),
         (800, 600, 4, "register-corrupt"),
+        (800, 600, 4, "register-chain-break"),
+        (1024, 768, 16, "register-tail-change"),
     ]
     failures = []
     for width, height, vram, mode in observations:

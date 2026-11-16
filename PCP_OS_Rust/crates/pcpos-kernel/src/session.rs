@@ -157,7 +157,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
             }
             #[cfg(feature = "register-view-diagnostic")]
             (0x13, false) => {
-                if let Some(mode @ ("register-snapshot" | "register-corrupt")) = option(line, "test") {
+                if let Some(mode @ ("register-snapshot" | "register-corrupt" | "register-chain-break" | "register-tail-change")) = option(line, "test") {
                     register_view_diagnostic(rec, mode);
                 } else {
                     register_view(rec);
@@ -322,7 +322,7 @@ fn register_view_diagnostic(rec: &Record, mode: &str) {
     say!("");
     say!("D10_REGISTER_RAW_END bytes={}", raw.len());
     if mode == "register-corrupt" {
-        // Corrupt an isolated copy, not the live append-only register.
+        // Parsing refusal only. The live Record is never modified.
         let mut damaged = raw.to_vec();
         if let Some(first) = damaged.first_mut() {
             let before = *first;
@@ -332,6 +332,45 @@ fn register_view_diagnostic(rec: &Record, mode: &str) {
         } else {
             say!("D10_REGISTER_INJECT_EMPTY: intentionally malformed single-byte input");
             register_view_with_bytes(b"{");
+        }
+    } else if mode == "register-chain-break" {
+        // Preserve canonical JSON in the first event but invalidate the next
+        // event's existing SHA-256 predecessor. Always change a DETACHED copy.
+        let mut altered = raw.to_vec();
+        let first_end = altered.iter().position(|&b| b == b'\n').unwrap_or(0);
+        const LABEL: &[u8] = b"\"label\":\"kernel\"";
+        let at = altered[..first_end].windows(LABEL.len()).position(|w| w == LABEL)
+            .map(|p| p + b"\"label\":\"k".len());
+        match at {
+            Some(i) if altered[i] == b'e' => {
+                altered[i] = b'E';
+                say!("D10_REGISTER_INJECT_CHAIN offset={} before=65 after=45", i);
+                register_view_with_bytes(&altered);
+            }
+            _ => {
+                say!("D10_REGISTER_INJECT_CHAIN_UNAVAILABLE");
+                register_view_with_bytes(b"{");
+            }
+        }
+    } else if mode == "register-tail-change" {
+        // The terminal line has no successor to bind its hash. Its canonical
+        // modification is a VALID chain with a NEW head, not a refusal.
+        let mut altered = raw.to_vec();
+        let final_line_start = altered[..altered.len().saturating_sub(1)]
+            .iter().rposition(|&b| b == b'\n').map(|p| p + 1).unwrap_or(0);
+        const END: &[u8] = b"\"outcome\":\"LOST\"";
+        let at = altered[final_line_start..].windows(END.len()).position(|w| w == END)
+            .map(|p| p + final_line_start + b"\"outcome\":\"".len());
+        match at {
+            Some(i) if &altered[i..i + 4] == b"LOST" => {
+                altered[i..i + 4].copy_from_slice(b"DONE");
+                say!("D10_REGISTER_INJECT_TAIL offset={} before=LOST after=DONE", i);
+                register_view_with_bytes(&altered);
+            }
+            _ => {
+                say!("D10_REGISTER_INJECT_TAIL_UNAVAILABLE");
+                register_view_with_bytes(b"{");
+            }
         }
     } else {
         say!("D10_REGISTER_UNMODIFIED");
