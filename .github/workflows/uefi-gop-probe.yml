@@ -148,3 +148,59 @@ jobs:
           assert "SET_MODE_STATUS" not in report, "Unexpected SetMode call"
           print("PASS: standalone UEFI probe executed in OVMF, read-only GOP mode capture only")
           PY
+      - name: Exercise a distinct GOP SetMode and restore in disposable QEMU only
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The only deliberate SetMode in this workflow is isolated inside
+          # a second, disposable UEFI app, never the PCP OS product or a disk.
+          MANIFEST="PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml"
+          cargo build --offline --release --features exercise-mode-switch,ci-debugcon --target x86_64-unknown-uefi --manifest-path "$MANIFEST"
+          BIN="PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/target/x86_64-unknown-uefi/release/pcpos-gop-probe.efi"
+          test -s "$BIN"
+          sha256sum "$BIN"
+          ESP_DIR="$RUNNER_TEMP/gop-uefi-esp"
+          test -d "$ESP_DIR/EFI/BOOT"
+          cp "$BIN" "$ESP_DIR/EFI/BOOT/BOOTX64.EFI"
+          VARS="/usr/share/OVMF/OVMF_VARS_4M.fd"
+          CODE="/usr/share/OVMF/OVMF_CODE_4M.fd"
+          cp "$VARS" "$RUNNER_TEMP/OVMF_VARS_EXPERIMENT.fd"
+          LOG="$RUNNER_TEMP/gop-mode-change.txt"
+          set +e
+          timeout -k 2s 25s qemu-system-x86_64 -machine q35,accel=tcg -cpu max -smp 1 -m 256M \
+            -drive if=pflash,format=raw,readonly=on,file="$CODE" \
+            -drive if=pflash,format=raw,file="$RUNNER_TEMP/OVMF_VARS_EXPERIMENT.fd" \
+            -drive if=virtio,format=raw,readonly=on,file="fat:$ESP_DIR" \
+            -display none -vga std -serial none -monitor none -net none -no-reboot \
+            -chardev file,id=debug,path="$LOG" -device isa-debugcon,iobase=0xe9,chardev=debug
+          EXIT="$?"
+          set -e
+          echo "Mode-change VM exit $EXIT; timeout after return is expected (124)"
+          if test -e "$LOG"; then
+            grep -E 'PCPOS_EFI_ENTRY|PCPOS_EFI_RETURN|PCPOS_GOP_PROBE_V1 (BEFORE|AFTER|RESTORED|STANDALONE_FIXTURE|SET_MODE_STATUS|RESTORE_STATUS)' "$LOG" || true
+          fi
+          python3 - "$LOG" "$EXIT" <<'PY'
+          import pathlib,sys,re
+          p=pathlib.Path(sys.argv[1])
+          exit_code=int(sys.argv[2])
+          s=p.read_bytes().decode("ascii",errors="replace") if p.exists() else ""
+          assert exit_code in (0,124), f"QEMU exited with {exit_code}"
+          def mode(label):
+              m=re.search(r"PCPOS_GOP_PROBE_V1 "+label+r" mode=([0-9]+)",s)
+              assert m, f"Missing {label} mode readback"
+              return int(m.group(1))
+          initial=mode("BEFORE")
+          after=mode("AFTER")
+          restored=mode("RESTORED")
+          target=re.search(r"STANDALONE_FIXTURE_SET_MODE target=([0-9]+)",s)
+          assert target, "Missing deliberately enabled standalone SetMode fixture"
+          assert after==int(target.group(1)), "The post-SetMode readback disagrees"
+          assert initial!=after, "The test failed to choose a distinct GOP mode"
+          assert restored==initial, "The original video mode was not restored"
+          assert "SET_MODE_STATUS 0x0000000000000000" in s, "GOP SetMode was not successful"
+          assert "RESTORE_STATUS 0x0000000000000000" in s, "GOP restore was not successful"
+          assert "PCPOS_EFI_RETURN_V1 0x0000000000000000" in s, "EFI app returned failure"
+          assert "PCPOS_GOP_PROBE_V1 END READ_ONLY" not in s, "Wrong feature variant"
+          print("PASS: disposable standalone EFI fixture SetMode",initial,"to",after,"and restored",restored)
+          print("NOT a PCP OS SetMode/EDID/physical monitor test")
+          PY
