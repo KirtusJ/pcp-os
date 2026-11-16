@@ -2,16 +2,17 @@
 #![no_main]
 
 use pcp_game_guest::{exit, ink::Frame, log, sleep_us, time_us, Display};
+#[cfg(feature = "https-probe")]
+mod https;
 #[cfg(feature = "local-media")]
 mod local_media;
 #[cfg(feature = "tcp-ip")]
 mod tcp;
 #[cfg(feature = "https-probe")]
-mod https;
-#[cfg(feature = "https-probe")]
 mod watch_view;
+mod page_text;
 const ORIGIN_HOST: &str = "fixture.test";
-use surfbird_cable::{body_length, parse, Page, CAPACITY, START};
+use surfbird_cable::{body_length, location::Location, parse, Page, CAPACITY, START};
 
 const W: usize = 640;
 const H: usize = 360;
@@ -144,7 +145,7 @@ fn label(frame: &mut Frame, x: i32, y: i32, value: &str, color: u32) {
     frame.text(x, y, upper, 1, color);
 }
 
-fn present(display: &mut Display, path: &str, page: &Page<'_>) {
+fn present(display: &mut Display, path: &str, page: &Page<'_>, row: usize) {
     let pixels = unsafe { &mut *(&raw mut PIXELS) };
     pixels.fill(0x102a33);
     let mut f = Frame {
@@ -152,13 +153,21 @@ fn present(display: &mut Display, path: &str, page: &Page<'_>) {
         pitch: W,
     };
     f.text(25, 26, "SURFBIRD", 3, 0x70e7e3);
-    label(&mut f, 26, 65, path, 0xa5b9bc);
-    f.rect(26, 87, 586, 1, 0x447078);
+    for (line, chunk) in path.as_bytes().chunks(58).enumerate() {
+        page_text::text(&mut f, 26, 55 + 21 * line, core::str::from_utf8(chunk).unwrap(), 0xa5b9bc);
+    }
+    f.rect(26, 99, 586, 1, 0x447078);
     label(&mut f, 26, 109, page.title, 0xf2f6f7);
-    label(&mut f, 26, 136, page.text, 0xcbdadd);
+    for (line, paragraph) in page.paragraphs[row..page.paragraph_count]
+        .iter()
+        .take(2)
+        .enumerate()
+    {
+        label(&mut f, 26, 136 + 18 * line as i32, paragraph.text, 0xcbdadd);
+        record("text", paragraph.text);
+    }
     record("path", path);
     record("title", page.title);
-    record("text", page.text);
     for (i, l) in page.links[..page.count].iter().enumerate() {
         let y = 185 + 32 * i as i32;
         f.text(26, y, if i == 0 { "1" } else { "2" }, 2, 0x65dedf);
@@ -168,7 +177,7 @@ fn present(display: &mut Display, path: &str, page: &Page<'_>) {
     f.text(
         26,
         315,
-        "1 / 2  FOLLOW     B  BACK     ESC  EXIT",
+        "1 / 2  FOLLOW     UP / DOWN  SCROLL     B  BACK     ESC  EXIT",
         1,
         0x96cace,
     );
@@ -192,16 +201,15 @@ fn browse_pages(stream: &mut impl Stream) -> Result<(), &'static str> {
     let mut display = Display::new(W, H);
     let mut bodies = [[0; CAPACITY]; 2];
     let mut lengths = [0; 2];
-    let mut paths = [[0; 96]; 2];
-    let mut path_len = [START.len(), 0];
-    paths[0][..START.len()].copy_from_slice(START.as_bytes());
+    let mut locations = [Location::start(); 2];
+    let mut rows = [0usize; 2];
     lengths[0] = fetch(stream, START, &mut bodies[0])?;
     let mut slot = 0;
     let mut previous = false;
     loop {
         let page = parse(&bodies[slot][..lengths[slot]])?;
-        let path = core::str::from_utf8(&paths[slot][..path_len[slot]]).unwrap();
-        present(&mut display, path, &page);
+        let path = locations[slot].address();
+        present(&mut display, path, &page, rows[slot]);
         // Keep the displayed document borrowed while waiting for the next selection.
         let index = loop {
             stream.poll()?;
@@ -218,15 +226,40 @@ fn browse_pages(stream: &mut impl Stream) -> Result<(), &'static str> {
             if page.count > 1 && display.pressed[3] {
                 break Some(1);
             }
+            let next = if display.pressed[72] {
+                rows[slot].saturating_sub(1)
+            } else if display.pressed[80] {
+                (rows[slot] + 1).min(page.paragraph_count - 1)
+            } else {
+                rows[slot]
+            };
+            if next != rows[slot] {
+                rows[slot] = next;
+                present(&mut display, path, &page, next);
+            }
             sleep_us(2000);
         };
         let other = 1 - slot;
         if let Some(i) = index {
-            let target = page.links[i].path.as_bytes();
-            path_len[other] = target.len();
-            paths[other][..target.len()].copy_from_slice(target);
-            let target = core::str::from_utf8(&paths[other][..path_len[other]]).unwrap();
-            lengths[other] = fetch(stream, target, &mut bodies[other])?;
+            let target = match locations[slot].follow(page.links[i].path) {
+                Ok(target) => target,
+                Err(error) => {
+                    record("navigation", error);
+                    continue;
+                }
+            };
+            if target.fragment().is_some()
+                && target.request_target() == locations[slot].request_target()
+            {
+                rows[other] = page.target_row(target.fragment(), rows[slot]);
+                lengths[other] = lengths[slot];
+                bodies[other] = bodies[slot];
+            } else {
+                lengths[other] = fetch(stream, target.request_target(), &mut bodies[other])?;
+                let next = parse(&bodies[other][..lengths[other]])?;
+                rows[other] = next.target_row(target.fragment(), 0);
+            }
+            locations[other] = target;
             previous = true;
         } else {
             previous = false;

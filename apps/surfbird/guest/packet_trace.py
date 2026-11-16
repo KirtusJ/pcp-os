@@ -126,7 +126,7 @@ def verify(capture, port, expected_paths, scenario, bodies, host_ip=HOST_IP):
     requests = payload(True, (syn + 1) % 2**32)
     responses = payload(False, server_seq)
     paths = [
-        p.decode("ascii") for p in re.findall(rb"GET (/[a-zA-Z0-9_/-]*) HTTP/1\.1\r\n", requests)
+        p.decode("ascii") for p in re.findall(rb"GET (/[^ \r\n#]*) HTTP/1\.1\r\n", requests)
     ]
     check(paths == expected_paths, f"GET paths {paths!r}")
     expected_stream = b"".join(
@@ -134,7 +134,7 @@ def verify(capture, port, expected_paths, scenario, bodies, host_ip=HOST_IP):
         for path in expected_paths
     )
     check(requests == expected_stream, "extra or malformed HTTP request bytes")
-    if scenario == "allowed":
+    if scenario in ("allowed", "fragment"):
         # Match each entire body with its length and maintain response order.
         rest = responses
         for path in paths:
