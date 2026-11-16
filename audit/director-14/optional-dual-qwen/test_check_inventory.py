@@ -188,5 +188,18 @@ class DualQwenInventoryControls(unittest.TestCase):
                     self.run_check()
 
 
+    def test_all_zero_source_revision_is_not_a_real_commit(self):
+        # A 40-hex null object ID cannot identify an actual Git source.
+        self.manifest["source_revision"] = "0" * 40
+        with self.assertRaisesRegex(ValueError, "source commit"):
+            self.run_check()
+
+    def test_all_zero_model_revision_is_not_an_upstream_pin(self):
+        # The same missing-identity sentinel must not pin model weights.
+        self.manifest["models"][1]["revision"] = "0" * 40
+        with self.assertRaisesRegex(ValueError, "unversioned"):
+            self.run_check()
+
+
 if __name__ == "__main__":
     unittest.main()
