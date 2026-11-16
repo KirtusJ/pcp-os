@@ -18,6 +18,11 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Check installed serial record handling
+        working-directory: os-docs/display-acceptance
+        run: |
+          python3 -m unittest -q test_installed_serial
+          python3 -O -m unittest -q test_installed_serial
       - name: Get pinned desktop kernel
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
