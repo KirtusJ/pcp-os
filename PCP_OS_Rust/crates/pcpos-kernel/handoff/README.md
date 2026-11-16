@@ -55,7 +55,7 @@ malformed memory descriptors, and a fully headless path. Failures must be
 retained, not silently normalized.
 
 At authorship, **no Rust compiler or QEMU** is installed in this authoring
-container. The 39 Rust tests under `tests/validation.rs` are authored
+container. The 42 Rust tests under `tests/validation.rs` are authored
 **but not executed or compiler-validated** by Session B. Director PT owns
 executed real-image and OVMF/hardware receipts. A textual test suite is
 not evidence of passing behavior.
@@ -90,8 +90,10 @@ not evidence of passing behavior.
    and only maps a loader framebuffer with a **below-4-GiB** address,
    2-MiB alignment and 32-bit pixels. A valid handoff is not a valid
    kernel mapping. Mismatched pixel layout requires conversion or an
-   explicit headless/non-graphical fallback; this first validation rejects
-   unsupported 16-bit bitmask layouts.
+   explicit headless/non-graphical fallback; this first validation reports `UnsupportedPixelLayout` for otherwise
+   well-formed 16-bit bitmask layouts, rather than calling the firmware mode invalid.
+   A future loader/controller must handle this as a visible headless fallback,
+   not silently stop the operating system.
 6. **Keep startup independent of Qwen.** Kernel, storage, keyboard and
    desktop must not require a model. PT owns model data, service startup
    and effect authorization; Session A owns the rasterized desktop/UI.
