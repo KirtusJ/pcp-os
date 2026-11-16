@@ -4,7 +4,7 @@ import sys
 
 p = Path(sys.argv[1])
 variant = sys.argv[2]
-if variant != "normal":
+if variant not in {"normal", "trace"}:
     source = p.read_text()
     marker = source.index("USER_PROGRAM sleeper_long")
     start = source.index("    subq $16, %rsp", marker)

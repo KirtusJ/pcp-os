@@ -585,11 +585,11 @@ fn asynchronous(failed: &mut u32) {
     const STOP_TIMEOUT: u64 = 100;
     let pacing = Sleeping { idle_ticks: SLEEP_IDLE_TICKS, timeout: STOP_TIMEOUT };
     let (r, free0, free1, took) = loaded("sleeper_long", &["sleeper_long"], &STOP_KEYS, 0, pacing);
-    let (end, idle, calls) = r.as_ref().map(|p| (p.end, p.idle, p.calls)).unwrap_or((None, 0, 0));
-    say!("  note stop key while asleep: {:?}, end {:?}, idle {} of {} timer periods, {} calls, free frames {} before and {} after",
-         r.as_ref().err(), end, idle, took, calls, free0, free1);
+    let (end, idle, calls, settled) = r.as_ref().map(|p| (p.end, p.idle, p.calls, p.settled)).unwrap_or((None, 0, 0, None));
+    say!("  note stop key while asleep: {:?}, end {:?}, idle {} of {} timer periods, syscall count {}, free frames {} before and {} after, task {:?}",
+         r.as_ref().err(), end, idle, took, calls, free0, free1, settled);
     check("the stop key ends a program that is asleep (for the longest sleep accepted: its deadline does not overflow) at once, and all its memory comes back",
-          end == Some(End::Stopped) && idle >= SLEEP_IDLE_TICKS && took < STOP_TIMEOUT && calls == 1 && free0 == free1, failed);
+          end == Some(End::Stopped) && settled == Some(Task::Stopped) && idle >= SLEEP_IDLE_TICKS && took < STOP_TIMEOUT && calls == 1 && free0 == free1, failed);
 
     // 5. The stop key while a program waits in a read of the keyboard. Ctrl and Alt wake it and it waits again; Delete ends it.
     // Six calls: open, and three reads that wait, of which the first two are made again and answered with Ctrl and with Alt.

@@ -4,11 +4,12 @@ out="$RUNNER_TEMP/sleep-stop"
 mkdir -p "$out"
 kernel=PCP_OS_Rust/crates/pcpos-kernel
 parent=628f5fe039ec0dbaa451c132e8236e9fbebfce6b
-candidate=23fa0b620dd870c3656480142da0a11de98355e8
+candidate=d969d193e867c64271075f3a73689b89d95c81b1
 build() {
   local ref=$1 variant=$2
   git checkout -q "$ref" -- "$kernel"
   python3 .github/sleep-stop-control.py "$kernel/src/boot.s" "$variant"
+  python3 .github/sleep-stop-trace.py "$kernel/src" "$variant"
   bash "$kernel/run.sh" build > "$out/$3-build.log" 2>&1
   cp "$kernel/target/pcpos-kernel.elf32" "$out/$3.elf32"
 }
@@ -55,7 +56,7 @@ for f in sorted(out.glob("*.serial")):
     if f.stem=='parent-delayed':
         assert idle < 10 and 'Some(Stopped)' in note,note
     else:
-        m=re.search(r'(\d+) calls, free frames (\d+) before and (\d+) after',note)
+        m=re.search(r'syscall count (\d+), free frames (\d+) before and (\d+) after, task Some\(Stopped\)',note)
         assert m,note
         calls,before,after=map(int,m.groups())
         assert before==after and 'Some(Stopped)' in note,note
@@ -65,6 +66,24 @@ for f in sorted(out.glob("*.serial")):
             assert idle>=10 and calls==1 and elapsed<100,note
     summary[f.stem]=note.strip()
 (out/'notes.json').write_text(json.dumps(summary,indent=2)+'\n')
+PY
+build "$candidate" trace observed
+boot observed observed 33 fixed
+python3 - "$out/observed.serial" <<'PY'
+from pathlib import Path
+import re,sys
+s=Path(sys.argv[1]).read_text()
+section=s.split('note sleep of 50 ms:',1)[1].split('note stop key while asleep:',1)[0]
+section=section.split('note key while waiting:',1)[1]
+t={}
+for stage in ['admitted','blocked','first-key','stop']:
+    rows=re.findall(r'^SLEEP-TRACE '+stage+r' (\d+) > "$out/kernel-sha256.txt"
+rm "$out"/*.elf32
+,section,re.M)
+    assert len(rows)==1,(stage,rows,section)
+    t[stage]=int(rows[0])
+assert t['admitted']<=t['blocked'] and t['first-key']-t['blocked']>=10 and t['first-key']<=t['stop']
+print('sleep transition ticks',t)
 PY
 sha256sum "$out"/*.elf32 > "$out/kernel-sha256.txt"
 rm "$out"/*.elf32
