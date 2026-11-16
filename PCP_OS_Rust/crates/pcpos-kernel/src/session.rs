@@ -155,16 +155,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
                 arch::interrupts_on();
                 dev::keys_forget();
             }
-            #[cfg(feature = "register-view-diagnostic")]
-            (0x13, false) => {
-                if let Some(mode @ ("register-snapshot" | "register-corrupt" | "register-chain-break" | "register-tail-change")) = option(line, "test") {
-                    register_view_diagnostic(rec, mode);
-                } else {
-                    register_view(rec);
-                }
-            },
-            #[cfg(not(feature = "register-view-diagnostic"))]
-            (0x13, false) => register_view(rec),
+            #[cfg(feature = "register-view-diagnostic")] (0x13, false) => match option(line, "test") { Some(mode @ ("register-snapshot" | "register-corrupt" | "register-chain-break" | "register-tail-change")) => register_view_diagnostic(rec, mode), _ => register_view(rec) }, #[cfg(not(feature = "register-view-diagnostic"))] (0x13, false) => register_view(rec),
             (0x19, false) | (0x01, false) => break,
             _ => {}
         }
@@ -306,6 +297,93 @@ fn register_view(rec: &Record) {
     }
 }
 
+/// Run one program as a task in the register. Interrupts must be off; returns with them off.
+/// Returns what to tell the person, and the world as the program left it.
+fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, start: &Start, failed: &mut u32) -> (String, World) {
+    *tasks += 1;
+    let id = format!("T{}", *tasks);
+    let mut recorded = logged("TASK_STARTED", rec.submit(&now(), "kernel", "HOST", "TASK_STARTED",
+        obj(&[("label", text(&entry.name.chars().take(31).collect::<String>())), ("worker", text("PROGRAM")), ("review", Value::Null), ("quiet_limit", Value::Int(0)), ("budget", Value::Int(0)),
+              ("attempt", text(&format!("program {} of SHA-256 {}", entry.name, entry.digest))), ("observed", text("PROCESS_CREATED"))]))).is_ok();
+    let mut args: Vec<&str> = alloc::vec![entry.name.as_str()];
+    args.extend(entry.arguments.split_whitespace());
+    say!("starting {} ({} bytes, SHA-256 {}){}", entry.name, entry.image.len(), entry.digest, if entry.arguments.is_empty() { String::new() } else { format!(" with: {}", entry.arguments) });
+    let none = option(start.boot.command_line.as_str(), "grant") == Some("none");
+    let grants = if none { Grants { console: true, ..Grants::default() } } else { Grants { console: true, display: start.display.is_some(), keys: start.keyboard, files: true, store: true, sound: start.sound,
+        #[cfg(feature = "guest-ethernet")] ethernet: ethernet_grant(start.boot.exact_command_line(), &entry.digest),
+        #[cfg(feature = "game-link")] game_link: option(&start.boot.command_line, "link_image") == Some(entry.digest.as_str()) && arch::game_link_init(), } };
+    if none {
+        say!("{} is started with the console and no other grant (grant=none)", entry.name);
+    }
+    let (free0, shows0, t0) = (user::frames_free(), dev::display_shows(), arch::ticks());
+    let (_, sound0, dry0) = dev::sound_state();
+    let run = || user::run_program(&Program { name: &entry.name, image: entry.image, args: &args, grants, budget: u64::MAX }, world);
+    #[cfg(feature = "guest-ethernet")]
+    let (result, world) = if grants.ethernet {
+        let (outcome, status) = dev::virtio_tx::guest::during(run);
+        if let Err(reason) = status { say!("guest Ethernet: {}", reason); *failed += 1; }
+        outcome
+    } else { run() };
+    #[cfg(not(feature = "guest-ethernet"))]
+    let (result, world) = run();
+    let (ticks, shows) = (arch::ticks() - t0, dev::display_shows() - shows0);
+    let (_, sound1, dry1) = dev::sound_state();
+    let (sound_ms, dry) = ((sound1 - sound0) / (dev::SOUND_RATE as u64 * 4 / 1000), dry1 - dry0);
+    let (_, fm_written, fm_late) = dev::fm_state();
+    // The display is the kernel's again, in the kernel's own mode.
+    if start.display.is_some() {
+        dev::display_set(OWN_MODE.0, OWN_MODE.1);
+        dev::display_show(0);
+    }
+    let message = match result {
+        Ok(p) => {
+            let digest = sha256_hex(&p.output);
+            let (outcome, result, how) = match p.end {
+                Some(End::Exited(0)) => {
+                    recorded &= logged("ARTIFACT_ADDED", rec.submit(&now(), "kernel", "HOST", "ARTIFACT_ADDED",
+                        obj(&[("sha256", text(&digest)), ("size", Value::Int(p.output.len() as i64)), ("origin", text("PRODUCED")), ("stored", Value::Bool(false)), ("task", text(&id))]))).is_ok();
+                    ("DONE", text(&digest), "exit 0".to_string())
+                }
+                Some(End::Exited(code)) => ("FAILED", Value::Null, format!("exit {}", code)),
+                Some(End::Refused { vector, error, address, rip }) =>
+                    ("FAILED", Value::Null, format!("ended by the kernel: the processor refused an act of the program (exception {}, error {:#x}, address {:#x}, instruction {:#x})", vector, error, address, rip)),
+                Some(End::OverBudget) => ("STOPPED", Value::Null, "stopped by the kernel: over its budget".to_string()),
+                Some(End::Stopped) => ("STOPPED", Value::Null, "stopped by the person with Ctrl+Alt+Delete".to_string()),
+                None => ("LOST", Value::Null, "no end was observed".to_string()),
+            };
+            let seconds = ticks / arch::TICKS_PER_SECOND;
+            let rate = if ticks > 0 { shows * arch::TICKS_PER_SECOND * 10 / ticks } else { 0 };
+            let idle = if ticks > 0 { p.idle * 100 / ticks } else { 0 };
+            let note = format!("{} after {} s; {} system calls; {} frames shown ({}.{} a second); the processor idled {}% of the time; {} ms of sound played, the device ran out of sound {} time(s); {} music register writes so far, the latest {} ms late; {} pages at the end, {} of them the display's, {} both writable and executable; {} frames given back, {} free before and {} after; the store holds {} file(s), {} bytes",
+                               how, seconds, p.calls, shows, rate / 10, rate % 10, idle, sound_ms, dry, fm_written, fm_late, p.census.0, p.census.2, p.census.1, p.released, free0, user::frames_free(), world.store.len(), world.store.iter().map(|f| f.1.len()).sum::<usize>());
+            recorded &= logged("TASK_ENDED", rec.submit(&now(), "host", "HOST", "TASK_ENDED",
+                obj(&[("id", text(&id)), ("outcome", text(outcome)), ("result", result.clone()), ("read_back", result), ("spent", Value::Int(p.periods.min(i64::MAX as u64) as i64)),
+                      ("note", text(&note)), ("observed", text("PROCESS_END"))]))).is_ok();
+            say!("{} ended {}: {}", entry.name, outcome, note);
+            if !world.unanswered.is_empty() {
+                say!("calls {} made that this kernel does not answer (number, times): {:?}", entry.name, world.unanswered);
+            }
+            if p.census.1 != 0 || p.census.3 || user::frames_free() != free0 {
+                say!("  FAIL the program's memory was not what it must be: writable-and-executable pages {}, kernel reachable {}, frames {} -> {}", p.census.1, p.census.3, free0, user::frames_free());
+                *failed += 1;
+            }
+            format!("{} ended {}: {} after {} s.\n{} pictures shown, {}.{} a second; the processor idled {}% of the time.\nAll {} frames of its memory were given back.", entry.name, outcome, how, seconds, shows, rate / 10, rate % 10, idle, p.released)
+        }
+        Err(why) => {
+            recorded &= logged("TASK_ENDED", rec.submit(&now(), "host", "HOST", "TASK_ENDED",
+                obj(&[("id", text(&id)), ("outcome", text("FAILED")), ("result", Value::Null), ("read_back", Value::Null), ("spent", Value::Int(0)),
+                      ("note", text(&format!("not started: {}", why))), ("observed", text("PROCESS_END"))]))).is_ok();
+            say!("{} could not be started: {}", entry.name, why);
+            format!("{} could not be started: {}.", entry.name, why)
+        }
+    };
+    if !recorded {
+        say!("  FAIL the run of {} was not recorded in the register", entry.name);
+        *failed += 1;
+    }
+    (message, world)
+}
+
 /// Only compiled in deliberately instrumented test images, never in the release kernel.
 /// The raw canonical bytes, not a kernel-reported expected digest, let a separate
 /// verifier reconstruct the same register state that the display next renders.
@@ -419,91 +497,4 @@ fn register_view_with_bytes(raw: &[u8]) {
             _ => {}
         }
     }
-}
-
-/// Run one program as a task in the register. Interrupts must be off; returns with them off.
-/// Returns what to tell the person, and the world as the program left it.
-fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, start: &Start, failed: &mut u32) -> (String, World) {
-    *tasks += 1;
-    let id = format!("T{}", *tasks);
-    let mut recorded = logged("TASK_STARTED", rec.submit(&now(), "kernel", "HOST", "TASK_STARTED",
-        obj(&[("label", text(&entry.name.chars().take(31).collect::<String>())), ("worker", text("PROGRAM")), ("review", Value::Null), ("quiet_limit", Value::Int(0)), ("budget", Value::Int(0)),
-              ("attempt", text(&format!("program {} of SHA-256 {}", entry.name, entry.digest))), ("observed", text("PROCESS_CREATED"))]))).is_ok();
-    let mut args: Vec<&str> = alloc::vec![entry.name.as_str()];
-    args.extend(entry.arguments.split_whitespace());
-    say!("starting {} ({} bytes, SHA-256 {}){}", entry.name, entry.image.len(), entry.digest, if entry.arguments.is_empty() { String::new() } else { format!(" with: {}", entry.arguments) });
-    let none = option(start.boot.command_line.as_str(), "grant") == Some("none");
-    let grants = if none { Grants { console: true, ..Grants::default() } } else { Grants { console: true, display: start.display.is_some(), keys: start.keyboard, files: true, store: true, sound: start.sound,
-        #[cfg(feature = "guest-ethernet")] ethernet: ethernet_grant(start.boot.exact_command_line(), &entry.digest),
-        #[cfg(feature = "game-link")] game_link: option(&start.boot.command_line, "link_image") == Some(entry.digest.as_str()) && arch::game_link_init(), } };
-    if none {
-        say!("{} is started with the console and no other grant (grant=none)", entry.name);
-    }
-    let (free0, shows0, t0) = (user::frames_free(), dev::display_shows(), arch::ticks());
-    let (_, sound0, dry0) = dev::sound_state();
-    let run = || user::run_program(&Program { name: &entry.name, image: entry.image, args: &args, grants, budget: u64::MAX }, world);
-    #[cfg(feature = "guest-ethernet")]
-    let (result, world) = if grants.ethernet {
-        let (outcome, status) = dev::virtio_tx::guest::during(run);
-        if let Err(reason) = status { say!("guest Ethernet: {}", reason); *failed += 1; }
-        outcome
-    } else { run() };
-    #[cfg(not(feature = "guest-ethernet"))]
-    let (result, world) = run();
-    let (ticks, shows) = (arch::ticks() - t0, dev::display_shows() - shows0);
-    let (_, sound1, dry1) = dev::sound_state();
-    let (sound_ms, dry) = ((sound1 - sound0) / (dev::SOUND_RATE as u64 * 4 / 1000), dry1 - dry0);
-    let (_, fm_written, fm_late) = dev::fm_state();
-    // The display is the kernel's again, in the kernel's own mode.
-    if start.display.is_some() {
-        dev::display_set(OWN_MODE.0, OWN_MODE.1);
-        dev::display_show(0);
-    }
-    let message = match result {
-        Ok(p) => {
-            let digest = sha256_hex(&p.output);
-            let (outcome, result, how) = match p.end {
-                Some(End::Exited(0)) => {
-                    recorded &= logged("ARTIFACT_ADDED", rec.submit(&now(), "kernel", "HOST", "ARTIFACT_ADDED",
-                        obj(&[("sha256", text(&digest)), ("size", Value::Int(p.output.len() as i64)), ("origin", text("PRODUCED")), ("stored", Value::Bool(false)), ("task", text(&id))]))).is_ok();
-                    ("DONE", text(&digest), "exit 0".to_string())
-                }
-                Some(End::Exited(code)) => ("FAILED", Value::Null, format!("exit {}", code)),
-                Some(End::Refused { vector, error, address, rip }) =>
-                    ("FAILED", Value::Null, format!("ended by the kernel: the processor refused an act of the program (exception {}, error {:#x}, address {:#x}, instruction {:#x})", vector, error, address, rip)),
-                Some(End::OverBudget) => ("STOPPED", Value::Null, "stopped by the kernel: over its budget".to_string()),
-                Some(End::Stopped) => ("STOPPED", Value::Null, "stopped by the person with Ctrl+Alt+Delete".to_string()),
-                None => ("LOST", Value::Null, "no end was observed".to_string()),
-            };
-            let seconds = ticks / arch::TICKS_PER_SECOND;
-            let rate = if ticks > 0 { shows * arch::TICKS_PER_SECOND * 10 / ticks } else { 0 };
-            let idle = if ticks > 0 { p.idle * 100 / ticks } else { 0 };
-            let note = format!("{} after {} s; {} system calls; {} frames shown ({}.{} a second); the processor idled {}% of the time; {} ms of sound played, the device ran out of sound {} time(s); {} music register writes so far, the latest {} ms late; {} pages at the end, {} of them the display's, {} both writable and executable; {} frames given back, {} free before and {} after; the store holds {} file(s), {} bytes",
-                               how, seconds, p.calls, shows, rate / 10, rate % 10, idle, sound_ms, dry, fm_written, fm_late, p.census.0, p.census.2, p.census.1, p.released, free0, user::frames_free(), world.store.len(), world.store.iter().map(|f| f.1.len()).sum::<usize>());
-            recorded &= logged("TASK_ENDED", rec.submit(&now(), "host", "HOST", "TASK_ENDED",
-                obj(&[("id", text(&id)), ("outcome", text(outcome)), ("result", result.clone()), ("read_back", result), ("spent", Value::Int(p.periods.min(i64::MAX as u64) as i64)),
-                      ("note", text(&note)), ("observed", text("PROCESS_END"))]))).is_ok();
-            say!("{} ended {}: {}", entry.name, outcome, note);
-            if !world.unanswered.is_empty() {
-                say!("calls {} made that this kernel does not answer (number, times): {:?}", entry.name, world.unanswered);
-            }
-            if p.census.1 != 0 || p.census.3 || user::frames_free() != free0 {
-                say!("  FAIL the program's memory was not what it must be: writable-and-executable pages {}, kernel reachable {}, frames {} -> {}", p.census.1, p.census.3, free0, user::frames_free());
-                *failed += 1;
-            }
-            format!("{} ended {}: {} after {} s.\n{} pictures shown, {}.{} a second; the processor idled {}% of the time.\nAll {} frames of its memory were given back.", entry.name, outcome, how, seconds, shows, rate / 10, rate % 10, idle, p.released)
-        }
-        Err(why) => {
-            recorded &= logged("TASK_ENDED", rec.submit(&now(), "host", "HOST", "TASK_ENDED",
-                obj(&[("id", text(&id)), ("outcome", text("FAILED")), ("result", Value::Null), ("read_back", Value::Null), ("spent", Value::Int(0)),
-                      ("note", text(&format!("not started: {}", why))), ("observed", text("PROCESS_END"))]))).is_ok();
-            say!("{} could not be started: {}", entry.name, why);
-            format!("{} could not be started: {}.", entry.name, why)
-        }
-    };
-    if !recorded {
-        say!("  FAIL the run of {} was not recorded in the register", entry.name);
-        *failed += 1;
-    }
-    (message, world)
 }
