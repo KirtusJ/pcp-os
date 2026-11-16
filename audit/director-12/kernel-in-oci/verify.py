@@ -23,7 +23,7 @@ def shell(args: list[str], timeout: float = 45.0, check: bool = True) -> subproc
 def sha256(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
-def run_guest(image: str, kernel: Path, pin: str | None, cutoff: int) -> tuple[subprocess.CompletedProcess, float]:
+def run_guest(image: str, kernel: Path, pin: str | None, cutoff: int, probe: Path | None = None) -> tuple[subprocess.CompletedProcess, float]:
     args = [
         "docker", "run", "--rm",
         "--network", "none", "--read-only",
@@ -39,10 +39,16 @@ def run_guest(image: str, kernel: Path, pin: str | None, cutoff: int) -> tuple[s
         "-display", "none", "-serial", "stdio", "-monitor", "none",
         "-no-reboot",
         "-kernel", "/kernel.elf32",
-        "-append", "then=off" + (f" image={pin}" if pin is not None else ""),
+        "-append", "then=off" + (f" image={pin}" if pin is not None else "") + (" auto=probe grant=none" if probe is not None else ""),
         "-net", "none",
         "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
     ]
+    if probe is not None:
+        # The loader obtains an exact external ELF, not a built-in program.
+        args[args.index(image):args.index(image)] = [
+            "--mount", f"type=bind,source={probe},target=/probe.elf,readonly"
+        ]
+        args.extend(["-initrd", "/probe.elf probe"])
     start = time.monotonic()
     result = shell(args, timeout=cutoff, check=False)
     return result, time.monotonic() - start
@@ -69,6 +75,7 @@ def record_arm(name: str, result: subprocess.CompletedProcess, elapsed: float, d
         "image_was_rejected": "measured; NOT the value the loader named" in result.stdout,
         "image_was_unchecked": "loader named no value to compare it with" in result.stdout,
         "built_in_programs_not_run": "the processes built into it are not run" in result.stdout,
+        "external_probe_zero_failures": "probe: 0 failure(s)" in result.stdout,
     }
 
 def validate_positive(record: dict, serial: str, expected_measurement: str) -> None:
@@ -97,16 +104,29 @@ def validate_unpinned(record: dict, serial: str) -> None:
     assert record["self_tests_pass_banner"], "unlocked image did not finish its independent self tests"
     assert len(record["registered_event_counts_and_heads"]) == 1
 
+def validate_probe(record: dict, serial: str, expected_measurement: str) -> None:
+    validate_positive(record, serial, expected_measurement)
+    assert "probe: run with no grant but the console" in serial, (
+        "the externally loaded ELF did not execute in no-grant mode"
+    )
+    assert "probe: 0 failure(s)" in serial, (
+        "the externally loaded ELF did not complete all of its own checks"
+    )
+    assert record["external_probe_zero_failures"]
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--image", required=True)
     p.add_argument("--kernel", required=True, type=Path)
     p.add_argument("--measurement", required=True)
     p.add_argument("--source-head", required=True)
+    p.add_argument("--probe", type=Path, help="optional externally loaded kernel guest ELF")
     p.add_argument("--out", required=True, type=Path)
     p.add_argument("--guest-timeout", type=int, default=160)
     args = p.parse_args()
     kernel = args.kernel.resolve(strict=True)
+    probe = args.probe.resolve(strict=True) if args.probe else None
     if not HEX64.fullmatch(args.measurement):
         p.error("measurement must be 64 lowercase hexadecimal characters")
     if not args.source_head.strip():
@@ -114,8 +134,8 @@ def main() -> int:
     if args.guest_timeout < 20 or args.guest_timeout > 300:
         p.error("guest-timeout must be 20..300 seconds")
 
-    # This compares observed behavior of one kernel image under three explicit
-    # launch conditions. The Linux OCI kernel is *not* PCP OS.
+    # This compares actual guest boots under explicit launch conditions.
+    # Docker's host kernel is Linux, not PCP OS.
     report = {
         "kind": "pcp-os-in-qemu-in-oci/test-only",
         "producer": "Director 12 diagnostic",
@@ -123,6 +143,8 @@ def main() -> int:
         "expected_kernel_measurement": args.measurement,
         "kernel_file_sha256": sha256(kernel.read_bytes()),
         "kernel_file_bytes": kernel.stat().st_size,
+        "guest_probe_sha256": sha256(probe.read_bytes()) if probe else None,
+        "external_guest_probe_verified": False,
         "guest_is_actually_booted_pcp_kernel": False,
         "host_is_linux_docker_not_pcp_kernel": True,
         "runtime_is_ephemeral": True,
@@ -147,9 +169,13 @@ def main() -> int:
             ("valid_pin", args.measurement),
             ("wrong_pin", "0" * 64),
             ("no_pin", None),
+            *((("probe_no_grant", args.measurement),) if probe is not None else ()),
         ]:
             assert pin != args.measurement or arm != "wrong_pin"
-            q, elapsed = run_guest(args.image, kernel, pin, args.guest_timeout)
+            q, elapsed = run_guest(
+                args.image, kernel, pin, args.guest_timeout,
+                probe if arm == "probe_no_grant" else None,
+            )
             evidence = record_arm(arm, q, elapsed, args.out)
             report["arms"][arm] = evidence
             if arm == "valid_pin":
@@ -157,8 +183,11 @@ def main() -> int:
                 report["guest_is_actually_booted_pcp_kernel"] = True
             elif arm == "wrong_pin":
                 validate_bad_pin(evidence, q.stdout, "0" * 64)
-            else:
+            elif arm == "no_pin":
                 validate_unpinned(evidence, q.stdout)
+            elif arm == "probe_no_grant":
+                validate_probe(evidence, q.stdout, args.measurement)
+                report["external_guest_probe_verified"] = True
         report["status"] = "OBSERVED_IN_BOUNDED_CI"
         return 0
     except Exception as exc:
