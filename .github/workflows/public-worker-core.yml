@@ -1,4 +1,4 @@
-name: Public resident worker Core readback
+name: Director 1 Core delivery and resident inference
 
 on:
   pull_request:
@@ -57,6 +57,21 @@ jobs:
             --kernel "$kernel/target/pcpos-kernel.elf32" \
             --model inputs/checkpoint.bin --reference inputs/run.c \
             --method adapter/method --out receipts
+      - name: Check a fresh Core-reading cohort through six minute-spaced rounds
+        env:
+          PCPOS_CORE_MODULE: ${{ github.workspace }}/receipts/core-spec.md
+          PCPOS_REAL_QEMU: /usr/bin/qemu-system-x86_64
+        run: |
+          set -euo pipefail
+          python3 examples/resident-workers/supervise.py \
+            --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            --worker receipts/resident.elf --oracle receipts/control/oracle.json \
+            --qemu "$GITHUB_WORKSPACE/examples/method-readback/qemu-worker" \
+            --run receipts/session --cycles 6 --interval 60
+          for cycle in 1 2 3 4 5 6; do
+            python3 -O examples/resident-workers/verify.py \
+              --run receipts/session --oracle receipts/control/oracle.json --cycle "$cycle"
+          done
       - name: Retain the oracle, serial logs and cohort receipts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
