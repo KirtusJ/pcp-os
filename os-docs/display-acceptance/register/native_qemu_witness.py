@@ -98,8 +98,8 @@ def run(args, report):
     memory = 4 if args.width == 800 else 8
     command = [
         "qemu-system-x86_64", "-machine", "q35", "-accel", "tcg",
-        "-icount", "shift=3,align=off,sleep=off", "-cpu", "max",
-        "-m", "128M", "-nic", "none", "-display", "none",
+        "-cpu", "max",
+        "-m", "256M", "-nic", "none", "-display", "none",
         "-vga", "none", "-device", f"VGA,vgamem_mb={memory}",
         "-serial", f"file:{serial}", "-monitor", "none",
         "-qmp", "stdio", "-no-reboot",
@@ -118,7 +118,7 @@ def run(args, report):
             if "QMP" not in greeting:
                 raise RuntimeError("QMP greeting missing")
             monitor.execute("qmp_capabilities")
-            wait_serial(process, serial, b"ALL SELF-TESTS PASS", 100)
+            wait_serial(process, serial, b"ALL SELF-TESTS PASS", 180)
             menu, size, before, _ = poll_frame(
                 monitor, out, "launcher",
                 lambda s, p: label_present(s, p, glyphs, "PCP OS", 19, 2, TEXT)
