@@ -294,6 +294,12 @@ pub fn run_program(program: &Program, world: World) -> (Result<Process, &'static
     }
 }
 
+/// Called by the keyboard self-test on a timer interrupt, before the scheduler handles that interrupt.
+pub fn idle_in_key_read() -> bool {
+    TABLE.with(|slot| slot.as_ref().is_some_and(|t| t.current.is_none() &&
+        t.procs.iter().any(|p| p.end.is_none() && p.waiting == Waiting::Key)))
+}
+
 /// Entered from `arch` on every entry that concerns programs. On return, `frame` is what the processor resumes.
 pub fn trap(frame: &mut Frame, trap: Trap, from_user: bool) {
     TABLE.with(|slot| match slot.as_mut() {
