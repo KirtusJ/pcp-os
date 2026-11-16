@@ -37,7 +37,12 @@ The associated read-only GitHub Actions workflow records the triggering exact so
 
 **Cross-compilation feature gate:** The EFI-only binary uses `efi_main` and has no Linux `main`. It is intentionally excluded from ordinary `cargo test --test abi` using `required-features = ["uefi-app"]`. The explicitly enabled `uefi-app` build is the read-only firmware application. The `exercise-mode-switch` feature requires `uefi-app` and compiles a different optional program. Do not enable either target during ordinary Linux host tests.
 
-**Retained negative CI result:** The first hosted job [run 43804687581](https://github.com/KirtusJ/pcp-os/actions/runs/43804687581) failed **before UEFI compilation** because an integration-test invocation also attempted to link the non-Linux `efi_main` binary as a Linux executable. It produced a missing-`main` linker error. This is a source/build gating mistake, not evidence of a UEFI failure; the feature gate above is its direct repair, pending a fresh run.
+**Retained negative CI result:** The first hosted job [run 43804687581](https://github.com/KirtusJ/pcp-os/actions/runs/43804687581) failed **before UEFI compilation** because an integration-test invocation also attempted to link the non-Linux `efi_main` binary as a Linux executable. It produced a missing-`main` linker error. This is a source/build gating mistake, not evidence of a UEFI failure. The feature gate above corrected it. The subsequent [exact-head GitHub Actions run 43804946236](https://github.com/KirtusJ/pcp-os/actions/runs/43804946236) at `b39beaa23a34f36387a4884cdb5b84786717dcb2` **completed successfully** on Ubuntu 24.04 / Rust 1.99.1: 12/12 host ABI and pure-value tests passed; the read-only `x86_64-unknown-uefi` PE32+ EFI_APPLICATION binary compiled and was structurally inspected; a separate explicitly opt-in mode-switch build also compiled. Neither EFI image was executed.
+
+**Executable identities from that successful CI build (not boot receipts):**
+- Read-only PE32+ EFI_APPLICATION: SHA-256 `b3212814608893e07d7d072df793caa5baf0b88be776713368bed77e7afd3369` (9216-byte binary).
+- Explicit opt-in mode-switch fixture (not run): SHA-256 `8892c9417a3ce53632fdf1a523e8c8224086ccde703da9bc760428a39d32e3f0`.
+- The binary identities are tied to the exact build and compiler reported above, not to PT's separate private preview or any installed disk.
 
 ## Source and safety boundaries
 
