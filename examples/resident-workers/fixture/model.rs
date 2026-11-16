@@ -1,10 +1,10 @@
-//! Four-position greedy inference for the pinned float32 TinyStories checkpoint.
+//! Greedy inference for the pinned float32 TinyStories checkpoint.
 const DIM: usize = 64;
 const KV: usize = 32;
 const HIDDEN: usize = 172;
 const LAYERS: usize = 5;
 const HEAD: usize = 8;
-const POSITIONS: usize = 4;
+const CHECKPOINT_POSITIONS: usize = 512;
 const VOCAB: usize = 512;
 
 #[repr(align(4))]
@@ -27,18 +27,18 @@ pub struct Model {
     sine: &'static [f32],
 }
 
-type Cache = [[[f32; KV]; POSITIONS]; LAYERS];
+type Cache<const N: usize> = [[[f32; KV]; N]; LAYERS];
 
-pub struct Context {
-    keys: Cache,
-    values: Cache,
+pub struct Context<const N: usize = 4> {
+    keys: Cache<N>,
+    values: Cache<N>,
 }
 
-impl Context {
+impl<const N: usize> Context<N> {
     pub const fn new() -> Self {
         Self {
-            keys: [[[0.0; KV]; POSITIONS]; LAYERS],
-            values: [[[0.0; KV]; POSITIONS]; LAYERS],
+            keys: [[[0.0; KV]; N]; LAYERS],
+            values: [[[0.0; KV]; N]; LAYERS],
         }
     }
 }
@@ -138,7 +138,7 @@ impl Model {
         }
     }
 
-    fn forward(&self, ctx: &mut Context, token: usize, pos: usize) -> usize {
+    fn forward<const N: usize>(&self, ctx: &mut Context<N>, token: usize, pos: usize) -> usize {
         let mut x = [0.0; DIM];
         x.copy_from_slice(&self.embedding[token * DIM..(token + 1) * DIM]);
         let (mut xb, mut tmp, mut q) = ([0.0; DIM], [0.0; DIM], [0.0; DIM]);
@@ -152,7 +152,7 @@ impl Model {
             self.rotate(&mut ctx.keys[l][pos], pos);
             for (h, query) in q.chunks_exact(HEAD).enumerate() {
                 let start = h / (DIM / KV) * HEAD;
-                let mut scores = [0.0; POSITIONS];
+                let mut scores = [0.0; N];
                 let scores = &mut scores[..=pos];
                 for (t, score) in scores.iter_mut().enumerate() {
                     *score = dot(query, &ctx.keys[l][t][start..start + HEAD]) / sqrt(HEAD as f32);
@@ -198,15 +198,28 @@ impl Model {
         best
     }
 
-    pub fn predict(&self, ctx: &mut Context, prompt: usize) -> [usize; 3] {
-        // Starting at position zero overwrites every cache entry this prompt reads.
-        self.forward(ctx, 1, 0);
-        let mut token = 300 + prompt;
-        let mut answer = [0; 3];
-        for (i, out) in answer.iter_mut().enumerate() {
-            token = self.forward(ctx, token, i + 1);
-            *out = token;
+    /// Consume each supplied token (including BOS) before returning three greedy predictions.
+    pub fn complete<const N: usize>(
+        &self,
+        ctx: &mut Context<N>,
+        tokens: &[usize],
+    ) -> Option<[usize; 3]> {
+        let (&first, rest) = tokens.split_first()?;
+        if tokens.len().checked_add(2)? > N.min(CHECKPOINT_POSITIONS)
+            || tokens.iter().any(|&id| id >= VOCAB)
+        {
+            return None;
         }
-        answer
+        let mut next = self.forward(ctx, first, 0);
+        for (position, &token) in rest.iter().enumerate() {
+            next = self.forward(ctx, token, position + 1);
+        }
+        let second = self.forward(ctx, next, tokens.len());
+        let third = self.forward(ctx, second, tokens.len() + 1);
+        Some([next, second, third])
+    }
+
+    pub fn predict(&self, ctx: &mut Context, prompt: usize) -> [usize; 3] {
+        self.complete(ctx, &[1, 300 + prompt]).expect("valid indexed prompt")
     }
 }
