@@ -95,18 +95,23 @@ fn test_service() -> io::Result<i32> {
 
     let serial = File::create(base.join(format!("qemu-{next}.serial")))?;
     let stderr = File::create(base.join(format!("qemu-{next}.stderr")))?;
-    let status = Command::new("/usr/bin/qemu-system-x86_64")
-        .args([
-            "-accel", "tcg", "-cpu", "max", "-m", "128M",
-            "-display", "none", "-monitor", "none", "-no-reboot",
-            "-kernel", "/kernel.elf32",
-            "-serial", "stdio", "-net", "none",
-            "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
-        ])
-        .arg("-append").arg(format!("then=off image={measurement}"))
-        .stdout(Stdio::from(serial))
-        .stderr(Stdio::from(stderr))
-        .status()?;
+    let mut qemu = Command::new("/usr/bin/qemu-system-x86_64");
+    qemu.args([
+        "-accel", "tcg", "-cpu", "max", "-m", "128M",
+        "-display", "none", "-monitor", "none", "-no-reboot",
+        "-kernel", "/kernel.elf32",
+        "-serial", "stdio", "-net", "none",
+        "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
+    ])
+    .arg("-append").arg(format!("then=off image={measurement}"))
+    .stdout(Stdio::from(serial))
+    .stderr(Stdio::from(stderr));
+    if env::var("D12_HOLD_GUEST").as_deref() == Ok("1") {
+        // Deliberate test-only post-spawn crash window: QEMU remains alive
+        // with vCPUs paused. This is *not* a completed or booted PCP guest.
+        qemu.arg("-S");
+    }
+    let status = qemu.status()?;
 
     if status.code() != Some(33) {
         durable_attention(&base, &format!(
