@@ -6,6 +6,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, Read, Write},
     path::{Path, PathBuf},
+    os::fd::AsRawFd,
     process::{self, Command, Stdio},
     thread,
     time::Duration,
@@ -114,6 +115,35 @@ fn attest_guest_serial_file_for(
         .map_err(|why| io::Error::new(io::ErrorKind::InvalidData, why))
 }
 
+// Linux-only, cooperative same-host lease. The descriptor stays owned by
+// this process for the complete guest attempt and is released on normal
+// return, abort, or process death. This is NOT an authority boundary against
+// other processes capable of writing to the same test volume.
+unsafe extern "C" {
+    fn flock(fd: std::os::raw::c_int, operation: std::os::raw::c_int) -> std::os::raw::c_int;
+}
+const LOCK_EX: std::os::raw::c_int = 2;
+const LOCK_NB: std::os::raw::c_int = 4;
+
+fn acquire_controller_lock(state: &Path) -> io::Result<Option<File>> {
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(state.join("controller.lock"))?;
+    let result = unsafe { flock(file.as_raw_fd(), LOCK_EX | LOCK_NB) };
+    if result == 0 {
+        return Ok(Some(file));
+    }
+    let error = io::Error::last_os_error();
+    if error.raw_os_error() == Some(11) {
+        // A live controller owns this request's journal now. Do not infer
+        // a crash, do not write INDETERMINATE, and do not spawn a guest.
+        return Ok(None);
+    }
+    Err(error)
+}
+
 fn test_service() -> io::Result<i32> {
     let base = PathBuf::from("/state");
     let request = env::var("D12_REQUEST").map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
@@ -122,6 +152,10 @@ fn test_service() -> io::Result<i32> {
     if request.len() != 24 || !request.bytes().all(|b| b.is_ascii_hexdigit()) || !hex64(&measurement) {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid synthetic request or image pin"));
     }
+    let _exclusive_controller_lock = match acquire_controller_lock(&base)? {
+        Some(guard) => guard,
+        None => return Ok(0), // OS-live owner is a BUSY/HELD response.
+    };
     let pin = base.join("request.txt");
     if !pin.exists() {
         persist_new(&pin, &request)?;
