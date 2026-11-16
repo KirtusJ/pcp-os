@@ -105,3 +105,49 @@ source was merged, flashed, installed or granted a permission.
 No real hardware, encrypted volume, physical boot disk, 64-bit-LBA
 transport, removable hotplug or PT-private release was tested.
 
+
+
+## Current executable receipt and separate evidence-source categories
+
+A subsequent **12 inline Rust test cases** in `src/store_identity.rs` were added
+to the 18 existing host cases. Some intentionally overlap: this is **30
+executed Rust tests**, not 30 independent assessors or physical devices.
+
+[GitHub Actions run 43820682770](https://github.com/KirtusJ/pcp-os/actions/runs/43820682770)
+at exact code head `e1c3867bb638a36ba8e5bcce7a77622e5fac1cc0`
+executed **30/30 host debug tests** and **30/30 optimized tests**,
+compiled the historic default and opt-in 64-bit kernel separately, and
+completed the two QEMU disk-role matrices. The feature-gated candidate
+refused mismatched/malformed/missing IDs, unsafe selector combinations,
+v1 downgrades and absent IDE0 without a host-observed disk mutation.
+**An exact-cloned ID on the wrong IDE0 still wrote to the wrong volume.**
+This is an expected *negative* security/disambiguation finding, not
+approval of safe physical disk selection.
+
+Compiled historical kernel SHA-256: `60fcf96ad5fffc5481b0283f948d76df5a5f80bca4da2d6f11a121c089db5026`.
+Opt-in ID-gated kernel SHA-256: `e783e4413c9876faf96298f21ddd7ec52fe3f50a448f06a9ab0448381882761b`.
+Do not conflate those feature-set identities.
+
+**Externally referenced:** UEFI/GPT source material describes partition
+identifiers and structures. It does not prove this raw IDE store
+correctly identifies or authorizes a target, nor does it prove a
+physical disk implementation exists.
+
+**Internally source-bound and executed:** the exact public Git commit,
+CI job/toolchain, QEMU console output and independently compared
+disposable disk-file bytes. These are observable outcomes of a
+particular emulator build, not independent inspection of PT's private
+installer or real device.
+
+**No checked source or evidence available:** physical device path,
+actual GPT/ESP table provenance and 64-bit LBA capacity, authenticated
+volume identity, encryption/KDF/secret recovery, surprise-unplug,
+USB/NVMe/AHCI support, hardware bricking/recovery and the current
+private shipping artifact. Each remains unqualified, never
+automatically passed due to offline or missing source access.
+
+**Separation of permissions:** a syntactically valid `store_id=`
+selects cloneable metadata only. It is neither user consent nor an
+authorization capability. Optional PCP/ACR review-stage selection
+cannot grant storage writes or replace a privileged installer gate.
+These statements are acceptance guidance, not host enforcement.
