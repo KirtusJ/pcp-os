@@ -45,7 +45,15 @@ jobs:
             sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
           cargo build --locked --release --target x86_64-unknown-none \
             --manifest-path apps/surfbird/guest/Cargo.toml --features tcp-ip
+      - name: Independent repository Surfbird allowed-Ethernet reference harness
+        run: |
+          mkdir -p "$RUNNER_TEMP/d13-reference"
+          cd apps/surfbird/guest
+          python3 replay.py ../../../PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            target/x86_64-unknown-none/release/surfcable \
+            --tcp --arm allowed --output "$RUNNER_TEMP/d13-reference"
       - name: Positive normal-carrier native QEMU Surfbird baseline
+        if: always()
         run: |
           python3 audit/director-13/network/ethernet_cycle.py \
             --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
@@ -68,6 +76,10 @@ jobs:
         with:
           name: director-13-network-link-cycle
           path: |
+            ${{ runner.temp }}/d13-reference/**/serial.log
+            ${{ runner.temp }}/d13-reference/**/stderr.log
+            ${{ runner.temp }}/d13-reference/**/guest.pcap
+            ${{ runner.temp }}/d13-reference/**/fixture.json
             ${{ runner.temp }}/d13-link-baseline/result.json
             ${{ runner.temp }}/d13-link-baseline/qmp-journal.json
             ${{ runner.temp }}/d13-link-baseline/serial.log
