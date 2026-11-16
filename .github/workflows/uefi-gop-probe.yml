@@ -1,0 +1,62 @@
+name: PCP OS isolated native UEFI GOP probe compile checks
+
+on:
+  pull_request:
+    paths:
+      - 'PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/**'
+      - '.github/workflows/uefi-gop-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-and-pe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact PR head, not a synthetic merge commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Source and compiler identities
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          rustc --version --verbose
+          cargo --version
+      - name: Host ABI and pure-value tests
+        run: |
+          set -euo pipefail
+          cargo test --offline --lib --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+          cargo test --offline --test abi --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+      - name: Add official x86_64-unknown-uefi target to ephemeral compiler
+        run: |
+          set -euo pipefail
+          rustup target add x86_64-unknown-uefi
+      - name: Build read-only PE32+ EFI application with default features
+        run: |
+          set -euo pipefail
+          cargo build --offline --release --target x86_64-unknown-uefi --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          root=Path('PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/target/x86_64-unknown-uefi/release')
+          matches=list(root.glob('pcpos-gop-probe.efi'))
+          assert len(matches)==1, f"Expected exactly one EFI probe binary: {matches}"
+          data=matches[0].read_bytes()
+          assert data[:2]==b'MZ' and len(data)>512
+          off=int.from_bytes(data[60:64], 'little')
+          assert data[off:off+4]==b'PE\0\0'
+          machine=int.from_bytes(data[off+4:off+6], 'little')
+          magic=int.from_bytes(data[off+24:off+26], 'little')
+          subsystem=int.from_bytes(data[off+24+68:off+24+70], 'little')
+          assert (machine,magic,subsystem)==(0x8664,0x20b,10),(hex(machine),hex(magic),subsystem)
+          print('PE32+ EFI_APPLICATION structural-only, not launched',len(data),hashlib.sha256(data).hexdigest())
+          PY
+      - name: Compile separately opt-in mode-switch fixture; do not execute it
+        run: |
+          set -euo pipefail
+          cargo build --offline --release --features exercise-mode-switch --target x86_64-unknown-uefi --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+          sha256sum PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/target/x86_64-unknown-uefi/release/pcpos-gop-probe.efi
