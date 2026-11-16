@@ -106,6 +106,18 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     let mut world = World { files: files.iter().map(|f| (f.0.clone(), f.1)).collect(), store: Vec::new(), volume: None,
                             epoch_at_start: epoch(y, mo, d, h, mi, s).saturating_sub(arch::ticks() / arch::TICKS_PER_SECOND), unanswered: Vec::new() };
     let line = start.boot.command_line.as_str();
+    // A requested bound store must never silently become volatile if the
+    // accompanying store= selector is absent, misspelled or unsupported.
+    // This is still only a cloneable on-media ID, not physical identity.
+    #[cfg(feature = "store-id-gate")]
+    if !safe
+        && line.split_ascii_whitespace().any(|w| w.starts_with("store_id=") || w.starts_with("store="))
+        && !line.split_ascii_whitespace().any(|w| w == "store=ide0")
+    {
+        say!("bound user store requested without supported store=ide0; no program started");
+        *failed += 1;
+        return tasks;
+    }
     if !safe && line.split_whitespace().any(|w| w == "store=ide0") {
         let exact = start.boot.exact_command_line();
         if exact.is_none() || line.split_whitespace().filter(|w| w.starts_with("store=")).count() != 1 {
