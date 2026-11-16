@@ -53,10 +53,10 @@ def build(out, model, tokenizer, reference):
 def scores(lines):
     require(len(lines) == 32 and all(re.fullmatch(r"LOGITS(?: [0-9a-f]{8}){16}", line) for line in lines),
             "expected all 512 hexadecimal float32 scores")
-    raw = bytes.fromhex(" ".join(line[7:] for line in lines))
-    values = struct.unpack(">512f", raw)
+    bits = "".join("".join(line.split()[1:]) for line in lines)
+    values = struct.unpack(">512f", bytes.fromhex(bits))
     require(all(math.isfinite(value) for value in values), "nonfinite next-token score")
-    return values
+    return values, bits
 
 
 def maximum_error(a, b):
@@ -102,7 +102,7 @@ def boot(case, executable, kernel, measure, payload, offset, length, expected, s
     output = after[:finish]
     require(output[:len(expected)] == expected, f"{case.name}: guest excerpt or token mismatch")
     if status == 0:
-        record["guest_logits"] = scores(output[len(expected):])
+        record["guest_logits"], record["guest_score_bits"] = scores(output[len(expected):])
     else:
         require(not output, f"{case.name}: unexpected model output before failure")
     return record
@@ -139,7 +139,7 @@ def run(args):
             inputs, predicted, *reference_logits = ref.splitlines()
             require(re.fullmatch(r"INPUT 1(?: \d+)+", inputs) and re.fullmatch(r"OUTPUT(?: \d+){3}", predicted),
                     "unexpected oracle output")
-            record["upstream_logits"] = scores(reference_logits)
+            record["upstream_logits"], _ = scores(reference_logits)
             expected = ["EXCERPT " + excerpt.decode("ascii"), inputs, predicted]
             record.update(text=excerpt.decode("ascii"), excerpt_sha256=sha(excerpt),
                           tokens=list(map(int, inputs.split()[1:])), prediction=list(map(int, predicted.split()[1:])))
@@ -150,12 +150,12 @@ def run(args):
             record["max_abs_oracle_error"] = error
             require(error <= 0.001, f"{name}: oracle discrepancy {error}")
         records[name] = record
-        print(name, json.dumps({k: v for k, v in record.items() if not k.endswith("_logits")}), flush=True)
+        print(name, json.dumps({k: v for k, v in record.items() if not k.endswith(("_logits", "_bits"))}), flush=True)
     evidence = dict(manifest=MANIFEST, core=row["sha256"], model=CHECKPOINT, tokenizer=TOKENIZER,
                     upstream=REFERENCE, kernel_sha256=sha(kernel.read_bytes()), measured_kernel=measure,
                     executable_sha256=sha((out / "text.elf").read_bytes()), cases=records)
     original, alternate, control = (records[k] for k in ("original", "alternate", "same-offset-control"))
-    for field in ("tokens", "prediction", "guest_logits", "upstream_logits"):
+    for field in ("tokens", "prediction", "guest_score_bits", "upstream_logits"):
         require(alternate[field] == control[field], f"same text at different offset changed {field}")
     delta = [abs(x - y) for x, y in zip(original["guest_logits"], alternate["guest_logits"], strict=True)]
     index = max(range(len(delta)), key=delta.__getitem__)
