@@ -145,6 +145,40 @@ fn palette_framebuffer_is_present_but_not_direct_rgb() {
 }
 
 #[test]
+fn accepts_bit_packed_one_bpp_indexed_framebuffer_pitch() {
+    // 640 one-bit pixels occupy 80 bytes per row, NOT 640 bytes.
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&0xB0000u64.to_le_bytes());
+    payload.extend_from_slice(&80u32.to_le_bytes());
+    payload.extend_from_slice(&640u32.to_le_bytes());
+    payload.extend_from_slice(&480u32.to_le_bytes());
+    payload.extend_from_slice(&[1, 0, 0, 0]);
+    // GRUB-compatible u16 count, two RGB palette entries.
+    payload.extend_from_slice(&2u16.to_le_bytes());
+    payload.extend_from_slice(&[0, 0, 0, 255, 255, 255]);
+    let info = mbi(&[tag(8, &payload)]);
+    let framebuffer = inspect(&info).unwrap().framebuffer.unwrap();
+    assert_eq!(framebuffer.bits_per_pixel, 1);
+    assert_eq!(framebuffer.pitch_bytes, 80);
+    assert_eq!(framebuffer.kind, PixelKind::Indexed);
+    assert!(!framebuffer.matches_bgrx32());
+}
+
+#[test]
+fn rejects_packed_one_bpp_pitch_one_byte_short() {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&0xB0000u64.to_le_bytes());
+    payload.extend_from_slice(&79u32.to_le_bytes());
+    payload.extend_from_slice(&640u32.to_le_bytes());
+    payload.extend_from_slice(&480u32.to_le_bytes());
+    payload.extend_from_slice(&[1, 0, 0, 0]);
+    payload.extend_from_slice(&2u16.to_le_bytes());
+    payload.extend_from_slice(&[0, 0, 0, 255, 255, 255]);
+    let info = mbi(&[tag(8, &payload)]);
+    assert_eq!(inspect(&info), Err(Error::BadFramebuffer));
+}
+
+#[test]
 fn accept_single_palette_color_with_nonzero_red_and_blue() {
     let mut data = Vec::new();
     data.extend_from_slice(&0xB0000u64.to_le_bytes());
