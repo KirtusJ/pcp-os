@@ -444,7 +444,7 @@ fn register_adapter_sigkill_retains_admission_without_termination_proof() {
         .env("PCPOS_BIN", &host)
         .args(["--register"])
         .arg(&reg)
-        .args([actor, "register orphan negative control", "--"])
+        .args([actor, "register-orphan-negative-control", "--"])
         .arg(std::env::current_exe().unwrap())
         .args(["--exact", "slow_child"])
         .env("PARROTS_TEST_SENTINEL", &ready)
