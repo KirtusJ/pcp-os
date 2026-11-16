@@ -115,6 +115,12 @@ def run():
     for name in ("valid_first_slot","valid_fourth_slot"):
         assert rows[name]["primary_crc_ok"] and rows[name]["backup_crc_ok"]
         assert rows[name]["arrays_equal"] and rows[name]["disk_guid_equal"]
+        # The external oracle must recognize the intended positive controls.
+        # A globally failing tool must not count as a successful probe.
+        # No invalid-case PTTYPE is asserted as product policy.
+        assert rows[name]["rc"] == 0 and rows[name]["pttype"] == "gpt", (
+            "blkid failed to recognize the synthetic positive GPT: " + name
+        )
     assert not rows["different_disk_guid_both_crcs_valid"]["disk_guid_equal"]
     assert rows["different_disk_guid_both_crcs_valid"]["backup_crc_ok"]
     assert not rows["different_partition_arrays_both_crcs_valid"]["arrays_equal"]
