@@ -157,8 +157,14 @@ extern "C" fn guest_main(stack: *const usize) -> ! {
     writeln!(Console).unwrap();
     let model = model::Model::load();
     let context = unsafe { &mut *core::ptr::addr_of_mut!(CONTEXT) };
-    let [a, b, c] = model.complete(context, &tokens[..count]).unwrap();
+    let mut scores = [0.0; model::VOCAB];
+    let [a, b, c] = model.complete(context, &tokens[..count], Some(&mut scores)).unwrap();
     writeln!(Console, "OUTPUT {a} {b} {c}").unwrap();
+    for chunk in scores.chunks(16) {
+        write!(Console, "LOGITS").unwrap();
+        for score in chunk { write!(Console, " {:08x}", score.to_bits()).unwrap(); }
+        writeln!(Console).unwrap();
+    }
     exit(0)
 }
 

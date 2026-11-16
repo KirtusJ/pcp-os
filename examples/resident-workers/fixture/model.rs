@@ -5,7 +5,7 @@ const HIDDEN: usize = 172;
 const LAYERS: usize = 5;
 const HEAD: usize = 8;
 const CHECKPOINT_POSITIONS: usize = 512;
-const VOCAB: usize = 512;
+pub const VOCAB: usize = 512;
 
 #[repr(align(4))]
 struct Aligned([u8; 1_056_540]);
@@ -138,7 +138,9 @@ impl Model {
         }
     }
 
-    fn forward<const N: usize>(&self, ctx: &mut Context<N>, token: usize, pos: usize) -> usize {
+    fn forward<const N: usize>(
+        &self, ctx: &mut Context<N>, token: usize, pos: usize, mut logits: Option<&mut [f32; VOCAB]>,
+    ) -> usize {
         let mut x = [0.0; DIM];
         x.copy_from_slice(&self.embedding[token * DIM..(token + 1) * DIM]);
         let (mut xb, mut tmp, mut q) = ([0.0; DIM], [0.0; DIM], [0.0; DIM]);
@@ -190,6 +192,7 @@ impl Model {
         let (mut best, mut largest) = (0, f32::NEG_INFINITY);
         for (i, row) in self.embedding.chunks_exact(DIM).enumerate() {
             let logit = dot(row, &xb);
+            if let Some(values) = &mut logits { values[i] = logit; }
             if logit > largest {
                 best = i;
                 largest = logit;
@@ -198,28 +201,30 @@ impl Model {
         best
     }
 
-    /// Consume each supplied token (including BOS) before returning three greedy predictions.
+    /// Consume the full prompt, then generate three greedy predictions. When requested,
+    /// capture the vocabulary scores that produced the first predicted token.
     pub fn complete<const N: usize>(
         &self,
         ctx: &mut Context<N>,
         tokens: &[usize],
+        prompt_logits: Option<&mut [f32; VOCAB]>,
     ) -> Option<[usize; 3]> {
-        let (&first, rest) = tokens.split_first()?;
+        let (&last, prefix) = tokens.split_last()?;
         if tokens.len().checked_add(2)? > N.min(CHECKPOINT_POSITIONS)
             || tokens.iter().any(|&id| id >= VOCAB)
         {
             return None;
         }
-        let mut next = self.forward(ctx, first, 0);
-        for (position, &token) in rest.iter().enumerate() {
-            next = self.forward(ctx, token, position + 1);
+        for (position, &token) in prefix.iter().enumerate() {
+            self.forward(ctx, token, position, None);
         }
-        let second = self.forward(ctx, next, tokens.len());
-        let third = self.forward(ctx, second, tokens.len() + 1);
-        Some([next, second, third])
+        let first = self.forward(ctx, last, prefix.len(), prompt_logits);
+        let second = self.forward(ctx, first, tokens.len(), None);
+        let third = self.forward(ctx, second, tokens.len() + 1, None);
+        Some([first, second, third])
     }
 
     pub fn predict(&self, ctx: &mut Context, prompt: usize) -> [usize; 3] {
-        self.complete(ctx, &[1, 300 + prompt]).expect("valid indexed prompt")
+        self.complete(ctx, &[1, 300 + prompt], None).expect("valid indexed prompt")
     }
 }

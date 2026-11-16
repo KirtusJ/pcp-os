@@ -2,9 +2,11 @@
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
+import struct
 import subprocess
 import sys
 
@@ -48,6 +50,19 @@ def build(out, model, tokenizer, reference):
                    check=True, env=env)
 
 
+def scores(lines):
+    require(len(lines) == 32 and all(re.fullmatch(r"LOGITS(?: [0-9a-f]{8}){16}", line) for line in lines),
+            "expected all 512 hexadecimal float32 scores")
+    raw = bytes.fromhex(" ".join(line[7:] for line in lines))
+    values = struct.unpack(">512f", raw)
+    require(all(math.isfinite(value) for value in values), "nonfinite next-token score")
+    return values
+
+
+def maximum_error(a, b):
+    return max(abs(x - y) for x, y in zip(a, b, strict=True))
+
+
 def boot(case, executable, kernel, measure, payload, offset, length, expected, status, qemu, firmware):
     case.mkdir()
     (case / "text.elf").hardlink_to(executable)
@@ -83,8 +98,14 @@ def boot(case, executable, kernel, measure, payload, offset, length, expected, s
     finish = ends[0]
     kind = "DONE" if status == 0 else "FAILED"
     require(re.match(rf"^text\.elf ended {kind}: exit {status}\b", after[finish]), f"{case.name}: guest exit")
-    require(after[:finish] == expected, f"{case.name}: guest text, tokens or prediction; see {case}/boot.serial")
-    return {"exit": status, "serial_sha256": sha(data), "module_sha256": sha(payload) if payload is not None else None}
+    record = {"exit": status, "serial_sha256": sha(data), "module_sha256": sha(payload) if payload is not None else None}
+    output = after[:finish]
+    require(output[:len(expected)] == expected, f"{case.name}: guest excerpt or token mismatch")
+    if status == 0:
+        record["guest_logits"] = scores(output[len(expected):])
+    else:
+        require(not output, f"{case.name}: unexpected model output before failure")
+    return record
 
 
 def run(args):
@@ -115,22 +136,36 @@ def run(args):
         record = {"offset": offset, "length": length}
         if excerpt is not None:
             ref = subprocess.check_output([out / "oracle", model, tokenizer, excerpt.decode("ascii")], text=True)
-            inputs, predicted = ref.splitlines()
+            inputs, predicted, *reference_logits = ref.splitlines()
             require(re.fullmatch(r"INPUT 1(?: \d+)+", inputs) and re.fullmatch(r"OUTPUT(?: \d+){3}", predicted),
                     "unexpected oracle output")
+            record["upstream_logits"] = scores(reference_logits)
             expected = ["EXCERPT " + excerpt.decode("ascii"), inputs, predicted]
             record.update(text=excerpt.decode("ascii"), excerpt_sha256=sha(excerpt),
                           tokens=list(map(int, inputs.split()[1:])), prediction=list(map(int, predicted.split()[1:])))
         record.update(boot(out / name, out / "text.elf", kernel, measure, payload, offset, length,
                            expected, code, args.qemu, args.firmware))
+        if code == 0:
+            error = maximum_error(record["guest_logits"], record["upstream_logits"])
+            record["max_abs_oracle_error"] = error
+            require(error <= 0.001, f"{name}: oracle discrepancy {error}")
         records[name] = record
-        print(name, json.dumps(record), flush=True)
+        print(name, json.dumps({k: v for k, v in record.items() if not k.endswith("_logits")}), flush=True)
     evidence = dict(manifest=MANIFEST, core=row["sha256"], model=CHECKPOINT, tokenizer=TOKENIZER,
                     upstream=REFERENCE, kernel_sha256=sha(kernel.read_bytes()), measured_kernel=measure,
                     executable_sha256=sha((out / "text.elf").read_bytes()), cases=records)
+    original, alternate, control = (records[k] for k in ("original", "alternate", "same-offset-control"))
+    for field in ("tokens", "prediction", "guest_logits", "upstream_logits"):
+        require(alternate[field] == control[field], f"same text at different offset changed {field}")
+    delta = [abs(x - y) for x, y in zip(original["guest_logits"], alternate["guest_logits"], strict=True)]
+    index = max(range(len(delta)), key=delta.__getitem__)
+    upstream_delta = abs(original["upstream_logits"][index] - alternate["upstream_logits"][index])
+    comparison = dict(greedy_changed=original["prediction"] != alternate["prediction"],
+                      token_index=index, max_guest_logit_change=delta[index], upstream_change_at_index=upstream_delta,
+                      logit_change_resolved=min(delta[index], upstream_delta) > 0.002)
+    evidence["comparison"] = comparison
     (out / "results.json").write_text(json.dumps(evidence, indent=2) + "\n")
-    require(records["original"]["prediction"] != records["alternate"]["prediction"], "outputs did not distinguish the sentences")
-    require(records["alternate"]["prediction"] == records["same-offset-control"]["prediction"], "substitution control failed")
+    print("comparison", json.dumps(comparison), flush=True)
 
 
 if __name__ == "__main__":
