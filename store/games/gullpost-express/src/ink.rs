@@ -1,0 +1,135 @@
+use crate::game::{H, W};
+pub type Color = u32;
+pub const INK: Color = 0x233044;
+pub const PAPER: Color = 0xffedc1;
+pub const GOLD: Color = 0xffbc67;
+pub const RED: Color = 0xd95847;
+pub const BLUE: Color = 0x26555e;
+
+pub struct Frame<'a> {
+    pub px: &'a mut [Color],
+    pub pitch: usize,
+}
+impl Frame<'_> {
+    pub fn rect(&mut self, x: i32, y: i32, w: i32, h: i32, c: Color) {
+        let l = x.max(0);
+        let r = (x + w).min(W);
+        let t = y.max(0);
+        let b = (y + h).min(H);
+        if l >= r || t >= b {
+            return;
+        }
+        for yy in t..b {
+            let k = yy as usize * self.pitch;
+            self.px[k + l as usize..k + r as usize].fill(c)
+        }
+    }
+    pub fn line(&mut self, mut x: i32, mut y: i32, tx: i32, ty: i32, c: Color) {
+        let dx = (tx - x).abs();
+        let dy = -(ty - y).abs();
+        let sx = (tx - x).signum();
+        let sy = (ty - y).signum();
+        let mut err = dx + dy;
+        loop {
+            self.rect(x, y, 1, 1, c);
+            if x == tx && y == ty {
+                break;
+            }
+            let e = err * 2;
+            if e >= dy {
+                err += dy;
+                x += sx
+            }
+            if e <= dx {
+                err += dx;
+                y += sy
+            }
+        }
+    }
+    pub fn circ(&mut self, x: i32, y: i32, r: i32, c: Color) {
+        for j in -r..=r {
+            let mut n = r;
+            while n * n + j * j > r * r {
+                n -= 1
+            }
+            self.rect(x - n, y + j, n * 2 + 1, 1, c)
+        }
+    }
+    pub fn tri(&mut self, x: i32, y: i32, w: i32, h: i32, c: Color) {
+        for i in 0..h {
+            let n = w * (i + 1) / h;
+            self.rect(x - n, y + i, 2 * n + 1, 1, c)
+        }
+    }
+    pub fn text(&mut self, x: i32, y: i32, s: &str, z: i32, c: Color) {
+        for (i, ch) in s.bytes().enumerate() {
+            let bits = glyph(ch);
+            for (j, row) in bits.iter().enumerate() {
+                for col in 0..5 {
+                    if row & (16 >> col) != 0 {
+                        self.rect(x + (i as i32 * 6 + col) * z, y + j as i32 * z, z, z, c)
+                    }
+                }
+            }
+        }
+    }
+    pub fn num(&mut self, x: i32, y: i32, n: u32, z: i32, c: Color) {
+        let b = [b'0' + (n / 10 % 10) as u8, b'0' + (n % 10) as u8];
+        if let Ok(s) = core::str::from_utf8(&b) {
+            self.text(x, y, s, z, c)
+        }
+    }
+}
+pub fn mix(a: Color, b: Color, t: i32, d: i32) -> Color {
+    let k = |s: u32| {
+        let v = ((a >> s) & 255) as i32;
+        let w = ((b >> s) & 255) as i32;
+        (v + (w - v) * t / d) as u32
+    };
+    (k(16) << 16) | (k(8) << 8) | k(0)
+}
+fn glyph(ch: u8) -> [u8; 7] {
+    match ch {
+        b'A' => [14, 17, 17, 31, 17, 17, 17],
+        b'B' => [30, 17, 17, 30, 17, 17, 30],
+        b'C' => [14, 17, 16, 16, 16, 17, 14],
+        b'D' => [30, 17, 17, 17, 17, 17, 30],
+        b'E' => [31, 16, 16, 30, 16, 16, 31],
+        b'F' => [31, 16, 16, 30, 16, 16, 16],
+        b'G' => [14, 17, 16, 23, 17, 17, 15],
+        b'H' => [17, 17, 17, 31, 17, 17, 17],
+        b'I' => [31, 4, 4, 4, 4, 4, 31],
+        b'J' => [7, 2, 2, 2, 18, 18, 12],
+        b'K' => [17, 18, 20, 24, 20, 18, 17],
+        b'L' => [16, 16, 16, 16, 16, 16, 31],
+        b'M' => [17, 27, 21, 21, 17, 17, 17],
+        b'N' => [17, 25, 25, 21, 19, 19, 17],
+        b'O' => [14, 17, 17, 17, 17, 17, 14],
+        b'P' => [30, 17, 17, 30, 16, 16, 16],
+        b'Q' => [14, 17, 17, 17, 21, 18, 13],
+        b'R' => [30, 17, 17, 30, 20, 18, 17],
+        b'S' => [15, 16, 16, 14, 1, 1, 30],
+        b'T' => [31, 4, 4, 4, 4, 4, 4],
+        b'U' => [17, 17, 17, 17, 17, 17, 14],
+        b'V' => [17, 17, 17, 17, 17, 10, 4],
+        b'W' => [17, 17, 17, 21, 21, 21, 10],
+        b'X' => [17, 17, 10, 4, 10, 17, 17],
+        b'Y' => [17, 17, 10, 4, 4, 4, 4],
+        b'Z' => [31, 1, 2, 4, 8, 16, 31],
+        b'0' => [14, 17, 19, 21, 25, 17, 14],
+        b'1' => [4, 12, 4, 4, 4, 4, 14],
+        b'2' => [14, 17, 1, 2, 4, 8, 31],
+        b'3' => [30, 1, 1, 14, 1, 1, 30],
+        b'4' => [2, 6, 10, 18, 31, 2, 2],
+        b'5' => [31, 16, 16, 30, 1, 1, 30],
+        b'6' => [14, 16, 16, 30, 17, 17, 14],
+        b'7' => [31, 1, 2, 4, 8, 8, 8],
+        b'8' => [14, 17, 17, 14, 17, 17, 14],
+        b'9' => [14, 17, 17, 15, 1, 1, 14],
+        b'/' => [1, 1, 2, 4, 8, 16, 16],
+        b'-' => [0, 0, 0, 31, 0, 0, 0],
+        b'.' => [0, 0, 0, 0, 0, 12, 12],
+        b'+' => [0, 4, 4, 31, 4, 4, 0],
+        _ => [0; 7],
+    }
+}

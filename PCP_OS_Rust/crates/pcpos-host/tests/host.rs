@@ -158,6 +158,33 @@ fn the_caller_does_not_choose_the_actor_and_cannot_write_as_a_person_or_as_the_s
 }
 
 #[test]
+fn mcp_reports_the_depth_limit_of_the_complete_request() {
+    use pcpos_core::value::MAX_DEPTH;
+
+    let root = dir("request-depth");
+    assert!(!tool(&root, "acr_begin", "{}").1);
+    let submit = |id, layers| {
+        let value = format!("{}null{}", "[".repeat(layers), "]".repeat(layers));
+        format!(r#"{{"jsonrpc":"2.0","id":{id},"method":"tools/call","params":{{"name":"acr_submit","arguments":{{"kind":"NOTE","body":{{"probe":{value}}}}}}}}}"#)
+    };
+    // The probe itself starts at depth four: params, arguments, body, probe.
+    let before = events(&root).len();
+    let requests = [submit(1, MAX_DEPTH - 4), submit(2, MAX_DEPTH - 3)];
+    let mut server = pcpos(&root);
+    server.arg("mcp");
+    let (out, code) = feed(server, (requests.join("\n") + "\n").as_bytes());
+    assert_eq!(code, 0);
+    let replies: Vec<_> = out.lines().map(|line| Value::parse(line.as_bytes()).unwrap()).collect();
+    assert_eq!(replies.len(), 2);
+    assert!(replies[0].get("result").is_some());
+    assert_eq!(events(&root).len(), before + 1);
+    assert_eq!(replies[1].get("id"), Some(&Value::Int(2)));
+    let error = replies[1].get("error").unwrap();
+    assert_eq!(error.get("code"), Some(&Value::Int(-32600)));
+    assert_eq!(error.get("message").and_then(Value::as_str), Some(format!("the message exceeds the maximum nesting depth of {MAX_DEPTH}").as_str()));
+}
+
+#[test]
 fn only_a_typed_command_is_the_person_s_own_adoption_and_a_fragment_of_a_prompt_is_not_the_prompt() {
     let root = dir("adopt");
     tool(&root, "acr_begin", "{}");
@@ -949,6 +976,28 @@ fn a_file_is_material_a_review_was_given_only_if_its_last_write_is_shown_to_be_e
 }
 
 #[test]
+fn a_mistyped_digest_claim_cannot_be_recorded_as_a_passing_check() {
+    let root = in_use("digest-claim");
+    let check = |claim: &str| tool(&root, "acr_instrument", &format!(
+        r#"{{"instrument":"cryptography.digest","input":{{"text":"abc"{claim}}}}}"#
+    ));
+    let before = fs::read(root.join(REG)).unwrap();
+    for invalid in ["null", "false", "0", "[]", "{}"] {
+        let (out, err) = check(&format!(r#","claimed":{invalid}"#));
+        assert!(err && out.contains("claimed"), "{invalid}: {out}");
+        assert_eq!(fs::read(root.join(REG)).unwrap(), before);
+    }
+    for (claim, expected_exit) in [("".to_string(), 0), (format!(r#","claimed":"{}""#, sha256_hex(b"abc")), 0),
+                                    (format!(r#","claimed":"{}""#, "0".repeat(64)), 1)] {
+        let (out, err) = check(&claim);
+        assert!(!err && out.contains("WRITTEN"), "{out}");
+        let last = events(&root).pop().unwrap();
+        assert_eq!(last.get("kind").and_then(Value::as_str), Some("CHECK_RAN"));
+        assert_eq!(last.get("body").unwrap().get("exit").and_then(Value::as_int), Some(expected_exit));
+    }
+}
+
+#[test]
 fn an_instrument_is_run_by_the_program_and_recorded_as_a_check_it_ran() {
     let root = in_use("instrument");
     let n = kinds(&root).len();
@@ -971,7 +1020,10 @@ fn an_instrument_is_run_by_the_program_and_recorded_as_a_check_it_ran() {
         assert!(err && kinds(&root).len() == before, "{bad}: {out}");
     }
     let (out, _) = tool(&root, "acr_instrument", r#"{"instrument":"list"}"#);
-    assert!(out.contains("statistics.grim") && out.contains("mathematics.statement") && out.contains("core.calibration") && out.lines().count() == 10, "{out}");
+    let listed: Vec<_> = out.lines().skip(1).map(|line| line.trim().split_once(": ").unwrap().0).collect();
+    for id in ["statistics.grim", "mathematics.statement", "mathematics.protected_bins", "science.incident_bounds", "core.calibration"] {
+        assert_eq!(listed.iter().filter(|&&name| name == id).count(), 1, "{out}");
+    }
     // A finding that cites the program's own check is EXECUTED, and the register verifies.
     let f = r#"{"kind":"FINDING_RECORDED","body":{"review":"R","claim":"A","disposition":"UNRESOLVED","basis":[{"ref":{"t":"check","id":"K1"}}],"left_open":"the claim was commissioned with no criterion"}}"#;
     let (out, _) = tool(&root, "acr_submit", r#"{"kind":"GATE_COMMITTED","body":{"review":"R","gate":"G1"}}"#);

@@ -1,0 +1,20 @@
+[package]
+name = "gullpost-express-64"
+version = "0.1.1"
+edition = "2021"
+publish = false
+
+[lib]
+name = "gull64_island"
+path = "src/island.rs"
+
+[[bin]]
+name = "gull64"
+path = "src/main.rs"
+test = false
+bench = false
+
+[profile.release]
+opt-level = 3
+panic = "abort"
+strip = "symbols"

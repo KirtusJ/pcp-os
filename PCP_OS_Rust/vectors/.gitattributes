@@ -1,0 +1,2 @@
+# The register verifier checks canonical JSON Lines bytes, including line endings.
+register_*.jsonl text eol=lf

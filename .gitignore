@@ -1,3 +1,5 @@
 target/
 __pycache__/
 *.pyc
+# written by `cargo run --release --bin pcpos-vectors -- vectors`; six megabytes, regenerated, never committed
+PCP_OS_Rust/vectors/guard_cases.jsonl

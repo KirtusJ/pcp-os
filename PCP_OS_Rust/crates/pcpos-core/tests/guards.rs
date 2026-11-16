@@ -111,3 +111,23 @@ fn the_native_guards_answer_as_the_published_cases_say() {
     assert!(total > 16000 && by_kind.len() >= 31);
     assert!(differences.is_empty(), "{} differences; the first:\n{}", differences.len(), differences.iter().filter(|d| !d.is_empty()).cloned().collect::<Vec<_>>().join("\n"));
 }
+
+#[test]
+fn successor_session_must_fit_the_record_integer() {
+    let (events, _) = ledger::verify(&vectors("register_scenario.jsonl")).unwrap();
+    let at = events.iter().position(|ev| ev.get("kind").and_then(Value::as_str) == Some("SESSION_OPENED")).unwrap();
+    let (mut state, problems) = acr::fold(&events[..at], true).unwrap();
+    assert!(problems.is_empty());
+    let body = events[at].get("body").unwrap();
+    let actor = events[at].get("actor").and_then(Value::as_str).unwrap();
+    let review = body.get("review").and_then(Value::as_str).unwrap();
+
+    state.reviews.get_mut(review).unwrap().session = i64::MAX - 1;
+    let last = acr::guard(&state, "SESSION_OPENED", body, actor).unwrap();
+    assert_eq!(last.get("session").and_then(Value::as_int), Some(i64::MAX));
+
+    state.reviews.get_mut(review).unwrap().session = i64::MAX;
+    let refusal = acr::guard(&state, "SESSION_OPENED", body, actor).unwrap_err();
+    assert_eq!(refusal.code, acr::REFUSED);
+    assert!(refusal.message.contains("session number"));
+}

@@ -3,7 +3,7 @@ import json, multiprocessing, os, shutil, subprocess, sys, unittest, zipfile
 from pathlib import Path
 from common import Case, ROOT, PcposError, Ops
 from pcpos import base, bag, model
-from pcpos.store import Workspace
+from pcpos.store import MAX_EVENT_BYTES, Workspace
 
 
 def _appender(args):
@@ -101,6 +101,25 @@ class Chain(Case):
         n = len(self.ws.events()[0])
         self.refused(self.ws.append, "NOTE", {"text": "x" * 70000}, "P", code=base.USAGE)
         self.assertEqual(len(self.ws.events()[0]), n)
+
+    def test_register_readers_enforce_the_writer_event_size_limit(self):
+        events, head = self.ws.events()
+        prefix = self.ws.register_path.read_bytes()
+        event = {"seq": len(events), "prev": head, "ts": "2026-01-01T00:00:00Z", "actor": "P",
+                 "auth": "DECLARED", "kind": "NOTE", "body": {"text": ""}}
+        overhead = len(base.canon(event))
+        for size in (MAX_EVENT_BYTES - 1, MAX_EVENT_BYTES, MAX_EVENT_BYTES + 1):
+            event["body"]["text"] = "x" * (size - overhead)
+            line = base.canon(event)
+            self.assertEqual(len(line), size)
+            raw = prefix + line + b"\n"
+            self.ws.register_path.write_bytes(raw)
+            for reader, args in ((self.ws.events, ()), (bag.parse_register, (raw,))):
+                with self.subTest(size=size, reader=reader.__name__):
+                    if size > MAX_EVENT_BYTES:
+                        self.refused(reader, *args, code=base.INTEGRITY)
+                    else:
+                        self.assertEqual(reader(*args), (events + [event], base.sha_bytes(line)))
 
     def test_a_refused_event_writes_nothing(self):
         raw = self.ws.register_path.read_bytes()
