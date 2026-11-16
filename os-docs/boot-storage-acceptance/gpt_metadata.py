@@ -157,7 +157,16 @@ def _check_partitions(array: bytes, h: _Header) -> int:
 def _check_protective_mbr(s: SparseSnapshot) -> None:
     mbr = _read(s, 0)
     _require(mbr[510:512] == b"\x55\xaa", "bad-protective-mbr-signature")
-    entry = mbr[446:462]
+    _require(not any(mbr[440:446]), "nonzero-protective-mbr-reserved")
+    _require(not any(mbr[512:]), "hybrid-or-nonzero-mbr-reserved")
+    # UEFI 2.11 Table 5.3 permits the sole 0xEE protective partition
+    # record in *any* of four slots; the other three must be all zero.
+    # Do not assume it must be the first record.
+    records = tuple(mbr[446 + i * 16:462 + i * 16] for i in range(4))
+    active = tuple(record for record in records if any(record))
+    _require(bool(active), "bad-protective-mbr-partition-type")
+    _require(len(active) == 1, "hybrid-or-nonzero-mbr-reserved")
+    entry = active[0]
     _require(entry[0] == 0 and entry[4] == 0xee,
              "bad-protective-mbr-partition-type")
     _require(entry[1:4] == b"\x00\x02\x00",
@@ -167,12 +176,9 @@ def _check_protective_mbr(s: SparseSnapshot) -> None:
     # this is NOT a full CHS conformance or physical-device check.
     _require(entry[5:8] != b"\x00\x00\x00",
              "bad-protective-mbr-end-chs")
-    _require(not any(mbr[440:446]), "nonzero-protective-mbr-reserved")
     start, size = struct.unpack_from("<II", entry, 8)
     _require(start == 1 and size == min(s.total_lba - 1, 0xffff_ffff),
              "bad-protective-mbr-size")
-    _require(not any(mbr[462:510]) and not any(mbr[512:]),
-             "hybrid-or-nonzero-mbr-reserved")
 
 
 def inspect_gpt(s: SparseSnapshot) -> GPTResult:
