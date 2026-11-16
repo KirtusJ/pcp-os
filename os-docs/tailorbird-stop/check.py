@@ -151,7 +151,7 @@ def boot(args, output, name, pins, guid, results):
     options = [args.qemu]
     if args.firmware:
         options.extend(["-L", str(args.firmware.resolve())])
-    options += ["-machine", "pc", "-accel", "tcg,tb-size=4", "-cpu", "max",
+    options += ["-machine", "pc", "-accel", "tcg,tb-size=8", "-cpu", "max",
                 "-m", "48M", "-nic", "none", "-display", "none", "-monitor", "stdio",
                 "-no-reboot", "-vga", "std", "-uuid", identity,
                 "-drive", "if=none,format=raw,id=os,file=store.img,cache=writeback",
