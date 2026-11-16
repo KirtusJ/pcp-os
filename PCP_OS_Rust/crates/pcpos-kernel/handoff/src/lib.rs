@@ -10,6 +10,9 @@
 //! or Rust references in the binary record. Unknown values are rejected, never
 //! transmuted. The existing Multiboot 1 entry remains unchanged.
 
+/// Advisory assessment of source-recorded GOP SetMode sequences; no firmware calls.
+pub mod gop_witness;
+
 use core::mem::size_of;
 
 pub const MAGIC: u64 = u64::from_le_bytes(*b"PCPHOF01");
