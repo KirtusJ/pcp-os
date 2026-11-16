@@ -465,7 +465,7 @@ def replayed_native_guest_receipt(image: str, kernel: Path, measurement: str, ev
     raw = original.read_bytes()
     txt = raw.decode("utf-8")
     pattern = (
-        rf"^command line: /kernel\\.elf32 then=off image={re.escape(measurement)} "
+        rf"^command line: /kernel\.elf32 then=off image={re.escape(measurement)} "
         rf"d12_ticket=([0-9a-f]{{24}}) d12_attempt=1$"
     )
     matches = re.findall(pattern, txt, flags=re.MULTILINE)
@@ -481,10 +481,10 @@ def replayed_native_guest_receipt(image: str, kernel: Path, measurement: str, ev
         name = "d12-native-replay-" + secrets.token_hex(5)
         (directory / "request.txt").write_text(request, encoding="ascii")
         (directory / "start-1.txt").write_text(
-            f"REQUEST={request};ATTEMPT=1;START\\n", encoding="ascii"
+            f"REQUEST={request};ATTEMPT=1;START\n", encoding="ascii"
         )
         (directory / "end-1.txt").write_text(
-            f"REQUEST={request};ATTEMPT=1;QEMU_EXIT=33;END\\n", encoding="ascii"
+            f"REQUEST={request};ATTEMPT=1;QEMU_EXIT=33;END\n", encoding="ascii"
         )
         (directory / "qemu-1.serial").write_bytes(raw)
         (directory / "qemu-1.stderr").write_bytes(b"")
