@@ -18,7 +18,8 @@ def example():
     d = ObservedDevice(
         handle="host-minted-handle-A", generation=3,
         transport=FIRST_TRANSPORT, bus_path="pci/0000:00:05.0",
-        capacity_512=CAP, gpt_lba_bytes=512, media_id=ID,
+        capacity_512=CAP, gpt_lba_bytes=512, volume_marker=ID,
+        uefi_media_id=7,
         preflight_digest=HASH,
         condition=MediaCondition.FULL_ZERO_SCAN_REPORTED,
     )
@@ -26,7 +27,8 @@ def example():
         inventory_epoch=9, handle=d.handle, generation=d.generation,
         transport=d.transport, bus_path=d.bus_path,
         capacity_512=d.capacity_512, gpt_lba_bytes=d.gpt_lba_bytes,
-        media_id=d.media_id, preflight_digest=d.preflight_digest,
+        volume_marker=d.volume_marker, uefi_media_id=d.uefi_media_id,
+        preflight_digest=d.preflight_digest,
         image_bytes=CAP * 512, image_sha256=IMAGE,
     )
     return Inventory(epoch=9, devices=(d,)), p
@@ -58,7 +60,7 @@ class PreflightTests(unittest.TestCase):
         inv, p = example()
         self.assert_hold(replace(inv, devices=(replace(inv.devices[0],generation=4),)), p)
 
-    def test_bus_path_swapped_even_if_media_id_is_cloned(self):
+    def test_bus_path_swapped_even_if_volume_marker_is_cloned(self):
         inv, p = example()
         self.assert_hold(replace(inv, devices=(replace(inv.devices[0],bus_path="pci/0000:00:06.0"),)), p)
 
@@ -69,31 +71,31 @@ class PreflightTests(unittest.TestCase):
 
     def test_another_writable_device_even_with_different_id(self):
         inv, p = example()
-        extra = replace(inv.devices[0], handle="different-handle",bus_path="pci/0000:00:06.0",media_id="different-id")
+        extra = replace(inv.devices[0], handle="different-handle",bus_path="pci/0000:00:06.0",volume_marker="different-id")
         self.assert_hold(replace(inv, devices=(inv.devices[0],extra)), p)
 
     def test_second_writable_device_on_unsupported_bus_still_holds(self):
         inv,p=example()
         extra=replace(inv.devices[0],handle="other",bus_path="pci/0000:00:06.0",
-                      transport="ahci",media_id="different")
+                      transport="ahci",volume_marker="different")
         self.assert_hold(replace(inv,devices=(inv.devices[0],extra)),p)
 
-    def test_blank_disk_without_existing_media_id_is_not_automatically_disqualified(self):
+    def test_blank_disk_without_existing_volume_marker_is_not_automatically_disqualified(self):
         inv,p=example()
-        blank=replace(inv.devices[0],media_id="")
+        blank=replace(inv.devices[0],volume_marker="")
         self.assertEqual(assess_fresh_install(replace(inv,devices=(blank,)),
-                         replace(p,media_id="")).state,
+                         replace(p,volume_marker="")).state,
                          PreflightState.ELIGIBLE_FOR_HOST_RECHECK)
 
     def test_other_read_only_device_does_not_create_two_writable_targets(self):
         inv, p = example()
-        other = replace(inv.devices[0], handle="different-handle",bus_path="pci/0000:00:06.0",media_id="different-id",read_only=True)
+        other = replace(inv.devices[0], handle="different-handle",bus_path="pci/0000:00:06.0",volume_marker="different-id",read_only=True)
         self.assertEqual(assess_fresh_install(replace(inv,devices=(inv.devices[0],other)),p).state,
                          PreflightState.ELIGIBLE_FOR_HOST_RECHECK)
 
     def test_duplicate_bus_path_is_ambiguous(self):
         inv, p = example()
-        extra = replace(inv.devices[0],handle="different-handle",media_id="different-id",read_only=True)
+        extra = replace(inv.devices[0],handle="different-handle",volume_marker="different-id",read_only=True)
         self.assert_hold(replace(inv,devices=(inv.devices[0],extra)),p)
 
     def test_target_absent(self):
@@ -111,6 +113,28 @@ class PreflightTests(unittest.TestCase):
     def test_transport_not_other_ide_or_ahci(self):
         inv, p = example()
         self.assert_hold(replace(inv,devices=(replace(inv.devices[0],transport="ahci"),)),p)
+
+    def test_uefi_media_change_is_distinct_from_volume_marker(self):
+        inv, p = example()
+        d = replace(inv.devices[0], uefi_media_id=8)
+        self.assert_hold(replace(inv, devices=(d,)), p)
+
+    def test_missing_or_noninteger_uefi_media_id_holds(self):
+        inv, p = example()
+        d = replace(inv.devices[0], uefi_media_id=None)
+        self.assert_hold(replace(inv, devices=(d,)), p)
+
+    def test_invalid_plan_uefi_media_id_holds(self):
+        inv, p = example()
+        self.assert_hold(inv, replace(p, uefi_media_id=True))
+
+    def test_valid_zero_uefi_media_id_can_coexist_with_blank_media(self):
+        inv, p = example()
+        d = replace(inv.devices[0], uefi_media_id=0, volume_marker="")
+        self.assertEqual(assess_fresh_install(
+            replace(inv, devices=(d,)),
+            replace(p, uefi_media_id=0, volume_marker="")).state,
+            PreflightState.ELIGIBLE_FOR_HOST_RECHECK)
 
     def test_capacity_changed(self):
         inv, p = example()
@@ -161,9 +185,9 @@ class PreflightTests(unittest.TestCase):
         inv, p = example()
         self.assert_hold(replace(inv,devices=(replace(inv.devices[0],preflight_digest="c"*64),)),p)
 
-    def test_media_id_changed(self):
+    def test_volume_marker_changed(self):
         inv, p = example()
-        self.assert_hold(replace(inv,devices=(replace(inv.devices[0],media_id="other"),)),p)
+        self.assert_hold(replace(inv,devices=(replace(inv.devices[0],volume_marker="other"),)),p)
 
     def test_missing_image_digest(self):
         inv, p = example()
@@ -179,7 +203,7 @@ class PreflightTests(unittest.TestCase):
 
     def test_reordered_enumeration_is_not_identity(self):
         inv, p = example()
-        ro=replace(inv.devices[0],handle="other",bus_path="pci/0000:00:09.0",media_id="different",read_only=True)
+        ro=replace(inv.devices[0],handle="other",bus_path="pci/0000:00:09.0",volume_marker="different",read_only=True)
         self.assertEqual(assess_fresh_install(replace(inv,devices=(ro,inv.devices[0])),p).state,
                          PreflightState.ELIGIBLE_FOR_HOST_RECHECK)
 
