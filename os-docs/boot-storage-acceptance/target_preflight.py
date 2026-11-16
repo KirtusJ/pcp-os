@@ -81,8 +81,9 @@ def _hold(reason: str) -> PreflightResult:
     return PreflightResult(PreflightState.HOLD, reason)
 
 
-def _digest_looks_sha256(value: str) -> bool:
-    return len(value) == 64 and all(x in "0123456789abcdef" for x in value)
+def _digest_looks_sha256(value: object) -> bool:
+    return type(value) is str and len(value) == 64 and all(
+        x in "0123456789abcdef" for x in value)
 
 
 def assess_fresh_install(inventory: Inventory, plan: FreshInstallPlan) -> PreflightResult:
@@ -92,19 +93,40 @@ def assess_fresh_install(inventory: Inventory, plan: FreshInstallPlan) -> Prefli
     transport, a fully-zero *reported* scan, full-size image geometry, and a
     source-bound digest. Installation, resume and upgrade need separate gates.
     """
-    if inventory.epoch < 1 or plan.inventory_epoch != inventory.epoch:
+    if (type(inventory.epoch) is not int or type(plan.inventory_epoch) is not int
+            or inventory.epoch < 1 or plan.inventory_epoch != inventory.epoch):
         return _hold("missing-or-stale-inventory-epoch")
     if not _digest_looks_sha256(plan.image_sha256):
         return _hold("missing-or-malformed-image-digest")
-    if plan.image_bytes <= 0 or plan.image_bytes > MAX_U64:
+    if (type(plan.image_bytes) is not int or
+            plan.image_bytes <= 0 or plan.image_bytes > MAX_U64):
         return _hold("invalid-or-overflowed-image-length")
-    if not inventory.devices:
+    if type(inventory.devices) is not tuple or not inventory.devices:
         return _hold("no-observed-block-devices")
-    if any((not d.handle or not d.bus_path or d.generation < 1 or
+    if any(type(d) is not ObservedDevice for d in inventory.devices):
+        return _hold("incomplete-or-invalid-device-observation")
+    if any((type(d.handle) is not str or not d.handle or
+            type(d.bus_path) is not str or not d.bus_path or
+            type(d.transport) is not str or type(d.volume_marker) is not str or
+            type(d.preflight_digest) is not str or
+            type(d.condition) is not MediaCondition or
+            type(d.read_only) is not bool or type(d.present) is not bool or
+            type(d.flush_supported) is not bool or type(d.outstanding_io) is not bool or
+            type(d.generation) is not int or d.generation < 1 or
+            type(d.capacity_512) is not int or
             d.capacity_512 <= 0 or d.capacity_512 > MAX_U64 or
+            type(d.gpt_lba_bytes) is not int or
             type(d.uefi_media_id) is not int or not (0 <= d.uefi_media_id < (1 << 32)))
            for d in inventory.devices):
         return _hold("incomplete-or-invalid-device-observation")
+    if (type(plan.handle) is not str or type(plan.bus_path) is not str or
+            type(plan.transport) is not str or type(plan.volume_marker) is not str or
+            type(plan.preflight_digest) is not str or
+            type(plan.generation) is not int or
+            type(plan.capacity_512) is not int or
+            type(plan.gpt_lba_bytes) is not int or
+            type(plan.uefi_media_id) is not int):
+        return _hold("invalid-plan-field-type")
     # Duplicate handles/paths are an ambiguous enumeration, even if identifiers
     # differ; duplicate media IDs remain ambiguous even when paths differ.
     handles = [d.handle for d in inventory.devices if d.present]
@@ -113,7 +135,7 @@ def assess_fresh_install(inventory: Inventory, plan: FreshInstallPlan) -> Prefli
     if len(handles) != len(set(handles)) or len(paths) != len(set(paths)):
         return _hold("duplicate-device-handle-or-path")
     if len(volume_markers) != len(set(volume_markers)):
-        return _hold("duplicate-media-id")
+        return _hold("duplicate-volume-marker")
     # A second writable block device is ambiguous for the initial narrow
     # installer profile even if its transport is currently unsupported.
     candidates = [d for d in inventory.devices if d.present and not d.read_only]
@@ -156,7 +178,7 @@ def assess_fresh_install(inventory: Inventory, plan: FreshInstallPlan) -> Prefli
     # prerequisite for fresh setup; a marker alone never grants authority.
     # This is distinct from UEFI MediaId, which is a firmware change token.
     if d.volume_marker != plan.volume_marker:
-        return _hold("media-id-mismatched")
+        return _hold("volume-marker-mismatched")
     if (not _digest_looks_sha256(d.preflight_digest) or
             d.preflight_digest != plan.preflight_digest):
         return _hold("preflight-digest-missing-or-mismatched")
