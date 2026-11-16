@@ -177,6 +177,8 @@ def visit(kernel, measured, root, width, height, vram, font, timeout):
                 raise ValueError("head changed during Down")
             report["frames"]["register_down"] = hashlib.sha256(path.read_bytes()).hexdigest()
             report["up_down_changed_frame"] = report["frames"]["register_up"] != report["frames"]["register"]
+            if not report["up_down_changed_frame"] or report["frames"]["register_down"] != report["frames"]["register"]:
+                raise ValueError("Up/Down did not change then restore the register frame")
 
             monitor.key("esc")
             end = time.monotonic() + timeout
@@ -193,7 +195,8 @@ def visit(kernel, measured, root, width, height, vram, font, timeout):
             report["qemu_exit"] = guest.wait(timeout=timeout)
             raw = serial.read_bytes()
             report["serial_sha256"] = hashlib.sha256(raw).hexdigest()
-            if report["qemu_exit"] != 33 or b"ALL SELF-TESTS PASS" not in raw or b"  FAIL" in raw:
+            if (report["qemu_exit"] != 33 or b"ALL SELF-TESTS PASS" not in raw
+                    or b"  FAIL" in raw or (measured + " (measured; equal").encode() not in raw):
                 raise RuntimeError("guest shutdown, self-tests or serial failed")
             report["passed"] = True
         except Exception as exc:
