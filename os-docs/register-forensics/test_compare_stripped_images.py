@@ -15,9 +15,29 @@ class TestStrippedIdentityVerdict(unittest.TestCase):
         self.write("base_1",ELF)
         self.write("base_2",ELF)
         self.write("candidate_off",ELF)
+        self.write_raw("base_1", "a"*64)
+        self.write_raw("base_2", "a"*64)
+        self.write_raw("candidate_off", "a"*64)
 
     def write(self,kind,value):
         (self.root/(kind+".stripped.elf32")).write_bytes(value)
+
+    def write_raw(self,kind,digest):
+        (self.root/(kind+".elf_sha256")).write_text(digest+"\n")
+
+    def test_unstripped_digest_is_observed_not_assumed(self):
+        result=observe(self.root)
+        self.assertTrue(result["unmodified_whole_ELF_identical"])
+        self.write_raw("candidate_off","b"*64)
+        self.assertFalse(observe(self.root)["unmodified_whole_ELF_identical"])
+
+    def test_missing_or_malformed_unstripped_hash_fails_closed(self):
+        (self.root/"candidate_off.elf_sha256").unlink()
+        with self.assertRaises(ValueError):
+            observe(self.root)
+        self.write_raw("candidate_off","not-a-sha256")
+        with self.assertRaises(ValueError):
+            observe(self.root)
 
     def test_exact_positive(self):
         result=observe(self.root)
