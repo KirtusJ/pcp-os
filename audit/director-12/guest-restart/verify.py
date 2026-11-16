@@ -574,6 +574,56 @@ def completed_journal_missing_native_serial(image: str, kernel: Path, measuremen
             invoke(["docker", "rm", "-f", name], checked=False)
 
 
+def completed_journal_wrong_attempt_serial(image: str, kernel: Path, measurement: str, evidence_dir: Path):
+    # Both source files are genuine native serial outputs from the same
+    # synthetic request, but attempt 1 cannot authenticate attempt 2.
+    valid = evidence_dir / "valid"
+    request = (valid / "request.txt").read_text(encoding="ascii")
+    assert re.fullmatch("[0-9a-f]{24}", request)
+    genuine_first = (valid / "qemu-1.serial").read_bytes()
+    genuine_second = (valid / "qemu-2.serial").read_bytes()
+    assert genuine_first != genuine_second
+    with tempfile.TemporaryDirectory(prefix="d12-terminal-wrong-attempt-") as tmp:
+        directory = Path(tmp)
+        os.chmod(directory, 0o777)
+        name = "d12-terminal-wrong-attempt-" + secrets.token_hex(5)
+        for n in (1, 2, 3):
+            for suffix in (f"start-{n}.txt", f"end-{n}.txt",
+                           f"qemu-{n}.serial", f"qemu-{n}.stderr"):
+                shutil.copyfile(valid / suffix, directory / suffix)
+        (directory / "request.txt").write_text(request, encoding="ascii")
+        (directory / "qemu-2.serial").write_bytes(genuine_first)
+        assert len(list(directory.glob("end-*.txt"))) == 3
+        try:
+            policy = start(image, name, directory, kernel, measurement, request, fault=False)
+            await_true(
+                lambda: not inspect(name)["State"]["Running"]
+                and (directory / "attention.txt").exists(),
+                "completed journal's genuine prior-attempt substitution rejected", 12,
+            )
+            info = inspect(name)
+            assert info["RestartCount"] == 0 and info["State"]["ExitCode"] == 0
+            reason = (directory / "attention.txt").read_text()
+            assert "INVALID_JOURNAL: prior attempt 2 END without valid native receipt" in reason
+            assert "native kernel command line does not match the exact request and attempt" in reason
+            assert (directory / "qemu-2.serial").read_bytes() == genuine_first
+            assert not (directory / "start-4.txt").exists()
+            return {
+                "fixture_three_complete_real_guest_journals": True,
+                "source_attempt": 1,
+                "falsely_assigned_attempt": 2,
+                "genuine_source_serial_sha256": sha(genuine_first),
+                "original_correct_second_serial_sha256": sha(genuine_second),
+                "wrong_attempt_serial_refused_before_completion": True,
+                "no_new_QEMU_launched": True,
+                "attention": reason.strip(),
+                "requested_policy": policy,
+            }
+        finally:
+            capture(directory, evidence_dir / "terminal_wrong_attempt", 3)
+            invoke(["docker", "rm", "-f", name], checked=False)
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--image", required=True)
@@ -618,6 +668,9 @@ def main() -> int:
             a.image, kernel, a.measurement, evidence_dir
         )
         result["terminal_complete_missing_receipt"] = completed_journal_missing_native_serial(
+            a.image, kernel, a.measurement, evidence_dir
+        )
+        result["terminal_complete_wrong_attempt"] = completed_journal_wrong_attempt_serial(
             a.image, kernel, a.measurement, evidence_dir
         )
         result["status"] = "OBSERVED_IN_TEST_SCOPE"
