@@ -36,6 +36,14 @@ https://github.com/KirtusJ/pcp-os/tree/59f26ebe6397e00e8a9b8cce08487ad8a5319c0c
 
 **Special link nuance.** The checked virtio driver negotiates MAC but not VIRTIO_NET_F_STATUS and therefore does not observe STATUS/LINK_UP; OASIS Virtio allows a driver that did not negotiate STATUS to assume link active. This is not by itself a virtio protocol violation, but it is insufficient evidence for a daily-driver truthful link indication or recovery controller.
 
+## General daily-driver GUI audit, separate from the network GUI
+
+The current native kernel launcher is a keyboard-selectable, nonwindowed display with a fixed 10×20 pixel character grid and a foreground user-program handoff. This is not equivalent to a general desktop compositor, a window manager, simultaneous desktop applications, or a mouse-driven network settings service. One program can own the screen; the kernel's Ctrl+Alt+Delete mechanism can stop it and return to the launcher. The source has visible selection styling and readable headings in its normal fixed-input case, but these do not establish accessibility or scalable layout under every installed program count.
+
+**Deterministic source-bound layout risk, not a guest screenshot:** The [GUI geometry discriminator](gui_geometry.py) models only the explicit row increments and footer draw in session.rs, checked against the exact 10×20 ui.rs/font.rs constants. With one digest-granted Ethernet program and one loader file per program, an 800×600 launcher has 30 text rows, a footer occupying rows **28–29**, and its displayed store line lands at **row 28** with **four** programs; it is overpainted by the footer. At 1024×768, 38 rows have footer **36–37**, and the analogous display line lands at **row 36** with **seven** programs. Both are testable counterexample inputs, not claims that these counts were present in an actual current boot. A later QEMU guest must load and navigate the corresponding program count, capture pixels and test every focusable row. Any source change invalidates the modeled claim until rechecked.
+
+For an interface intended for daily driving, test multi-app launcher scroll/paging, clearly visible keyboard focus, focus never hidden by footer/overlaid panels, predictable Escape/Back/Stop, resizable or display-scaled text, error and long-field overflow, keyboard-only access to all network operations and distinguishable disabled/pending/failed states. Compare with **W3C WCAG 2.2** keyboard/focus guidance and **W3C WCAG2ICT** application notes for non-web software (reference practice, *no conformance claim*). Sources: https://www.w3.org/TR/WCAG22/ and https://www.w3.org/TR/wcag2ict-22/. The register-view 800/1024 event-outcome clipping and optical source fixes are separately owned by Directors 2/10 on #233/#235; this audit does not alter them or silently accept their independent promotion gates.
+
 ## Separation of concerns required before implementation
 
 1. **NIC/PHY and WLAN driver:** signed or pinned firmware/device identities, IRQ/hotplug and carrier/association events; no app or GUI deciding device truth.
@@ -74,7 +82,7 @@ https://github.com/KirtusJ/pcp-os/tree/59f26ebe6397e00e8a9b8cce08487ad8a5319c0c
 
 ## New limited QEMU probe
 
-The diagnostic script [ethernet_cycle.py](ethernet_cycle.py) and path-scoped [CI workflow](https://github.com/KirtusJ/pcp-os/blob/director-13/network-lifecycle-audit-20261116/.github/workflows/director-13-network-audit.yml) build the existing opt-in kernel/Surfbird and run a host-loopback HTTP fixture. QMP sets virtual carrier down before a first guest is launched; the first guest should fail to browse without HTTP requests. QMP then sets carrier up and a **fresh app process** is launched; a local GET and intact kernel shutdown are required.
+The diagnostic script [ethernet_cycle.py](ethernet_cycle.py), the independent source-only [gui_geometry.py](gui_geometry.py) and path-scoped [CI workflow](https://github.com/KirtusJ/pcp-os/blob/director-13/network-lifecycle-audit-20261116/.github/workflows/director-13-network-audit.yml) build the existing opt-in kernel/Surfbird and run a host-loopback HTTP fixture. QMP sets virtual carrier down before a first guest is launched; the first guest should fail to browse without HTTP requests. QMP then sets carrier up and a **fresh app process** is launched; a local GET and intact kernel shutdown are required.
 
 This deliberately does **not** claim an in-session reconnect, a native Connect button, a Wi-Fi radio, DHCP, firewall or physical NIC. A QMP command acknowledgement does not show the guest recognized link state. Actual CI result and captured serial/QMP/pcap are required; until inspected this case is **NOT_MEASURED**.
 
