@@ -1,0 +1,63 @@
+name: PCP OS source-only virtio-blk GPT preflight contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/gpt-preflight.yml'
+      - 'PCP_OS_Rust/crates/pcpos-kernel/gpt-preflight/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  no-write-gpt-parser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PCPOS_GPT_FIXTURES: ${{ runner.temp }}/pcpos-gpt-fixtures
+    steps:
+      - name: Checkout exact authored PR head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Source and compiler identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          rustc --version --verbose
+          cargo --version
+          python3 --version
+      - name: Generate independent Python-zlib GPT fixtures on temporary files
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 PCP_OS_Rust/crates/pcpos-kernel/gpt-preflight/tools/make_fixtures.py --out "$PCPOS_GPT_FIXTURES"
+          test -f "$PCPOS_GPT_FIXTURES/valid.raw"
+          sha256sum "$PCPOS_GPT_FIXTURES/valid.raw" "$PCPOS_GPT_FIXTURES/clone.raw"
+      - name: Cross-check valid protective MBR and GPT with independent sgdisk read-only verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gdisk
+          sgdisk --version
+          sgdisk --verify "$PCPOS_GPT_FIXTURES/valid.raw"
+      - name: Run 512-sector GPT and negative-choice fixtures in host debug
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --offline --manifest-path PCP_OS_Rust/crates/pcpos-kernel/gpt-preflight/Cargo.toml --all-targets -- --nocapture
+      - name: Run exact same fixtures with optimized Rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --offline --release --manifest-path PCP_OS_Rust/crates/pcpos-kernel/gpt-preflight/Cargo.toml --all-targets -- --nocapture
+      - name: Check independent no_std module for x86_64-unknown-none
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add x86_64-unknown-none
+          cargo check --offline --lib --target x86_64-unknown-none --manifest-path PCP_OS_Rust/crates/pcpos-kernel/gpt-preflight/Cargo.toml
