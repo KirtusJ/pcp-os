@@ -37,6 +37,10 @@ jobs:
             --cli store/apps/parrots-all-the-way-down/host/target/release/parrots-all-the-way-down \
             --delegate store/apps/parrots-all-the-way-down/host/target/release/pcp-delegate \
             --output d13-evidence/process_group_boundary.json
+      - name: Read cgroup and pidfd support without changing host policy
+        run: |
+          python3 audit/director-13/cgroup_preflight.py \
+            --output d13-evidence/cgroup_preflight.json
       - name: Preserve scoped test result
         if: always()
         uses: actions/upload-artifact@v4
@@ -45,5 +49,6 @@ jobs:
           path: |
             d13-evidence/process_boundary.json
             d13-evidence/process_group_boundary.json
+            d13-evidence/cgroup_preflight.json
           if-no-files-found: warn
           retention-days: 7
