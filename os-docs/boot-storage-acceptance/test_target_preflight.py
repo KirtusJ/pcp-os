@@ -72,6 +72,19 @@ class PreflightTests(unittest.TestCase):
         extra = replace(inv.devices[0], handle="different-handle",bus_path="pci/0000:00:06.0",media_id="different-id")
         self.assert_hold(replace(inv, devices=(inv.devices[0],extra)), p)
 
+    def test_second_writable_device_on_unsupported_bus_still_holds(self):
+        inv,p=example()
+        extra=replace(inv.devices[0],handle="other",bus_path="pci/0000:00:06.0",
+                      transport="ahci",media_id="different")
+        self.assert_hold(replace(inv,devices=(inv.devices[0],extra)),p)
+
+    def test_blank_disk_without_existing_media_id_is_not_automatically_disqualified(self):
+        inv,p=example()
+        blank=replace(inv.devices[0],media_id="")
+        self.assertEqual(assess_fresh_install(replace(inv,devices=(blank,)),
+                         replace(p,media_id="")).state,
+                         PreflightState.ELIGIBLE_FOR_HOST_RECHECK)
+
     def test_other_read_only_device_does_not_create_two_writable_targets(self):
         inv, p = example()
         other = replace(inv.devices[0], handle="different-handle",bus_path="pci/0000:00:06.0",media_id="different-id",read_only=True)
@@ -191,6 +204,10 @@ class OfflineEvidenceTests(unittest.TestCase):
     def test_offline_external_unavailable(self):
         self.assertEqual(classify_source(location="external",available=False,
                          inspected=False,networking_enabled=False),SourceStatus.UNAVAILABLE)
+
+    def test_offline_cached_external_source_available_but_unread(self):
+        self.assertEqual(classify_source(location="external",available=True,
+                         inspected=False,networking_enabled=False),SourceStatus.NOT_INSPECTED)
 
     def test_online_external_source_available_but_unread(self):
         self.assertEqual(classify_source(location="external",available=True,
