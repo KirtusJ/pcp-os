@@ -522,6 +522,58 @@ def replayed_native_guest_receipt(image: str, kernel: Path, measurement: str, ev
             capture(directory, evidence_dir / "native_replay", 2)
             invoke(["docker", "rm", "-f", name], checked=False)
 
+def completed_journal_missing_native_serial(image: str, kernel: Path, measurement: str, evidence_dir: Path):
+    # A journal that appears to have COMPLETED all three attempts is not
+    # sufficient when an independently recorded native serial is gone.
+    valid = evidence_dir / "valid"
+    request = (valid / "request.txt").read_text(encoding="ascii")
+    assert re.fullmatch("[0-9a-f]{24}", request)
+    removed_real_serial = (valid / "qemu-2.serial").read_bytes()
+    assert b"ALL SELF-TESTS PASS." in removed_real_serial
+    with tempfile.TemporaryDirectory(prefix="d12-terminal-missing-receipt-") as tmp:
+        directory = Path(tmp)
+        os.chmod(directory, 0o777)
+        name = "d12-terminal-missing-" + secrets.token_hex(5)
+        for n in (1, 2, 3):
+            for suffix in (f"start-{n}.txt", f"end-{n}.txt", f"qemu-{n}.stderr"):
+                shutil.copyfile(valid / suffix, directory / suffix)
+            if n != 2:
+                shutil.copyfile(valid / f"qemu-{n}.serial", directory / f"qemu-{n}.serial")
+        (directory / "request.txt").write_text(request, encoding="ascii")
+        assert len(list(directory.glob("end-*.txt"))) == 3
+        assert not (directory / "qemu-2.serial").exists()
+        try:
+            policy = start(image, name, directory, kernel, measurement, request, fault=False)
+            await_true(
+                lambda: not inspect(name)["State"]["Running"],
+                "terminal-journal controller returned after examining prior runs", 12,
+            )
+            info = inspect(name)
+            assert info["RestartCount"] == 0
+            assert info["State"]["ExitCode"] == 0
+            attention = directory / "attention.txt"
+            assert attention.exists(), (
+                "test-first failure: all-complete journal was silently accepted "
+                "even though real guest attempt 2 raw serial was missing"
+            )
+            reason = attention.read_text(encoding="utf-8")
+            assert "INVALID_JOURNAL: prior attempt 2 END without valid native receipt" in reason
+            assert not (directory / "qemu-2.serial").exists()
+            assert len(list(directory.glob("start-*.txt"))) == 3
+            return {
+                "fixture_copied_real_three_guest_complete_journal": True,
+                "omitted_real_attempt": 2,
+                "omitted_real_native_serial_sha256": sha(removed_real_serial),
+                "terminal_journal_missing_receipt_refused": True,
+                "no_new_QEMU_launched": True,
+                "attention": reason.strip(),
+                "requested_policy": policy,
+            }
+        finally:
+            capture(directory, evidence_dir / "terminal_missing", 3)
+            invoke(["docker", "rm", "-f", name], checked=False)
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--image", required=True)
@@ -563,6 +615,9 @@ def main() -> int:
         result["noncontiguous_journal"] = sparse_future_attempt(a.image, kernel, a.measurement, evidence_dir)
         result["false_prior_END"] = invalid_prior_receipt(a.image, kernel, a.measurement, evidence_dir)
         result["replayed_native_guest_receipt"] = replayed_native_guest_receipt(
+            a.image, kernel, a.measurement, evidence_dir
+        )
+        result["terminal_complete_missing_receipt"] = completed_journal_missing_native_serial(
             a.image, kernel, a.measurement, evidence_dir
         )
         result["status"] = "OBSERVED_IN_TEST_SCOPE"
