@@ -3,8 +3,8 @@ use core::mem::{offset_of, size_of};
 use pcpos_gop_probe::{
     BootServices, GraphicsOutput, GraphicsOutputMode, Guid, ModeInformation,
     PixelBitmask, SimpleTextOutput, Snapshot, SystemTable, BS_FREE_POOL,
-    BS_LOCATE_PROTOCOL, GOP_GUID, observed, report_changed,
-    safe_alternate_candidate,
+    BS_LOCATE_PROTOCOL, GOP_GUID, EDID_ACTIVE_GUID, EDID_DISCOVERED_GUID,
+    EdidProtocol, observed, report_changed, safe_alternate_candidate,
 };
 
 const RGB32: ModeInformation = ModeInformation {
@@ -108,4 +108,19 @@ fn recognizes_mode_metadata_changes_separately_from_index_changes() {
     let second = Snapshot { framebuffer_base: first.framebuffer_base + 0x1000, ..first };
     assert!(report_changed(first, second));
     assert!(!report_changed(first, first));
+}
+
+#[test]
+fn uefi_edid_active_and_discovered_protocols_have_distinct_guids_and_layout() {
+    assert_eq!(size_of::<EdidProtocol>(), 16);
+    assert_eq!(offset_of!(EdidProtocol, size_of_edid), 0);
+    assert_eq!(offset_of!(EdidProtocol, edid), 8);
+    assert_eq!(EDID_ACTIVE_GUID.data1, 0xbd8c1056);
+    assert_eq!(EDID_ACTIVE_GUID.data2, 0x9f36);
+    assert_eq!(EDID_ACTIVE_GUID.data3, 0x44ec);
+    assert_eq!(EDID_ACTIVE_GUID.data4, [0x92, 0xa8, 0xa6, 0x33, 0x7f, 0x81, 0x79, 0x86]);
+    assert_eq!(EDID_DISCOVERED_GUID.data1, 0x1c0c34f6);
+    assert_eq!(EDID_DISCOVERED_GUID.data2, 0xd380);
+    assert_eq!(EDID_DISCOVERED_GUID.data3, 0x41fa);
+    assert_eq!(EDID_DISCOVERED_GUID.data4, [0xa0, 0x49, 0x8a, 0xd0, 0x6c, 0x1a, 0x66, 0xaa]);
 }
