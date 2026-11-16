@@ -1,0 +1,31 @@
+name: Parrots hosted supervisor-loss characterization
+
+on:
+  pull_request:
+    paths:
+      - 'store/apps/parrots-all-the-way-down/core/**'
+      - 'store/apps/parrots-all-the-way-down/host/**'
+      - '.github/workflows/parrots-supervisor-loss.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-crash-window:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Identify Rust host
+        run: rustc -Vv
+      - name: Exercise hosted recursion, cancellation and adapter loss
+        run: |
+          cargo test --locked --manifest-path store/apps/parrots-all-the-way-down/core/Cargo.toml
+          cargo test --locked --manifest-path store/apps/parrots-all-the-way-down/host/Cargo.toml --tests -- --nocapture
+      - name: Interpret this workflow only as bounded evidence
+        run: |
+          echo 'Pass means the killed-adapter failure window was reproduced.'
+          echo 'It does not establish a resident supervisor, a live independent worker after this job, reboot recovery, or actual containment.'
