@@ -3,6 +3,7 @@ name: Storage target preflight source-only fixture
 on:
   push:
     branches:
+      - master
       - session-b/virtio-gpt-target-preflight-source-20261116
     paths:
       - os-docs/boot-storage-acceptance/**
@@ -11,6 +12,7 @@ on:
     paths:
       - os-docs/boot-storage-acceptance/**
       - .github/workflows/storage-target-preflight.yml
+  workflow_dispatch:
 
 permissions:
   contents: read
