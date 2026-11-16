@@ -45,3 +45,15 @@ python3 examples/resident-workers/verify.py \
 ```
 
 The command replays admissions and retirements up to the selected round. It checks the model replies and parent tickets against the recorded input, then hashes exactly the recorded prefix of each guest serial. Later bytes and replacement VMs can remain in place. A successful exit prints the round timestamp, digest, root UUID, guest count, edge count and repair count. An unavailable round, missing evidence or a mismatch exits with status 1. Compare the result or archive digest with a separately retained value to check provenance. The command works offline and reports the historical observation at the recorded time.
+
+## Save a round from a running supervisor
+
+Choose a completed cycle and a new ZIP filename. The command also works after shutdown.
+
+```sh
+python3 examples/resident-workers/archive.py \
+  --run inputs/run-01 --oracle inputs/resident/oracle.json \
+  --cycle 2 --output inputs/run-01-through-2.zip
+```
+
+The ZIP contains the oracle, the event ledger through that cycle, the selected readback, and the serial prefixes for every guest that appeared in a completed round through that point. This includes retired guests. Later serial output is excluded. The command validates every included round from the ZIP before publishing it and preserves any existing output file. The output directory must support hard links. After unpacking, use the historical verification command above with any included cycle.

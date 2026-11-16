@@ -4,6 +4,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from uuid import UUID
+import zipfile
+
+from archive import freeze
 
 from supervise import PARENTS, sha
 from verify import verify
@@ -124,6 +127,49 @@ class HistoricalReadback(unittest.TestCase):
         event["sha256"] = self.digest(event["record"])
         with self.assertRaisesRegex(RuntimeError, "kernel protection or measurement report"):
             self.check(2)
+
+    def test_archive_retains_each_round_through_the_cutoff(self):
+        self.check(2)
+        with (self.run / "events.jsonl").open("ab") as log:
+            log.write(b'{"event":"later')
+        with (self.run / "1-1.serial").open("ab") as serial:
+            serial.write(b"later serial output")
+        records = [e["record"] for e in self.events if e["event"] == "readback"]
+        for cycle in (1, 2):
+            with self.subTest(cycle=cycle):
+                output = self.run / f"through-{cycle}.zip"
+                self.assertEqual(freeze(self.run, self.oracle, cycle, output)["cycle"], cycle)
+                with zipfile.ZipFile(output) as archive:
+                    root = zipfile.Path(archive)
+                    self.assertEqual(json.loads(archive.read("cohort/readback.json")), records[cycle - 1])
+                    for n in range(1, cycle + 1):
+                        result = verify(root / "cohort", root / "fixture" / "oracle.json", n)
+                        self.assertEqual(result["sha256"], self.digest(records[n - 1]))
+                    ends = {row["serial_file"]: row["serial_bytes"] for record in records[:cycle]
+                            for row in record["nodes"]}
+                    serials = {name.removeprefix("cohort/"): archive.getinfo(name).file_size
+                               for name in archive.namelist() if name.endswith(".serial")}
+                    self.assertEqual(serials, ends)
+                    ledger = archive.read("cohort/events.jsonl")
+                    self.assertEqual(json.loads(ledger.splitlines()[-1])["cycle"], cycle)
+                    self.assertEqual(json.loads(ledger.splitlines()[-1])["event"], "readback")
+
+    def test_archive_checks_retired_evidence_and_preserves_existing_output(self):
+        self.check(2)
+        output = self.run / "rounds.zip"
+        output.write_bytes(b"existing archive")
+        with self.assertRaises(FileExistsError):
+            freeze(self.run, self.oracle, 2, output)
+        self.assertEqual(output.read_bytes(), b"existing archive")
+        output.unlink()
+        with self.assertRaisesRegex(ValueError, "round 3 unavailable"):
+            freeze(self.run, self.oracle, 3, output)
+        self.assertFalse(output.exists())
+        retired = self.run / "3-1.serial"
+        retired.write_bytes(retired.read_bytes().replace(b"GATE 1", b"GATE 0"))
+        with self.assertRaisesRegex(RuntimeError, "serial digest mismatch"):
+            freeze(self.run, self.oracle, 2, output)
+        self.assertFalse(output.exists())
 
     def test_legacy_digest_alone_cannot_verify_a_round(self):
         del next(e for e in self.events if e["event"] == "readback")["record"]
