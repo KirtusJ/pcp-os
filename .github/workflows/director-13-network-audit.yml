@@ -86,6 +86,27 @@ jobs:
             --measure PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py \
             --arm down-up \
             --output "$RUNNER_TEMP/d13-link-down-up"
+      - name: Control disabled-application Ethernet grant (same feature-on kernel)
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/d13-denied-reference"
+          cd apps/surfbird/guest
+          python3 replay.py ../../../PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            target/x86_64-unknown-none/release/surfcable \
+            --tcp --arm denied --output "$RUNNER_TEMP/d13-denied-reference"
+      - name: Separate non-Ethernet serial-cable guest control
+        if: always()
+        run: |
+          PCPOS_KERNEL_STAGE="$RUNNER_TEMP/d13-serial-kernel-stage" \
+            PCPOS_KERNEL_FEATURES=game-link \
+            sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          cargo build --locked --release --target x86_64-unknown-none \
+            --manifest-path apps/surfbird/guest/Cargo.toml
+          mkdir -p "$RUNNER_TEMP/d13-serial-reference"
+          cd apps/surfbird/guest
+          python3 replay.py ../../../PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            target/x86_64-unknown-none/release/surfcable \
+            --arm allowed --output "$RUNNER_TEMP/d13-serial-reference"
       - name: Retain isolated synthetic guest evidence, including on failure
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -97,6 +118,11 @@ jobs:
             ${{ runner.temp }}/d13-reference/**/stderr.log
             ${{ runner.temp }}/d13-reference/**/guest.pcap
             ${{ runner.temp }}/d13-reference/**/fixture.json
+            ${{ runner.temp }}/d13-denied-reference/**/serial.log
+            ${{ runner.temp }}/d13-denied-reference/**/stderr.log
+            ${{ runner.temp }}/d13-denied-reference/**/guest.pcap
+            ${{ runner.temp }}/d13-serial-reference/**/serial.log
+            ${{ runner.temp }}/d13-serial-reference/**/stderr.log
             ${{ runner.temp }}/d13-link-baseline/result.json
             ${{ runner.temp }}/d13-link-baseline/qmp-journal.json
             ${{ runner.temp }}/d13-link-baseline/serial.log
