@@ -1,0 +1,29 @@
+name: Sleep and Stop timing controls
+on:
+  push:
+    branches: [director-10/sleep-stop-qa]
+permissions:
+  contents: read
+jobs:
+  stop:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install build and emulator tools
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y --no-install-recommends qemu-system-x86 lld binutils
+          rustup toolchain install stable --profile minimal --component rust-src
+      - name: Exercise healthy sleep, delayed sleep and a process that stays awake
+        env:
+          RUSTUP_TOOLCHAIN: stable
+        run: bash .github/sleep-stop-check.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sleep-stop-receipts
+          path: ${{ runner.temp }}/sleep-stop
