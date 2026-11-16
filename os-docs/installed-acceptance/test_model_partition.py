@@ -1,6 +1,8 @@
 """Exercise the checker against real GPT/FAT images containing small test payloads."""
 import hashlib
+import io
 import json
+import os
 import shutil
 import struct
 import subprocess
@@ -10,13 +12,43 @@ import uuid
 import zlib
 from pathlib import Path
 
-from check_model_partition import check
+from check_model_partition import COPY_BYTES, check, copy_partition
 
 REVISION = "a" * 40
 DIRECTORY = "::/models/qwen/qwen2.5-coder-0.5b/" + REVISION
 MODEL = b"model fixture\0\r\n\x1a\xff"
 LICENSE = b"license fixture\r\n"
 TOOLS = ("partx", "mformat", "mmd", "mcopy")
+
+
+class PartitionCopyTests(unittest.TestCase):
+    def test_zero_ranges_and_partition_boundaries(self):
+        zero = bytes(COPY_BYTES)
+        for payload in (zero + bytes(17),
+                        zero + b"\x01" + zero[2:] + b"\xff" + zero + b"tail",
+                        b"A" * COPY_BYTES + zero + bytes(31)):
+            with self.subTest(length=len(payload)), tempfile.TemporaryFile() as volume:
+                disk = io.BytesIO(b"prefix" + payload + b"outside")
+                copy_partition(disk, 6, len(payload), volume)
+                volume.seek(0)
+                self.assertEqual(volume.read(), payload)
+
+    def test_unused_blocks_need_less_space_on_a_sparse_filesystem(self):
+        payload = b"x" * COPY_BYTES + bytes(3 * COPY_BYTES)
+        with tempfile.TemporaryFile() as dense, tempfile.TemporaryFile() as sparse:
+            dense.write(payload)
+            dense.flush()
+            dense_blocks = os.fstat(dense.fileno()).st_blocks
+            sparse.truncate(len(payload))
+            if os.fstat(sparse.fileno()).st_blocks >= dense_blocks:
+                self.skipTest("temporary filesystem does not distinguish holes from written data")
+            sparse.truncate(0)
+            copy_partition(io.BytesIO(payload), 0, len(payload), sparse)
+            self.assertLess(os.fstat(sparse.fileno()).st_blocks, dense_blocks)
+
+    def test_short_source_is_rejected(self):
+        with tempfile.TemporaryFile() as volume, self.assertRaisesRegex(ValueError, "Incomplete"):
+            copy_partition(io.BytesIO(bytes(17)), 0, 18, volume)
 
 
 def make_disk(path, names):

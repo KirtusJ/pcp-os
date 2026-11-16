@@ -17,6 +17,7 @@ import tempfile
 from gpt_integrity import require_gpt_mirror
 
 SECTOR_BYTES = 512
+COPY_BYTES = 1024 * 1024
 
 
 def model_partition(disk, size):
@@ -48,6 +49,25 @@ def model_partition(disk, size):
     if sector_size not in (512, 1024, 2048, 4096) or not 0 < sector_size * sectors <= length:
         raise ValueError("Declared FAT size is invalid for the model partition")
     return int(row["NR"]), offset, length
+
+
+def copy_partition(disk, offset, length, volume):
+    """Copy exactly one partition into an empty temporary file, preserving zero ranges."""
+    disk.seek(offset)
+    remaining = length
+    zero_block = bytes(COPY_BYTES)
+    while remaining:
+        block = disk.read(min(COPY_BYTES, remaining))
+        if not block:
+            raise ValueError("Incomplete model partition")
+        if block == zero_block[:len(block)]:
+            volume.seek(len(block), os.SEEK_CUR)
+        else:
+            volume.write(block)
+        remaining -= len(block)
+    # Seeking across trailing zeroes alone does not extend the destination file.
+    volume.truncate(length)
+    volume.flush()
 
 
 def read_file(disk, offset, path):
@@ -92,15 +112,7 @@ def check(disk_path, manifest_path, *, scope="factory"):
             # Give mtools only the selected extent of a disk changed since release.
             volume = resources.enter_context(tempfile.TemporaryFile())
             volume_offset = 0
-            disk.seek(offset)
-            remaining = length
-            while remaining:
-                block = disk.read(min(1024 * 1024, remaining))
-                if not block:
-                    raise ValueError("Incomplete model partition")
-                volume.write(block)
-                remaining -= len(block)
-            volume.flush()
+            copy_partition(disk, offset, length, volume)
         for name, field in (("qwen.gguf", "model_sha256"), ("LICENSE.txt", "license_sha256")):
             path = f"{directory}/{name}"
             size, digest = read_file(volume, volume_offset, path)
