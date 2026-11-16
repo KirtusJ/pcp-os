@@ -40,7 +40,8 @@ class HistoricalReadback(unittest.TestCase):
         self.events.append(dict(event="admitted", **admission))
         self.active[node] = admission
         prompt = (node + incoming) % 16
-        lines = ["long mode true", "a" * 64 + " (measured; equal to the value the loader named)",
+        lines = ["protections: paging true, supervisor write protection true, no-execute true, long mode true",
+                 f"running image (code and read-only data), SHA-256: {'a' * 64} (measured; equal to the value the loader named)",
                  f"starting resident.elf (10 bytes, SHA-256 {'b' * 64}) with: {node} {incoming} 0",
                  f"NODE {node} PARENT {parent} INPUT {incoming} TICKET {ticket}", f"LM tokens {prompt} 2 3", "GATE 1"]
         lines.extend(f"SPAWN {c} PARENT {node} TICKET {ticket}" for c in children)
@@ -112,6 +113,16 @@ class HistoricalReadback(unittest.TestCase):
         row.update(serial_bytes=len(raw), serial_sha256=sha(raw))
         event["sha256"] = self.digest(event["record"])
         with self.assertRaisesRegex(RuntimeError, "unexpected challenge record"):
+            self.check(2)
+
+    def test_offline_round_requires_the_kernel_measurement_line(self):
+        path = self.run / "1-1.serial"
+        raw = path.read_bytes().replace(b"running image (", b"command line: running image (", 1)
+        path.write_bytes(raw)
+        event = self.events[-1]
+        event["record"]["nodes"][0].update(serial_bytes=len(raw), serial_sha256=sha(raw))
+        event["sha256"] = self.digest(event["record"])
+        with self.assertRaisesRegex(RuntimeError, "kernel protection or measurement report"):
             self.check(2)
 
     def test_legacy_digest_alone_cannot_verify_a_round(self):

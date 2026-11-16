@@ -183,12 +183,18 @@ class Machine:
 def check_start(node, serial, parent, incoming, salt, kernel_hash, elf_hash, oracle):
     ticket = (incoming * 31 + node * 13 + salt + 1) % 1000003
     children = [n for n in range(2, len(PARENTS)) if PARENTS[n] == node]
-    require("long mode true" in serial and "  FAIL" not in serial and
-            f"{kernel_hash} (measured; equal to the value the loader named)" in serial,
-            f"guest {node}: kernel measurement or self-test")
     start = re.search(r"^starting resident\.elf \(\d+ bytes, SHA-256 ([a-f0-9]{64})\) with: (.+)$", serial, re.M)
     require(start and start.groups() == (elf_hash, f"{node} {incoming} {salt}"),
             f"guest {node}: admitted program or arguments")
+    boot = serial[:start.start()]
+    image_label = "running image (code and read-only data), SHA-256: "
+    reports = [line for line in boot.split("\n") if line.startswith(("protections:", "running image ("))]
+    require(reports == [
+        "protections: paging true, supervisor write protection true, no-execute true, long mode true",
+        f"{image_label}{kernel_hash} (measured; equal to the value the loader named)",
+    ], f"guest {node}: kernel protection or measurement report")
+    require("  FAIL" not in boot and not re.search(r"^[1-9]\d* SELF-TEST\(S\) FAILED$", boot, re.M),
+            f"guest {node}: kernel self-test")
     prompt = (node + salt + incoming) % len(oracle)
     wanted = [f"NODE {node} PARENT {parent} INPUT {incoming} TICKET {ticket}",
               "LM tokens " + " ".join(map(str, oracle[prompt])), "GATE 1"]
