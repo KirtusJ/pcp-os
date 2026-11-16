@@ -58,6 +58,7 @@ class Machine:
         self.position = 0
         self.qmp_data = b""
         self.sequence = 0
+        self.last_command = "greeting"
         error = cleanup.enter_context((run / f"{node}-{attempt}.stderr").open("xb"))
         self.child = subprocess.Popen(
             args + ["-uuid", self.uuid, "-serial", f"file:{self.serial}", "-qmp", "stdio"],
@@ -84,30 +85,36 @@ class Machine:
         while b"\n" not in self.qmp_data:
             remaining = deadline - time.monotonic()
             if remaining <= 0 or not self.selector.select(remaining):
-                raise TimeoutError(f"guest {self.node}: QMP response")
+                raise TimeoutError(self.failure_details("QMP response timeout"))
             chunk = os.read(self.child.stdout.fileno(), 8192)
             if not chunk:
-                raise ConnectionError(f"guest {self.node}: QMP disconnected")
+                raise ConnectionError(self.failure_details("QMP disconnected"))
             self.qmp_data += chunk
             require(len(self.qmp_data) <= SERIAL_LIMIT, "oversized QMP message")
         line, self.qmp_data = self.qmp_data.split(b"\n", 1)
         return json.loads(line)
 
+    def failure_details(self, reason):
+        status = self.child.poll()
+        observed = "running at poll" if status is None else f"exit status {status}"
+        return f"guest {self.node}: {self.last_command}: {reason}; emulator {observed}"
+
     def command(self, name, **arguments):
+        self.last_command = name
         self.sequence += 1
         packet = {"execute": name, "id": self.sequence, "arguments": arguments}
         wire = json.dumps(packet).encode() + b"\n"
         try:
             written = self.child.stdin.write(wire)
         except BrokenPipeError as error:
-            raise ConnectionError(f"guest {self.node}: {name} disconnected") from error
+            raise ConnectionError(self.failure_details("broken pipe")) from error
         require(written == len(wire), f"guest {self.node}: incomplete QMP request")
         deadline = time.monotonic() + self.response_timeout
         while True:
             try:
                 response = self.message(deadline)
             except TimeoutError as error:
-                raise TimeoutError(f"guest {self.node}: {name} timed out") from error
+                raise TimeoutError(self.failure_details("response timeout")) from error
             if "event" in response:
                 continue
             require(response.get("id") == self.sequence and "return" in response,

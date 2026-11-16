@@ -54,6 +54,14 @@ class WorkerReadback(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 m.live()
 
+    def test_disconnect_identifies_request_and_observed_exit(self):
+        m = object.__new__(sup.Machine)
+        m.node, m.sequence, m.child = 12, 0, Mock()
+        m.child.poll.return_value = -9
+        m.child.stdin.write.side_effect = BrokenPipeError()
+        with self.assertRaisesRegex(ConnectionError, "guest 12: query-uuid: broken pipe; emulator exit status -9"):
+            m.command("query-uuid")
+
     def test_guest_loss_during_collection_is_visible(self):
         m = object.__new__(sup.Machine)
         m.node, m.child = 7, Mock()
