@@ -295,5 +295,78 @@ class OfflineEvidenceTests(unittest.TestCase):
                             inspected=True,networking_enabled=False)
 
 
+    # Red controls: annotations are not runtime validation. Input values other
+    # than actual Python bools must NOT be truthiness-coerced into INSPECTED.
+    def test_inspected_string_false_cannot_become_inspected_local(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="local", available=True,
+                            inspected="false", networking_enabled=False)
+
+    def test_inspected_string_true_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="local", available=True,
+                            inspected="true", networking_enabled=False)
+
+    def test_inspected_integer_one_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="external", available=True,
+                            inspected=1, networking_enabled=False)
+
+    def test_inspected_integer_zero_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="local", available=True,
+                            inspected=0, networking_enabled=False)
+
+    def test_inspected_none_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="local", available=True,
+                            inspected=None, networking_enabled=False)
+
+    def test_inspected_float_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="external", available=True,
+                            inspected=0.0, networking_enabled=False)
+
+    def test_available_string_false_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="local", available="false",
+                            inspected=False, networking_enabled=False)
+
+    def test_available_integer_zero_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="local", available=0,
+                            inspected=False, networking_enabled=False)
+
+    def test_available_none_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="local", available=None,
+                            inspected=False, networking_enabled=False)
+
+    def test_available_float_one_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="local", available=1.0,
+                            inspected=False, networking_enabled=False)
+
+    def test_network_string_false_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="external", available=True,
+                            inspected=False, networking_enabled="false")
+
+    def test_network_integer_one_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="external", available=True,
+                            inspected=False, networking_enabled=1)
+
+    def test_network_none_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="external", available=True,
+                            inspected=False, networking_enabled=None)
+
+    def test_network_float_zero_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="external", available=True,
+                            inspected=False, networking_enabled=0.0)
+
+
 if __name__ == "__main__":
     unittest.main()
