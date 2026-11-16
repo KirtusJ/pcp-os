@@ -63,3 +63,38 @@ The Principal's optional ISO model requirement and separate ISO-on-each-master-p
 requirement remain open. No changes to D10's register, D2's raster, D11's
 memory oracle, D12/D13's containment lanes, PT's Tailorbird source, installed
 media or the default distribution are made by this test-only candidate.
+
+## Future chunked-ISO byte-reconstruction preflight
+
+A separate **test-only** script, \`check_chunk_manifest.py\`, can check an
+ordered series of locally held part files against a separately hash-pinned
+manifest. It streams each part once, checking part SHA-256 and byte length
+while simultaneously computing the digest of **the concatenation in order**.
+It does not build an ISO. The synthetic unit fixtures are short strings,
+not bootable images or model weights.
+
+\`\`\`sh
+python3 audit/director-14/optional-dual-qwen/check_chunk_manifest.py \
+  --root /readonly/parts --manifest /readonly/chunks.json \
+  --expected-manifest-sha256 64_lowercase_hex_from_separate_handoff
+\`\`\`
+
+The JSON manifest has exactly four fields:
+\`schema = "pcpos.optional-dual-qwen-chunk-inventory.v1"\`,
+\`source_revision\` (full 40-hex commit), \`iso\`
+(\`name\` ending in \`.iso\`, \`bytes\`, \`sha256\`), and
+\`parts\` (an ordered nonempty list of objects with \`index\` starting at
+zero, \`path\`, \`bytes\`, \`sha256\`).
+The script refuses wrong indices/order, missing, changed, repeated, aliased
+or symlinked chunks, path escapes and false assembled hashes. The
+verified property is **the exact concatenated byte digest** of a
+separately named candidate. Neither a claimed digest, a green
+synthetic test, nor this checker authenticates a publisher or proves
+those bytes contain a valid ISO filesystem, boots PCP OS or carry
+either genuine Qwen model. The check is for an immutable,
+trusted snapshot: concurrent replacement of parent directories and
+model authorization remain separate concerns.
+
+The new tests run in the same path-scoped CI as the original inventory
+tests. No source for the installed factory checker, Tailorbird, Qwen
+runtime, PCP OS kernel, ISO release or master branch is modified.
