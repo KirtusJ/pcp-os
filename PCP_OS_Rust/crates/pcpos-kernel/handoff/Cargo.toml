@@ -1,0 +1,16 @@
+[package]
+name = "pcpos-boot-handoff"
+version = "0.1.0"
+description = "Proposed fixed-width x86-64 PCP OS firmware handoff contract (not yet wired to a loader)"
+edition = "2021"
+authors = ["Kirtus Justus"]
+publish = false
+
+# Keep this proof-of-contract crate isolated from the current kernel workspace
+# and the existing Multiboot image. No changes to shared Cargo.lock are needed.
+[workspace]
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
