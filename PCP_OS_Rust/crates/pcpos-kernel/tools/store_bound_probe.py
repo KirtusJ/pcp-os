@@ -20,7 +20,7 @@ from store_role_probe import (
 )
 
 ID_A = "0123456789abcdeffedcba9876543210"
-ID_B = "123456789abcdeffedcba9876543211"
+ID_B = "1123456789abcdeffedcba9876543211"
 MARKER_V2 = b"PCPOS USER STORE 2\n"
 ID_OFFSET = 32
 
