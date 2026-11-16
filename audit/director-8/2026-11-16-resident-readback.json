@@ -1,0 +1,258 @@
+{
+  "recorded_utc": "2026-11-16T16:08:49Z",
+  "kernel_measurement": "3ed504581444f47c156a4952cd7c3b8741e4677012e1205eaa637e12e5aa6d5b",
+  "guest_elf_sha256": "c14bc81c25d5d7012a88532a854e42583378c2285734d650667dc4a52cf297c8",
+  "round_sha256": "801da3972104d46e49a9403a68946021a0e8327a7bb5437d5303873628af7686",
+  "round_file_utf8": "[\n  {\n    \"node\": 1,\n    \"parent\": 0,\n    \"uuid\": \"d1a87759-29ea-44a7-a0b7-35aba8546f28\",\n    \"previous_uuid\": \"d1a87759-29ea-44a7-a0b7-35aba8546f28\",\n    \"key\": 2,\n    \"tokens\": [\n      359,\n      413,\n      286\n    ],\n    \"start\": 9331,\n    \"end\": 9376,\n    \"serial\": \"d8d/1.serial\",\n    \"slice_sha256\": \"c574ed28a0c183b0bb1d457407095177e6e83c9a11d188f5ba24c700431e1e11\"\n  },\n  {\n    \"node\": 2,\n    \"parent\": 1,\n    \"uuid\": \"fd1fd7b8-3b91-4bc1-b1de-b7db30a3502d\",\n    \"previous_uuid\": \"bade6c7b-2001-4237-bd6f-e059a5ab981d\",\n    \"key\": 4,\n    \"tokens\": [\n      291,\n      259,\n      412\n    ],\n    \"start\": 9113,\n    \"end\": 9158,\n    \"serial\": \"d8e-repair/2.serial\",\n    \"slice_sha256\": \"2233fa5f56e6ddcec9d88984738336748fbc2d0aa3f7919ab2a981e6f994dde4\"\n  },\n  {\n    \"node\": 3,\n    \"parent\": 1,\n    \"uuid\": \"b51a9d34-9bc7-4b49-bf5a-ffe198e6c758\",\n    \"previous_uuid\": \"b51a9d34-9bc7-4b49-bf5a-ffe198e6c758\",\n    \"key\": 3,\n    \"tokens\": [\n      338,\n      397,\n      355\n    ],\n    \"start\": 9299,\n    \"end\": 9344,\n    \"serial\": \"d8d/3.serial\",\n    \"slice_sha256\": \"70bad62c314bb286f2ca4b56d342bb04289d7f0e3a5f62edbe29cc2b4adc0e5d\"\n  },\n  {\n    \"node\": 4,\n    \"parent\": 1,\n    \"uuid\": \"7d535521-00ec-472b-ba98-ec6174c3cb03\",\n    \"previous_uuid\": \"7d535521-00ec-472b-ba98-ec6174c3cb03\",\n    \"key\": 8,\n    \"tokens\": [\n      359,\n      413,\n      286\n    ],\n    \"start\": 9334,\n    \"end\": 9379,\n    \"serial\": \"d8d/4.serial\",\n    \"slice_sha256\": \"66ae65b63061f5893fb31891253059cbd5f7361247c5e831a4dfb74381a78adb\"\n  },\n  {\n    \"node\": 5,\n    \"parent\": 2,\n    \"uuid\": \"68bb7138-3a70-4fdf-9aa1-e4bcf8653285\",\n    \"previous_uuid\": \"037faac6-c975-4606-8df0-e2941e88e029\",\n    \"key\": 3,\n    \"tokens\": [\n      338,\n      397,\n      355\n    ],\n    \"start\": 9055,\n    \"end\": 9100,\n    \"serial\": \"d8f-live/instance-1794844819155340644-5/5.serial\",\n    \"slice_sha256\": \"0e989f4937ca5b24524de60bf1873c41cc6568e9d12902a9bca341a7f8426391\"\n  },\n  {\n    \"node\": 6,\n    \"parent\": 2,\n    \"uuid\": \"ff47d6a3-b4cf-449d-92d0-cba35ba79f45\",\n    \"previous_uuid\": \"ff47d6a3-b4cf-449d-92d0-cba35ba79f45\",\n    \"key\": 7,\n    \"tokens\": [\n      346,\n      391,\n      266\n    ],\n    \"start\": 9301,\n    \"end\": 9346,\n    \"serial\": \"d8d/6.serial\",\n    \"slice_sha256\": \"6b2b0d80ee4bddb4e32fcbda6b5661adfd63177437ab8694f4ff620627dc48bc\"\n  },\n  {\n    \"node\": 7,\n    \"parent\": 2,\n    \"uuid\": \"d54f2d34-09d8-457d-8c55-4e29806d9fc2\",\n    \"previous_uuid\": \"5f90c220-fc63-408d-aa2a-29512a8c85dc\",\n    \"key\": 8,\n    \"tokens\": [\n      359,\n      413,\n      286\n    ],\n    \"start\": 8989,\n    \"end\": 9034,\n    \"serial\": \"d8f-live/instance-1794844819191537865-7/7.serial\",\n    \"slice_sha256\": \"5bc58ae17027f574e836ce42de1355c92a0e0cc01eb54a16792e8e535be96552\"\n  },\n  {\n    \"node\": 8,\n    \"parent\": 3,\n    \"uuid\": \"e04a8320-215c-4534-b418-9a53fd55a629\",\n    \"previous_uuid\": \"e0a07db1-d8f3-45ec-955c-16c314942154\",\n    \"key\": 7,\n    \"tokens\": [\n      346,\n      391,\n      266\n    ],\n    \"start\": 9022,\n    \"end\": 9067,\n    \"serial\": \"d8f-live/instance-1794844819198602145-8/8.serial\",\n    \"slice_sha256\": \"baf8c8357bc6c60994fb4674aef3ec9c542a77c496a184afd633856454f6aba5\"\n  },\n  {\n    \"node\": 9,\n    \"parent\": 3,\n    \"uuid\": \"feeb5789-a2bf-454a-8f48-7d34290a545e\",\n    \"previous_uuid\": \"c78eddc6-f230-44d5-b5c1-0ad22ac00463\",\n    \"key\": 6,\n    \"tokens\": [\n      338,\n      397,\n      355\n    ],\n    \"start\": 8989,\n    \"end\": 9034,\n    \"serial\": \"d8f-live/instance-1794844974270339799-9/9.serial\",\n    \"slice_sha256\": \"fedd44f71aa7c065320a680fd8266fb8d67a0ba8cfc83cc038939f8e0d9d7574\"\n  },\n  {\n    \"node\": 10,\n    \"parent\": 4,\n    \"uuid\": \"987a61bc-b7ab-4f6f-a6a3-cfba4f33bbf6\",\n    \"previous_uuid\": \"987a61bc-b7ab-4f6f-a6a3-cfba4f33bbf6\",\n    \"key\": 1,\n    \"tokens\": [\n      346,\n      286,\n      399\n    ],\n    \"start\": 9279,\n    \"end\": 9325,\n    \"serial\": \"d8d/10.serial\",\n    \"slice_sha256\": \"a75aa3879393ffa591a4e3d52f9b0742f28fc2ba32f33df8a80383198ac268f5\"\n  },\n  {\n    \"node\": 11,\n    \"parent\": 4,\n    \"uuid\": \"32b3d962-ffa6-4985-8076-6c136d110e60\",\n    \"previous_uuid\": \"32b3d962-ffa6-4985-8076-6c136d110e60\",\n    \"key\": 1,\n    \"tokens\": [\n      346,\n      286,\n      399\n    ],\n    \"start\": 9279,\n    \"end\": 9325,\n    \"serial\": \"d8d/11.serial\",\n    \"slice_sha256\": \"5be78555741cda43518f8870d487127cd484032481189310ebdc6c068664d72a\"\n  },\n  {\n    \"node\": 12,\n    \"parent\": 4,\n    \"uuid\": \"f1d39bfc-3d9a-46a4-af76-4081cc95da09\",\n    \"previous_uuid\": \"f1d39bfc-3d9a-46a4-af76-4081cc95da09\",\n    \"key\": 5,\n    \"tokens\": [\n      338,\n      286,\n      399\n    ],\n    \"start\": 9233,\n    \"end\": 9279,\n    \"serial\": \"d8d/12.serial\",\n    \"slice_sha256\": \"dd60b6748d62b34884d557e0eeb93b3c9e7452562f80d38c5391d32f62b1a083\"\n  },\n  {\n    \"node\": 13,\n    \"parent\": 5,\n    \"uuid\": \"0cb496f9-6248-4a9a-991c-9c1de7a3782e\",\n    \"previous_uuid\": \"0cb496f9-6248-4a9a-991c-9c1de7a3782e\",\n    \"key\": 5,\n    \"tokens\": [\n      338,\n      286,\n      399\n    ],\n    \"start\": 9153,\n    \"end\": 9199,\n    \"serial\": \"d8d/13.serial\",\n    \"slice_sha256\": \"f9c7972769a2412bd6892293b29525e75d1530f6d3094600f4806ce42c2cc438\"\n  },\n  {\n    \"node\": 14,\n    \"parent\": 5,\n    \"uuid\": \"b38a4c96-fa33-44df-95d6-f08629cd76e5\",\n    \"previous_uuid\": \"8160bcda-4014-46fb-9ba9-795927d2ed9d\",\n    \"key\": 3,\n    \"tokens\": [\n      338,\n      397,\n      355\n    ],\n    \"start\": 8960,\n    \"end\": 9006,\n    \"serial\": \"d8f-live/instance-1794845117729884574-14/14.serial\",\n    \"slice_sha256\": \"8d553747e3400832c7d0ddae4f840f0a923556155af37a09eed006183f961677\"\n  },\n  {\n    \"node\": 15,\n    \"parent\": 5,\n    \"uuid\": \"b5faab85-ae8c-49da-923c-0b050ca2f887\",\n    \"previous_uuid\": \"b5faab85-ae8c-49da-923c-0b050ca2f887\",\n    \"key\": 4,\n    \"tokens\": [\n      291,\n      259,\n      412\n    ],\n    \"start\": 9153,\n    \"end\": 9199,\n    \"serial\": \"d8d/15.serial\",\n    \"slice_sha256\": \"ecc2b070142f53819b7e2bb453c969901dedc3b3673658955900df4f078db893\"\n  },\n  {\n    \"node\": 16,\n    \"parent\": 6,\n    \"uuid\": \"fcf04d20-b3e9-4ba7-8e9e-d547a897c370\",\n    \"previous_uuid\": \"fcf04d20-b3e9-4ba7-8e9e-d547a897c370\",\n    \"key\": 2,\n    \"tokens\": [\n      359,\n      413,\n      286\n    ],\n    \"start\": 9153,\n    \"end\": 9199,\n    \"serial\": \"d8d/16.serial\",\n    \"slice_sha256\": \"74cd38ecdb66eaaa697e1d479863fa0da66fef34a604437a8c262d91a53a15c0\"\n  },\n  {\n    \"node\": 17,\n    \"parent\": 6,\n    \"uuid\": \"65aa0ddc-0b6e-4002-87a9-4e76e83edf59\",\n    \"previous_uuid\": \"65aa0ddc-0b6e-4002-87a9-4e76e83edf59\",\n    \"key\": 2,\n    \"tokens\": [\n      359,\n      413,\n      286\n    ],\n    \"start\": 9153,\n    \"end\": 9199,\n    \"serial\": \"d8d/17.serial\",\n    \"slice_sha256\": \"54d291e34680da222f914487c5ede4d5f4289b9103b4729c8f2aa6c26383064c\"\n  },\n  {\n    \"node\": 18,\n    \"parent\": 7,\n    \"uuid\": \"aad417e4-3a47-478e-a6dd-0d35914f6b10\",\n    \"previous_uuid\": \"aad417e4-3a47-478e-a6dd-0d35914f6b10\",\n    \"key\": 9,\n    \"tokens\": [\n      338,\n      397,\n      355\n    ],\n    \"start\": 9153,\n    \"end\": 9199,\n    \"serial\": \"d8d/18.serial\",\n    \"slice_sha256\": \"56b3bbe727e98771110640356685427e10486f9959130710e471079139fc0d55\"\n  },\n  {\n    \"node\": 19,\n    \"parent\": 8,\n    \"uuid\": \"bbe99358-8a23-4bb9-bc64-998d1fcee91f\",\n    \"previous_uuid\": \"bbe99358-8a23-4bb9-bc64-998d1fcee91f\",\n    \"key\": 7,\n    \"tokens\": [\n      346,\n      391,\n      266\n    ],\n    \"start\": 9153,\n    \"end\": 9199,\n    \"serial\": \"d8d/19.serial\",\n    \"slice_sha256\": \"60f677cdfd2c74c074222ece4cd93675cccd2177cc9b0867ea5fbbebd3594fac\"\n  },\n  {\n    \"node\": 20,\n    \"parent\": 8,\n    \"uuid\": \"a57347e8-6b03-4aa3-9ddd-29759924718e\",\n    \"previous_uuid\": \"a57347e8-6b03-4aa3-9ddd-29759924718e\",\n    \"key\": 0,\n    \"tokens\": [\n      410,\n      447,\n      416\n    ],\n    \"start\": 9153,\n    \"end\": 9199,\n    \"serial\": \"d8d/20.serial\",\n    \"slice_sha256\": \"46f3174da596a3bd3e118be1380d778f8746f0ee5778996569e8ec7a90846527\"\n  },\n  {\n    \"node\": 21,\n    \"parent\": 9,\n    \"uuid\": \"63e658ad-3b80-4005-a0e2-6e4e39029019\",\n    \"previous_uuid\": \"63e658ad-3b80-4005-a0e2-6e4e39029019\",\n    \"key\": 6,\n    \"tokens\": [\n      338,\n      397,\n      355\n    ],\n    \"start\": 9153,\n    \"end\": 9199,\n    \"serial\": \"d8d/21.serial\",\n    \"slice_sha256\": \"149bba925148a0900130a3ea46d62461b16977fab92dcc804b11a502ed510423\"\n  },\n  {\n    \"node\": 22,\n    \"parent\": 10,\n    \"uuid\": \"ff8d760a-f580-42e0-90a2-789ffb133488\",\n    \"previous_uuid\": \"ff8d760a-f580-42e0-90a2-789ffb133488\",\n    \"key\": 3,\n    \"tokens\": [\n      338,\n      397,\n      355\n    ],\n    \"start\": 9154,\n    \"end\": 9200,\n    \"serial\": \"d8d/22.serial\",\n    \"slice_sha256\": \"05063898b35a825748e2998709ef141864cc7bc151c8c5cc883f2134f4d64fe0\"\n  },\n  {\n    \"node\": 23,\n    \"parent\": 11,\n    \"uuid\": \"fc5d72bb-f118-4ac5-8799-b06fb79e1867\",\n    \"previous_uuid\": \"ced97ce5-460d-431d-93f0-5477a50c30b6\",\n    \"key\": 5,\n    \"tokens\": [\n      338,\n      286,\n      399\n    ],\n    \"start\": 8961,\n    \"end\": 9007,\n    \"serial\": \"d8f-live/instance-1794845117737855636-23/23.serial\",\n    \"slice_sha256\": \"462a6df7c9ddffa89d4248dea106fcfd5f1a4e2cfd2dca5421c6d6aa6a26a55c\"\n  },\n  {\n    \"node\": 24,\n    \"parent\": 12,\n    \"uuid\": \"ee6c2a87-c80c-4ea1-b885-26a77a45c77a\",\n    \"previous_uuid\": \"dd206fcb-2fe7-43e7-a131-18658dd3a92f\",\n    \"key\": 9,\n    \"tokens\": [\n      338,\n      397,\n      355\n    ],\n    \"start\": 8961,\n    \"end\": 9007,\n    \"serial\": \"d8f-live/instance-1794844974267927544-24/24.serial\",\n    \"slice_sha256\": \"fbfa89e6e539e261c1b7036c521f5c5f28ffe5d59532b6ff00341a6074693e26\"\n  }\n]\n",
+  "reference_tokens": [
+    [
+      410,
+      447,
+      416
+    ],
+    [
+      346,
+      286,
+      399
+    ],
+    [
+      359,
+      413,
+      286
+    ],
+    [
+      338,
+      397,
+      355
+    ],
+    [
+      291,
+      259,
+      412
+    ],
+    [
+      338,
+      286,
+      399
+    ],
+    [
+      338,
+      397,
+      355
+    ],
+    [
+      346,
+      391,
+      266
+    ],
+    [
+      359,
+      413,
+      286
+    ],
+    [
+      338,
+      397,
+      355
+    ],
+    [
+      342,
+      300,
+      360
+    ],
+    [
+      338,
+      286,
+      399
+    ],
+    [
+      346,
+      397,
+      355
+    ],
+    [
+      338,
+      286,
+      399
+    ],
+    [
+      291,
+      278,
+      333
+    ],
+    [
+      410,
+      459,
+      363
+    ]
+  ],
+  "guest_evidence": {
+    "1": {
+      "guest_launch_records": [
+        "NODE 1 PARENT 0 INPUT 855890 TICKET 532531",
+        "SPAWN 2 PARENT 1 TICKET 532531",
+        "SPAWN 3 PARENT 1 TICKET 532531",
+        "SPAWN 4 PARENT 1 TICKET 532531"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 2\r\nLM tokens 359 413 286\r\nREADY 1\r\n"
+    },
+    "2": {
+      "guest_launch_records": [
+        "NODE 2 PARENT 1 INPUT 532531 TICKET 508445",
+        "SPAWN 5 PARENT 2 TICKET 508445",
+        "SPAWN 6 PARENT 2 TICKET 508445",
+        "SPAWN 7 PARENT 2 TICKET 508445"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 4\r\nLM tokens 291 259 412\r\nREADY 2\r\n"
+    },
+    "3": {
+      "guest_launch_records": [
+        "NODE 3 PARENT 1 INPUT 532531 TICKET 508458",
+        "SPAWN 8 PARENT 3 TICKET 508458",
+        "SPAWN 9 PARENT 3 TICKET 508458"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 3\r\nLM tokens 338 397 355\r\nREADY 3\r\n"
+    },
+    "4": {
+      "guest_launch_records": [
+        "NODE 4 PARENT 1 INPUT 532531 TICKET 508471",
+        "SPAWN 10 PARENT 4 TICKET 508471",
+        "SPAWN 11 PARENT 4 TICKET 508471",
+        "SPAWN 12 PARENT 4 TICKET 508471"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 8\r\nLM tokens 359 413 286\r\nREADY 4\r\n"
+    },
+    "5": {
+      "guest_launch_records": [
+        "NODE 5 PARENT 2 INPUT 508445 TICKET 761821",
+        "SPAWN 13 PARENT 5 TICKET 761821",
+        "SPAWN 14 PARENT 5 TICKET 761821",
+        "SPAWN 15 PARENT 5 TICKET 761821"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 3\r\nLM tokens 338 397 355\r\nREADY 5\r\n"
+    },
+    "6": {
+      "guest_launch_records": [
+        "NODE 6 PARENT 2 INPUT 508445 TICKET 761834",
+        "SPAWN 16 PARENT 6 TICKET 761834",
+        "SPAWN 17 PARENT 6 TICKET 761834"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 7\r\nLM tokens 346 391 266\r\nREADY 6\r\n"
+    },
+    "7": {
+      "guest_launch_records": [
+        "NODE 7 PARENT 2 INPUT 508445 TICKET 761847",
+        "SPAWN 18 PARENT 7 TICKET 761847"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 8\r\nLM tokens 359 413 286\r\nREADY 7\r\n"
+    },
+    "8": {
+      "guest_launch_records": [
+        "NODE 8 PARENT 3 INPUT 508458 TICKET 762263",
+        "SPAWN 19 PARENT 8 TICKET 762263",
+        "SPAWN 20 PARENT 8 TICKET 762263"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 7\r\nLM tokens 346 391 266\r\nREADY 8\r\n"
+    },
+    "9": {
+      "guest_launch_records": [
+        "NODE 9 PARENT 3 INPUT 508458 TICKET 762276",
+        "SPAWN 21 PARENT 9 TICKET 762276"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 6\r\nLM tokens 338 397 355\r\nREADY 9\r\n"
+    },
+    "10": {
+      "guest_launch_records": [
+        "NODE 10 PARENT 4 INPUT 508471 TICKET 762692",
+        "SPAWN 22 PARENT 10 TICKET 762692"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 1\r\nLM tokens 346 286 399\r\nREADY 10\r\n"
+    },
+    "11": {
+      "guest_launch_records": [
+        "NODE 11 PARENT 4 INPUT 508471 TICKET 762705",
+        "SPAWN 23 PARENT 11 TICKET 762705"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 1\r\nLM tokens 346 286 399\r\nREADY 11\r\n"
+    },
+    "12": {
+      "guest_launch_records": [
+        "NODE 12 PARENT 4 INPUT 508471 TICKET 762718",
+        "SPAWN 24 PARENT 12 TICKET 762718"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 5\r\nLM tokens 338 286 399\r\nREADY 12\r\n"
+    },
+    "13": {
+      "guest_launch_records": [
+        "NODE 13 PARENT 5 INPUT 761821 TICKET 616557"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 5\r\nLM tokens 338 286 399\r\nREADY 13\r\n"
+    },
+    "14": {
+      "guest_launch_records": [
+        "NODE 14 PARENT 5 INPUT 761821 TICKET 616570"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 3\r\nLM tokens 338 397 355\r\nREADY 14\r\n"
+    },
+    "15": {
+      "guest_launch_records": [
+        "NODE 15 PARENT 5 INPUT 761821 TICKET 616583"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 4\r\nLM tokens 291 259 412\r\nREADY 15\r\n"
+    },
+    "16": {
+      "guest_launch_records": [
+        "NODE 16 PARENT 6 INPUT 761834 TICKET 616999"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 2\r\nLM tokens 359 413 286\r\nREADY 16\r\n"
+    },
+    "17": {
+      "guest_launch_records": [
+        "NODE 17 PARENT 6 INPUT 761834 TICKET 617012"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 2\r\nLM tokens 359 413 286\r\nREADY 17\r\n"
+    },
+    "18": {
+      "guest_launch_records": [
+        "NODE 18 PARENT 7 INPUT 761847 TICKET 617428"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 9\r\nLM tokens 338 397 355\r\nREADY 18\r\n"
+    },
+    "19": {
+      "guest_launch_records": [
+        "NODE 19 PARENT 8 INPUT 762263 TICKET 630337"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 7\r\nLM tokens 346 391 266\r\nREADY 19\r\n"
+    },
+    "20": {
+      "guest_launch_records": [
+        "NODE 20 PARENT 8 INPUT 762263 TICKET 630350"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 0\r\nLM tokens 410 447 416\r\nREADY 20\r\n"
+    },
+    "21": {
+      "guest_launch_records": [
+        "NODE 21 PARENT 9 INPUT 762276 TICKET 630766"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 6\r\nLM tokens 338 397 355\r\nREADY 21\r\n"
+    },
+    "22": {
+      "guest_launch_records": [
+        "NODE 22 PARENT 10 INPUT 762692 TICKET 643675"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 3\r\nLM tokens 338 397 355\r\nREADY 22\r\n"
+    },
+    "23": {
+      "guest_launch_records": [
+        "NODE 23 PARENT 11 INPUT 762705 TICKET 644091"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 5\r\nLM tokens 338 286 399\r\nREADY 23\r\n"
+    },
+    "24": {
+      "guest_launch_records": [
+        "NODE 24 PARENT 12 INPUT 762718 TICKET 644507"
+      ],
+      "challenge_serial_bytes": "CHALLENGE 9\r\nLM tokens 338 397 355\r\nREADY 24\r\n"
+    }
+  }
+}
