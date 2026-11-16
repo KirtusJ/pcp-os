@@ -87,8 +87,22 @@ unavailable mode indices, out-of-range geometry and native-driver calls
 mistaken for UEFI Boot Services calls. Failed \`EFI_STATUS\` or contradictory
 readback never yields \`ConsistentWithOsModeChange\`. Unknown actor or
 incomplete capture stays unresolved, not silently promoted to PCP-OS credit.
-A valid \`PixelBltOnly\` mode may be selectable but supplies no direct
-writable framebuffer; the helper never authorizes drawing into it.
+
+**Material GOP readback correction:** An unchanged \`GOP.Mode.Mode\` index does
+NOT imply unchanged width, height, pitch, pixel format, mode count, framebuffer
+base or framebuffer extent. A successful same-index \`SetMode\` with changed
+metadata is now \`SameModeNumberChangedMetadata\`, not
+\`ReassertedActiveMode\`. A failed call with an unchanged mode index but changed
+metadata is \`FailedCallChangedMetadata\`, not a misleading
+\`AttemptNotConfirmed\` that obscures the new framebuffer state. These outcomes
+do not assert who changed the metadata, that physical pixels were modified, or
+that a device authorized any access.
+
+A \`PixelBltOnly\` mode can be selected but supplies no directly writable
+linear framebuffer. In the advisory classifier, such a mode does not require
+a usable linear scanline pitch; its memory address and pixel stride must never
+be used to draw. For direct formats, \`PixelsPerScanLine >= width\` remains
+a necessary geometry check, not a proof of a valid physical mapping.
 
 **EDID preference needs further independently checked evidence:** bytes,
 checksum, active/discovered/override source, matching GOP device path,
@@ -97,11 +111,12 @@ supported GOP mode. Matching width and height **alone** cannot prove the
 preferred refresh/timing or that EDID caused a mode-selection decision.
 No EDID preference conclusion is returned by this helper.
 
-The \`tests/gop_witness.rs\` file adds **28 synthetic controls**, including
+The \`tests/gop_witness.rs\` file adds **34 synthetic controls**, including
 already-correct initial mode, firmware/GRUB/unknown actors, false success,
-failed calls, late post-ExitBootServices readbacks, wrong handle, stale
-sequences, padded pitch, and a BLT-only selection without framebuffer
-permission. These are **not** real firmware events or kernel execution.
+failed calls, same-index metadata drift after successful or failed calls,
+late post-ExitBootServices readbacks, wrong handle, stale sequences, padded
+pitch, and a BLT-only selection without a usable linear pitch. The checker
+never authorizes a physical framebuffer write. These are **not** real firmware events or kernel execution.
 Test with the same \`cargo test --manifest-path\` commands above.
 The existing handoff wire ABI and 42 original validation cases are unchanged.
 This section does **not** mean PT's locally reported EFI preview has used
