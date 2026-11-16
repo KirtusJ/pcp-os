@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 import sys
 
@@ -75,14 +76,43 @@ def judge(images, status, serial_bytes):
     }
 
 
+
+def verify_checkout_sources(base: Path, candidate: Path):
+    """Require actual checked-out commits to match the names reported in result.json.
+
+    The workflow and this checker are two separately editable files. A partial
+    update can create a falsely attributed result even with a correct build.
+    Fail closed before issuing a version-bound identity verdict.
+    """
+    pins = {"base": (base, PIN_BASE), "candidate": (candidate, PIN_DIAGNOSTIC)}
+    observed = {}
+    for name, (checkout, expected) in pins.items():
+        try:
+            actual = subprocess.check_output(
+                ["git", "-C", str(checkout), "rev-parse", "HEAD"],
+                stderr=subprocess.PIPE, text=True
+            ).strip()
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise ValueError(f"{name}: cannot verify pinned Git checkout") from exc
+        observed[name] = actual
+        if actual != expected:
+            raise ValueError(
+                f"{name}: CHECKOUT_PIN_MISMATCH expected={expected} observed={actual}"
+            )
+    return observed
+
+
 def main():
     if len(sys.argv) != 3:
         raise SystemExit("usage: evaluate_default_image.py <result-directory> <qemu-exit-file>")
     data = Path(sys.argv[1])
+    # The checkout path check precedes every version-bound inference.
+    verified_checkouts = verify_checkout_sources(Path("baseline"), Path("candidate"))
     images = load_observation(data)
     status = int(Path(sys.argv[2]).read_text().strip())
     raw = (data / "guest-serial.log").read_bytes()
     result = judge(images, status, raw)
+    result["verified_checkout_commits"] = verified_checkouts
     (data / "result.json").write_text(json.dumps(result, indent=2, sort_keys=True)+"\n")
     print(json.dumps(result, sort_keys=True))
     return 0 if result["disposition"] == "BYTE_IDENTICAL_IN_EXACT_BUILD_CONTRACT" else 1
