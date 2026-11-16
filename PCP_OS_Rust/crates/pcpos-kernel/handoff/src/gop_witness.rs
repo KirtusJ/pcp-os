@@ -86,6 +86,7 @@ pub enum Error {
     UnsupportedPixelFormat,
     WrongStage,
     RequestOutOfRange,
+    InvalidInitiator,
 }
 
 /// All conclusions are about internally consistent *reported data* only.
@@ -103,7 +104,7 @@ pub enum Assessment {
     /// matched after-readback. Attribution still relies on producer honesty.
     ConsistentWithOsModeChange,
     /// OS-attributed successful call to a mode that was already active.
-    OsReassertedMode,
+    ReassertedActiveMode,
     /// Successful recorded call and change, but not OS-attributed.
     OtherActorModeChange,
     /// SetMode request failed or cannot be shown to have changed mode.
@@ -134,6 +135,16 @@ fn checked_snapshot(s: ModeSnapshot) -> Result<(), Error> {
     Ok(())
 }
 
+fn same_reported_mode_state(a: ModeSnapshot, b: ModeSnapshot) -> bool {
+    a.current_mode == b.current_mode
+        && a.max_modes == b.max_modes
+        && a.width == b.width && a.height == b.height
+        && a.pixels_per_scan_line == b.pixels_per_scan_line
+        && a.pixel_format == b.pixel_format
+        && a.framebuffer_base == b.framebuffer_base
+        && a.framebuffer_size == b.framebuffer_size
+}
+
 pub fn assess(c: &Capture) -> Result<Assessment, Error> {
     checked_snapshot(c.before)?;
     checked_snapshot(c.after)?;
@@ -154,7 +165,7 @@ pub fn assess(c: &Capture) -> Result<Assessment, Error> {
         return Ok(Assessment::MissingCaptureCoverage);
     }
     let Some(call) = c.set_mode else {
-        if c.before.current_mode == c.after.current_mode {
+        if same_reported_mode_state(c.before, c.after) {
             return Ok(Assessment::ReportedAlreadyActive);
         }
         return Ok(Assessment::UnattributedChange);
@@ -168,6 +179,11 @@ pub fn assess(c: &Capture) -> Result<Assessment, Error> {
     if call.stage != Stage::BootServicesActive {
         return Err(Error::WrongStage);
     }
+    // A native driver after ExitBootServices does not invoke the UEFI GOP
+    // SetMode service. It needs a different event format and scope.
+    if call.initiator == Initiator::NativeDriver {
+        return Err(Error::InvalidInitiator);
+    }
     if call.requested_mode >= c.before.max_modes {
         return Err(Error::RequestOutOfRange);
     }
@@ -179,12 +195,15 @@ pub fn assess(c: &Capture) -> Result<Assessment, Error> {
                 return Ok(Assessment::ContradictoryReadback);
             }
             if !changed {
-                return Ok(Assessment::OsReassertedMode);
+                return Ok(Assessment::ReassertedActiveMode);
             }
-            if call.initiator == Initiator::OsControlledPreExit {
-                Ok(Assessment::ConsistentWithOsModeChange)
-            } else {
-                Ok(Assessment::OtherActorModeChange)
+            match call.initiator {
+                Initiator::OsControlledPreExit => Ok(Assessment::ConsistentWithOsModeChange),
+                Initiator::Firmware | Initiator::Bootloader => {
+                    Ok(Assessment::OtherActorModeChange)
+                }
+                Initiator::Unattributed => Ok(Assessment::UnattributedChange),
+                Initiator::NativeDriver => Err(Error::InvalidInitiator),
             }
         }
         SetModeStatus::EfiUnsupported | SetModeStatus::EfiDeviceError
