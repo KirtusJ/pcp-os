@@ -465,12 +465,16 @@ def replayed_native_guest_receipt(image: str, kernel: Path, measurement: str, ev
     raw = original.read_bytes()
     txt = raw.decode("utf-8")
     pattern = (
-        rf"^command line: /kernel\.elf32 then=off image={re.escape(measurement)} "
-        rf"d12_ticket=([0-9a-f]{{24}}) d12_attempt=1$"
+        rf"command line: /kernel\.elf32 then=off image={re.escape(measurement)} "
+        rf"d12_ticket=([0-9a-f]{{24}}) d12_attempt=1"
     )
-    matches = re.findall(pattern, txt, flags=re.MULTILINE)
-    assert len(matches) == 1, "source must be the exact prior native guest attempt 1"
-    old_ticket = matches[0]
+    source_commands = [
+        line for line in txt.splitlines() if line.startswith("command line: ")
+    ]
+    assert len(source_commands) == 1, "source must have one exact kernel command line"
+    source_match = re.fullmatch(pattern, source_commands[0])
+    assert source_match is not None, "source must be the exact prior native guest attempt 1"
+    old_ticket = source_match.group(1)
     assert "ALL SELF-TESTS PASS." in txt and "PCP OS kernel " in txt
     with tempfile.TemporaryDirectory(prefix="d12-native-replay-") as tmp:
         directory = Path(tmp)
