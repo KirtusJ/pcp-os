@@ -28,10 +28,14 @@ def fixture(bits, entry=0x10000C, header_off=0x1000):
     struct.pack_into("<HHI", raw, 16, 2, 62 if bits == 64 else 3, 1)
     if bits == 64:
         struct.pack_into("<Q", raw, 24, entry)
+        struct.pack_into("<Q", raw, 32, 0x40)
+        struct.pack_into("<HH", raw, 54, 56, 4)
         struct.pack_into("<Q", raw, 40, 0x5500)
         struct.pack_into("<HHH", raw, 58, 64, 7, 6)
     else:
         struct.pack_into("<I", raw, 24, entry)
+        struct.pack_into("<I", raw, 28, 0x34)
+        struct.pack_into("<HH", raw, 42, 32, 4)
         struct.pack_into("<I", raw, 32, 0x5500)
         struct.pack_into("<HHH", raw, 46, 40, 7, 6)
     raw[0x1000:0x2000] = b"\x90" * 0x1000
@@ -39,6 +43,20 @@ def fixture(bits, entry=0x10000C, header_off=0x1000):
     raw[0x3000:0x4000] = b"R" * 0x1000
     raw[0x4000:0x4010] = b"D" * 16
     struct.pack_into("<III", raw, header_off, tool.MAGIC, 3, (-tool.MAGIC - 3) & 0xFFFFFFFF)
+    # Same semantically loaded segments in ELF64 and its converted ELF32 wrapper.
+    segments = [
+        (0x1000, 0x100000, 0x1000, 0x1000, 7),
+        (0x2000, 0x101000, 0x1000, 0x1000, 5),
+        (0x3000, 0x102000, 0x1000, 0x1000, 4),
+        (0x4000, 0x103000, 0x10, 0x2000, 6),
+    ]
+    for i, (offset, addr, filesz, memsz, flags) in enumerate(segments):
+        if bits == 64:
+            struct.pack_into("<IIQQQQQQ", raw, 0x40 + i * 56,
+                             1, flags, offset, addr, addr, filesz, memsz, 4096)
+        else:
+            struct.pack_into("<IIIIIIII", raw, 0x34 + i * 32,
+                             1, offset, addr, addr, filesz, memsz, flags, 4096)
     raw[0x5300:0x5300 + len(NAMES)] = NAMES
     all_sections = [("", 0, 0, 0, 0)] + list(SECTIONS) + [(".shstrtab", 0, 0x5300, len(NAMES), 3)]
     for i, (name, addr, off, size, typ) in enumerate(all_sections):
@@ -61,6 +79,7 @@ class AuditTests(unittest.TestCase):
         self.assertTrue(result["result"].startswith("PASS: STRUCTURAL ONLY"))
         self.assertEqual(result["multiboot_header_file_offset"], 4096)
         self.assertEqual(len(result["linked_elf64_sha256"]), 64)
+        self.assertEqual(result["compared_load_segments"], 4)
 
     def test_reject_two_elf64_files(self):
         with self.assertRaisesRegex(tool.AuditError, "ELF class"):
@@ -71,6 +90,25 @@ class AuditTests(unittest.TestCase):
         struct.pack_into("<H", t, 18, 62)
         with self.assertRaisesRegex(tool.AuditError, "e_machine"):
             tool.audit(self.source, bytes(t))
+
+    def test_reject_altered_pt_load_address(self):
+        t = bytearray(self.target)
+        struct.pack_into("<I", t, 0x34 + 12, 0x200000)  # first PT_LOAD physical address
+        with self.assertRaisesRegex(tool.AuditError, "PT_LOAD mapping"):
+            tool.audit(self.source, bytes(t))
+
+    def test_reject_missing_program_headers(self):
+        t = bytearray(self.target)
+        struct.pack_into("<H", t, 44, 0)
+        with self.assertRaisesRegex(tool.AuditError, "program header"):
+            tool.audit(self.source, bytes(t))
+
+    def test_reject_entry_without_executable_segment(self):
+        s, t = bytearray(self.source), bytearray(self.target)
+        struct.pack_into("<I", s, 0x40 + 4, 6)  # drop execute permission from ELF64 boot segment
+        struct.pack_into("<I", t, 0x34 + 24, 6)  # same in ELF32 wrapper
+        with self.assertRaisesRegex(tool.AuditError, "not covered by an executable"):
+            tool.audit(bytes(s), bytes(t))
 
     def test_reject_lost_multiboot_header(self):
         t = bytearray(self.target)
