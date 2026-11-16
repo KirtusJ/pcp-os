@@ -169,7 +169,7 @@ fn present(display: &mut Display, path: &str, page: &Page<'_>, view: View) {
             Source::Link(index) => {
                 if view.focus == Some(index) {
                     outline_top.get_or_insert(y as i32 - 2);
-                    outline_bottom = y as i32 + 20;
+                    outline_bottom = y as i32 + 21;
                 }
                 if line.first {
                     text(&mut frame, 26, y, if index == 0 { "1" } else { "2" }, 0x65dedf);

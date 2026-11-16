@@ -284,7 +284,7 @@ def run_arm(args, work, arm, dns):
 
                         def check_focus(name, first_row, last_row):
                             frame = capture_frame(vm, work, name)
-                            top, bottom = 102 + 22 * first_row, 124 + 22 * last_row
+                            top, bottom = 102 + 22 * first_row, 125 + 22 * last_row
                             for y in range(102, 303):
                                 start = 3 * (640 * y + 20)
                                 wanted = border if top <= y <= bottom else bg.to_bytes(3, "big")
