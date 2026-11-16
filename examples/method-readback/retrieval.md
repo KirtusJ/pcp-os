@@ -20,10 +20,12 @@ python3 -I -B TOOLS/calibrate.py items --seed "$seed" --out items.json --key key
 python3 -I -B TOOLS/calibrate.py prompt items.json > prompt.txt
 ```
 
-4. Preserve the participant's original JSON reply as `answers.json`. Score it on the assessor's side. Select `full` when the participant can inspect the Specifications and terms, `kernel` when it can inspect only the kernel extracts, or `none` when it has no method text in reach. Record the actual model, host, delivery, extent, date and counts with the result.
+4. Preserve the participant's original JSON reply as `answers.json`. Use the following command when the participant could inspect the Specifications and terms. Record the actual model, host, delivery, extent, date and counts with the result.
 
 ```sh
 python3 -I -B TOOLS/calibrate.py score items.json key.json answers.json --extent full
 ```
+
+If the participant could reach only kernel extracts or had no access to the method, Build 22 can credit an exact quotation of an out-of-reach provision. Hold the aggregate for that configuration until an assessor has checked reach for each such row. [Build 22 scoring issue](https://github.com/KirtusJ/pcp-os/issues/187)
 
 The scoring command reports retrieval on these questions. Application requires separately administered items and an independent assessor. The full matching Implementation packet supplies those probes. [Build 22 Core §14.4](https://github.com/KirtusJ/pcp-os-claude/blob/c0fbde739b4cc3bc409878d901de0974702c506e/method/MODULES/01_Core/SOURCE/Specification.md#144-calibration) · [Python isolated mode](https://docs.python.org/3/using/cmdline.html#cmdoption-I)

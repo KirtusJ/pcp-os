@@ -50,14 +50,18 @@ class Retrieval(unittest.TestCase):
                         answer = {"kind": "DEFINED" if row["kind"] == "TERM" else "NOT_DEFINED"}
                     answers.append(dict(answer, id=item["id"]))
 
-                def score():
+                def score(extent="full"):
                     (kit / "answers.json").write_text(json.dumps(answers))
                     return json.loads(subprocess.check_output(
-                        [*command, "score", "items.json", "key.json", "answers.json", "--extent", "full"],
+                        [*command, "score", "items.json", "key.json", "answers.json", "--extent", extent],
                         cwd=kit))
 
                 scored = score()
                 self.assertEqual((scored["for"], scored["against"], scored["unscored"]), (22, 0, 0))
+                # Characterize the immutable Build 22 scorer (issue #187).
+                restricted = score("none")
+                self.assertEqual(restricted["by_category"]["EXACT"], 10)
+                print(f"{name}: Build 22 credited 10 exact provision answers with extent none", flush=True)
                 next(answer for answer in answers if answer["kind"] == "TEXT")["text"] = "Synthetic wrong answer."
                 scored = score()
                 self.assertEqual((scored["for"], scored["against"], scored["by_category"]["INEXACT"]),
