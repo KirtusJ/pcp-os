@@ -246,7 +246,34 @@ unsafe fn app(table: *mut SystemTable) -> EfiStatus {
     0
 }
 
+#[cfg(feature = "ci-debugcon")]
+fn qemu_entry_marker() {
+    // This runs *before* inspecting firmware pointers. An empty debugcon log
+    // means our opt-in application's entrypoint has not been observed.
+    for &b in b"PCPOS_EFI_ENTRY_V1\r\n" {
+        unsafe {
+            core::arch::asm!(
+                "out dx, al",
+                in("dx") 0x00e9u16,
+                in("al") b,
+                options(nomem, nostack, preserves_flags)
+            );
+        }
+    }
+}
+
 #[no_mangle]
 pub extern "efiapi" fn efi_main(_image: usize, system_table: *mut SystemTable) -> EfiStatus {
-    unsafe { app(system_table) }
+    #[cfg(feature = "ci-debugcon")]
+    qemu_entry_marker();
+    let status = unsafe { app(system_table) };
+    #[cfg(feature = "ci-debugcon")]
+    {
+        let mut line = Line::new();
+        line.text("PCPOS_EFI_RETURN_V1 ");
+        line.hex(status as u64);
+        line.text("\r\n");
+        line.mirror_qemu_debugcon();
+    }
+    status
 }
