@@ -60,6 +60,18 @@ container. The 42 Rust tests under `tests/validation.rs` are authored
 executed real-image and OVMF/hardware receipts. A textual test suite is
 not evidence of passing behavior.
 
+## Compatibility with PT's reported GRUB Multiboot2 EFI amd64 preview
+
+Director PT [reports an OVMF/GRUB EFI amd64 Multiboot2 preview](https://github.com/KirtusJ/pcp-os/issues/132#issuecomment-6906026073). That is a **producer-reported emulator observation**, not a boot run or source-tree verification in this Session B. This contract is **not yet an adapter** for the preview's Multiboot2 information structure.
+
+A crucial condition from the [GNU Multiboot2 Specification v2.0, §§3.1.8, 3.5 and 3.6.12](https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html):
+
+- The **EFI amd64 entry** uses Multiboot2 header tag 9 together with the EFI boot-services tag 7. The entry receives the Multiboot2 magic and information-structure address under the specified machine state. The loader **must not load the kernel, modules or Multiboot2 information structure above 4 GiB - 1**. The proposed handoff contract's accepted >4-GiB **kernel/module** addresses describe **future loaders with a different placement contract**, not what this GRUB path currently certifies.
+- In contrast, Multiboot2's **framebuffer information tag 8** contains a **64-bit** physical framebuffer address, separate pitch in bytes, width, height, bits per pixel and color-channel metadata. The bootloader is asked to place the framebuffer below 4 GiB if possible, but the address field remains 64-bit. Do not truncate it, or assume its pixel layout equals GOP's direct enum without decoding it.
+- The EFI memory map can use variable descriptor sizes and may be absent in some boot-service-enabled combinations. A tag being present, a receipt claiming ExitBootServices, and a verified live memory map after that exit are different facts.
+
+For integration, make a **separate, source-pinned Multiboot2 decoding adapter** with bounded 8-byte-aligned tag scanning, exactly one terminating tag, 64-bit framebuffer values, validated byte lengths, explicit color-channel conversion and proper boot-services/memory-map provenance. Do not cast arbitrary Multiboot2 bytes to `Handoff` or set `physical_limit` from untrusted input. Preserve negative fixtures for truncated tags, malformed entry states, overflow, channel aliasing, absent framebuffer, and a high framebuffer with low kernel/modules. This repo pin's Multiboot1 path is unchanged.
+
 ## Boundaries before using any handoff in a running OS
 
 1. **Build a real `x86_64-unknown-uefi` loader.** UEFI apps use PE32+ and
