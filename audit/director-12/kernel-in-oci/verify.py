@@ -39,7 +39,7 @@ def run_guest(image: str, kernel: Path, pin: str | None, cutoff: int, probe: Pat
         "-display", "none", "-serial", "stdio", "-monitor", "none",
         "-no-reboot",
         "-kernel", "/kernel.elf32",
-        "-append", "then=off" + (f" image={pin}" if pin is not None else "") + (" auto=probe grant=none" if probe is not None else ""),
+        "-append", "then=off" + (f" image={pin}" if pin is not None else "") + (" auto=probe.elf grant=none" if probe is not None else ""),
         "-net", "none",
         "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
     ]
@@ -48,7 +48,7 @@ def run_guest(image: str, kernel: Path, pin: str | None, cutoff: int, probe: Pat
         args[args.index(image):args.index(image)] = [
             "--mount", f"type=bind,source={probe},target=/probe.elf,readonly"
         ]
-        args.extend(["-initrd", "/probe.elf probe"])
+        args.extend(["-initrd", "/probe.elf"])
     start = time.monotonic()
     result = shell(args, timeout=cutoff, check=False)
     return result, time.monotonic() - start
