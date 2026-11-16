@@ -65,7 +65,8 @@ jobs:
       - name: Check two clean same-commit read-only PE builds are byte-identical
         run: |
           set -euo pipefail
-          cargo clean --release --target x86_64-unknown-uefi --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+          cargo clean --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+          test ! -e PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/target/x86_64-unknown-uefi/release/pcpos-gop-probe.efi
           sleep 2
           cargo build --offline --release --features uefi-app --target x86_64-unknown-uefi --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
           python3 - <<'PY'
