@@ -2,15 +2,30 @@
 
 This Linux QA runner boots 24 distinct x86-64 PCP OS guests and keeps their numerical workers resident. Each parent emits the child requests. The local QEMU supervisor verifies the requests and starts their virtual machines. Repeated challenges check that a worker can still perform inference after its children start. Each VM has 32 MiB of guest RAM, a 4 MiB TCG translation cache, a virtual keyboard, and networking disabled. Allow additional host memory for the emulator and firmware.
 
-Supply a PCP OS kernel ELF with multiboot support, a compatible resident worker ELF, and 16 reference outputs computed from the same model. The known compatible private session fixture is identified by archive SHA-256 `bcef11c8a1f9fb85e20b0215830bd7d1df676bb64f4be229b791055ed3a1f387`. Its kernel ELF, worker ELF and reference outputs have SHA-256 values `ec70c7fbd70b08cfc4d5672131d61dbc84f0e4a885d7563c5f5ba8b8430bb8b8`, `c14bc81c25d5d7012a88532a854e42583378c2285734d650667dc4a52cf297c8` and `7fb50b43c445058fe3d983a718aa73d65b7ba91d305c60c731b17fcff1cc9df1`, respectively. Verify your inputs against their source before running. The worker embeds the 260K-parameter TinyStories transformer and accepts 16 indexed prompts. Each answer contains three generated token IDs. [Model and reference architecture](https://github.com/karpathy/llama2.c)
+## Build and run the public fixture
 
-Run from the repository root with Python 3.9+ and QEMU (tested with 10.0.13). Recompute the reference first with the fixture's NumPy script from its `oracle` directory. Use a new output directory for every run. Keep the supervisor in the foreground for continued checks.
+The guest runs a Rust implementation of the 260K-parameter TinyStories transformer. Each key selects a two-token prompt (BOS followed by token 300 through 315). The guest generates three tokens by greedy decoding on every request. The builder compares all 48 output tokens against the pinned upstream C implementation before producing the worker ELF. Each guest also exercises the PCP core transition for the first required gate and its out-of-order refusal.
+
+From the repository root on x86-64 Linux, use a C compiler, Python 3.9+, Rust with the `x86_64-unknown-none` target and `rust-src`, LLVM's `ld.lld`, GNU `objcopy`, and QEMU. Use a fresh directory for the fixture and for each supervisor run. These commands retrieve the two external inputs. The builder checks both SHA-256 digests before invoking either compiler.
 
 ```sh
+mkdir -p inputs
+curl -fL https://huggingface.co/karpathy/tinyllamas/resolve/0bd21da7698eaf29a0d7de3992de8a46ef624add/stories260K/stories260K.bin -o inputs/stories260K.bin
+curl -fL https://raw.githubusercontent.com/karpathy/llama2.c/350e04fe35433e6d2941dce5a1f53308f87058eb/run.c -o inputs/run.c
+rustup target add x86_64-unknown-none
+rustup component add rust-src
+python3 examples/resident-workers/fixture/build.py \
+  --model inputs/stories260K.bin --reference inputs/run.c --out inputs/resident
+PCP_OS_Rust/crates/pcpos-kernel/run.sh build
 python3 examples/resident-workers/supervise.py \
-  --kernel /path/to/worker-kernel.elf32 --worker /path/to/resident.elf \
-  --oracle /path/to/oracle/oracle.json --run /path/to/new-run
+  --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+  --worker inputs/resident/resident.elf --oracle inputs/resident/oracle.json \
+  --run inputs/run-01 --once
 ```
+
+The checkpoint SHA-256 is `b0a507e7ad0f626624f17112325e66691f9076d622e1d3274d103d00299f2696`. The reference source SHA-256 is `9c4f2d5c6ae01b71726d1cc37530d71e60bff0ec7cc012565f16a43c1ca658bd`. The guest embeds the checkpoint. The oracle runs on the host and its outputs stay outside the guest ELF. [Model release](https://huggingface.co/karpathy/tinyllamas/tree/main/stories260K) · [Upstream reference](https://github.com/karpathy/llama2.c/tree/350e04fe35433e6d2941dce5a1f53308f87058eb)
+
+## Supervise a cohort
 
 Use `--qemu` and `--firmware` for a nonstandard QEMU installation. Supply `--once` for a single cycle followed by shutdown. The default interval between complete challenge cycles is 60 seconds. Interrupt or terminate the supervisor for orderly shutdown.
 
