@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'apps/tailorbird/guest/**'
+      - 'store/native/guest/src/device.rs'
       - '.github/workflows/tailorbird-guest.yml'
   workflow_dispatch:
 
@@ -37,6 +38,10 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --offline --release --lib --manifest-path apps/tailorbird/guest/Cargo.toml -- --nocapture
+      - name: Verify guest framebuffer padding and page flips
+        run: |
+          rustc --edition 2021 --test apps/tailorbird/guest/tests/display_pages.rs -o "$RUNNER_TEMP/display-pages"
+          "$RUNNER_TEMP/display-pages"
       - name: Install official x86_64 freestanding Rust target
         shell: bash
         run: |
