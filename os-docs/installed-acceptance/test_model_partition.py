@@ -1,4 +1,5 @@
 """Exercise the checker against real GPT/FAT images containing small test payloads."""
+from contextlib import contextmanager
 import hashlib
 import io
 import json
@@ -6,6 +7,7 @@ import os
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 import unittest
 import uuid
@@ -51,6 +53,16 @@ class PartitionCopyTests(unittest.TestCase):
             copy_partition(io.BytesIO(bytes(17)), 0, 18, volume)
 
 
+class ExpectedDigestTests(unittest.TestCase):
+    def test_invalid_digest_is_rejected_before_opening_inputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "missing"
+            for option, invalid in (("expected_disk_sha256", ""),
+                                    ("expected_manifest_sha256", "g" * 64)):
+                with self.subTest(option=option), self.assertRaisesRegex(ValueError, "64 hexadecimal"):
+                    check(missing, missing, **{option: invalid})
+
+
 def make_disk(path, names):
     # Two separate four-MiB volumes, each with a primary/backup GPT entry.
     sectors = 20480
@@ -86,8 +98,9 @@ def make_disk(path, names):
 
 @unittest.skipUnless(all(shutil.which(tool) for tool in TOOLS), "requires util-linux partx and GNU mtools")
 class InstalledModelTests(unittest.TestCase):
-    def run_case(self, *, model=MODEL, license_text=LICENSE, misplaced=False, duplicate=False,
-                 scope="factory", after_release=None, invalid_factory_hash=False):
+    @contextmanager
+    def fixture(self, *, model=MODEL, license_text=LICENSE, misplaced=False, duplicate=False,
+                after_release=None, invalid_factory_hash=False):
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
             disk = work / "installed.raw"
@@ -121,7 +134,44 @@ class InstalledModelTests(unittest.TestCase):
                 subprocess.run(["mcopy", "-o", "-i", volume, source, destination], check=True)
                 self.assertEqual(subprocess.check_output(["mcopy", "-i", volume, destination, "-"]),
                                  source.read_bytes())
+            yield disk, manifest
+
+    def run_case(self, *, scope="factory", **options):
+        with self.fixture(**options) as (disk, manifest):
             return check(disk, manifest, scope=scope)
+
+    def test_expected_handoff_digests_on_command_line(self):
+        with self.fixture(after_release="notes.txt") as (disk, manifest):
+            with disk.open("rb") as stream:
+                saved_hash = hashlib.file_digest(stream, "sha256").hexdigest()
+            manifest_hash = hashlib.sha256(manifest.read_bytes()).hexdigest()
+            command = [sys.executable, str(Path(__file__).with_name("check_model_partition.py")),
+                       "--scope", "model-files", "--disk", str(disk), "--manifest", str(manifest),
+                       "--expected-disk-sha256", saved_hash.upper(), "--expected-manifest-sha256", manifest_hash]
+            passed = subprocess.run(command, check=True, capture_output=True, text=True)
+            result = json.loads(passed.stdout)
+            self.assertEqual(result["disk_sha256"], saved_hash)
+            self.assertEqual(result["manifest_sha256"], manifest_hash)
+            self.assertIs(result["factory_disk_matches"], False)
+
+            # Another valid save still has the same two model files.
+            source = disk.parent / "replacement"
+            source.write_bytes(b"second save\n")
+            subprocess.run(["mcopy", "-o", "-i", f"{disk}@@{10240 * 512}",
+                            str(source), "::/notes.txt"], check=True)
+            self.assertEqual(check(disk, manifest, scope="model-files")["files"], result["files"])
+            wrong_disk = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(wrong_disk.returncode, 1)
+            self.assertIn("Disk SHA-256 differs from expected", wrong_disk.stderr)
+            self.assertEqual(wrong_disk.stdout, "")
+
+            # Identical JSON values, different manifest bytes. Check this before the disk.
+            with manifest.open("ab") as stream:
+                stream.write(b"\n")
+            wrong_manifest = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(wrong_manifest.returncode, 1)
+            self.assertIn("Manifest SHA-256 differs from expected", wrong_manifest.stderr)
+            self.assertEqual(wrong_manifest.stdout, "")
 
     def test_read_both_files(self):
         result = self.run_case()
