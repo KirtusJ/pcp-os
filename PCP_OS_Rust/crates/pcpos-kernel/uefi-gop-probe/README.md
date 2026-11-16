@@ -28,12 +28,16 @@ Even this optional branch does **not** authenticate an OS-controlled caller, EDI
 cargo test --offline --lib --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
 cargo test --offline --test abi --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
 rustup target add x86_64-unknown-uefi
-cargo build --offline --release --target x86_64-unknown-uefi --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+cargo build --offline --release --features uefi-app --target x86_64-unknown-uefi --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
 # Only cross-COMPILE the optional path, do not execute:
 cargo build --offline --release --features exercise-mode-switch --target x86_64-unknown-uefi --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
 ```
 
 The associated read-only GitHub Actions workflow records the triggering exact source SHA, compiler and Cargo versions, tests, PE32+ header fields and SHA-256 of generated EFI executables. **Building EFI bytes is not booting them.** Nothing in this proposal launches QEMU or a real UEFI application.
+
+**Cross-compilation feature gate:** The EFI-only binary uses `efi_main` and has no Linux `main`. It is intentionally excluded from ordinary `cargo test --test abi` using `required-features = ["uefi-app"]`. The explicitly enabled `uefi-app` build is the read-only firmware application. The `exercise-mode-switch` feature requires `uefi-app` and compiles a different optional program. Do not enable either target during ordinary Linux host tests.
+
+**Retained negative CI result:** The first hosted job [run 43804687581](https://github.com/KirtusJ/pcp-os/actions/runs/43804687581) failed **before UEFI compilation** because an integration-test invocation also attempted to link the non-Linux `efi_main` binary as a Linux executable. It produced a missing-`main` linker error. This is a source/build gating mistake, not evidence of a UEFI failure; the feature gate above is its direct repair, pending a fresh run.
 
 ## Source and safety boundaries
 
