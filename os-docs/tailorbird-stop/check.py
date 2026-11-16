@@ -25,6 +25,8 @@ SAVED = b"TAILORBIRD EDIT CONFIRMED"
 RAN = b"TAILORBIRD APPLICATION READ"
 ACCEPTED = b"TAILORBIRD STOP ACCEPTED"
 STOPPED = b"TAILORBIRD STOP CONFIRMED"
+CONTROLS = {STAGED, SAVED, RAN, ACCEPTED, STOPPED}
+SERIAL_LINE = re.compile(rb"^([^\r\n]*)\r?\n", re.MULTILINE)
 
 
 def require(condition, message):
@@ -107,7 +109,8 @@ def desktop_startup(data, launch):
     """Return the cursor at the completed handshake, or None while records are pending."""
     seen = set()
     ready = None
-    for record in re.finditer(rb"^([^\r\n]*)\r?\n", data, re.MULTILINE):
+    ended = False
+    for record in SERIAL_LINE.finditer(data):
         line = record[1]
         if line.startswith(b"protections:"):
             require(re.fullmatch(rb"protections: paging (?:true|false), supervisor write protection "
@@ -135,8 +138,14 @@ def desktop_startup(data, launch):
             name, needs = "connection", {"admission"}
         elif line == b"QWEN READY":
             raise ValueError("model-ready stream in model-unavailable test")
-        elif line.startswith(b"Tailorbird ended ") and ready is None:
-            raise ValueError("Tailorbird ended before desktop startup completed")
+        elif line.startswith(b"Tailorbird ended "):
+            require(ready is not None, "Tailorbird ended before desktop startup completed")
+            require(not ended, "duplicate Tailorbird exit")
+            ended = True
+            continue
+        elif line in CONTROLS:
+            require(ready is not None and not ended, "control receipt outside the active Tailorbird session")
+            continue
         else:
             continue
         require(name not in seen and needs <= seen, f"duplicate or out-of-order desktop record: {name}")
@@ -171,7 +180,7 @@ class Guest:
         self.key("ret")
 
     def wait(self, marker):
-        if marker in (STAGED, SAVED, RAN, ACCEPTED, STOPPED):
+        if marker in CONTROLS:
             marker = b"\n" + marker + b"\r\n"
         deadline = time.monotonic() + self.timeout
         while time.monotonic() < deadline:
@@ -272,8 +281,7 @@ def boot(args, output, name, pins, guid, results):
 
 
 def check_trace(serial, expected):
-    controls = {STAGED, SAVED, RAN, ACCEPTED, STOPPED}
-    actual = [line for line in serial.read_bytes().splitlines() if line in controls]
+    actual = [record[1] for record in SERIAL_LINE.finditer(serial.read_bytes()) if record[1] in CONTROLS]
     require(actual == expected, f"{serial.name}: unexpected control sequence {actual!r}")
 
 
