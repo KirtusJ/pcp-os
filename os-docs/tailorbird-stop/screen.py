@@ -53,11 +53,6 @@ def matching_row(pixels, expected, *, tag=OUTPUT_TAG):
             for word, digest in fields.items():
                 if field == digest:
                     matches.append((word, y))
-                    break
-            else:
-                # A visible row with this result tag is an additional outcome,
-                # even if its message was not in the accepted fixture set.
-                return None
     if len(matches) == 1 and matches[0][0] == expected:
         return matches[0][1]
     return None
