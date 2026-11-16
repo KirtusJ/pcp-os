@@ -14,6 +14,7 @@ import tempfile
 import threading
 import time
 from urllib.parse import urlsplit
+from framebuffer import check_line, load_glyphs, raster
 from packet_trace import verify as verify_trace
 from dns_fixture import DNS_ARMS, DNS_ERRORS, resolver
 
@@ -57,18 +58,17 @@ def hosted_check(binary, port, targets, tag):
                 browser.kill()
 
 
-def viewport_pixels(vm, work, name):
+def capture_frame(vm, work, name):
     path = work / (name + ".ppm")
     vm.stdin.write(f"screendump {path.name}\n".encode())
     vm.stdin.flush()
-    # Compare the paragraph viewport only, so a changed URL cannot pass the test.
     until = time.monotonic() + 20
     while time.monotonic() < until:
         if path.exists():
-            parts = path.read_bytes().split(b"\n", 3)
-            if len(parts) == 4 and parts[:3] == [b"P6", b"640 360", b"255"]:
-                if len(parts[3]) == 640 * 360 * 3:
-                    return parts[3][136 * 640 * 3 : 168 * 640 * 3]
+            try:
+                return raster(path)
+            except ValueError:
+                pass  # QEMU may still be writing the file.
         time.sleep(.04)
     raise RuntimeError(f"Incomplete capture at {path}")
 
@@ -104,9 +104,16 @@ def run_arm(args, work, arm, dns):
                 pages["/harbour"] = f'<title>Harbour</title><p>Tide {tag}</p><a href="{targets[0]}">Bar</a><a href="{targets[1]}">Jetty</a>'
                 if scenario == "fragment":
                     targets[:] = [f"/jetty-{tag}?view=2&deck=upper"]
-                    pages["/harbour"] = (f'<title>Harbour</title><p>Tide {tag}</p><p>Middle</p>'
-                                         '<p id="details">Hidden details</p><a href="#details">Details</a>'
-                                         f'<a href="./jetty-{tag}?view=2&amp;deck=upper&#35;berth">Jetty</a>')
+                    # These line endings are fixed independently of the renderer.
+                    fillers = "".join(f"<p>Marker {n}</p>" for n in range(5))
+                    pages["/harbour"] = (
+                        "<title>Harbour: Port vs port?</title>"
+                        f"<p>Tide {tag}</p><p>Read this MixedCase Notice: the North Pier opens at noon; "
+                        f"keep the Gate ID handy.</p>{fillers}"
+                        '<p id="details">Hidden details</p>'
+                        '<a href="#details">Read the Port Notice and check the MixedCase passenger access code today.</a>'
+                        f'<a href="./jetty-{tag}?view=2&amp;deck=upper&#35;berth">Jetty</a>'
+                    )
                     pages[targets[0]] = ('<title>Jetty</title><p>Jetty start</p>'
                                          '<p id="berth">Berth reached</p>')
                 else:
@@ -227,22 +234,45 @@ def run_arm(args, work, arm, dns):
                         expected = ["/harbour", targets[1], targets[0]] + [targets[0]]*args.extra_visits
                     elif scenario == "fragment":
                         wait("SURFBIRD ready")
-                        first = viewport_pixels(vm, work, "home")
+                        glyphs = load_glyphs()
+
+                        def line(frame, row, value, ink=0xcbdadd, x=26):
+                            check_line(frame, glyphs, x, 104 + 22 * row, value, ink, 0x102a33)
+
+                        first = capture_frame(vm, work, "home")
+                        line(first, 0, "Harbour: Port vs port?", 0xf2f6f7)
+                        line(first, 1, f"Tide {tag}")
+                        line(first, 2, "Read this MixedCase Notice: the North Pier opens at noon;")
+                        line(first, 3, "keep the Gate ID handy.")
                         require("SURFBIRD text Hidden details" not in log.read_text(), "target visible before activation")
+                        key("down")
+                        wait("SURFBIRD ready", 2)
+                        scrolled = capture_frame(vm, work, "scroll")
+                        line(scrolled, 0, f"Tide {tag}")
+                        line(scrolled, 8, "Hidden details")
+                        key("up")
+                        wait("SURFBIRD ready", 3)
+                        require(capture_frame(vm, work, "up") == first, "Up failed to restore the screen")
+                        key("down")
+                        wait("SURFBIRD ready", 4)
                         key("1")
                         wait("SURFBIRD path /harbour#details")
-                        wait("SURFBIRD text Hidden details")
-                        wait("SURFBIRD ready", 2)
-                        require(viewport_pixels(vm, work, "details") != first, "fragment left viewport unchanged")
+                        wait("SURFBIRD ready", 5)
+                        details = capture_frame(vm, work, "details")
+                        line(details, 0, "Hidden details")
+                        line(details, 1, "1", 0x65dedf)
+                        line(details, 1, "Read the Port Notice and check the MixedCase passenger", 0xe4edef, 56)
+                        line(details, 2, "access code today.", 0xe4edef, 56)
+                        line(details, 3, "Jetty", 0xe4edef, 56)
                         key("b")
-                        wait("SURFBIRD ready", 3)
-                        require(viewport_pixels(vm, work, "back") == first, "Back failed to restore viewport")
+                        wait("SURFBIRD ready", 6)
+                        require(capture_frame(vm, work, "back") == scrolled, "Back failed to restore the scrolled screen")
                         key("2")
                         wait(f"SURFBIRD path {targets[0]}#berth")
-                        wait("SURFBIRD text Berth reached")
-                        wait("SURFBIRD ready", 4)
-                        destination = viewport_pixels(vm, work, "berth")
-                        require(destination != first, "destination still shows the original viewport")
+                        wait("SURFBIRD ready", 7)
+                        destination = capture_frame(vm, work, "berth")
+                        line(destination, 0, "Berth reached")
+                        check_line(destination, glyphs, 26, 39, targets[0] + "#berth", 0xa5b9bc, 0x102a33)
                         key("esc")
                         wait("surf.elf ended DONE")
                         expected = ["/harbour", targets[0]]
@@ -265,7 +295,7 @@ def run_arm(args, work, arm, dns):
                     key("p")
                     require(vm.wait(timeout=10) == 33, "Kernel did not power off normally")
                     require(requests == [(p, "fixture.test") for p in expected], requests)
-                    frames = {"fragment": 4, "allowed": 4 + 2*args.extra_visits}.get(scenario, 0)
+                    frames = {"fragment": 7, "allowed": 4 + 2*args.extra_visits}.get(scenario, 0)
                     require(f"; {frames} frames shown (" in log.read_text(), "Unexpected rendered frame count")
                     require("kernel's register of its own start, verification and stop verifies" in log.read_text(), "Register verification missing")
                     if args.hosted and scenario == "allowed":
