@@ -175,12 +175,31 @@ class InstalledModelTests(unittest.TestCase):
 
     def test_read_both_files(self):
         result = self.run_case()
+        self.assertEqual(result["source_revision"], "b" * 40)
         self.assertEqual(result["partition"]["number"], 1)
         self.assertEqual(result["scope"], "factory")
         self.assertIs(result["factory_disk_matches"], True)
         self.assertEqual(result["disk_sha256"], result["factory_disk_sha256"])
         self.assertEqual(result["files"][DIRECTORY[2:] + "/qwen.gguf"]["bytes"], len(MODEL))
         self.assertEqual(result["files"][DIRECTORY[2:] + "/LICENSE.txt"]["bytes"], len(LICENSE))
+
+    def test_release_commit_in_model_receipt(self):
+        with self.fixture() as (disk, manifest):
+            fields = json.loads(manifest.read_bytes())
+            command = [sys.executable, str(Path(__file__).with_name("check_model_partition.py")),
+                       "--disk", str(disk), "--manifest", str(manifest)]
+            for invalid in (None, False, {"id": "b" * 40}, "main", "a" * 39,
+                            "a" * 41, "a" * 63, "x" * 64, "0" * 40, "0" * 64):
+                with self.subTest(invalid=invalid):
+                    fields["git_commit"] = invalid
+                    manifest.write_text(json.dumps(fields))
+                    result = subprocess.run(command, capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertEqual(result.stdout, "")
+                    self.assertIn("release Git commit", result.stderr)
+            fields["git_commit"] = "C9" * 32
+            manifest.write_text(json.dumps(fields))
+            self.assertEqual(check(disk, manifest)["source_revision"], fields["git_commit"])
 
     def test_identical_files_on_wrong_partition(self):
         with self.assertRaisesRegex(ValueError, "Cannot read .*qwen.gguf"):
