@@ -180,8 +180,7 @@ class Machine:
                 "serial_bytes": self.position, "serial_sha256": self.serial_digest.hexdigest()}
 
 
-def verify_start(machine, serial, parent, incoming, salt, kernel_hash, elf_hash, oracle, deadline=None):
-    node = machine.node
+def check_start(node, serial, parent, incoming, salt, kernel_hash, elf_hash, oracle):
     ticket = (incoming * 31 + node * 13 + salt + 1) % 1000003
     children = [n for n in range(2, len(PARENTS)) if PARENTS[n] == node]
     require("long mode true" in serial and "  FAIL" not in serial and
@@ -196,8 +195,21 @@ def verify_start(machine, serial, parent, incoming, salt, kernel_hash, elf_hash,
     wanted += [f"SPAWN {child} PARENT {node} TICKET {ticket}" for child in children]
     wanted += [f"READY {node}"]
     require(serial[start.end():].splitlines()[1:] == wanted, f"guest {node}: guest dispatch or model result")
-    machine.live(deadline=deadline)
     return ticket, children
+
+
+def verify_start(machine, serial, parent, incoming, salt, kernel_hash, elf_hash, oracle, deadline=None):
+    dispatch = check_start(machine.node, serial, parent, incoming, salt, kernel_hash, elf_hash, oracle)
+    machine.live(deadline=deadline)
+    return dispatch
+
+
+def parse_oracle(oracle_bytes):
+    oracle = json.loads(oracle_bytes)
+    require(isinstance(oracle, list) and len(oracle) == 16 and all(
+        isinstance(row, list) and len(row) == 3 and all(type(t) is int and 0 <= t < 512 for t in row)
+        for row in oracle), "expected 16 reference outputs of three token IDs")
+    return oracle
 
 
 def supervise(opt, log):
@@ -206,10 +218,7 @@ def supervise(opt, log):
     kernel_hash = measure(kernel.read_bytes())
     elf_hash = sha(elf.read_bytes())
     oracle_bytes = opt.oracle.read_bytes()
-    oracle = json.loads(oracle_bytes)
-    require(isinstance(oracle, list) and len(oracle) == 16 and all(
-        isinstance(row, list) and len(row) == 3 and all(type(t) is int and 0 <= t < 512 for t in row)
-        for row in oracle), "expected 16 reference outputs of three token IDs")
+    oracle = parse_oracle(oracle_bytes)
     run = opt.run.resolve()
     # The module name becomes argv[0] in the PCP OS launcher.
     shutil.copyfile(elf, run / "resident.elf")
