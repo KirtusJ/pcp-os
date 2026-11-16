@@ -324,8 +324,14 @@ def run_test(image: str, result: dict) -> None:
             earlier = size(directory / "grandchild.tick")
             time.sleep(0.35)
             assert size(directory / "grandchild.tick") > earlier
+            grandchild_id = host_grandchild_identity(name)
+            assert not original_process_terminated(grandchild_id)
             cmd("docker", "kill", "--signal", "KILL", name)
             wait_for(lambda: not state(name)["State"]["Running"], "hosted adapter container stopped", 10)
+            wait_for(
+                lambda: original_process_terminated(grandchild_id),
+                "original hosted Parrots grandchild PID terminated", 10,
+            )
             time.sleep(0.3)
             stopped = size(directory / "grandchild.tick")
             time.sleep(0.6)
@@ -404,6 +410,9 @@ def run_test(image: str, result: dict) -> None:
                 "fresh_request_refused_due_to_stale_live_slot": True,
                 "new_worker_launch_before_reconciliation": False,
                 "detached_worker_heartbeat_stopped": True,
+                "original_host_pid": grandchild_id["pid"],
+                "original_host_start_tick": grandchild_id["start_tick"],
+                "same_process_identity_gone_or_zombie": original_process_terminated(grandchild_id),
                 "controller_performed_explicit_cancel_after_external_stop_witness": True,
                 "new_distinct_worker_finished_after_explicit_cancel": True,
                 "final_states": [node["state"] for node in final["nodes"]],
