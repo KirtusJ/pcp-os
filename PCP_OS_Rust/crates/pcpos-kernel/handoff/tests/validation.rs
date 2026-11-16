@@ -205,7 +205,7 @@ fn rejects_unsupported_five_six_five_bitmask_without_guessing() {
     h.framebuffer.red_mask = 0xf800;
     h.framebuffer.green_mask = 0x07e0;
     h.framebuffer.blue_mask = 0x001f;
-    assert_eq!(validate(&h, &regions, &modules, LIMIT), Err(Error::InvalidDisplayMasks));
+    assert_eq!(validate(&h, &regions, &modules, LIMIT), Err(Error::UnsupportedPixelLayout));
 }
 
 #[test]
@@ -251,6 +251,13 @@ fn accepts_kernel_handoff_above_four_gib_with_no_graphics() {
 }
 
 #[test]
+fn rejects_unaligned_kernel_image() {
+    let (mut h, regions, modules) = fixture();
+    h.kernel_physical += 1;
+    assert_eq!(validate(&h, &regions, &modules, LIMIT), Err(Error::KernelRange));
+}
+
+#[test]
 fn rejects_invalid_kernel_extent() {
     let (mut h, regions, modules) = fixture();
     h.kernel_length = 0;
@@ -262,6 +269,13 @@ fn rejects_memory_map_count_mismatch() {
     let (mut h, regions, modules) = fixture();
     h.map_count = 1;
     assert_eq!(validate(&h, &regions, &modules, LIMIT), Err(Error::MissingOrTooManyRegions));
+}
+
+#[test]
+fn rejects_unaligned_memory_map_table() {
+    let (mut h, regions, modules) = fixture();
+    h.map_physical += 1;
+    assert_eq!(validate(&h, &regions, &modules, LIMIT), Err(Error::MemoryMapMetadata));
 }
 
 #[test]
@@ -289,6 +303,13 @@ fn rejects_overlapping_regions() {
 fn rejects_bad_module_metadata() {
     let (mut h, regions, modules) = fixture();
     h.module_stride = 1;
+    assert_eq!(validate(&h, &regions, &modules, LIMIT), Err(Error::ModuleTableMetadata));
+}
+
+#[test]
+fn rejects_unaligned_module_table() {
+    let (mut h, regions, modules) = fixture();
+    h.module_table_physical += 1;
     assert_eq!(validate(&h, &regions, &modules, LIMIT), Err(Error::ModuleTableMetadata));
 }
 
