@@ -6,6 +6,7 @@ when supplying a complete disk. A store-partition extract starts at offset zero.
 import argparse
 import hashlib
 import json
+import re
 import struct
 from pathlib import Path
 
@@ -53,6 +54,8 @@ def decode_slot(data):
 
 
 def inspect(store, name, expected):
+    if not re.fullmatch(r"[a-z][a-z0-9-]{0,47}", name):
+        raise ValueError("invalid Tailorbird application name")
     if len(store) != STORE_BYTES or store[:SECTOR] != MARKER:
         raise ValueError("short store or wrong format marker")
     valid = {}
@@ -89,8 +92,8 @@ def main():
     state.add_argument("--source", type=Path, help="file containing the exact expected source bytes")
     state.add_argument("--absent", action="store_true")
     args = parser.parse_args()
-    if not args.app or "/" in args.app or args.offset < 0 or args.offset % SECTOR:
-        parser.error("provide one app name and a nonnegative sector-aligned byte offset")
+    if args.offset < 0 or args.offset % SECTOR:
+        parser.error("provide a nonnegative sector-aligned byte offset")
     try:
         with args.image.open("rb") as image:
             image.seek(args.offset)
