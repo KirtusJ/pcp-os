@@ -7,11 +7,10 @@ from pathlib import Path
 import subprocess
 import time
 
-from check_display import Monitor, digest, wait_serial
+from check_display import Monitor, crop, digest, read_frame, title_record, wait_serial
 
 
 DESKTOP = (1920, 1080)
-TITLE_SHA256 = "a35240f2eea7b8ccc7536d9d8e8402659126f5dc8862590605fbb60544fb0322"
 TEAL = bytes.fromhex("41bad7")
 PANEL = bytes.fromhex("18364f")
 GROUND = bytes.fromhex("10283f")
@@ -19,16 +18,7 @@ GROUND = bytes.fromhex("10283f")
 
 def frame(monitor, path):
     monitor.execute("screendump", filename=str(path))
-    with path.open("rb") as stream:
-        if stream.readline().strip() != b"P6":
-            raise ValueError("expected a native QEMU P6 image")
-        width, height = map(int, stream.readline().split())
-        if stream.readline().strip() != b"255":
-            raise ValueError("expected RGB24 samples")
-        pixels = stream.read()
-    if min(width, height) <= 0 or len(pixels) != 3 * width * height:
-        raise ValueError("incomplete native frame")
-    return (width, height), pixels
+    return read_frame(path)
 
 
 def contains_paint(size, pixels, screen):
@@ -61,11 +51,6 @@ def sample(monitor, folder, name, screen):
             return size, pixels, {"size": size, "ppm_sha256": digest(path)}
         time.sleep(0.1)
     raise TimeoutError(f"{name}: expected paint missing; last frame kept")
-
-
-def crop(pixels, width, left, top, right, bottom):
-    return b"".join(pixels[3 * (width * y + left):3 * (width * y + right)]
-                    for y in range(top, bottom))
 
 
 def exercise(args, report):
@@ -103,6 +88,8 @@ def exercise(args, report):
             if len(set(title)) <= 3:
                 raise ValueError("title crop contains only panel background")
             report["app"]["title_rgb_sha256"] = hashlib.sha256(title).hexdigest()
+            if args.profile == "candidate":
+                report["app"]["title_1080p"] = title_record(size, pixels)
             monitor.key("esc")
             wait(f"{args.app.name} ended DONE: exit 0")
             end_size, pixels, report["returned"] = sample(monitor, out, "returned", "desktop")
@@ -119,7 +106,7 @@ def exercise(args, report):
             expected = DESKTOP if args.profile == "candidate" else (960, 540)
             if size != expected:
                 raise ValueError(f"app size {size} differs from {expected}")
-            if args.profile == "candidate" and report["app"]["title_rgb_sha256"] != TITLE_SHA256:
+            if args.profile == "candidate" and not report["app"]["title_1080p"]["matches"]:
                 raise ValueError("candidate title differs from the precommitted reference")
         finally:
             monitor.selector.close()
