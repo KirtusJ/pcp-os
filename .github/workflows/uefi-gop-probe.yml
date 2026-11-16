@@ -39,6 +39,11 @@ jobs:
           cargo test --offline --test edid --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
           cargo test --offline --release --test abi --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
           cargo test --offline --release --test edid --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+      - name: Falsify no-GOP receipt oracle with mutated status/return fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/tests -p test_headless_receipt.py -v
       - name: Add official x86_64-unknown-uefi target to ephemeral compiler
         run: |
           set -euo pipefail
@@ -230,17 +235,4 @@ jobs:
           if test -f "$LOG"; then
             grep -E 'PCPOS_EFI_ENTRY|PCPOS_EFI_RETURN|PCPOS_GOP_PROBE_V1' "$LOG" | head -30 || true
           fi
-          python3 - "$LOG" "$EXIT" <<'PY'
-          import sys,pathlib,re
-          code=int(sys.argv[2])
-          path=pathlib.Path(sys.argv[1])
-          report=path.read_bytes().decode('ascii',errors='replace') if path.exists() else ''
-          assert code in (0,124),f"QEMU failed before headless probe result: {code}"
-          assert 'PCPOS_EFI_ENTRY_V1' in report, 'No entrypoint observed on headless EFI'
-          assert 'PCPOS_GOP_PROBE_V1 NO_GOP status=' in report, 'Expected no video GOP result'
-          assert 'PCPOS_GOP_PROBE_V1 BEFORE mode=' not in report, 'Unexpected GOP device found'
-          assert 'STANDALONE_FIXTURE_SET_MODE' not in report, 'Wrong EFI fixture used'
-          assert re.search(r'PCPOS_EFI_RETURN_V1 0x[0-9a-f]{16}',report), 'Missing EFI returned status'
-          print('PASS: standalone EFI no-GOP fallback observed in no-VGA OVMF')
-          print('No PCP OS kernel, desktop or physical display was invoked')
-          PY
+          python3 PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/tools/headless_receipt.py "$LOG" "$EXIT"
