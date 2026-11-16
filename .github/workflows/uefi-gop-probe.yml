@@ -55,8 +55,30 @@ jobs:
           assert (machine,magic,subsystem)==(0x8664,0x20b,10),(hex(machine),hex(magic),subsystem)
           print('PE32+ EFI_APPLICATION structural-only, not launched',len(data),hashlib.sha256(data).hexdigest())
           PY
+          cp PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/target/x86_64-unknown-uefi/release/pcpos-gop-probe.efi "$RUNNER_TEMP/pcpos-readonly-first.efi"
       - name: Compile separately opt-in mode-switch fixture; do not execute it
         run: |
           set -euo pipefail
           cargo build --offline --release --features exercise-mode-switch --target x86_64-unknown-uefi --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
           sha256sum PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/target/x86_64-unknown-uefi/release/pcpos-gop-probe.efi
+
+      - name: Check two clean same-commit read-only PE builds are byte-identical
+        run: |
+          set -euo pipefail
+          cargo clean --release --target x86_64-unknown-uefi --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+          sleep 2
+          cargo build --offline --release --features uefi-app --target x86_64-unknown-uefi --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+          python3 - <<'PY'
+          from pathlib import Path
+          from hashlib import sha256
+          a = Path(__import__('os').environ['RUNNER_TEMP']+'/pcpos-readonly-first.efi').read_bytes()
+          b = Path('PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/target/x86_64-unknown-uefi/release/pcpos-gop-probe.efi').read_bytes()
+          def coff_timestamp(image):
+              off=int.from_bytes(image[60:64],'little')
+              return int.from_bytes(image[off+8:off+12],'little')
+          print('first',len(a),sha256(a).hexdigest(),'COFF_TimeDateStamp',coff_timestamp(a))
+          print('second',len(b),sha256(b).hexdigest(),'COFF_TimeDateStamp',coff_timestamp(b))
+          differences=[i for i in range(min(len(a),len(b))) if a[i]!=b[i]]
+          print('difference_count',len(differences),'first_differing_offsets',differences[:16])
+          assert a==b, 'NONDETERMINISTIC EFI PROBE BUILD: preserve both hashes and inspect PE metadata'
+          PY
