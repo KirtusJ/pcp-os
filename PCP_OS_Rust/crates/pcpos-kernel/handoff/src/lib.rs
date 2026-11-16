@@ -204,18 +204,6 @@ impl Framebuffer {
         {
             return Err(Error::InvalidDisplayDimensions);
         }
-        let min_stride = self.width.checked_mul(4).ok_or(Error::SpanOverflow)?;
-        if self.stride_bytes < min_stride || self.stride_bytes % 4 != 0 {
-            return Err(Error::InvalidDisplayStride);
-        }
-        // The GOP frame-buffer size includes row padding, including the last
-        // row. Do not infer stride from horizontal resolution.
-        let need = u64::from(self.stride_bytes)
-            .checked_mul(u64::from(self.height)).ok_or(Error::SpanOverflow)?;
-        if self.length_bytes < need {
-            return Err(Error::InvalidDisplayLength);
-        }
-        span_end_nonzero(self.physical_start, self.length_bytes, physical_limit)?;
         match self.pixel_format {
             PIXEL_RGBX8 | PIXEL_BGRX8 => {
                 if self.red_mask != 0 || self.green_mask != 0
@@ -244,6 +232,21 @@ impl Framebuffer {
             }
             _ => return Err(Error::InvalidDisplayFormat),
         }
+        // Check pixel-format support *before* imposing the 32-bit row
+        // contract. A valid 16-bit GOP bitmask mode must be reported as
+        // unsupported, not mislabeled as a malformed 32-bit stride.
+        let min_stride = self.width.checked_mul(4).ok_or(Error::SpanOverflow)?;
+        if self.stride_bytes < min_stride || self.stride_bytes % 4 != 0 {
+            return Err(Error::InvalidDisplayStride);
+        }
+        // The GOP frame-buffer size includes row padding, including the last
+        // row. Do not infer stride from horizontal resolution.
+        let need = u64::from(self.stride_bytes)
+            .checked_mul(u64::from(self.height)).ok_or(Error::SpanOverflow)?;
+        if self.length_bytes < need {
+            return Err(Error::InvalidDisplayLength);
+        }
+        span_end_nonzero(self.physical_start, self.length_bytes, physical_limit)?;
         Ok(Display::Linear(*self))
     }
 }
