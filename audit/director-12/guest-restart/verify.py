@@ -44,7 +44,7 @@ def inspect(name: str):
     return json.loads(invoke(["docker", "inspect", name]).stdout)[0]
 
 def start(image: str, name: str, directory: Path, kernel: Path,
-          measurement: str, request: str, *, fault: bool, hold: bool = False):
+          measurement: str, request: str, *, fault: bool, hold: bool = False, spoof: bool = False):
     args = [
         "docker", "run", "-d", "--name", name,
         "--restart", "on-failure:2",
@@ -62,6 +62,8 @@ def start(image: str, name: str, directory: Path, kernel: Path,
         args += ["-e", "D12_FAULT_PRESPAWN=1"]
     if hold:
         args += ["-e", "D12_HOLD_GUEST=1"]
+    if spoof:
+        args += ["-e", "D12_SPOOF_EXIT33=1"]
     args += [image]
     invoke(args)
     obj = inspect(name)
@@ -323,6 +325,44 @@ def interrupted_after_spawn(image: str, kernel: Path, measurement: str, evidence
             capture(directory, evidence_dir / "after_spawn", 1)
             invoke(["docker", "rm", "-f", name], checked=False)
 
+def fabricated_exit_33(image: str, kernel: Path, measurement: str, evidence_dir: Path):
+    # Negative, test-owned evidence: status 33 without the corresponding native
+    # kernel serial MUST NOT permit an END or completion claim.
+    with tempfile.TemporaryDirectory(prefix="d12-fabricated-exit-") as tmp:
+        directory = Path(tmp)
+        os.chmod(directory, 0o777)
+        request = secrets.token_hex(12)
+        name = "d12-fabricated-exit-" + secrets.token_hex(5)
+        try:
+            policy = start(image, name, directory, kernel, measurement, request, fault=False, spoof=True)
+            await_true(
+                lambda: not inspect(name)["State"]["Running"]
+                and (directory / "attention.txt").exists(),
+                "spoofed QEMU exit 33 rejected by independent native serial check", 12,
+            )
+            assert inspect(name)["RestartCount"] == 0
+            assert inspect(name)["State"]["ExitCode"] == 0
+            serial = (directory / "qemu-1.serial").read_bytes()
+            assert serial.startswith(b"SYNTHETIC TEST:") and b"PCP OS kernel" not in serial
+            assert (directory / "start-1.txt").read_text() == f"REQUEST={request};ATTEMPT=1;START\\n"
+            assert not list(directory.glob("end-*.txt"))
+            assert not (directory / "qemu-2.serial").exists()
+            receipt = (directory / "attention.txt").read_text()
+            assert "UNCONFIRMED: QEMU exited 33 but native receipt invalid" in receipt
+            return {
+                "test_only_spoof": True,
+                "falsified_qemu_exit_code": 33,
+                "native_kernel_boot_observed": False,
+                "synthetic_serial_sha256": sha(serial),
+                "no_fabricated_END": True,
+                "host_restart_count": 0,
+                "attention": receipt.strip(),
+                "requested_policy": policy,
+            }
+        finally:
+            capture(directory, evidence_dir / "spoof", 1)
+            invoke(["docker", "rm", "-f", name], checked=False)
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--image", required=True)
@@ -360,6 +400,7 @@ def main() -> int:
         result["qualification"] = qualifying_run(a.image, kernel, a.measurement, evidence_dir)
         result["interrupted"] = interrupted_run(a.image, kernel, a.measurement, evidence_dir)
         result["post_spawn_interrupted"] = interrupted_after_spawn(a.image, kernel, a.measurement, evidence_dir)
+        result["falsified_exit_33"] = fabricated_exit_33(a.image, kernel, a.measurement, evidence_dir)
         result["status"] = "OBSERVED_IN_TEST_SCOPE"
         return 0
     except Exception as e:
