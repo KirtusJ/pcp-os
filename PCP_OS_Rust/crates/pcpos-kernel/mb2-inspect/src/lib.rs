@@ -224,11 +224,17 @@ fn framebuffer_tag(tag: &[u8]) -> Result<Framebuffer, Error> {
             PixelKind::DirectRgb
         }
         0 => {
-            if tag.len() < 36 {
+            // Multiboot2 framebuffer_palette_num_colors is u16 at offset
+            // 32, followed immediately by 3-byte RGB entries at offset 34.
+            // Reading a u32 here consumes two bytes of the first color.
+            if tag.len() < 34 {
                 return Err(Error::BadFramebuffer);
             }
-            let count = get32(tag, 32)?;
-            if count > 256 || tag.len() < 36 + count as usize * 3 {
+            let count = u16::from_le_bytes([tag[32], tag[33]]) as usize;
+            let expected = 34usize
+                .checked_add(count.checked_mul(3).ok_or(Error::BadFramebuffer)?)
+                .ok_or(Error::BadFramebuffer)?;
+            if count > 256 || tag.len() != expected {
                 return Err(Error::BadFramebuffer);
             }
             PixelKind::Indexed
