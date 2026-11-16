@@ -51,6 +51,12 @@ jobs:
             --ui PCP_OS_Rust/crates/pcpos-kernel/src/ui.rs \
             --font PCP_OS_Rust/crates/pcpos-kernel/src/font.rs \
             --output "$RUNNER_TEMP/d13-gui-layout.json"
+      - name: Test-only separation of interface intent and observed connectivity
+        run: |
+          rustc --edition 2021 --test \
+            audit/director-13/network/lifecycle_contract.rs \
+            -o "$RUNNER_TEMP/network-test/test-network-lifecycle"
+          "$RUNNER_TEMP/network-test/test-network-lifecycle"
       - name: Check the existing Surfbird guest and parsed-capture controls
         run: |
           cargo test --locked --manifest-path apps/surfbird/guest/Cargo.toml --lib
