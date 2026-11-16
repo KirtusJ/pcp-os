@@ -178,7 +178,19 @@ def select_candidate(memory, minimum_events=1, workspace_label='kernel'):
     if len(distinct) != 1:
         return {'found': False, 'reason': 'ambiguous longest chains',
                 'candidate_count': len(candidates), 'longest_events': count,
-                'distinct_longest_chains': len(distinct)}
+                'distinct_longest_chains': len(distinct),
+                'longest_candidate_locations': len(leaders)}
+    if len(leaders) != 1:
+        # Equal content hashes do not collapse different physical addresses.
+        # A second *identical* maximal chain is still an independent RAM
+        # location, and neither location is proven to be the live Rust Record.
+        return {'found': False,
+                'reason': 'multiple equally long RAM candidate locations',
+                'candidate_count': len(candidates),
+                'longest_events': count,
+                'distinct_longest_chains': 1,
+                'longest_candidate_locations': len(leaders),
+                'live_record_pointer_authenticated': False}
     selected = leaders[0]
     return {'found': True, 'reason': 'unique maximal canonical RAM candidate',
             'candidate_count': len(candidates), 'longest_events': count,
