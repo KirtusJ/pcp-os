@@ -125,11 +125,20 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
             return tasks;
         }
     }
-    let interactive = start.display.is_some() && start.keyboard && option(line, "then") != Some("off");
+    // A reported framebuffer is not automatically a safe framebuffer. Reject
+    // zero/huge dimensions, impossible strides and unmapped scanlines before
+    // drawing or accepting graphical keyboard navigation.
+    let display_usable = start.display.map(|d|
+        pcpos_desktop::Surface::new(d.width, d.height, d.pitch, d.mapped).is_ok()
+    ).unwrap_or(false);
+    let interactive = display_usable && start.keyboard && option(line, "then") != Some("off");
     if !interactive {
+        if start.display.is_some() && !display_usable {
+            say!("the reported display geometry is invalid; skipping the graphical launcher");
+        }
         if !programs.is_empty() && option(line, "auto").is_none() {
             say!("{} program(s) from the loader were not started: there is {}. Name one with auto=<name> to run it unattended.",
-                 programs.len(), if option(line, "then") == Some("off") { "nobody to choose (then=off)" } else { "no display and keyboard to choose with" });
+                 programs.len(), if option(line, "then") == Some("off") { "nobody to choose (then=off)" } else { "no usable display and keyboard to choose with" });
         }
         return tasks;
     }
@@ -190,7 +199,13 @@ fn desktop_at(cols: u32, rows: u32, x: u32, y: u32, s: &str, fg: u32, bg: u32) {
 fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8], String)], rec: &Record, chosen: usize, message: &str, stored: usize) {
     use ui::{GROUND, PANEL, SOFT, TEXT};
     if !ui::desktop_background() {
-        // Unsupported video dimensions/pitch keep the original flat background.
+        // Do not attempt even a flat fill into an inconsistent framebuffer.
+        let valid = dev::display().map(|d|
+            pcpos_desktop::Surface::new(d.width, d.height, d.pitch, d.mapped).is_ok()
+        ).unwrap_or(false);
+        if !valid {
+            return;
+        }
         ui::clear(GROUND);
     }
     let (cols, rows) = ui::grid();
