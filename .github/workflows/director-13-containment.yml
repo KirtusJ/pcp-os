@@ -1,0 +1,41 @@
+name: Director 13 unregistered-descendant boundary
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/director-13-containment.yml"
+      - "audit/director-13/**"
+      - "store/apps/parrots-all-the-way-down/host/**"
+      - "store/apps/parrots-all-the-way-down/core/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-process-boundary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Read tested repository revision
+        uses: actions/checkout@v4
+      - name: Select Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build native Rust Parrots adapter and desk
+        run: cargo build --locked --release --manifest-path store/apps/parrots-all-the-way-down/host/Cargo.toml --bins
+      - name: Existing native positive and negative dispatch tests
+        run: cargo test --locked --release --manifest-path store/apps/parrots-all-the-way-down/host/Cargo.toml --test dispatch -- --test-threads=1
+      - name: Independently probe unregistered process escape (expected adverse observation)
+        run: |
+          python3 audit/director-13/containment_probe.py \
+            --cli store/apps/parrots-all-the-way-down/host/target/release/parrots-all-the-way-down \
+            --delegate store/apps/parrots-all-the-way-down/host/target/release/pcp-delegate \
+            --output d13-evidence/process_boundary.json
+      - name: Preserve scoped test result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: director-13-process-boundary
+          path: d13-evidence/process_boundary.json
+          if-no-files-found: warn
+          retention-days: 7
