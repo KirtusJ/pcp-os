@@ -76,7 +76,8 @@ fn efi_mmap(entry_bytes: u32, version: u32, entries: &[u8]) -> Vec<u8> {
 
 #[test]
 fn empty_information_is_valid_but_proves_no_boot_services_state() {
-    let result = inspect(&mbi(&[])).unwrap();
+    let data = mbi(&[]);
+    let result = inspect(&data).unwrap();
     assert!(result.framebuffer.is_none());
     assert!(result.efi_memory_map.is_none());
     assert!(!result.efi_boot_services_not_terminated);
@@ -85,7 +86,8 @@ fn empty_information_is_valid_but_proves_no_boot_services_state() {
 
 #[test]
 fn valid_rgb_framebuffer_above_four_gib_has_distinct_pitch() {
-    let result = inspect(&mbi(&[bgrx(0x1_1000_0000)])).unwrap();
+    let data = mbi(&[bgrx(0x1_1000_0000)]);
+    let result = inspect(&data).unwrap();
     let fb = result.framebuffer.unwrap();
     assert!(fb.physical_base > u32::MAX as u64);
     assert_eq!(fb.pitch_bytes, 8192);
@@ -98,7 +100,8 @@ fn valid_rgb_framebuffer_above_four_gib_has_distinct_pitch() {
 #[test]
 fn same_high_framebuffer_with_reversed_channels_is_not_bgrx() {
     let tag = rgb(0x1_1000_0000, 8192, 1920, 1080, 32, [0, 8, 8, 8, 16, 8]);
-    let result = inspect(&mbi(&[tag])).unwrap();
+    let data = mbi(&[tag]);
+    let result = inspect(&data).unwrap();
     let fb = result.framebuffer.unwrap();
     assert!(!fb.matches_bgrx32());
     assert!(fb.matches_rgbx32());
@@ -107,7 +110,8 @@ fn same_high_framebuffer_with_reversed_channels_is_not_bgrx() {
 #[test]
 fn valid_rgb565_is_preserved_as_non_bgrx() {
     let tag = rgb(0xB8000, 2560, 1280, 720, 16, [11, 5, 5, 6, 0, 5]);
-    let result = inspect(&mbi(&[tag])).unwrap();
+    let data = mbi(&[tag]);
+    let result = inspect(&data).unwrap();
     let fb = result.framebuffer.unwrap();
     assert_eq!(fb.kind, PixelKind::DirectRgb);
     assert_eq!(fb.bits_per_pixel, 16);
@@ -118,7 +122,8 @@ fn valid_rgb565_is_preserved_as_non_bgrx() {
 fn unsupported_unknown_framebuffer_subtype_is_not_implicitly_absent() {
     let mut t = bgrx(0x200000);
     t[8 + 8 + 4 + 4 + 4 + 1] = 99;
-    let result = inspect(&mbi(&[t])).unwrap();
+    let data = mbi(&[t]);
+    let result = inspect(&data).unwrap();
     assert_eq!(result.framebuffer.unwrap().kind, PixelKind::Unknown(99));
 }
 
@@ -132,7 +137,8 @@ fn palette_framebuffer_is_present_but_not_direct_rgb() {
     data.extend_from_slice(&[8, 0, 0, 0]);
     data.extend_from_slice(&2u32.to_le_bytes());
     data.extend_from_slice(&[255, 0, 0, 0, 255, 0]);
-    let result = inspect(&mbi(&[tag(8, &data)])).unwrap();
+    let data = mbi(&[tag(8, &data)]);
+    let result = inspect(&data).unwrap();
     assert_eq!(result.framebuffer.unwrap().kind, PixelKind::Indexed);
 }
 
@@ -144,17 +150,19 @@ fn ega_text_width_and_height_are_not_pixels() {
     data.extend_from_slice(&80u32.to_le_bytes());
     data.extend_from_slice(&25u32.to_le_bytes());
     data.extend_from_slice(&[16, 2, 0, 0]);
-    let result = inspect(&mbi(&[tag(8, &data)])).unwrap();
+    let data = mbi(&[tag(8, &data)]);
+    let result = inspect(&data).unwrap();
     assert_eq!(result.framebuffer.unwrap().kind, PixelKind::Text);
 }
 
 #[test]
 fn accepts_efi_memory_map_and_basic_map_as_distinct_sources() {
     let memory = mm_entry(0, 640 * 1024, 2);
-    let result = inspect(&mbi(&[
+    let data = mbi(&[
         mmap(24, 0, &memory),
         efi_mmap(48, 1, &[0; 48]),
-    ])).unwrap();
+    ]);
+    let result = inspect(&data).unwrap();
     assert_eq!(result.basic_memory_map.unwrap().entry_bytes, 24);
     assert_eq!(result.efi_memory_map.unwrap().entry_bytes, 48);
     assert_eq!(result.efi_memory_map.unwrap().entry_version, 1);
@@ -162,17 +170,19 @@ fn accepts_efi_memory_map_and_basic_map_as_distinct_sources() {
 
 #[test]
 fn efi_boot_services_tag_reports_not_exited() {
-    let result = inspect(&mbi(&[tag(18, &[])])).unwrap();
+    let data = mbi(&[tag(18, &[])]);
+    let result = inspect(&data).unwrap();
     assert!(result.efi_boot_services_not_terminated);
     assert!(result.efi_memory_map.is_none());
 }
 
 #[test]
 fn command_line_and_module_use_nul_delimited_bytes() {
-    let result = inspect(&mbi(&[
+    let data = mbi(&[
         tag(1, b"auto=probe\0"),
         module(0x400000, 0x500000, b"probe\0"),
-    ])).unwrap();
+    ]);
+    let result = inspect(&data).unwrap();
     assert_eq!(result.command_line, Some(&b"auto=probe"[..]));
     assert_eq!(result.module_count, 1);
     assert_eq!(result.modules[0].unwrap().command, b"probe");
@@ -180,7 +190,8 @@ fn command_line_and_module_use_nul_delimited_bytes() {
 
 #[test]
 fn efi_system_table_pointer_is_64_bit_without_map_authority() {
-    let result = inspect(&mbi(&[tag(12, &0x1_0000_1000u64.to_le_bytes())])).unwrap();
+    let data = mbi(&[tag(12, &0x1_0000_1000u64.to_le_bytes())]);
+    let result = inspect(&data).unwrap();
     assert_eq!(result.efi64_system_table, Some(0x1_0000_1000));
     assert!(result.efi_memory_map.is_none());
 }
@@ -189,7 +200,8 @@ fn efi_system_table_pointer_is_64_bit_without_map_authority() {
 fn elf_header_tags_are_not_mb2_information_tags() {
     // Byte pattern for an EFI image HEADER tag type 9 is not evidence of
     // the separate OS-image header. The information parser just skips it.
-    let result = inspect(&mbi(&[tag(9, &[0x11; 12])])).unwrap();
+    let data = mbi(&[tag(9, &[0x11; 12])]);
+    let result = inspect(&data).unwrap();
     assert_eq!(result.unknown_tag_count, 1);
 }
 
@@ -243,7 +255,7 @@ fn reject_zero_sized_tag_without_looping() {
 fn reject_missing_end_tag() {
     let mut raw = mbi(&[]);
     raw[8..12].copy_from_slice(&22u32.to_le_bytes());
-    assert_eq!(inspect(&raw), Err(Error::MalformedTag));
+    assert_eq!(inspect(&raw), Err(Error::MissingEnd));
 }
 
 #[test]
@@ -350,7 +362,8 @@ fn reject_duplicate_overlapping_modules() {
 
 #[test]
 fn accept_unknown_tags_without_granting_semantics() {
-    let result = inspect(&mbi(&[tag(1000, &[1, 2, 3])])).unwrap();
+    let data = mbi(&[tag(1000, &[1, 2, 3])]);
+    let result = inspect(&data).unwrap();
     assert_eq!(result.unknown_tag_count, 1);
 }
 
