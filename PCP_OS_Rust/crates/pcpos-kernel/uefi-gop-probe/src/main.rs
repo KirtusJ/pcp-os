@@ -7,10 +7,12 @@
 use core::{ffi::c_void, mem::{size_of, transmute}, ptr};
 use pcpos_gop_probe::{
     BootServices, EfiStatus, FreePoolFn, GOP_GUID, GraphicsOutput,
-    GraphicsOutputMode, LocateProtocolFn, ModeInformation, SimpleTextOutput,
+    LocateProtocolFn, ModeInformation, SimpleTextOutput,
     SystemTable, BOOT_SERVICES_SIGNATURE, BS_FREE_POOL, BS_LOCATE_PROTOCOL,
-    SYSTEM_TABLE_SIGNATURE, observed, safe_alternate_candidate,
+    SYSTEM_TABLE_SIGNATURE,
 };
+#[cfg(feature = "exercise-mode-switch")]
+use pcpos_gop_probe::safe_alternate_candidate;
 
 const MAX_LISTED_MODES: u32 = 64;
 const EFI_NOT_FOUND: usize = (1usize << 63) | 14;
@@ -146,6 +148,7 @@ unsafe fn app(table: *mut SystemTable) -> EfiStatus {
     line.text(" no_edid_association");
     unsafe { line.send(con) };
     unsafe { show_mode(con, "BEFORE", gop) };
+    #[cfg(feature = "exercise-mode-switch")]
     let original = unsafe { (*mode).mode };
     let max_modes = unsafe { (*mode).max_mode };
     let bounded = core::cmp::min(max_modes, MAX_LISTED_MODES);
