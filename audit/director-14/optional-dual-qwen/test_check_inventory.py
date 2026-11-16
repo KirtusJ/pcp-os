@@ -207,11 +207,12 @@ class DualQwenInventoryControls(unittest.TestCase):
         # One original file is hashed, then changed in place to same-length
         # bytes while its open handle remains live.
         target = self.root / "models/8b/model.gguf"
+        target_ino = target.stat().st_ino
         previous = inventory.sha256_file
 
         def mutate_after_hash(handle):
             observation = previous(handle)
-            if Path(handle.name) == target:
+            if os.fstat(handle.fileno()).st_ino == target_ino:
                 target.write_bytes(self.files["models/8b/model.gguf"].replace(
                     b"-8B-", b"-9B-"))
             return observation
@@ -225,13 +226,14 @@ class DualQwenInventoryControls(unittest.TestCase):
         # Previously the old correct inode could be hashed successfully
         # even after its pathname was replaced by another file.
         target = self.root / "models/8b/model.gguf"
+        target_ino = target.stat().st_ino
         swap = self.root / "models/8b/swapped.tmp"
         swap.write_bytes(b"NONMODEL-REPLACEMENT-FILE")
         previous = inventory.sha256_file
 
         def swap_after_hash(handle):
             observation = previous(handle)
-            if Path(handle.name) == target:
+            if os.fstat(handle.fileno()).st_ino == target_ino:
                 os.replace(swap, target)
             return observation
 
@@ -241,11 +243,12 @@ class DualQwenInventoryControls(unittest.TestCase):
 
     def test_path_removed_after_hash_is_not_success(self):
         target = self.root / "models/8b/model.gguf"
+        target_ino = target.stat().st_ino
         previous = inventory.sha256_file
 
         def unlink_after_hash(handle):
             observation = previous(handle)
-            if Path(handle.name) == target:
+            if os.fstat(handle.fileno()).st_ino == target_ino:
                 target.unlink()
             return observation
 
