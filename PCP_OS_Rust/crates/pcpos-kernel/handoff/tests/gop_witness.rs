@@ -133,6 +133,68 @@ fn repeated_setmode_on_same_mode_index_does_not_demonstrate_switch() {
 }
 
 #[test]
+fn successful_same_mode_number_with_changed_pitch_is_not_an_unchanged_reassertion() {
+    let mut c = captured_mode_change();
+    c.after = c.before;
+    c.after.sequence = 30;
+    c.after.pixels_per_scan_line = c.before.pixels_per_scan_line + 64;
+    c.set_mode.as_mut().unwrap().requested_mode = c.before.current_mode;
+    assert_eq!(assess(&c), Ok(Assessment::SameModeNumberChangedMetadata));
+}
+
+#[test]
+fn successful_same_mode_number_with_new_framebuffer_base_is_reported_separately() {
+    let mut c = captured_mode_change();
+    c.after = c.before;
+    c.after.sequence = 30;
+    c.after.framebuffer_base = 0x1_1000_0000;
+    c.set_mode.as_mut().unwrap().requested_mode = c.before.current_mode;
+    assert_eq!(assess(&c), Ok(Assessment::SameModeNumberChangedMetadata));
+}
+
+#[test]
+fn failed_call_with_same_mode_number_and_different_framebuffer_is_not_no_effect() {
+    let mut c = captured_mode_change();
+    c.after = c.before;
+    c.after.sequence = 30;
+    c.after.framebuffer_size += 4096;
+    let call = c.set_mode.as_mut().unwrap();
+    call.requested_mode = c.before.current_mode;
+    call.status = SetModeStatus::EfiDeviceError;
+    assert_eq!(assess(&c), Ok(Assessment::FailedCallChangedMetadata));
+}
+
+#[test]
+fn failed_call_with_same_mode_number_and_changed_mode_catalog_is_not_no_effect() {
+    let mut c = captured_mode_change();
+    c.after = c.before;
+    c.after.sequence = 30;
+    c.after.max_modes += 1;
+    let call = c.set_mode.as_mut().unwrap();
+    call.requested_mode = c.before.current_mode;
+    call.status = SetModeStatus::EfiUnsupported;
+    assert_eq!(assess(&c), Ok(Assessment::FailedCallChangedMetadata));
+}
+
+#[test]
+fn pixelbltonly_with_no_usable_scanline_can_be_a_selected_mode() {
+    let mut c = captured_mode_change();
+    c.after.pixel_format = 3; // GOP PixelBltOnly
+    c.after.pixels_per_scan_line = 0; // never used for a direct framebuffer
+    c.after.framebuffer_base = 0;
+    c.after.framebuffer_size = 0;
+    assert_eq!(assess(&c), Ok(Assessment::ConsistentWithOsModeChange));
+}
+
+#[test]
+fn linear_pixel_format_does_not_allow_zero_scanline_pitch() {
+    let mut c = captured_mode_change();
+    c.after.pixel_format = 1;
+    c.after.pixels_per_scan_line = 0;
+    assert_eq!(assess(&c), Err(Error::InvalidGeometry));
+}
+
+#[test]
 fn successful_call_without_matching_post_readback_is_contradictory() {
     let mut c = captured_mode_change();
     c.after.current_mode = 2;
