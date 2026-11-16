@@ -23,6 +23,12 @@ The independent [group-boundary probe](group_boundary.py) starts **each** test a
 
 Both groups are test-created, their PIDs are checked against `/proc` start ticks before use, and the detached child is independently cleaned up. Neither case uses a real PCP OS guest, device, model, installed host or service. A passing test **demonstrates the residual escape**, not an enforceable container. A selected cgroup/VM containment mechanism must later be tested separately with direct and detached descendants, crash and restart controls, and externally verified enforcement.
 
+## Logical task budget versus real OS process count
+
+The bounded [budget-bypass probe](budget_escape.py) tests a distinct consequence of untrusted descendants. It configures a disposable native Rust Parrots desk with **depth 0, one live admitted task, ten cumulative admissions**. A correctly admitted root spawns **three** OS children into separate Unix sessions without using the admission service. While the registered root is active, a second legitimate adapter request must fail with the **live node limit** and must not execute its requested program. The same readback must show **one** registered task, but the original worker and three unregistered children are independently observed alive using their /proc PID/start identities.
+
+After the registered root is cancelled, its original worker must be observed exited. The desk must contain one cancelled node and no other admitted task, while each of the three unregistered children remains alive and writes a fresh heartbeat. Every child is bounded to 22 seconds, has a test-only isolated process group and exit marker, and is explicitly cleaned up by PID/start-checked disposal. This is **not a bypass of the native register-admission check**: the legitimate second task is correctly refused. It is proof that a bound on *admitted task records* is not a bound on *operating system processes* when a registered program can spawn unregistered descendants. The eventual enforcement candidate must use an actual OS process/cgroup limit and negative cases for both same-group and detached descendants.
+
 ## Read-only cgroup feasibility check
 
 The separate [cgroup preflight](cgroup_preflight.py) does **not** create cgroups, move processes, modify a mount, issue a privilege escalation or establish an enforcement mechanism. It reads the transient Linux worker's cgroup v2 mount and namespace-relative membership, controller names, available control files, observed read-only mount flags, write-access hints, and whether a pidfd for the current test process can be opened. It omits the actual host cgroup path. A successful preflight merely identifies the observed API surface and hints about delegation; it cannot qualify a cgroup parent, usable enforcement, process confinement, crash recovery or resident service. A future confinement test must use an explicitly authorized, isolated resource boundary and an independent before/during/after process check. 
@@ -42,11 +48,15 @@ python3 audit/director-13/group_boundary.py \
   --cli store/apps/parrots-all-the-way-down/host/target/release/parrots-all-the-way-down \
   --delegate store/apps/parrots-all-the-way-down/host/target/release/pcp-delegate \
   --output d13-evidence/process_group_boundary.json
+python3 audit/director-13/budget_escape.py \
+  --cli store/apps/parrots-all-the-way-down/host/target/release/parrots-all-the-way-down \
+  --delegate store/apps/parrots-all-the-way-down/host/target/release/pcp-delegate \
+  --output d13-evidence/budget_escape.json
 python3 audit/director-13/cgroup_preflight.py \
   --output d13-evidence/cgroup_preflight.json
 ~~~
 
-The workflow at .github/workflows/director-13-containment.yml builds and executes the **actual Rust adapter** on a transient Linux Actions runner and retains the two process-test JSON observations and cgroup preflight result as one ephemeral artifact. A fake-adapter rehearsal, if separately performed, would check only harness structure, not Rust behavior. The actual code revision, job outcome and raw saved artifact must be inspected for any native-host finding. Neither this test nor a green Actions job establishes a resident runtime.
+The workflow at .github/workflows/director-13-containment.yml builds and executes the **actual Rust adapter** on a transient Linux Actions runner and retains all three process-test JSON observations and cgroup preflight result as one ephemeral artifact. A fake-adapter rehearsal, if separately performed, would check only harness structure, not Rust behavior. The actual code revision, job outcome and raw saved artifact must be inspected for any native-host finding. Neither this test nor a green Actions job establishes a resident runtime.
 
 ## Acceptance still missing
 
