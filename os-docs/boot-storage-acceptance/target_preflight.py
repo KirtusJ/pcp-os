@@ -203,7 +203,14 @@ def classify_source(*, location: str, available: bool, inspected: bool,
     Availability alone is never evidence. A network-off condition does not erase
     earlier genuinely inspected external source bytes, if inspection is known.
     """
-    if location not in ("local", "external"):
+    # Python type annotations are not runtime input validation. In particular,
+    # bool is an int subclass and the nonempty string "false" is truthy.
+    # Check *all* flags before making an evidence or availability assertion;
+    # a descriptive status must never be inferred from malformed caller input.
+    if (type(available) is not bool or type(inspected) is not bool or
+            type(networking_enabled) is not bool):
+        raise ValueError("availability, inspection and network flags must be bool")
+    if type(location) is not str or location not in ("local", "external"):
         raise ValueError("location must be local or external")
     if inspected and not available:
         raise ValueError("inspection cannot be asserted for an unavailable source")
