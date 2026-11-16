@@ -3,8 +3,10 @@
 import tempfile
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
-from evaluate_default_image import judge, load_observation, LABELS
+from evaluate_default_image import (judge, load_observation, verify_checkout_sources,
+                                    LABELS, PIN_BASE, PIN_DIAGNOSTIC)
 
 
 def image(elf, measured):
@@ -61,6 +63,30 @@ class ImageIdentityOracleControls(unittest.TestCase):
             with self.subTest(exit_code=exit_code, serial=serial):
                 self.assertEqual(judge(images,exit_code,serial)["disposition"],
                                  "DEFAULT_GUEST_SELFTEST_NOT_ACCEPTED")
+
+    def test_checkout_pin_mismatch_is_detected_before_issuing_attribution(self):
+        # Regression for the intermediate edited-checker / old-checkout CI
+        # revision: a result must not label an older tested candidate with a
+        # newer candidate commit SHA just because the Python constant changed.
+        def fake_git(argv, **kwargs):
+            self.assertEqual(argv[:3], ["git", "-C", argv[2]])
+            return PIN_BASE if argv[2] == "baseline" else PIN_DIAGNOSTIC
+        with patch("evaluate_default_image.subprocess.check_output",
+                   side_effect=fake_git):
+            self.assertEqual(
+                verify_checkout_sources(Path("baseline"), Path("candidate")),
+                {"base": PIN_BASE, "candidate": PIN_DIAGNOSTIC}
+            )
+        with patch("evaluate_default_image.subprocess.check_output",
+                   side_effect=lambda argv, **kw:
+                       PIN_BASE if argv[2] == "baseline"
+                       else "9fa9819103a67b0f2b124991a2d0d88b4c64b755"):
+            with self.assertRaisesRegex(ValueError, "CHECKOUT_PIN_MISMATCH"):
+                verify_checkout_sources(Path("baseline"), Path("candidate"))
+        with patch("evaluate_default_image.subprocess.check_output",
+                   side_effect=FileNotFoundError("git missing")):
+            with self.assertRaisesRegex(ValueError, "cannot verify"):
+                verify_checkout_sources(Path("baseline"), Path("candidate"))
 
     def test_missing_or_malformed_digest_file_is_not_silent(self):
         with tempfile.TemporaryDirectory() as root:
