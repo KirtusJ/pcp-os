@@ -45,12 +45,12 @@ def proc_identity(pid):
 
 def actor(mode, directory):
     root = Path(directory)
-    if mode == "leaf":
-        identity = proc_identity(os.getpid())
-        assert identity is not None
-        (root / "leaf.identity.json").write_text(
-            json.dumps({"pid": os.getpid(), "start_tick": identity["start_tick"]}), encoding="ascii"
-        )
+    identity = proc_identity(os.getpid())
+    assert identity is not None
+    (root / f"{mode}.identity.json").write_text(
+        json.dumps({"pid": os.getpid(), "start_tick": identity["start_tick"],
+                    "process_group": os.getpgrp()}), encoding="ascii"
+    )
     heartbeat = root / ("leaf.tick" if mode == "leaf" else "parent.tick")
     if mode in {"rogue-parent", "same-group-parent"}:
         # Both descendants bypass pcp-delegate. The original 'rogue-parent'
@@ -83,7 +83,7 @@ def has_exited(pid, original_start_tick):
             or current["start_tick"] != original_start_tick)
 
 
-def cleanup_escaped_child(root):
+def cleanup_escaped_child(root, expected_group=None):
     pidfile = root / "leaf.pid"
     if not pidfile.exists():
         return {"leaf_created": False}
@@ -91,20 +91,63 @@ def cleanup_escaped_child(root):
     identity = json.loads((root / "leaf.identity.json").read_text(encoding="ascii"))
     assert identity["pid"] == pid
     start_tick = identity["start_tick"]
+    approved_group = pid if expected_group is None else expected_group
     (root / "release").touch()
     if not has_exited(pid, start_tick):
         wait_for(lambda: (root / "leaf.exited").exists() or has_exited(pid, start_tick),
                  "escaped worker's exit notice", 2.5)
     if not has_exited(pid, start_tick):
-        # Kill only the process group created by the test itself. Neither an
-        # installed VM nor any existing worker is ever a target.
-        os.killpg(pid, signal.SIGTERM)
+        # The leaf identity is still the same process; check group ownership.
+        # Never accidentally signal the runner's or a foreign process group.
+        if os.getpgid(pid) != approved_group or (
+            expected_group is None and identity["process_group"] != pid
+        ):
+            raise AssertionError("detached leaf escaped its test-owned cleanup group")
+        os.killpg(approved_group, signal.SIGTERM)
         try:
             wait_for(lambda: has_exited(pid, start_tick), "escaped worker cleanup", 2.0)
         except AssertionError:
-            os.killpg(pid, signal.SIGKILL)
-            wait_for(lambda: has_exited(pid, start_tick), "forced escaped worker cleanup", 2.0)
+            if has_exited(pid, start_tick):
+                pass
+            elif os.getpgid(pid) == approved_group:
+                os.killpg(approved_group, signal.SIGKILL)
+                wait_for(lambda: has_exited(pid, start_tick),
+                         "forced escaped worker cleanup", 2.0)
+            else:
+                raise AssertionError("cleanup group identity changed")
     return {"leaf_created": True, "leaf_pid": pid, "leaf_exited_or_reaped": has_exited(pid, start_tick)}
+
+
+def read_actor_identity(root, mode):
+    identity = json.loads((root / f"{mode}.identity.json").read_text(encoding="ascii"))
+    assert isinstance(identity["pid"], int) and identity["pid"] > 0
+    assert isinstance(identity["start_tick"], int) and identity["start_tick"] > 0
+    return identity
+
+
+def silent_liveness_oracle(root):
+    """Negative control: absence of heartbeats does not prove an OS process exited."""
+    sleeper = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(10)"],
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True,
+    )
+    try:
+        wait_for(lambda: proc_identity(sleeper.pid) is not None, "silent worker to start")
+        identity = proc_identity(sleeper.pid)
+        assert identity is not None and identity["state"] != "Z"
+        marker = root / "silent.tick"
+        before = read_ticks(marker)
+        time.sleep(0.20)
+        after = read_ticks(marker)
+        assert before == after == 0
+        assert not has_exited(sleeper.pid, identity["start_tick"])
+        return {"no_heartbeat": True, "process_still_alive": True,
+                "positive_liveness_oracle": "PID and /proc start tick"}
+    finally:
+        if sleeper.poll() is None:
+            sleeper.terminate()
+        sleeper.wait(timeout=5.0)
 
 
 def probe(cli, delegate, output):
@@ -122,6 +165,7 @@ def probe(cli, delegate, output):
         db = root / "probe.redb"
         invoke(str(cli), "init", str(db), "0", "1", "4")
         try:
+            report["controls"]["silent_oracle"] = silent_liveness_oracle(root)
             # Positive: the only child is the directly supervised process.
             direct_dir = root / "direct"
             direct_dir.mkdir()
@@ -132,18 +176,27 @@ def probe(cli, delegate, output):
                stderr=subprocess.PIPE, text=True, start_new_session=True,
                close_fds=True)
             try:
-                wait_for(lambda: read_ticks(direct_dir / "parent.tick") >= 2,
+                wait_for(lambda: read_ticks(direct_dir / "parent.tick") >= 2
+                         and (direct_dir / "direct-parent.identity.json").exists(),
                          "direct worker to start")
+                direct_identity = read_actor_identity(direct_dir, "direct-parent")
+                assert not has_exited(direct_identity["pid"], direct_identity["start_tick"])
                 invoke(str(cli), "cancel", str(db), "cancel-direct", "1")
                 out, err = direct.communicate(timeout=8.0)
                 assert direct.returncode != 0, (out, err)
+                wait_for(lambda: has_exited(direct_identity["pid"],
+                                              direct_identity["start_tick"]),
+                         "direct worker to exit after cancellation", 2.0)
                 n = read_ticks(direct_dir / "parent.tick")
                 time.sleep(0.40)
                 assert read_ticks(direct_dir / "parent.tick") == n
+                recorded = json.loads(invoke(str(cli), "status", str(db)).stdout)
+                assert len(recorded["nodes"]) == 1 and recorded["nodes"][0]["state"] == "Cancelled"
                 report["controls"]["direct"] = {
                     "adapter_exit_code": direct.returncode,
                     "direct_child_stopped_after_cancel": True,
-                    "recorded_state": "Cancelled",
+                    "direct_child_os_exited_or_reaped": True,
+                    "recorded_state": recorded["nodes"][0]["state"],
                 }
             finally:
                 if direct.poll() is None:
@@ -170,11 +223,19 @@ def probe(cli, delegate, output):
                close_fds=True)
             try:
                 wait_for(lambda: (rogue_dir / "leaf.pid").exists()
+                         and (rogue_dir / "rogue-parent.identity.json").exists()
                          and read_ticks(rogue_dir / "leaf.tick") >= 2,
                          "unregistered detached descendant")
+                rogue_identity = read_actor_identity(rogue_dir, "rogue-parent")
+                assert not has_exited(rogue_identity["pid"], rogue_identity["start_tick"])
+                leaf_identity = read_actor_identity(rogue_dir, "leaf")
+                assert not has_exited(leaf_identity["pid"], leaf_identity["start_tick"])
                 invoke(str(cli), "cancel", str(db), "cancel-rogue", "2")
                 out, err = rogue.communicate(timeout=8.0)
                 assert rogue.returncode != 0, (out, err)
+                wait_for(lambda: has_exited(rogue_identity["pid"],
+                                              rogue_identity["start_tick"]),
+                         "registered parent worker OS exit", 2.0)
                 before = read_ticks(rogue_dir / "leaf.tick")
                 time.sleep(0.50)
                 after = read_ticks(rogue_dir / "leaf.tick")
@@ -186,7 +247,12 @@ def probe(cli, delegate, output):
                     "ticks_after_parent_cancel": after - before,
                     "continued_after_parent_cancel": after > before,
                     "tracked_as_separate_desk_node": len(recorded["nodes"]) > 2,
+                    "registered_parent_os_exited_or_reaped": True,
+                    "detached_child_os_alive": True,
                 }
+                assert not has_exited(leaf_identity["pid"], leaf_identity["start_tick"]), (
+                    "detached child exited before a live continuation could be established"
+                )
                 assert after > before, (
                     "negative control did not expose the known group escape; "
                     "check whether the supervisor was hardened, or the probe is stale"
