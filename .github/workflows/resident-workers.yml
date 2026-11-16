@@ -39,7 +39,7 @@ jobs:
           python3 examples/resident-workers/fixture/build.py \
             --model "$RUNNER_TEMP/inputs/stories260K.bin" --reference "$RUNNER_TEMP/inputs/run.c" \
             --out "$RUNNER_TEMP/fixture"
-          PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
       - name: Boot the 24 guests and challenge the complete tree twice
         run: |
           python3 examples/resident-workers/supervise.py \

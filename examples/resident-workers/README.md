@@ -16,7 +16,7 @@ rustup target add x86_64-unknown-none
 rustup component add rust-src
 python3 examples/resident-workers/fixture/build.py \
   --model inputs/stories260K.bin --reference inputs/run.c --out inputs/resident
-PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
 python3 examples/resident-workers/supervise.py \
   --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
   --worker inputs/resident/resident.elf --oracle inputs/resident/oracle.json \
