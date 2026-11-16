@@ -191,3 +191,80 @@ fn newly_read_only_device_refuses_write_plan(){
     new.read_only=true;
     assert_eq!(still_writable(old,new),Err(Error::ReadOnly));
 }
+
+
+/// Sparse, fully synthetic >2^32-sector device. No multi-terabyte file
+/// exists: only 67 GPT metadata sectors are served through ReadSector.
+/// The Rust CRC helper is used for this *arithmetic* regression, while
+/// the ordinary 512-sector disk has independent Python/zlib and sgdisk checks.
+const HIGH_CAP: u64 = (1u64 << 32) + 512;
+
+struct SparseHigh {
+    mbr: [u8;512],
+    primary: [u8;512],
+    backup: [u8;512],
+    entries: Vec<u8>,
+    reads: Cell<usize>,
+}
+fn write_64(x: &mut [u8], at:usize, value:u64) {
+    x[at..at+8].copy_from_slice(&value.to_le_bytes());
+}
+fn write_32(x: &mut [u8], at:usize, value:u32) {
+    x[at..at+4].copy_from_slice(&value.to_le_bytes());
+}
+fn fix_header_crc(x: &mut [u8;512]) {
+    x[16..20].fill(0);
+    let sum=crc32(&x[..92]);
+    write_32(x,16,sum);
+}
+fn high_disk() -> SparseHigh {
+    let source=fixture("valid");
+    let mut mbr:[u8;512]=source.bytes[..512].try_into().unwrap();
+    let mut primary:[u8;512]=source.bytes[512..1024].try_into().unwrap();
+    let mut backup:[u8;512]=source.bytes[(512-1)*512..512*512].try_into().unwrap();
+    let mut entries=source.bytes[2*512..34*512].to_vec();
+    write_32(&mut mbr,446+12,u32::MAX); // large-disk protective MBR sentinel
+    write_64(&mut entries,32,(1u64<<32)+40);
+    write_64(&mut entries,40,(1u64<<32)+100);
+    let entries_crc=crc32(&entries);
+    write_64(&mut primary,32,HIGH_CAP-1); // alternate header
+    write_64(&mut primary,48,HIGH_CAP-34); // last usable
+    write_32(&mut primary,88,entries_crc);
+    fix_header_crc(&mut primary);
+    write_64(&mut backup,24,HIGH_CAP-1); // own LBA
+    write_64(&mut backup,48,HIGH_CAP-34);
+    write_64(&mut backup,72,HIGH_CAP-33); // backup entries location
+    write_32(&mut backup,88,entries_crc);
+    fix_header_crc(&mut backup);
+    SparseHigh{mbr,primary,backup,entries,reads:Cell::new(0)}
+}
+impl ReadSector for SparseHigh {
+    fn read_sector(&self,lba:u64,out:&mut [u8;512])->Result<(),()>{
+        self.reads.set(self.reads.get()+1);
+        let src:&[u8]=if lba==0 {&self.mbr}
+        else if lba==1 {&self.primary}
+        else if lba==HIGH_CAP-1 {&self.backup}
+        else if (2..34).contains(&lba) {
+            let i=(lba-2) as usize*512;
+            &self.entries[i..i+512]
+        } else if (HIGH_CAP-33..HIGH_CAP-1).contains(&lba) {
+            let i=(lba-(HIGH_CAP-33)) as usize*512;
+            &self.entries[i..i+512]
+        } else {return Err(());};
+        out.copy_from_slice(src);
+        Ok(())
+    }
+}
+#[test]
+fn accepts_sparse_valid_gpt_with_real_64_bit_lba_above_2_pow_32(){
+    let disk=high_disk();
+    let facts=Media{capacity_512:HIGH_CAP,read_only:false,generation:44};
+    let found=inspect(&disk,facts,target()).unwrap();
+    assert_eq!(found.media.capacity_512,HIGH_CAP);
+    assert_eq!(found.selected.first,(1u64<<32)+40);
+    assert_eq!(found.selected.last,(1u64<<32)+100);
+    assert!(found.selected.last > u64::from(u32::MAX));
+    assert_eq!(disk.reads.get(),67);
+    assert_eq!(still_writable(found,facts),Ok(()));
+    // No physical sectors above 4 GiB were allocated, attached or written.
+}
