@@ -58,8 +58,11 @@ jobs:
           CARGO_PROFILE_RELEASE_LTO: 'off'
         run: |
           set -euo pipefail
-          cargo build --offline --release --target x86_64-unknown-none \
-            --manifest-path apps/tailorbird/guest/Cargo.toml
+          # Cargo discovers .cargo/config.toml relative to the current
+          # directory, NOT the directory containing --manifest-path.
+          # The guest's config supplies the static high-address linker script.
+          cd apps/tailorbird/guest
+          cargo build --offline --release --target x86_64-unknown-none
       - name: Inspect exact ELF64 output and hash
         shell: bash
         run: |
@@ -68,5 +71,51 @@ jobs:
           test -s "$ELF"
           readelf -h "$ELF"
           readelf -l "$ELF"
+          readelf -r "$ELF"
+          # Reject default PIE/low-address layouts that are ELF64 but do not
+          # match PCP OS' guest linker script or loader expectations.
+          python3 - "$ELF" <<'PY'
+          import pathlib
+          import struct
+          import sys
+
+          data = pathlib.Path(sys.argv[1]).read_bytes()
+          assert data[:6] == b"\x7fELF\x02\x01", "expected ELF64 little endian"
+          (
+              e_type, machine, version, entry, phoff, shoff, flags,
+              ehsize, phentsize, phnum, shentsize, shnum, shstrndx
+          ) = struct.unpack_from("<HHIQQQIHHHHHH", data, 16)
+          assert e_type == 2, f"expected ET_EXEC (2), got {e_type}"
+          assert machine == 62, f"expected x86_64, got {machine}"
+          assert entry == 0x8000400000, f"unexpected entry {entry:#x}"
+          assert phentsize == 56 and 0 < phnum <= 64
+          assert phoff + phentsize * phnum <= len(data)
+          loads = []
+          entry_executable = False
+          for i in range(phnum):
+              (kind, permissions, offset, vaddr, paddr,
+               filesz, memsz, align) = struct.unpack_from(
+                  "<IIQQQQQQ", data, phoff + i * phentsize
+              )
+              assert kind not in (2, 3), "dynamic segment / interpreter not allowed"
+              if kind != 1:
+                  continue
+              assert filesz <= memsz and offset + filesz <= len(data)
+              assert not (permissions & 3 == 3), "writable-and-executable segment"
+              assert vaddr >= 0x8000400000
+              if permissions & 1 and vaddr <= entry < vaddr + memsz:
+                  entry_executable = True
+              loads.append((hex(vaddr), hex(memsz), permissions))
+          assert loads and entry_executable, "entry not in executable PT_LOAD"
+          if shoff and shnum:
+              assert shentsize == 64 and shoff + shentsize * shnum <= len(data)
+              for i in range(shnum):
+                  sh_type = struct.unpack_from("<I", data, shoff + i * shentsize + 4)[0]
+                  sh_size = struct.unpack_from("<Q", data, shoff + i * shentsize + 32)[0]
+                  assert not (sh_type in (4, 9) and sh_size), (
+                      "unprocessed runtime relocations are not supported by PCP OS"
+                  )
+          print("PASS: intended static high-address ELF64 guest layout", loads)
+          PY
           sha256sum "$ELF"
           git rev-parse HEAD
