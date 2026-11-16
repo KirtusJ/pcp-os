@@ -49,9 +49,6 @@ struct Entry {
     digest: String,
 }
 
-/// The mode the kernel draws its own screens in.
-const OWN_MODE: (u32, u32) = (1024, 768);
-
 fn option<'a>(line: &'a str, key: &str) -> Option<&'a str> {
     line.split_whitespace().find_map(|w| w.strip_prefix(key).and_then(|r| r.strip_prefix('=')))
 }
@@ -155,6 +152,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
                 arch::interrupts_on();
                 dev::keys_forget();
             }
+            (0x21, false) => files_view(&files),
             (0x13, false) => register_view(rec),
             (0x19, false) | (0x01, false) => break,
             _ => {}
@@ -177,81 +175,129 @@ fn wait_key() -> (u8, bool) {
     }
 }
 
+/// Clip a text field to the selected mode's character grid.
+/// The text renderer already clips framebuffer writes; this also bounds work.
+fn desktop_at(cols: u32, rows: u32, x: u32, y: u32, s: &str, fg: u32, bg: u32) {
+    if x >= cols || y >= rows {
+        return;
+    }
+    let clipped: String = s.chars().take((cols - x) as usize).collect();
+    ui::at(x, y, &clipped, fg, bg);
+}
+
+/// Keyboard-accessible first-launch shell drawn atop a per-resolution raster.
+/// It is not a multiwindow desktop and cannot choose a monitor's native mode.
 fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8], String)], rec: &Record, chosen: usize, message: &str, stored: usize) {
-    use ui::{at, GROUND, PANEL, SOFT, TEXT};
-    ui::clear(GROUND);
+    use ui::{GROUND, PANEL, SOFT, TEXT};
+    if !ui::desktop_background() {
+        // Unsupported video dimensions/pitch keep the original flat background.
+        ui::clear(GROUND);
+    }
     let (cols, rows) = ui::grid();
-    ui::emblem(30, 24, 132, GROUND);
-    at(19, 2, "PCP OS", TEXT, GROUND);
-    at(26, 2, &format!("kernel {}", start.version), SOFT, GROUND);
-    at(19, 3, "Parrot Council Protocol. Evidence before agreement.", SOFT, GROUND);
-    let verified = if start.failed == 0 { format!("Verified at start: all {} self-tests passed.", start.passed) } else { format!("NOT VERIFIED: {} of {} self-tests failed.", start.failed, start.passed + start.failed) };
-    at(19, 5, &verified, if start.failed == 0 { ui::GOOD } else { ui::BAD }, GROUND);
+    let layout = match pcpos_desktop::Layout::new(cols, rows) {
+        Some(a) => a,
+        None => {
+            desktop_at(cols, rows, 1, 1, "PCP OS: display too small for desktop", TEXT, GROUND);
+            desktop_at(cols, rows, 1, 2, "Up/Down select, Enter run, R register, F files, P power off", SOFT, GROUND);
+            if let Some(p) = programs.get(chosen) {
+                desktop_at(cols, rows, 1, 4, &p.name, TEXT, GROUND);
+            }
+            return;
+        }
+    };
+    let l = layout.pane_left;
+    let inner = l + 2;
+    let bg = PANEL;
+    let focus = 0x27526A;
+    ui::fill(l * ui::CELL_W, layout.top * ui::CELL_H,
+             layout.pane_cols * ui::CELL_W, (rows - layout.top) * ui::CELL_H, bg);
+    desktop_at(cols, rows, inner, layout.top, "PCP OS | FIRST-LAUNCH DESKTOP", ui::TEAL, bg);
+    if layout.pane_cols >= 82 {
+        ui::emblem((l + layout.pane_cols - 8) * ui::CELL_W,
+                   (layout.top + 1) * ui::CELL_H, 42, bg);
+    }
+    let status = if start.failed == 0 {
+        format!("Kernel checks: {}/{} passed", start.passed, start.passed)
+    } else {
+        format!("SAFE: {}/{} checks failed; no programs may start", start.failed, start.passed + start.failed)
+    };
+    desktop_at(cols, rows, inner, layout.top + 1, &status,
+               if start.failed == 0 { ui::GOOD } else { ui::BAD }, bg);
+    if let Some(d) = dev::display() {
+        let origin = if d.kind == dev::DisplayKind::Bochs { "Bochs" } else { "loader" };
+        desktop_at(cols, rows, inner, layout.top + 2,
+                   &format!("Display: {}x{}  stride {} bytes  source {}", d.width, d.height, d.pitch, origin),
+                   SOFT, bg);
+    }
     let head = rec.ledger().head();
-    at(19, 6, &format!("Register: {} events, head {}...", rec.ledger().len(), &head[..head.len().min(16)]), SOFT, GROUND);
-    let mut row = 9;
-    at(2, row, "PROGRAMS", ui::TEAL, GROUND);
-    row += 1;
+    desktop_at(cols, rows, inner, layout.top + 3,
+               &format!("Register: {} events  head {}...", rec.ledger().len(), &head[..head.len().min(16)]),
+               SOFT, bg);
+    desktop_at(cols, rows, inner, layout.list_row - 1,
+               &format!("APPLICATIONS ({} supplied by loader)", programs.len()), ui::TEAL, bg);
+
+    let first = layout.first_visible(chosen, programs.len());
+    for (n, p) in programs.iter().enumerate().skip(first).take(layout.slots) {
+        let row = layout.list_row + (n - first) as u32;
+        let highlighted = n == chosen;
+        let line_bg = if highlighted { focus } else { bg };
+        if highlighted {
+            ui::fill((l + 1) * ui::CELL_W, row * ui::CELL_H,
+                     (layout.pane_cols - 2) * ui::CELL_W, ui::CELL_H, line_bg);
+        }
+        let line = format!("{} {:>3}/{}  {}  ({})", if highlighted { ">" } else { " " },
+                           n + 1, programs.len(), p.name, size_text(p.image.len()));
+        desktop_at(cols, rows, inner, row, &line,
+                   if highlighted { TEXT } else { SOFT }, line_bg);
+    }
     if programs.is_empty() {
-        at(4, row, "The loader handed over no program.", SOFT, GROUND);
-        row += 1;
+        desktop_at(cols, rows, inner, layout.list_row,
+                   "No applications installed. Manual kernel operation remains available.", SOFT, bg);
     }
-    for (i, p) in programs.iter().enumerate() {
-        let ground = if i == chosen { PANEL } else { GROUND };
-        ui::fill(ui::CELL_W, row * ui::CELL_H, (cols - 2) * ui::CELL_W, 2 * ui::CELL_H, ground);
-        at(2, row, if i == chosen { ">" } else { " " }, ui::AMBER, ground);
-        at(4, row, &p.name, TEXT, ground);
-        at(26, row, &size_text(p.image.len()), SOFT, ground);
-        at(38, row, &format!("SHA-256 {}...", &p.digest[..16]), SOFT, ground);
-        if !p.arguments.is_empty() {
-            at(66, row, &format!("with: {}", p.arguments.chars().take(30).collect::<String>()), SOFT, ground);
-        }
-        at(4, row + 1, if start.sound { "starting it lets it use: the display, the keyboard, sound, the loader's files, the store" } else { "starting it lets it use: the display, the keyboard, the loader's files, the store" }, SOFT, ground);
-        row += 2;
-        #[cfg(feature = "guest-ethernet")]
-        if ethernet_grant(start.boot.exact_command_line(), &p.digest) {
-            at(4, row, "Ethernet grant: this program can send and receive raw network frames.", SOFT, ground);
-            row += 1;
-        }
-        #[cfg(feature = "game-link")]
-        if option(&start.boot.command_line, "grant") != Some("none") && option(&start.boot.command_line, "link_image") == Some(p.digest.as_str()) {
-            at(4, row, "Optional game cable: this image can read and write the second serial port.", SOFT, ground);
-            row += 1;
-        }
+    if let Some(p) = programs.get(chosen) {
+        desktop_at(cols, rows, inner, layout.info_row,
+                   &format!("Selected SHA-256: {}", p.digest), SOFT, bg);
+    } else {
+        desktop_at(cols, rows, inner, layout.info_row, "Select a loader-supplied application to run.", SOFT, bg);
     }
-    row += 1;
-    at(2, row, "FILES FROM THE LOADER", ui::TEAL, GROUND);
-    row += 1;
-    for f in files.iter().take(8) {
-        at(4, row, &f.0, TEXT, GROUND);
-        at(26, row, &size_text(f.1.len()), SOFT, GROUND);
-        at(38, row, &format!("SHA-256 {}...", &f.2[..16]), SOFT, GROUND);
-        row += 1;
-    }
-    if files.is_empty() {
-        at(4, row, "None.", SOFT, GROUND);
-        row += 1;
-    }
-    row += 1;
-    at(2, row, "MACHINE", ui::TEAL, GROUND);
-    row += 1;
     let (pool, free, _, _) = crate::mem::census();
-    at(4, row, &format!("memory for programs: {} MiB, {} MiB free", pool * 4096 >> 20, free * 4096 >> 20), SOFT, GROUND);
-    row += 1;
-    if let Some(d) = start.display {
-        at(4, row, &format!("display: {}, {} page(s); keyboard: PS/2; sound: {}", if d.kind == dev::DisplayKind::Bochs { "Bochs interface, any mode" } else { "mode set by the loader" }, d.pages, if start.sound { "present" } else { "none" }), SOFT, GROUND);
-        row += 1;
-        at(4, row, &format!("store: {} file(s) written by programs, kept until power off", stored), SOFT, GROUND);
-    }
-    row += 2;
-    if !message.is_empty() {
-        for (n, part) in message.split('\n').enumerate() {
-            at(2, row + n as u32, &part.chars().take(cols as usize - 4).collect::<String>(), ui::AMBER, GROUND);
+    desktop_at(cols, rows, inner, layout.info_row + 1,
+               &format!("Loader files: {}  RAM: {} MiB / {} MiB free  session store: {}",
+                        files.len(), pool * 4096 >> 20, free * 4096 >> 20, stored),
+               SOFT, bg);
+    desktop_at(cols, rows, inner, layout.info_row + 2,
+               if message.is_empty() { "No Qwen or Tailorbird needed to use this launcher." } else { message },
+               if message.is_empty() { SOFT } else { ui::AMBER }, bg);
+
+    ui::fill(l * ui::CELL_W, layout.footer_row * ui::CELL_H,
+             layout.pane_cols * ui::CELL_W, 2 * ui::CELL_H, GROUND);
+    desktop_at(cols, rows, inner, layout.footer_row,
+               "Up/Down select  Enter launch  F files  R register  P power off", TEXT, GROUND);
+    desktop_at(cols, rows, inner, layout.footer_row + 1,
+               "Esc quit  Ctrl+Alt+Delete: kernel stops active guest", SOFT, GROUND);
+}
+
+/// View complete loader artifact identities separately from the compact launcher.
+/// This is still the kernel's supplied-file view, not a persistent file explorer.
+fn files_view(files: &[(String, &'static [u8], String)]) {
+    let (cols, rows) = ui::grid();
+    let page = rows.saturating_sub(5).max(1) as usize;
+    let mut top = 0usize;
+    loop {
+        ui::clear(ui::GROUND);
+        desktop_at(cols, rows, 1, 1, &format!("LOADER FILES: {}  (not persistent storage)", files.len()), ui::TEAL, ui::GROUND);
+        for (n, entry) in files.iter().skip(top).take(page).enumerate() {
+            let line = format!("{}  {}  SHA-256 {}", entry.0, size_text(entry.1.len()), entry.2);
+            desktop_at(cols, rows, 1, n as u32 + 3, &line, ui::TEXT, ui::GROUND);
+        }
+        desktop_at(cols, rows, 1, rows.saturating_sub(2), "Up/Down scroll  Esc return", ui::SOFT, ui::GROUND);
+        match wait_key() {
+            (0x48, _) => top = top.saturating_sub(1),
+            (0x50, _) => top = (top + 1).min(files.len().saturating_sub(page)),
+            (0x01, _) | (0x1C, _) => return,
+            _ => {}
         }
     }
-    ui::fill(0, (rows - 2) * ui::CELL_H, cols * ui::CELL_W, 2 * ui::CELL_H, PANEL);
-    at(2, rows - 2, "Up/Down choose    Enter start    R register    P power off", TEXT, PANEL);
-    at(2, rows - 1, "Ctrl+Alt+Delete stops a running program and returns here. No program can take that key.", SOFT, PANEL);
 }
 
 /// The kernel's register, newest events last, a screen at a time.
@@ -318,9 +364,11 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
     let (_, sound1, dry1) = dev::sound_state();
     let (sound_ms, dry) = ((sound1 - sound0) / (dev::SOUND_RATE as u64 * 4 / 1000), dry1 - dry0);
     let (_, fm_written, fm_late) = dev::fm_state();
-    // The display is the kernel's again, in the kernel's own mode.
-    if start.display.is_some() {
-        dev::display_set(OWN_MODE.0, OWN_MODE.1);
+    // Return to the actual startup mode, not a hard-coded 1024x768 desktop.
+    if let Some(initial) = start.display {
+        if dev::display_set(initial.width, initial.height).is_none() {
+            say!("desktop display restore refused: {}x{}", initial.width, initial.height);
+        }
         dev::display_show(0);
     }
     let message = match result {
