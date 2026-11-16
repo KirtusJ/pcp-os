@@ -165,6 +165,59 @@ not a blanket debugging or security recommendation. The next meaningful
 verification is an independently built, source-bound comparison across
 runners or toolchains, still separate from a UEFI runtime test.
 
+## First actual standalone Q35/OVMF execution (read-only, not PCP OS)
+
+[Exact-head GitHub Actions run 43808788133](https://github.com/KirtusJ/pcp-os/actions/runs/43808788133),
+[job 133105553642](https://github.com/KirtusJ/pcp-os/actions/runs/43808788133/job/133105553642)
+**completed successfully** at commit
+`2e22cb376e845198173ec4aa4f4466af16127894`.
+This is the first **executed UEFI probe** in Session B's own independently
+inspectable work. The step ran a disposable Q35/OVMF guest using
+QEMU **8.2.2**, Ubuntu 24.04 OVMF **2024.02-2ubuntu0.10**, a private copy
+of OVMF variables, **no networking**, and a QEMU virtual FAT device
+constructed only from this CI branch's EFI app. The firmware code image
+SHA-256 was `ad23261d43116abc3747d59a7837fbf578c9586a8993f4eeba064cd07eccb083`;
+the vars template was `5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e`.
+
+The special **`ci-debugcon`** compile-time feature mirrors UEFI ConOut
+text to the QEMU-only I/O debug port 0xE9. It is **not** enabled in either
+the normal default read-only binary or its normal release CI hash. It
+must not be run on physical PCs. The observed emulator-only EFI binary
+SHA-256 was `40b2ac5476b8e9286a48d41a7f1ea50a9f74c8c003be69f06726f11ac97f9d59`.
+
+The **actual decoded QEMU debug-output trace** contained:
+- `PCPOS_EFI_ENTRY_V1`, followed by
+  `PCPOS_GOP_PROBE_V1 STANDALONE ... no_edid_association`
+- An initial `BEFORE mode=0 max=30`, framebuffer physical base
+  `0x80000000`, framebuffer size **4,096,000 bytes**.
+- Initial mode **1280 × 800**, `PixelsPerScanLine=1280`,
+  GOP pixel format **1 (BGRX)**, mode info version 0.
+- Exactly **30 GOP QueryMode successes**, indices 0 through 29, including
+  **1920×1080 at index 22** and **2560×1440 at index 28**.
+- `PCPOS_GOP_PROBE_V1 END READ_ONLY` and
+  `PCPOS_EFI_RETURN_V1 0x0000000000000000` (EFI_SUCCESS).
+- The app made **no SetMode or ExitBootServices call**. The virtual
+  machine continued to firmware boot management and was deliberately
+  stopped after a **25-second test timeout**; QEMU timeout exit 124
+  is not a probe failure because the explicit EFI completion and return
+  status were observed.
+
+This strengthens **only** the execution finding for the **separate
+standalone EFI diagnostic** and actual emulated firmware GOP query.
+It is **not a PCP OS kernel boot**, does not authenticate a monitor or
+selected EDID, does not show PCP OS invoked a SetMode, does not verify
+physical hardware and does not establish host-enforced PCP calibration.
+
+**Retained emulator setup failures:** [run 43808168346](https://github.com/KirtusJ/pcp-os/actions/runs/43808168346)
+mounted a 32 MiB partitionless FAT32 virtual disk and yielded **zero**
+probe bytes by timeout. [run 43808422257](https://github.com/KirtusJ/pcp-os/actions/runs/43808422257)
+added an early EFI entry marker but still yielded **zero** bytes.
+Neither establishes that EFI entry executed. [run 43808598412](https://github.com/KirtusJ/pcp-os/actions/runs/43808598412)
+changed to QEMU virtual FAT but failed at QEMU launch
+(`Block node is read-only`) because the drive was opened writable;
+corrected with `readonly=on`. Only then did the actual probe execute.
+Keep these distinct from faults in UEFI pointer layout or GOP logic.
+
 ## Source and safety boundaries
 
 The minimal unsafe region is confined to firmware-entry code: table pointer reads, function-pointer conversion, and calls to firmware interfaces. The source is intentionally **not linked** to the kernel or the existing Multiboot1/Multiboot2 path. UEFI returns references and dynamically allocated buffers that must remain valid until `FreePool`; the program operates only while Boot Services are active.
