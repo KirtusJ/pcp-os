@@ -12,6 +12,8 @@ on:
       - "os-docs/register-forensics/test_compare_load_segments.py"
       - "os-docs/register-forensics/compare_stripped_images.py"
       - "os-docs/register-forensics/test_compare_stripped_images.py"
+      - "os-docs/register-forensics/check_stripped_kernel_boot.py"
+      - "os-docs/register-forensics/test_check_stripped_kernel_boot.py"
       - ".github/workflows/d11-parity-oracle-controls.yml"
   workflow_dispatch:
 
@@ -38,3 +40,5 @@ jobs:
             -p 'test_compare_load_segments.py' -v
           python3 -m unittest discover -s os-docs/register-forensics \
             -p 'test_compare_stripped_images.py' -v
+          python3 -m unittest discover -s os-docs/register-forensics \
+            -p 'test_check_stripped_kernel_boot.py' -v
