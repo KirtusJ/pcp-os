@@ -55,6 +55,32 @@ def refuse_float(_):
     raise ValueError("a ledger value is not a signed integer")
 
 
+def require_rust_value(value, depth=0):
+    """Reject structures Python parses but Rust's canonical Value rejects."""
+    if depth > 32:
+        raise ValueError("event nesting exceeds Rust MAX_DEPTH")
+    if value is None or type(value) is bool:
+        return
+    if type(value) is int:
+        if not -(1 << 63) <= value < (1 << 63):
+            raise ValueError("event integer exceeds Rust signed i64")
+        return
+    if type(value) is str:
+        if any(0xd800 <= ord(char) <= 0xdfff for char in value):
+            raise ValueError("unpaired UTF-16 surrogate accepted by Python JSON")
+        return
+    if type(value) is list:
+        for item in value:
+            require_rust_value(item, depth + 1)
+        return
+    if type(value) is dict:
+        for key, item in value.items():
+            require_rust_value(key, depth + 1)
+            require_rust_value(item, depth + 1)
+        return
+    raise ValueError("unsupported Rust record value")
+
+
 def read_register(raw):
     """Separate Python implementation of canonical event and chain verification."""
     if not raw or not raw.endswith(b"\n"):
@@ -70,6 +96,7 @@ def read_register(raw):
             parse_float=refuse_float,
             parse_constant=refuse_float,
         )
+        require_rust_value(obj)
         canonical = json.dumps(
             obj, sort_keys=True, ensure_ascii=True, separators=(",", ":")
         ).encode("ascii")
@@ -171,8 +198,8 @@ def exact_glyphs(frame, pos, phrase, cells, foreground, ground=GROUND):
 def launcher_ready(frame, cells, width, height):
     return frame[0] == (width, height) and (
         exact_glyphs(frame, (190, 40), "PCP OS", cells, TEXT)
-        and exact_glyphs(frame, (20, height - 40), "Up/Down choose", cells, TEXT, PANEL)
-        and exact_glyphs(frame, (20, height - 20), "Ctrl+Alt+Delete", cells, SOFT, PANEL)
+        and exact_glyphs(frame, (20, (height // 20 - 2) * 20), "Up/Down choose", cells, TEXT, PANEL)
+        and exact_glyphs(frame, (20, (height // 20 - 1) * 20), "Ctrl+Alt+Delete", cells, SOFT, PANEL)
     )
 
 
@@ -259,8 +286,36 @@ def one_boot(kernel, measurement, font, root, width, height, vram, mode, timeout
             damaged[0] ^= 1
             if not expect_failure(bytes(damaged)) or not expect_failure(raw[:-1]):
                 raise AssertionError("independent parser accepted a broken negative control")
+            # These are independent grammar discriminators, not broken chains.
+            # Python json.loads accepts all three; Rust Value::parse refuses.
+            fake = {
+                "actor": "diagnostic", "auth": "HOST", "body": {},
+                "kind": "NOTE", "prev": "0" * 64, "seq": 0,
+                "ts": "2026-11-12T00:00:00Z",
+            }
+            def encode_one(obj):
+                return json.dumps(
+                    obj, sort_keys=True, ensure_ascii=True,
+                    separators=(",", ":")
+                ).encode("ascii") + b"\n"
+            fake["actor"] = "\ud800"
+            if not expect_failure(encode_one(fake)):
+                raise AssertionError("Python accepted Rust-refused unpaired surrogate")
+            fake["actor"] = "diagnostic"
+            fake["body"] = {"big": 1 << 63}
+            if not expect_failure(encode_one(fake)):
+                raise AssertionError("Python accepted Rust-refused integer overflow")
+            deeply = {}
+            for _ in range(33):
+                deeply = [deeply]
+            fake["body"] = {"deep": deeply}
+            if not expect_failure(encode_one(fake)):
+                raise AssertionError("Python accepted Rust-refused excessive nesting")
             report["tampered_first_byte_refused_by_python"] = True
             report["missing_final_newline_refused_by_python"] = True
+            report["unpaired_surrogate_refused_by_python"] = True
+            report["i64_overflow_refused_by_python"] = True
+            report["excessive_nesting_refused_by_python"] = True
             if mode == "register-corrupt":
                 inject = re.findall(
                     rb"D10_REGISTER_INJECT offset=0 before=([0-9a-f]{2}) after=([0-9a-f]{2})",
