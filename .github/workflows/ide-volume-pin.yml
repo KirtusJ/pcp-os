@@ -1,0 +1,84 @@
+name: PCP OS opt-in v2 store identity boundary
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ide-volume-pin.yml'
+      - 'PCP_OS_Rust/crates/pcpos-kernel/STORE_PIN_EXPERIMENT.md'
+      - 'PCP_OS_Rust/crates/pcpos-kernel/src/store_identity.rs'
+      - 'PCP_OS_Rust/crates/pcpos-kernel/src/store.rs'
+      - 'PCP_OS_Rust/crates/pcpos-kernel/src/session.rs'
+      - 'PCP_OS_Rust/crates/pcpos-kernel/src/main.rs'
+      - 'PCP_OS_Rust/crates/pcpos-kernel/Cargo.toml'
+      - 'PCP_OS_Rust/crates/pcpos-kernel/tests/store_identity.rs'
+      - 'PCP_OS_Rust/crates/pcpos-kernel/tools/store_bound_probe.py'
+      - 'PCP_OS_Rust/crates/pcpos-kernel/tools/store_role_probe.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-v2-identity-and-clone-witness:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact authored PR head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Source and compiler identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          rustc --version --verbose
+          cargo --version
+          python3 --version
+      - name: Provision dedicated CI toolchain and QEMU
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends lld binutils qemu-system-x86 clang
+          rustup component add rust-src
+          rustup target add x86_64-unknown-none
+          qemu-system-x86_64 --version | head -1
+      - name: Pure source ID parser in host debug and optimized Rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="PCP_OS_Rust/crates/pcpos-kernel/tests/store_identity.rs"
+          rustc --edition=2021 --test "$src" -o "$RUNNER_TEMP/store-id-debug"
+          "$RUNNER_TEMP/store-id-debug" --nocapture
+          rustc --edition=2021 -O --test "$src" -o "$RUNNER_TEMP/store-id-optimized"
+          "$RUNNER_TEMP/store-id-optimized" --nocapture
+      - name: Historical default kernel and adverse role witness remain separate
+        shell: bash
+        env:
+          PCPOS_KERNEL_STAGE: ${{ runner.temp }}/pcpos-bound-store-build
+        run: |
+          set -euo pipefail
+          sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          cp PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 "$RUNNER_TEMP/historical-default.elf32"
+          sha256sum "$RUNNER_TEMP/historical-default.elf32"
+          python3 PCP_OS_Rust/crates/pcpos-kernel/tools/store_role_probe.py \
+            --kernel "$RUNNER_TEMP/historical-default.elf32" \
+            --out "$RUNNER_TEMP/default-legacy-ide" \
+            --objcopy objcopy --timeout 120
+      - name: Build opt-in v2 marker gate and run positive/refusal/cloning QEMU controls
+        shell: bash
+        env:
+          PCPOS_KERNEL_STAGE: ${{ runner.temp }}/pcpos-bound-store-build
+        run: |
+          set -euo pipefail
+          PCPOS_KERNEL_FEATURES=store-id-gate sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          kernel="PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32"
+          test -s "$kernel"
+          sha256sum "$kernel"
+          python3 PCP_OS_Rust/crates/pcpos-kernel/tools/store_bound_probe.py \
+            --kernel "$kernel" \
+            --out "$RUNNER_TEMP/opt-in-v2-ide" \
+            --objcopy objcopy --timeout 120
+          echo "This is a cloneable ID gate on synthetic IDE disk files, not physical-device authorization."

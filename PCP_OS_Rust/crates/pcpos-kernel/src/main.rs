@@ -20,6 +20,8 @@ mod worker_wire;
 mod register_wire;
 mod session;
 mod store;
+#[cfg(feature = "store-id-gate")]
+mod store_identity;
 mod sys;
 mod ui;
 mod user;

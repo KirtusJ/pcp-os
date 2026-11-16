@@ -106,6 +106,18 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     let mut world = World { files: files.iter().map(|f| (f.0.clone(), f.1)).collect(), store: Vec::new(), volume: None,
                             epoch_at_start: epoch(y, mo, d, h, mi, s).saturating_sub(arch::ticks() / arch::TICKS_PER_SECOND), unanswered: Vec::new() };
     let line = start.boot.command_line.as_str();
+    // A requested bound store must never silently become volatile if the
+    // accompanying store= selector is absent, misspelled or unsupported.
+    // This is still only a cloneable on-media ID, not physical identity.
+    #[cfg(feature = "store-id-gate")]
+    if !safe
+        && line.split_ascii_whitespace().any(|w| w.starts_with("store_id=") || w.starts_with("store="))
+        && !line.split_ascii_whitespace().any(|w| w == "store=ide0")
+    {
+        say!("bound user store requested without supported store=ide0; no program started");
+        *failed += 1;
+        return tasks;
+    }
     if !safe && line.split_whitespace().any(|w| w == "store=ide0") {
         let exact = start.boot.exact_command_line();
         if exact.is_none() || line.split_whitespace().filter(|w| w.starts_with("store=")).count() != 1 {
@@ -113,7 +125,16 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
             *failed += 1;
             return tasks;
         }
-        match crate::store::mount() {
+        // In the opt-in v2 fixture, missing or malformed ID tokens MUST NOT
+        // fall back to the old unpinned store mount. A syntactically valid
+        // and exact boot command alone does not authenticate a disk.
+        #[cfg(feature = "store-id-gate")]
+        let mounted = crate::store_identity::requested_id(line)
+            .ok_or(())
+            .and_then(crate::store::mount_pinned);
+        #[cfg(not(feature = "store-id-gate"))]
+        let mounted = crate::store::mount();
+        match mounted {
             Ok((volume, files)) => {
                 say!("user store mounted on primary IDE master: {} file(s)", files.len());
                 world.volume = Some(volume);
