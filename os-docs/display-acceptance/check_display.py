@@ -145,6 +145,13 @@ class TailorbirdLaunch:
 
 TITLE_SHA256 = "a35240f2eea7b8ccc7536d9d8e8402659126f5dc8862590605fbb60544fb0322"
 
+# Fixed first-launch desktop profile: native 1080p, 10 x 20 cells, Tailorbird first of two apps.
+LAUNCHER_FIELDS = {
+    "header": ((460, 40, 750, 60), "0886e044f1650f5607f0438457b4b68c7a65c4716e9fba470c932c161dc6facc"),
+    "selection": ((460, 140, 650, 160), "f79e60b90d4a8b449b42ff938d74b9eea458cd195c13ee95861a8502ca829ea3"),
+    "footer": ((460, 1040, 1080, 1060), "7bed92b8bc8e2b4256b6512c8fb4637cac2e35856638e65ea1853146c39aaccf"),
+}
+
 
 def crop(pixels, width, left, top, right, bottom):
     return b"".join(pixels[3 * (width * y + left):3 * (width * y + right)]
@@ -174,15 +181,31 @@ def title_record(size, pixels):
     return record
 
 
-def capture(monitor, out, name, check_title=False):
+def capture(monitor, out, name, check_title=False, check_launcher=False):
     time.sleep(1)
     path = out / f"{name}.ppm"
-    monitor.execute("screendump", filename=str(path))
-    size, raster = read_frame(path)
+    deadline = time.monotonic() + monitor.timeout
+    while True:
+        monitor.execute("screendump", filename=str(path))
+        size, raster = read_frame(path)
+        if not check_launcher:
+            break
+        hashes = {}
+        if size == (1920, 1080):
+            for field, (rect, _) in LAUNCHER_FIELDS.items():
+                hashes[field] = hashlib.sha256(crop(raster, size[0], *rect)).hexdigest()
+        missing = [field for field, (_, expected) in LAUNCHER_FIELDS.items() if hashes.get(field) != expected]
+        if not missing:
+            break
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"{name}: incomplete 1080p launcher at {size}; fields missing: {', '.join(missing)}")
+        time.sleep(.15)
     width, height = size
     if raster == raster[:3] * (width * height):
         raise ValueError(f"{name}: scanout is a single uniform colour")
     result = {"width": width, "height": height, "ppm_sha256": digest(path)}
+    if check_launcher:
+        result["launcher_field_sha256"] = hashes
     if check_title:
         result["title_1080p"] = title_record(size, raster)
     return result
@@ -227,7 +250,7 @@ def run(args, report):
             monitor.key("ret")
             wait_serial(guest, serial, b"PCP OS launcher ready", args.timeout)
             screen = report["scanout"]
-            screen["launcher"] = capture(monitor, out, "launcher")
+            screen["launcher"] = capture(monitor, out, "launcher", check_launcher=args.check_launcher_1080p)
             launch = TailorbirdLaunch(serial, args.app_sha256)
             monitor.key("ret")
             launch.wait(guest, args.timeout, require_ready=args.require_qwen_ready)
@@ -236,7 +259,7 @@ def run(args, report):
             launch.exit_from = serial.stat().st_size
             monitor.key("esc")
             launch.wait(guest, args.timeout, until_exit=True)
-            screen["returned"] = capture(monitor, out, "returned")
+            screen["returned"] = capture(monitor, out, "returned", check_launcher=args.check_launcher_1080p)
             launch.read()
             app = screen["tailorbird"]["ppm_sha256"]
             if app in {screen["launcher"]["ppm_sha256"], screen["returned"]["ppm_sha256"]}:
@@ -274,11 +297,15 @@ def main():
     parser.add_argument("--require-qwen-ready", action="store_true")
     parser.add_argument("--check-title-1080p", action="store_true",
                         help="compare the app title with the precommitted 1920x1080 reference")
+    parser.add_argument("--check-launcher-1080p", action="store_true",
+                        help="wait for the installed two-app desktop header, selection and footer at launch and return")
     args = parser.parse_args()
     if args.app_sha256 is not None and not re.fullmatch(r"[0-9a-f]{64}", args.app_sha256):
         parser.error("--app-sha256 requires 64 lowercase hexadecimal digits")
     if args.check_title_1080p and args.mode != (1920, 1080):
         parser.error("--check-title-1080p requires --mode 1920x1080")
+    if args.check_launcher_1080p and args.mode != (1920, 1080):
+        parser.error("--check-launcher-1080p requires --mode 1920x1080")
     image_hash = digest(args.image)
     if image_hash != args.image_sha256:
         parser.error("input disk SHA-256 differs from the requested disk")
