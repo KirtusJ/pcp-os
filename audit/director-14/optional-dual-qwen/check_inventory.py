@@ -96,6 +96,19 @@ def verify_asset(root: Path, spec: object, seen_paths: set[str],
         require(identity not in seen_files, "two asset paths alias one inode")
         seen_files.add(identity)
         nbytes, digest = sha256_file(handle)
+        after = os.fstat(handle.fileno())
+        # Detect observable mutation while hashing. A trusted immutable
+        # factory snapshot is still required against adversarial races.
+        require((actual.st_dev, actual.st_ino, actual.st_size,
+                 actual.st_mtime_ns, actual.st_ctime_ns) ==
+                (after.st_dev, after.st_ino, after.st_size,
+                 after.st_mtime_ns, after.st_ctime_ns),
+                "asset changed during read")
+        final_path = location.lstat()
+        require(stat.S_ISREG(final_path.st_mode) and
+                (final_path.st_dev, final_path.st_ino) ==
+                (actual.st_dev, actual.st_ino),
+                "asset path changed after read")
     require(nbytes == expected_bytes, f"{path}: byte count mismatches manifest")
     require(digest == expected_digest, f"{path}: SHA-256 mismatches manifest")
     return {"path": path, "bytes": nbytes, "sha256": digest}

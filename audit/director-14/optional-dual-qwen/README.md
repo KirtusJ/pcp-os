@@ -56,8 +56,10 @@ change to that production checker or an installed-image validation.
   memory release, and all operator/ACR destination permissions.
 - A trusted manifest-signature chain. Hashing manifest bytes against a digest
   derived from the same manifest is *not* independent source authentication.
-  Symlink checks are local preflight, not protection against concurrent
-  malicious mount mutation. Consume an immutable, trusted factory snapshot.
+  Symlink checks plus pre-/post-hash descriptor metadata and pathname
+  inode checks reject some observable input mutations. These are best-effort,
+  not protection against adversarial mount rewrites, changed parent paths or
+  rewrite-and-restore races. Consume an immutable, trusted factory snapshot.
 
 The Principal's optional ISO model requirement and separate ISO-on-each-master-push
 requirement remain open. No changes to D10's register, D2's raster, D11's
