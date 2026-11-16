@@ -103,6 +103,17 @@ class HistoricalReadback(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "serial digest mismatch"):
             self.check(1)
 
+    def test_unexpected_serial_output_between_complete_challenges(self):
+        path = self.run / "1-1.serial"
+        raw = path.read_bytes().replace(b"CHALLENGE 2", b"unsolicited text\r\nCHALLENGE 2")
+        path.write_bytes(raw)
+        event = self.events[-1]
+        row = event["record"]["nodes"][0]
+        row.update(serial_bytes=len(raw), serial_sha256=sha(raw))
+        event["sha256"] = self.digest(event["record"])
+        with self.assertRaisesRegex(RuntimeError, "unexpected challenge record"):
+            self.check(2)
+
     def test_legacy_digest_alone_cannot_verify_a_round(self):
         del next(e for e in self.events if e["event"] == "readback")["record"]
         with self.assertRaisesRegex(RuntimeError, "historical round record unavailable"):

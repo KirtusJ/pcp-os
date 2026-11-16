@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import re
 import sys
-from collections import deque
+from datetime import datetime
 from uuid import UUID
 
 from supervise import PARENTS, SERIAL_LIMIT, check_start, parse_oracle, require, sha
@@ -25,40 +25,44 @@ def node_id(event):
     return node
 
 
-def read_prefix(run, name, limit, node):
-    """Hash bytes on disk, retaining only the boot and most recent challenge."""
+def read_prefix(run, name, limit, node, oracle):
+    """Hash raw bytes and parse the worker's boot and challenge frames in order."""
     digest = hashlib.sha256()
-    pending = b""
     boot = bytearray()
     ready = f"READY {node}\n".encode()
     started = False
-    last = deque(maxlen=6)
-    boot_end = 0
+    frame = []
+    previous_prompt = None
+    offset = frame_start = 0
     with (run / name).open("rb") as serial:
-        while limit:
-            chunk = serial.read(min(limit, 64 * 1024))
-            require(chunk, f"{name}: truncated serial prefix")
-            digest.update(chunk)
-            limit -= len(chunk)
-            lines = (pending + chunk).split(b"\n")
-            pending = lines.pop()
-            require(len(pending) <= SERIAL_LIMIT, f"{name}: oversized serial line")
-            for raw in lines:
-                line = raw.removesuffix(b"\r") + b"\n"
-                if not started:
-                    boot.extend(line)
-                    require(len(boot) <= SERIAL_LIMIT, f"{name}: oversized boot record")
-                    boot_end += len(raw) + 1
-                    started = line == ready
-                else:
-                    last.append((line, len(raw) + 1))
-    require(started and not pending, f"{name}: incomplete serial prefix")
-    final_lines = list(last)[-3:]
-    last_size = sum(size for _, size in final_lines)
-    reply = b"".join(line for line, _ in final_lines).decode("ascii")
-    if len(last) == 6:
-        require(last[0][0] != last[3][0], f"{name}: repeated consecutive challenge")
-    return digest.hexdigest(), boot.decode("ascii"), reply, boot_end, last_size
+        while offset < limit:
+            raw = serial.readline(min(limit - offset, SERIAL_LIMIT + 1))
+            require(raw and len(raw) <= SERIAL_LIMIT and raw.endswith(b"\n"),
+                    f"{name}: truncated or incomplete serial prefix")
+            digest.update(raw)
+            line = raw.removesuffix(b"\n").removesuffix(b"\r") + b"\n"
+            if not started:
+                boot.extend(line)
+                require(offset + len(raw) <= SERIAL_LIMIT, f"{name}: oversized boot record")
+                started = line == ready
+            else:
+                if not frame:
+                    frame_start = offset
+                frame.append(line)
+                if len(frame) == 3:
+                    match = re.fullmatch(rb"CHALLENGE (0|[1-9][0-9]?)\n", frame[0])
+                    require(match, f"{name}: unexpected challenge record")
+                    prompt = int(match[1])
+                    require(prompt < len(oracle) and prompt != previous_prompt,
+                            f"{name}: invalid or repeated consecutive challenge")
+                    expected = "LM tokens " + " ".join(map(str, oracle[prompt])) + "\n"
+                    require(frame[1] == expected.encode() and frame[2] == ready,
+                            f"{name}: wrong reply or READY")
+                    previous_prompt = prompt
+                    frame.clear()
+            offset += len(raw)
+    require(started and not frame and previous_prompt is not None, f"{name}: incomplete challenge")
+    return digest.hexdigest(), boot.decode("ascii"), previous_prompt, frame_start
 
 
 def check_row(run, row, node, active, config, oracle, previous):
@@ -74,8 +78,8 @@ def check_row(run, row, node, active, config, oracle, previous):
             all(type(token) is int for token in row["tokens"]), f"node {node}: oracle mismatch")
     end = integer(row["serial_bytes"], "serial length", 1)
     previous_end = previous.get(row["uuid"], 0)
-    digest, boot, reply, boot_end, reply_size = read_prefix(run, name, end, node)
-    require(end - reply_size >= max(boot_end, previous_end), f"node {node}: reused serial prefix")
+    digest, boot, observed_prompt, frame_start = read_prefix(run, name, end, node, oracle)
+    require(frame_start >= previous_end, f"node {node}: reused serial prefix")
     require(digest == row["serial_sha256"], f"{name}: serial digest mismatch")
     incoming = active[parent]["ticket"] if parent else config["root_input"]
     require(integer(a["input"], "incoming ticket", 1) == incoming, f"{name}: wrong incoming ticket")
@@ -83,8 +87,7 @@ def check_row(run, row, node, active, config, oracle, previous):
                                    config["measurement"], config["worker_sha256"], oracle)
     require(integer(a["ticket"], "ticket") == ticket and a["children"] == children and
             all(type(child) is int for child in a["children"]), f"{name}: dispatch mismatch")
-    tokens = " ".join(map(str, oracle[prompt]))
-    require(reply == f"CHALLENGE {prompt}\nLM tokens {tokens}\nREADY {node}\n", f"{name}: wrong reply")
+    require(observed_prompt == prompt, f"{name}: final challenge differs from the round")
 
 
 def verify(run, oracle_path, cycle):
@@ -153,6 +156,8 @@ def verify(run, oracle_path, cycle):
                         check_row(run, row, node, active, config, oracle, previous)
                     previous[row["uuid"]] = integer(row["serial_bytes"], "serial length", 1)
                 if event["cycle"] == cycle:
+                    require(isinstance(record["time"], str) and datetime.fromisoformat(record["time"]).utcoffset() is not None,
+                            "invalid observation timestamp")
                     return {"cycle": cycle, "time": record["time"], "sha256": digest,
                             "root_uuid": active[1]["uuid"], "guests": len(rows),
                             "edges": len(rows) - 1, "repairs": repairs}
