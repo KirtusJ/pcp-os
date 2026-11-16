@@ -32,3 +32,11 @@ The runner opens the factory image read-only. It copies the GPT and application 
 A normal invocation writes `result.json`, serial transcripts, and QEMU diagnostics. The runner removes the temporary binaries and sparse disk on exit. A failed receipt, digest check, or deadline produces a nonzero exit. Inspect the first failing event and the matching transcript before rerunning. A harness-directed QEMU termination at a completed checkpoint appears separately in the result from the guest's worker exit.
 
 The keyboard test uses the QEMU monitor's `sendkey` command. See the [QEMU monitor reference](https://www.qemu.org/docs/master/system/monitor.html).
+
+## Visible program output on the fixed desktop preview
+
+Add `--check-screen` to check what appears in the task output panel. This option is specific to the 960×540 preview whose layout and font the pixel test describes. It waits for QEMU to present a complete P6 frame at each application-read checkpoint. The complete `OUTPUT` tag and the full 84-character message field must match on the same row. Checking the full field distinguishes the program's result from its source, a longer string with the same prefix, or text in another control.
+
+The expected visible results are `original` after Stop, `original` after cold reopen, and `replacement` after fresh approval. The runner saves the three accepted PPM files and records each full-file SHA-256 and row position in `result.json`. If presentation times out, inspect the most recent complete frame and serial transcript. A different layout needs independently derived pixel expectations. The [initial pixel criteria](https://github.com/KirtusJ/pcp-os/pull/157#issuecomment-6914807429) identify the reference field digests.
+
+Run `python3 -m unittest discover -s os-docs/tailorbird-stop` from the repository to check the trace, disk and framebuffer comparisons. The screen tests independently render reference glyphs from the checked-in kernel font and exercise complete, truncated, oversized, and wrong-size images.

@@ -12,6 +12,8 @@ import tempfile
 import time
 from uuid import UUID, uuid4
 
+import screen
+
 
 SECTOR = 512
 SLOT_SECTORS = 129
@@ -132,6 +134,30 @@ class Guest:
             time.sleep(.1)
         raise TimeoutError(f"{self.serial.name}: deadline before {marker!r}")
 
+    def verify_output(self, stage, expected):
+        """Wait for presentation, keeping the last complete frame on failure."""
+        deadline = time.monotonic() + self.timeout
+        pending = self.serial.parent / f"{stage}-pending.ppm"
+        target = self.serial.parent / f"{stage}.ppm"
+        while time.monotonic() < deadline:
+            self.process.stdin.write(f"screendump {pending.name}\n".encode("ascii"))
+            self.process.stdin.flush()
+            while time.monotonic() < deadline:
+                if self.process.poll() is not None:
+                    raise RuntimeError(f"{stage}: guest exited during framebuffer check")
+                if pending.exists():
+                    pixels = screen.read_frame(pending)
+                    if pixels is not None:
+                        pending.replace(target)
+                        row = screen.matching_row(pixels, expected)
+                        if row is not None:
+                            return {"file": target.name, "sha256": file_hash(target),
+                                    "output": expected, "row_y": row}
+                        break
+                time.sleep(.1)
+            time.sleep(.25)
+        raise TimeoutError(f"{stage}: no complete Output row displaying {expected!r}")
+
     def enter_desktop(self):
         self.wait(b"long mode true")
         self.wait(b"Persistent application store mounted:")
@@ -210,6 +236,7 @@ def exercise(args, output, results):
     results["fixture_sha256"] = fixture_hash
     if args.fixture_sha256 is not None:
         require(fixture_hash == args.fixture_sha256, "fixture digest mismatch")
+    frames = results["frames"] = {} if args.check_screen else None
     observations = results["checkpoints"]
     observations["factory"] = checkpoint(disk, offset)
     with boot(args, output, "first", pins, guid, results) as guest:
@@ -239,6 +266,8 @@ def exercise(args, output, results):
         check_trace(guest.serial, first_events + [ACCEPTED, STOPPED])
         guest.submit("run lark")
         guest.wait(RAN)
+        if frames is not None:
+            frames["after_stop"] = guest.verify_output("after-stop", "original")
     check_trace(output / "first.serial", first_events + [ACCEPTED, STOPPED, RAN])
     observations["after_stop"] = checkpoint(disk, offset, b"print original")
     require(observations["after_stop"] == original, "Stop changed application store")
@@ -246,6 +275,8 @@ def exercise(args, output, results):
         guest.key("alt-a")
         guest.submit("run lark")
         guest.wait(RAN)
+        if frames is not None:
+            frames["cold"] = guest.verify_output("cold-original", "original")
         observations["cold"] = checkpoint(disk, offset, b"print original")
         require(observations["cold"] == original, "cold boot or stale approval changed application store")
         guest.submit("edit lark print replacement then run lark")
@@ -253,6 +284,8 @@ def exercise(args, output, results):
         guest.key("alt-a")
         guest.wait(SAVED)
         guest.wait(RAN)
+        if frames is not None:
+            frames["fresh_approval"] = guest.verify_output("approved-replacement", "replacement")
     check_trace(output / "cold.serial", [RAN, STAGED, SAVED, RAN])
     observations["fresh_approval"] = checkpoint(disk, offset, b"print replacement")
     require(observations["fresh_approval"]["generation"] > original["generation"], "replacement was not committed")
@@ -263,6 +296,7 @@ def main():
     for flag in ("manifest", "disk", "kernel", "desktop", "worker", "output"):
         parser.add_argument("--" + flag, type=Path, required=True)
     parser.add_argument("--fixture-sha256", help="verify only the copied regions against this independent SHA-256")
+    parser.add_argument("--check-screen", action="store_true", help="verify visible output on the fixed 960x540 preview")
     parser.add_argument("--qemu", default="qemu-system-x86_64")
     parser.add_argument("--objcopy", default="objcopy")
     parser.add_argument("--firmware", type=Path)
@@ -277,7 +311,7 @@ def main():
             try:
                 exercise(args, work, results)
             finally:
-                for pattern in ("*.serial", "*.stderr"):
+                for pattern in ("*.serial", "*.stderr", "*.ppm"):
                     for log in work.glob(pattern):
                         log.rename(output / log.name)
         results["passed"] = True
