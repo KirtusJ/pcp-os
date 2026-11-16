@@ -1,0 +1,67 @@
+name: Director 13 network firewall GUI and link-cycle audit
+
+on:
+  pull_request:
+    paths:
+      - 'audit/director-13/network/**'
+      - '.github/workflows/director-13-network-audit.yml'
+      - 'PCP_OS_Rust/crates/pcpos-kernel/src/dev/virtio_tx/**'
+      - 'PCP_OS_Rust/crates/pcpos-kernel/src/session/ethernet.rs'
+      - 'apps/surfbird/guest/src/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ethernet-replay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact branch under review
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Prepare bounded QEMU and Rust guest builder
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 seabios lld
+          rustup component add rust-src
+          rustup target add x86_64-unknown-none
+      - name: Check the current exact-image raw Ethernet admission contract
+        run: |
+          mkdir -p "$RUNNER_TEMP/network-test"
+          rustc --edition 2021 --test \
+            PCP_OS_Rust/crates/pcpos-kernel/src/session/ethernet.rs \
+            -o "$RUNNER_TEMP/network-test/test-ethernet-grant"
+          "$RUNNER_TEMP/network-test/test-ethernet-grant"
+      - name: Check the existing Surfbird guest and parsed-capture controls
+        run: |
+          cargo test --locked --manifest-path apps/surfbird/guest/Cargo.toml --lib
+      - name: Build unmodified source opt-in Ethernet kernel and native browser
+        run: |
+          PCPOS_KERNEL_STAGE="$RUNNER_TEMP/d13-network-kernel-stage" \
+            PCPOS_KERNEL_FEATURES=guest-ethernet \
+            sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          cargo build --locked --release --target x86_64-unknown-none \
+            --manifest-path apps/surfbird/guest/Cargo.toml --features tcp-ip
+      - name: Exercise live QEMU virtual NIC link down then up with fresh guest launch
+        run: |
+          python3 audit/director-13/network/ethernet_cycle.py \
+            --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            --guest apps/surfbird/guest/target/x86_64-unknown-none/release/surfcable \
+            --measure PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py \
+            --output "$RUNNER_TEMP/d13-link-cycle"
+      - name: Retain isolated synthetic guest evidence, including on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: director-13-network-link-cycle
+          path: |
+            ${{ runner.temp }}/d13-link-cycle/result.json
+            ${{ runner.temp }}/d13-link-cycle/qmp-journal.json
+            ${{ runner.temp }}/d13-link-cycle/serial.log
+            ${{ runner.temp }}/d13-link-cycle/qemu.stderr
+            ${{ runner.temp }}/d13-link-cycle/frames.pcap
+          if-no-files-found: warn
+          retention-days: 7
