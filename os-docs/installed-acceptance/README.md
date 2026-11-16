@@ -25,3 +25,16 @@ Each boot gets a fresh firmware variable store and disposable disk writes. The r
 The desktop and diagnostic boots exercise distinct paths. The diagnostic measures one fixed inference. Interactive model responses, model access to the Enterprise packet, updates to stored applications, physical installation, and performance on a physical GPU need their own measurements.
 
 [QEMU invocation and snapshot controls](https://www.qemu.org/docs/master/system/invocation.html) · [QEMU disk images](https://www.qemu.org/docs/master/system/images.html)
+
+## Read the installed Qwen model and license
+
+On a Linux host with Python 3.11 or later, util-linux `partx` and GNU mtools, run the following against an offline raw factory installation and its matching release manifest.
+
+```sh
+python3 os-docs/installed-acceptance/check_model_partition.py \
+  --disk /qa/installed.raw --manifest /qa/release.json
+```
+
+The checker opens the image read-only, compares its whole-disk SHA-256 with the manifest, and locates the GPT partition named `PCP OS models` on the release's 512-byte-sector image. It reads both files through the FAT filesystem under the manifest's Qwen revision and prints their byte counts and hashes as JSON. It exits unsuccessfully if either file differs or the partition cannot be identified uniquely. Use this check for the factory disk before user changes. Its result covers installed content. Boot selection and model execution have their own checks above.
+
+The fixture tests use `mformat`, `mmd` and `mcopy` to create disposable volumes and run through the same file-reading path. Run `python3 -m unittest discover -v -s os-docs/installed-acceptance` and check for skipped tests if the tools are unavailable. [GNU mtools manual](https://www.gnu.org/s/mtools/manual/mtools.pdf) · [UEFI GPT layout](https://uefi.org/specs/UEFI/2.9_A/05_GUID_Partition_Table_Format.html)
