@@ -40,6 +40,12 @@ The relevant public standard text is [UEFI 2.11 GPT §5](https://uefi.org/specs/
 
 Run all source-only tests with `python3 -m unittest discover -s os-docs/boot-storage-acceptance -p 'test_*.py' -v` from the repository root. The isolated GitHub Actions job runs this exact suite and reports source SHA-256 values.
 
+## Exact-type negative controls (fixture only)
+
+The model now rejects a Python `True` used as an integer epoch/generation, numeric floats supplied where exact integer bytes or logical-block counts are required, string values such as `"false"` masquerading as boolean device flags, non-enumerated media conditions, missing/nonstring digests, malformed plan fields and invalid firmware `MediaId` types. Both GPT total-LBA and logical-block-byte count also require exact integers. This prevents accidental Python equality (`True == 1` and `512.0 == 512`) from becoming apparent acceptance evidence. The tests explicitly construct otherwise matching positive inputs so refusal cannot pass merely because an unrelated field differs.
+
+The complete **source-only suite contains 87 tests**, 53 for proposed device preflight/evidence labels and 34 for GPT byte-metadata consistency and simulated write-attempt oracles. This figure is *fixture count*, not 87 independent real-world installation validations.
+
 ## Concrete PT-side falsification requests (not performed here)
 
 | Arm | Exact product evidence needed |
