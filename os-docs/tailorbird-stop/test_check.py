@@ -35,6 +35,12 @@ class StopOracles(unittest.TestCase):
                     check.STAGED, check.ACCEPTED, check.STOPPED, check.RAN]
         self.path.write_bytes(b"\r\n".join(expected) + b"\r\n")
         check.check_trace(self.path, expected)
+        self.path.write_bytes(b"\n".join(expected) + b"\n")
+        check.check_trace(self.path, expected)
+        for tail in (b"", b"\r"):
+            with self.subTest(tail=tail), self.assertRaises(ValueError):
+                self.path.write_bytes(b"\r\n".join(expected) + tail)
+                check.check_trace(self.path, expected)
         cases = {
             "early read": expected[:4] + [check.RAN] + expected[4:],
             "extra save": expected[:5] + [check.SAVED] + expected[5:],
@@ -56,6 +62,7 @@ class StopOracles(unittest.TestCase):
         connected = b"TAILORBIRD MCP CONNECTED"
         versioned = connected + b" 2025-11-25"
         events = [mode, mount, launch, admission, ended, versioned]
+        desktop_exit = b"Tailorbird ended DONE: exit 0"
 
         def transcript(lines):
             return b"\r\n".join(lines) + b"\r\n"
@@ -67,6 +74,9 @@ class StopOracles(unittest.TestCase):
                 self.assertIsNone(check.desktop_startup(data[:-1], launch))
         for missing in (ended, versioned):
             self.assertIsNone(check.desktop_startup(transcript([e for e in events if e != missing]), launch))
+        ready = len(transcript(events)) - 1
+        for tail in ([check.STAGED], [check.STAGED, desktop_exit, b"ALL SELF-TESTS PASS"]):
+            self.assertEqual(check.desktop_startup(transcript(events + tail), launch), ready)
 
         cases = {
             "mode embedded in unrelated text": [b"protections: diagnostic, long mode true"] + events[1:],
@@ -82,6 +92,11 @@ class StopOracles(unittest.TestCase):
             "extra exit suffix": events[:4] + [ended + b" deferred", versioned],
             "model-ready": events + [b"QWEN READY"],
             "early desktop exit": events[:4] + [b"Tailorbird ended FAILED: exit 1"] + events[4:],
+            "control before launch": [check.STAGED] + events,
+            "control between worker exit and connection": events[:5] + [check.SAVED, versioned],
+            "control between connection and worker exit": events[:4] + [versioned, check.RAN, ended],
+            "control after exit": events + [desktop_exit, check.RAN],
+            "duplicate desktop exit": events + [desktop_exit, desktop_exit],
         }
         for name, records in cases.items():
             with self.subTest(case=name), self.assertRaises(ValueError):
