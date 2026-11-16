@@ -175,6 +175,25 @@ def run_test(image: str, result: dict) -> None:
             )
             grandchild_id = host_grandchild_identity(name)
             assert not original_process_terminated(grandchild_id)
+            # Adverse oracle control: silence is possible without termination.
+            # The *same host process* stays alive and later resumes writing.
+            silence = directory / "grandchild-quiet"
+            silence.touch()
+            time.sleep(0.25)
+            quiet_begin = size(directory / "grandchild.tick")
+            time.sleep(0.40)
+            assert size(directory / "grandchild.tick") == quiet_begin, (
+                "silent-worker control did not suppress heartbeat"
+            )
+            assert not original_process_terminated(grandchild_id), (
+                "worker must remain alive while silent, before actual stop"
+            )
+            silence.unlink()
+            wait_for(
+                lambda: size(directory / "grandchild.tick") > quiet_begin,
+                "silent-but-live worker resumes heartbeat", 3,
+            )
+            assert not original_process_terminated(grandchild_id)
             cmd("docker", "kill", "--signal", "KILL", name)
             wait_for(lambda: not state(name)["State"]["Running"], "Docker state stopped", 10)
             wait_for(
@@ -189,6 +208,7 @@ def run_test(image: str, result: dict) -> None:
             result["stop_boundary"] = {
                 "observed": True,
                 "worker_sets_new_session": (directory / "grandchild-setsid").exists(),
+                "silent_but_live_negative_control_passed": True,
                 "original_host_pid": grandchild_id["pid"],
                 "original_host_start_tick": grandchild_id["start_tick"],
                 "same_process_identity_gone_or_zombie": original_process_terminated(grandchild_id),
