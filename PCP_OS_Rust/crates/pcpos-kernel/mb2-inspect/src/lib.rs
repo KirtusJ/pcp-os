@@ -106,8 +106,9 @@ pub struct Inspection<'a> {
     pub basic_memory_map: Option<MapView<'a>>,
     /// EFI descriptor array (tag 17), never an ExitBootServices receipt.
     pub efi_memory_map: Option<MapView<'a>>,
-    /// Tag 18 positively says that ExitBootServices was not called.
-    /// Absence does NOT prove that the service has been exited.
+    /// Tag 18 says the boot loader had not called ExitBootServices
+    /// when it transferred control. A later OS call does not remove it.
+    /// Absence cannot prove a successful later ExitBootServices call.
     pub efi_boot_services_not_terminated: bool,
     pub efi64_system_table: Option<u64>,
     pub load_base32: Option<u32>,
@@ -191,7 +192,8 @@ fn framebuffer_tag(tag: &[u8]) -> Result<Framebuffer, Error> {
         return Err(Error::BadFramebuffer);
     }
     // Unknown pixel representations remain visible but cannot become an
-    // admitted linear renderer mode.
+    // admitted linear renderer mode. This does not establish the display
+    // contents or real frame-buffer address.
     let mut rgb_channels = None;
     let kind = match ty {
         1 => {
@@ -283,7 +285,8 @@ pub fn inspect_efi_amd64<'a>(
         return Err(Error::BadLocation);
     }
     let total = get32(raw, 0)? as usize;
-    // The boot-information length must include exactly one terminating tag.
+    // The boot-information length must end at a terminating tag; the
+    // parser does not accept any trailing unparsed bytes.
     if total != raw.len() || total < 16 || total % 8 != 0 {
         return Err(Error::BadTotal);
     }
