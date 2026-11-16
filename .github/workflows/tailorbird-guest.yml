@@ -156,7 +156,10 @@ jobs:
           PCPOS_KERNEL_STAGE: ${{ runner.temp }}/pcpos-kernel-build
         run: |
           set -euo pipefail
-          (cd apps/tailorbird/guest && cargo build --offline --release --target x86_64-unknown-none)
+          # The separate native-link job above builds production-default
+          # (without key logging). This QEMU-only binary logs synthetic
+          # scan-code receipts to locate the missing final key.
+          (cd apps/tailorbird/guest && cargo build --offline --release --target x86_64-unknown-none --features qemu-key-diagnostic)
           sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
           test -s PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
           test -s apps/tailorbird/guest/target/x86_64-unknown-none/release/tailorbird
