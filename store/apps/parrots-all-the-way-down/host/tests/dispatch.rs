@@ -473,10 +473,12 @@ fn register_adapter_sigkill_retains_admission_without_termination_proof() {
     };
     assert_eq!(verified(&reg), ["TASK_ADMITTED"]);
     let report = Command::new(&host).arg("verify").arg(&reg).output().unwrap();
-    ok(report);
     assert!(
-        String::from_utf8_lossy(&report.stdout).contains("guards replayed: 0 problem(s)")
+        String::from_utf8_lossy(&report.stdout).contains("guards replayed: 0 problem(s)"),
+        "verification output: {}",
+        String::from_utf8_lossy(&report.stdout)
     );
+    ok(report);
 
     // The test requests voluntary worker exit; no remaining adapter exists
     // to emit a release, so the register's chain stays intact but incomplete.
