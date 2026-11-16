@@ -393,6 +393,109 @@ def one_boot(kernel, measurement, font, root, width, height, vram, mode, timeout
     return report
 
 
+
+def one_default_no_export_boot(kernel, measurement, font, root, timeout):
+    """Challenge the ordinary no-feature guest with the diagnostic command line.
+
+    This is an *actual QEMU negative control* on the default-feature binary,
+    not proof of global noninterference or binary identity with the #233 image.
+    """
+    root.mkdir(parents=True, exist_ok=False)
+    width, height, vram = 800, 600, 4
+    serial = root / "serial.log"
+    markers = (
+        b"D10_REGISTER_RAW_BEGIN", b"D10_REGISTER_RAW_END",
+        b"D10_REGISTER_UNMODIFIED", b"D10_REGISTER_INJECT",
+    )
+    report = {
+        "kind": "no-feature guest with attempted diagnostic command",
+        "kernel_sha256": sha(kernel.read_bytes()),
+        "kernel_measurement": measurement,
+        "resolution": [width, height],
+        "command_line_challenge": "test=register-snapshot",
+        "frames": {},
+        "passed": False,
+    }
+    command = [
+        "qemu-system-x86_64", "-machine", "q35", "-accel", "tcg",
+        "-icount", "shift=3", "-cpu", "max", "-m", "128M",
+        "-nic", "none", "-display", "none", "-vga", "none",
+        "-device", "VGA,vgamem_mb=4", "-monitor", "none",
+        "-qmp", "stdio", "-serial", "file:" + str(serial),
+        "-no-reboot", "-device",
+        "isa-debug-exit,iobase=0xf4,iosize=0x04",
+        "-kernel", str(kernel),
+        "-append", f"image={measurement} test=register-snapshot",
+    ]
+    report["qemu_args"] = command
+    guest = None
+    monitor = None
+    try:
+        with (root / "qemu.stderr").open("wb") as stderr:
+            guest = subprocess.Popen(
+                command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=stderr,
+            )
+            monitor = Monitor(guest, timeout)
+            if "QMP" not in monitor.receive(time.monotonic() + timeout):
+                raise RuntimeError("native QMP greeting absent")
+            monitor.execute("qmp_capabilities")
+            wait_serial(guest, serial, b"display: Bochs, 800x600", timeout)
+            launcher, initial = wait_image(
+                monitor, root, "launcher",
+                lambda frame: launcher_ready(frame, font, width, height),
+                timeout,
+            )
+            report["frames"]["launcher"] = sha(launcher.read_bytes())
+            monitor.key("r")
+            register, frame = wait_image(
+                monitor, root, "register",
+                lambda f: f[0] == (width, height)
+                and exact_glyphs(f, (20, 40), "HEAD ", font, TEAL),
+                timeout,
+            )
+            report["frames"]["register"] = sha(register.read_bytes())
+            raw = serial.read_bytes()
+            if b"test=register-snapshot" not in raw:
+                raise AssertionError("native guest did not receive diagnostic challenge")
+            if any(marker in raw for marker in markers):
+                raise AssertionError("default guest emitted the forbidden diagnostic marker")
+            report["no_serial_export_before_exit"] = True
+            monitor.key("esc")
+            returned, restored = wait_image(
+                monitor, root, "returned", lambda f: f == initial, timeout,
+            )
+            report["frames"]["returned"] = sha(returned.read_bytes())
+            monitor.key("p")
+            report["qemu_exit"] = guest.wait(timeout=timeout)
+            raw = serial.read_bytes()
+            report["serial_sha256"] = sha(raw)
+            if (report["qemu_exit"] != 33
+                    or b"ALL SELF-TESTS PASS" not in raw or b"  FAIL" in raw
+                    or (measurement + " (measured; equal").encode() not in raw):
+                raise RuntimeError("ordinary guest shutdown / self-tests failed")
+            if any(marker in raw for marker in markers):
+                raise AssertionError("default guest emitted diagnostic material after exit")
+            report["no_serial_export_after_exit"] = True
+            report["passed"] = True
+    except Exception as exc:
+        report["failure"] = f"{type(exc).__name__}: {exc}"
+        raise
+    finally:
+        (root / "result.json").write_text(
+            json.dumps(report, indent=2, sort_keys=True) + "\n"
+        )
+        if monitor is not None:
+            monitor.selector.close()
+        if guest is not None:
+            if guest.poll() is None:
+                guest.kill()
+            guest.wait()
+            guest.stdin.close()
+            guest.stdout.close()
+    return report
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--kernel", type=Path, required=True)
@@ -400,11 +503,18 @@ def main():
     p.add_argument("--font", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--timeout", type=int, default=210)
+    p.add_argument("--default-no-export", action="store_true", help="test uninstrumented QEMU boot with diagnostic challenge")
     args = p.parse_args()
     kernel = args.kernel.resolve()
     font = font_from_rust(args.font)
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
+    if args.default_no_export:
+        result = one_default_no_export_boot(
+            kernel, args.measurement, font, output / "ordinary-no-export", args.timeout,
+        )
+        print(json.dumps(result, sort_keys=True), flush=True)
+        return 0
     observations = [
         (800, 600, 4, "register-snapshot"),
         (1024, 768, 16, "register-snapshot"),

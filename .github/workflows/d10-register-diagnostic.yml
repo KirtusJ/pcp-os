@@ -36,6 +36,15 @@ jobs:
             exit 1
           fi
           sha256sum "$kernel" | tee default-image-sha256.txt
+          python3 PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py "$kernel" > default-measurement.txt
+      - name: Boot default-feature QEMU with a diagnostic command and require no raw export
+        run: |
+          set -euo pipefail
+          kernel=PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
+          python3 os-docs/display-acceptance/register/d10_diagnostic_native.py \
+            --kernel "$kernel" --measurement "$(cat default-measurement.txt)" \
+            --font PCP_OS_Rust/crates/pcpos-kernel/src/font.rs \
+            --output captures/d10-default --default-no-export
       - name: Build opt-in diagnostic feature (NOT release kernel)
         env:
           PCPOS_KERNEL_STAGE: /tmp/d10-register-diagnostic-build
@@ -67,8 +76,10 @@ jobs:
         with:
           name: d10-same-view-diagnostic-native
           path: |
+            captures/d10-default/
             captures/d10-diagnostic/
             measurement.txt
             default-image-sha256.txt
+            default-measurement.txt
           if-no-files-found: warn
           retention-days: 14
