@@ -185,6 +185,41 @@ class ResultRecording(unittest.TestCase):
         self.assertEqual(list(result["boots"]), ["recovery", "desktop"])
         self.assertEqual(result["disk_sha256_after"], result["disk_sha256_before"])
 
+    def test_checkpoints_identify_the_manifest_used_for_the_boot(self):
+        manifest = self.root / "release.json"
+        original = manifest.read_bytes() + b"\n"
+        manifest.write_bytes(original)
+        source_revision = json.loads(original)["git_commit"]
+        expected_digest = hashlib.sha256(original).hexdigest()
+        checkpoint = check.checkpoint
+        recorded = []
+
+        def replace_after_first_checkpoint(directory, result):
+            checkpoint(directory, result)
+            recorded.append(self.result())
+            if len(recorded) == 1:
+                replacement = manifest.with_suffix(".new")
+                replacement.write_text(json.dumps(dict(json.loads(original), git_commit="different")))
+                replacement.replace(manifest)
+
+        with mock.patch.object(check, "checkpoint", side_effect=replace_after_first_checkpoint):
+            self.run_with_boot(lambda *args: {"qemu_exit": 33})
+        self.assertEqual(recorded[0]["status"], "in_progress")
+        self.assertEqual(recorded[-1]["status"], "complete")
+        for result in recorded:
+            self.assertEqual(result["source_revision"], source_revision)
+            self.assertEqual(result["manifest_sha256"], expected_digest)
+
+    def test_setup_failure_retains_the_manifest_digest(self):
+        kernel = self.root / "missing.elf"
+        self.args.extend(["--kernel-elf", str(kernel)])
+        with self.assertRaises(FileNotFoundError):
+            self.run_with_boot(None)
+        result = self.result()
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["failure"]["mode"], "setup")
+        self.assertEqual(result["manifest_sha256"], check.sha256(self.root / "release.json"))
+
     def test_boot_failure_and_changed_disk_are_both_recorded(self):
         def failed_boot(*args):
             self.disk.write_bytes(b"changed")
