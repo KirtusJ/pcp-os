@@ -77,9 +77,7 @@ section=s.split('note sleep of 50 ms:',1)[1].split('note stop key while asleep:'
 section=section.split('note key while waiting:',1)[1]
 t={}
 for stage in ['admitted','blocked','first-key','stop']:
-    rows=re.findall(r'^SLEEP-TRACE '+stage+r' (\d+) > "$out/kernel-sha256.txt"
-rm "$out"/*.elf32
-,section,re.M)
+    rows=re.findall(r'^SLEEP-TRACE '+stage+r' (\d+)$',section,re.M)
     assert len(rows)==1,(stage,rows,section)
     t[stage]=int(rows[0])
 assert t['admitted']<=t['blocked'] and t['first-key']-t['blocked']>=10 and t['first-key']<=t['stop']
