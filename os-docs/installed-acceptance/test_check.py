@@ -78,6 +78,23 @@ class SerialAcceptance(unittest.TestCase):
             self.check("diagnostic", self.diagnostic[:1] + self.diagnostic[2:5] +
                        ["QWEN READY"] + self.diagnostic[5:])
 
+    def test_diagnostic_requires_distinct_lifecycle_records(self):
+        for index, replacement in (
+            (1, "QWEN READY_PENDING"), (1, "previous event: QWEN READY"),
+            (5, "QWEN COMPLETELY UNFINISHED"), (6, "qwen.elf ended DONE: exit 01"),
+            (7, "NOT ALL SELF-TESTS PASS"),
+        ):
+            with self.subTest(record=replacement), self.assertRaises(ValueError):
+                lines = self.diagnostic.copy()
+                lines[index] = replacement
+                self.check("diagnostic", lines)
+
+    def test_kernel_accounting_and_self_test_details_are_accepted(self):
+        lines = self.diagnostic.copy()
+        lines[-2] += " after 3 s; 1228 system calls; 151 frames shown (39.9 a second)"
+        lines[-1] += ". Guest Ethernet support is compiled in."
+        self.check("diagnostic", lines)
+
     def test_recovery_rejects_a_payload_even_if_self_tests_pass(self):
         lines = ["PCP OS launcher ready: 0 programs, 0 files", "ALL SELF-TESTS PASS"]
         self.check("recovery", lines)
@@ -95,6 +112,18 @@ class SerialAcceptance(unittest.TestCase):
         for index in (2, 3, 4, 5, 6):
             with self.subTest(index=index), self.assertRaises(ValueError):
                 self.check("desktop", lines[:index] + lines[index + 1:])
+
+        with self.assertRaises(ValueError):
+            self.check("desktop", lines[:4] + ["TAILORBIRD MCP CONNECTED_PENDING"] + lines[5:])
+        wrong_launch = lines[2].replace(self.components["tailorbird"], "0" * 64)
+        for launches in ([lines[2], *lines[:2], wrong_launch, *lines[3:]],
+                         [*lines[:3], wrong_launch, *lines[3:]]):
+            with self.subTest(launches=launches), self.assertRaises(ValueError):
+                self.check("desktop", launches)
+
+    def test_repeated_diagnostic_launch_cannot_combine_two_workers(self):
+        with self.assertRaises(ValueError):
+            self.check("diagnostic", self.diagnostic[:2] + self.diagnostic)
 
 
 class ResultRecording(unittest.TestCase):
