@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-          ref: \${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Record source and compiler identities
         shell: bash
         run: |
@@ -42,7 +42,7 @@ jobs:
       - name: Compile exact PR119-derived kernel ELF; do not boot yet
         shell: bash
         env:
-          PCPOS_KERNEL_STAGE: \${{ runner.temp }}/pcpos-ide-role-kernel
+          PCPOS_KERNEL_STAGE: ${{ runner.temp }}/pcpos-ide-role-kernel
         run: |
           set -euo pipefail
           sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
