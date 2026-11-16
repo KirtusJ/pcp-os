@@ -119,3 +119,55 @@ jobs:
           PY
           sha256sum "$ELF"
           git rev-parse HEAD
+
+  qemu-model-free-guest:
+    needs: rust-ui-and-native-link
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact proposed source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Record kernel/guest source and executor identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          rustc --version --verbose
+          cargo --version
+          python3 --version
+      - name: Install freestanding compiler and QEMU emulator prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add x86_64-unknown-none
+          rustup component add rust-src
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 lld binutils
+          qemu-system-x86_64 --version
+          ld.lld --version
+          objcopy --version | head -1
+      - name: Build pinned public PCP OS kernel and native Tailorbird guest
+        shell: bash
+        env:
+          CARGO_PROFILE_RELEASE_LTO: 'off'
+          PCPOS_KERNEL_STAGE: ${{ runner.temp }}/pcpos-kernel-build
+        run: |
+          set -euo pipefail
+          (cd apps/tailorbird/guest && cargo build --offline --release --target x86_64-unknown-none)
+          sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          test -s PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
+          test -s apps/tailorbird/guest/target/x86_64-unknown-none/release/tailorbird
+          sha256sum PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
+          sha256sum apps/tailorbird/guest/target/x86_64-unknown-none/release/tailorbird
+          git rev-parse HEAD
+      - name: QEMU keyboard, actual scanout, offline refusal and guest-exit smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 apps/tailorbird/guest/tests/qemu_smoke.py \
+            PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            apps/tailorbird/guest/target/x86_64-unknown-none/release/tailorbird \
+            --timeout 100
