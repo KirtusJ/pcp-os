@@ -154,7 +154,13 @@ fn test_service() -> io::Result<i32> {
     }
     let _exclusive_controller_lock = match acquire_controller_lock(&base)? {
         Some(guard) => guard,
-        None => return Ok(0), // OS-live owner is a BUSY/HELD response.
+        None => {
+            // Status 0 here means this *contender* has stopped cleanly, not
+            // that the requested operation completed. Preserve an explicit
+            // process-output discriminator without mutating the shared state.
+            eprintln!("D12_BUSY: another same-host controller holds the journal; no dispatch");
+            return Ok(0);
+        }
     };
     let pin = base.join("request.txt");
     if !pin.exists() {
