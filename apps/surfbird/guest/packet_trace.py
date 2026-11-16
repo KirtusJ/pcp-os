@@ -134,7 +134,7 @@ def verify(capture, port, expected_paths, scenario, bodies, host_ip=HOST_IP):
         for path in expected_paths
     )
     check(requests == expected_stream, "extra or malformed HTTP request bytes")
-    if scenario in ("allowed", "fragment"):
+    if scenario in ("allowed", "fragment", "focus"):
         # Match each entire body with its length and maintain response order.
         rest = responses
         for path in paths:

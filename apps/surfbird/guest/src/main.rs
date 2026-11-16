@@ -13,7 +13,7 @@ mod watch_view;
 mod page_text;
 const ORIGIN_HOST: &str = "fixture.test";
 use page_text::text;
-use surfbird_cable::layout::{Source, VISIBLE_ROWS};
+use surfbird_cable::layout::{Source, View, VISIBLE_ROWS};
 use surfbird_cable::{body_length, location::Location, parse, Page, CAPACITY, START};
 
 const W: usize = 640;
@@ -138,7 +138,7 @@ fn record(key: &str, value: &str) {
     log(b"\n");
 }
 
-fn present(display: &mut Display, path: &str, page: &Page<'_>, row: usize) {
+fn present(display: &mut Display, path: &str, page: &Page<'_>, view: View) {
     let pixels = unsafe { &mut *(&raw mut PIXELS) };
     pixels.fill(0x102a33);
     let mut frame = Frame {
@@ -156,7 +156,9 @@ fn present(display: &mut Display, path: &str, page: &Page<'_>, row: usize) {
         );
     }
     frame.rect(26, 92, 586, 1, 0x447078);
-    for (i, line) in page.lines().skip(row).take(VISIBLE_ROWS).enumerate() {
+    let mut outline_top = None;
+    let mut outline_bottom = 0;
+    for (i, line) in page.lines().skip(view.row).take(VISIBLE_ROWS).enumerate() {
         let y = 104 + i * 22;
         let (x, color) = match line.source {
             Source::Title => (26, 0xf2f6f7),
@@ -165,6 +167,10 @@ fn present(display: &mut Display, path: &str, page: &Page<'_>, row: usize) {
                 (26, 0xcbdadd)
             }
             Source::Link(index) => {
+                if view.focus == Some(index) {
+                    outline_top.get_or_insert(y as i32 - 2);
+                    outline_bottom = y as i32 + 21;
+                }
                 if line.first {
                     text(&mut frame, 26, y, if index == 0 { "1" } else { "2" }, 0x65dedf);
                 }
@@ -172,6 +178,13 @@ fn present(display: &mut Display, path: &str, page: &Page<'_>, row: usize) {
             }
         };
         text(&mut frame, x, y, line.text, color);
+    }
+    if let Some(top) = outline_top {
+        let color = 0x70e7e3;
+        frame.rect(20, top, 596, 2, color);
+        frame.rect(20, outline_bottom - 1, 596, 2, color);
+        frame.rect(20, top, 2, outline_bottom - top, color);
+        frame.rect(614, top, 2, outline_bottom - top, color);
     }
     record("path", path);
     record("title", page.title);
@@ -182,10 +195,11 @@ fn present(display: &mut Display, path: &str, page: &Page<'_>, row: usize) {
     text(
         &mut frame,
         26,
-        322,
-        "1/2 Follow    Up/Down Scroll    B Back    Esc Exit",
+        314,
+        "Tab / Shift+Tab  Select link    Enter / 1 / 2  Follow",
         0x96cace,
     );
+    text(&mut frame, 26, 337, "Up / Down  Scroll    B  Back    Esc  Exit", 0x96cace);
     display.show(pixels);
     log(b"SURFBIRD ready\n");
 }
@@ -207,7 +221,7 @@ fn browse_pages(stream: &mut impl Stream) -> Result<(), &'static str> {
     let mut bodies = [[0; CAPACITY]; 2];
     let mut lengths = [0; 2];
     let mut locations = [Location::start(); 2];
-    let mut rows = [0usize; 2];
+    let mut views = [View::default(); 2];
     lengths[0] = fetch(stream, START, &mut bodies[0])?;
     let mut slot = 0;
     let mut previous = false;
@@ -215,35 +229,28 @@ fn browse_pages(stream: &mut impl Stream) -> Result<(), &'static str> {
         let page = parse(&bodies[slot][..lengths[slot]])?;
         let path = locations[slot].address();
         let last_full_view = page.lines().count().saturating_sub(VISIBLE_ROWS);
-        present(&mut display, path, &page, rows[slot]);
-        // Keep the displayed document borrowed while waiting for the next selection.
+        present(&mut display, path, &page, views[slot]);
         let index = loop {
             stream.poll()?;
-            display.poll();
-            if display.pressed[1] {
-                return Ok(());
-            }
-            if previous && display.pressed[48] {
-                break None;
-            }
-            if page.count > 0 && display.pressed[2] {
-                break Some(0);
-            }
-            if page.count > 1 && display.pressed[3] {
-                break Some(1);
-            }
-            let next = if display.pressed[72] {
-                rows[slot].saturating_sub(1)
-            } else if display.pressed[80] && rows[slot] < last_full_view {
-                rows[slot] + 1
-            } else {
-                rows[slot]
+            let Some(key) = display.next_press() else {
+                sleep_us(2000);
+                continue;
             };
-            if next != rows[slot] {
-                rows[slot] = next;
-                present(&mut display, path, &page, next);
+            let old_view = views[slot];
+            match key {
+                1 => return Ok(()),
+                48 if previous => break None,
+                2 if page.count > 0 => break Some(0),
+                3 if page.count > 1 => break Some(1),
+                15 => views[slot].tab(&page, display.held[42] || display.held[54]),
+                28 if old_view.focus.is_some() => break old_view.focus,
+                72 => views[slot].row = old_view.row.saturating_sub(1),
+                80 if old_view.row < last_full_view => views[slot].row += 1,
+                _ => {}
             }
-            sleep_us(2000);
+            if views[slot] != old_view {
+                present(&mut display, path, &page, views[slot]);
+            }
         };
         let other = 1 - slot;
         if let Some(i) = index {
@@ -254,16 +261,17 @@ fn browse_pages(stream: &mut impl Stream) -> Result<(), &'static str> {
                     continue;
                 }
             };
+            views[other] = View::default();
             if target.fragment().is_some()
                 && target.request_target() == locations[slot].request_target()
             {
-                rows[other] = page.fragment_line(target.fragment(), rows[slot]);
+                views[other].row = page.fragment_line(target.fragment(), views[slot].row);
                 lengths[other] = lengths[slot];
                 bodies[other] = bodies[slot];
             } else {
                 lengths[other] = fetch(stream, target.request_target(), &mut bodies[other])?;
                 let next = parse(&bodies[other][..lengths[other]])?;
-                rows[other] = next.fragment_line(target.fragment(), 0);
+                views[other].row = next.fragment_line(target.fragment(), 0);
             }
             locations[other] = target;
             previous = true;
