@@ -155,16 +155,16 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
                 arch::interrupts_on();
                 dev::keys_forget();
             }
+            #[cfg(feature = "register-view-diagnostic")]
             (0x13, false) => {
-                #[cfg(feature = "register-view-diagnostic")]
                 if let Some(mode @ ("register-snapshot" | "register-corrupt")) = option(line, "test") {
                     register_view_diagnostic(rec, mode);
                 } else {
                     register_view(rec);
                 }
-                #[cfg(not(feature = "register-view-diagnostic"))]
-                register_view(rec);
             },
+            #[cfg(not(feature = "register-view-diagnostic"))]
+            (0x13, false) => register_view(rec),
             (0x19, false) | (0x01, false) => break,
             _ => {}
         }
@@ -265,7 +265,45 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
 
 /// The kernel's register, newest events last, a screen at a time.
 fn register_view(rec: &Record) {
-    register_view_with_bytes(rec.ledger().bytes());
+    use ui::{at, GROUND, SOFT, TEXT};
+    let (cols, rows) = ui::grid();
+    let (events, head) = match ledger::verify(rec.ledger().bytes()) {
+        Ok(verified) => verified,
+        Err(error) => {
+            ui::clear(GROUND);
+            at(2, 1, "THE KERNEL'S REGISTER: verification failed", ui::BAD, GROUND);
+            at(2, 2, &format!("{error:?}"), TEXT, GROUND);
+            at(2, rows - 2, "Esc back", SOFT, GROUND);
+            loop {
+                match wait_key() {
+                    (0x01, _) | (0x1C, _) => return,
+                    _ => {}
+                }
+            }
+        }
+    };
+    let per = (rows - 6) as usize;
+    let mut top = events.len().saturating_sub(per);
+    loop {
+        ui::clear(GROUND);
+        at(2, 1, &format!("THE KERNEL'S REGISTER: {} events, chain intact", events.len()), ui::TEAL, GROUND);
+        at(2, 2, &format!("HEAD {}", head), ui::TEAL, GROUND);
+        at(2, 3, "seq  time                  actor     kind                 what", SOFT, GROUND);
+        for (n, e) in events.iter().skip(top).take(per).enumerate() {
+            let field = |k: &str| e.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+            let body = e.get("body");
+            let what = ["label", "event", "name", "id", "outcome", "note", "to"].iter().filter_map(|k| body.and_then(|b| b.get(k)).and_then(Value::as_str).map(|v| format!("{} {}", k, v))).collect::<Vec<_>>().join("; ");
+            let line = format!("{:<4} {:<21} {:<9} {:<20} {}", e.get("seq").and_then(Value::as_int).unwrap_or(0), field("ts"), field("actor"), field("kind"), what);
+            at(2, 4 + n as u32, &line.chars().take(cols as usize - 4).collect::<String>(), TEXT, GROUND);
+        }
+        at(2, rows - 2, "Up/Down scroll    Esc back", SOFT, GROUND);
+        match wait_key() {
+            (0x48, _) => top = top.saturating_sub(per / 2),
+            (0x50, _) => top = (top + per / 2).min(events.len().saturating_sub(per)),
+            (0x01, _) | (0x1C, _) => return,
+            _ => {}
+        }
+    }
 }
 
 /// Only compiled in deliberately instrumented test images, never in the release kernel.
@@ -301,6 +339,7 @@ fn register_view_diagnostic(rec: &Record, mode: &str) {
     }
 }
 
+#[cfg(feature = "register-view-diagnostic")]
 fn register_view_with_bytes(raw: &[u8]) {
     use ui::{at, GROUND, SOFT, TEXT};
     let (cols, rows) = ui::grid();
