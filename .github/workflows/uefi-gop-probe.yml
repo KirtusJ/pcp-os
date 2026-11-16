@@ -38,7 +38,7 @@ jobs:
       - name: Build read-only PE32+ EFI application with default features
         run: |
           set -euo pipefail
-          cargo build --offline --release --target x86_64-unknown-uefi --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+          cargo build --offline --release --features uefi-app --target x86_64-unknown-uefi --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
           python3 - <<'PY'
           from pathlib import Path
           import hashlib
