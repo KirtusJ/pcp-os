@@ -351,4 +351,61 @@ fn killed_adapter_leaves_admission_active_after_orphan_exits() {
     }
     assert!(worker_exited, "orphan worker failed to release its witness");
     assert_eq!(get(&db, 1).unwrap().state, State::Active);
+    // A distinct authorized request remains blocked by the stale live slot,
+    // not because its request ID was a duplicate.
+    let fresh = command(&db, "next-request")
+        .arg(DISPATCH)
+        .arg("--help")
+        .output()
+        .unwrap();
+    assert!(!fresh.status.success());
+    assert!(String::from_utf8_lossy(&fresh.stderr).contains("live node limit reached"));
+    assert_eq!(status(&db).unwrap().nodes.len(), 1);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn cancelled_desk_after_adapter_loss_does_not_terminate_orphan() {
+    // The cancellation record and actual process termination are different.
+    let (a, db) = arena("cancel-after-adapter-loss", 1, 2, 3);
+    let ready = a.0.join("running");
+    let mut adapter = command(&db, "root")
+        .arg(std::env::current_exe().unwrap())
+        .args(["--exact", "slow_child"])
+        .env("PARROTS_TEST_SENTINEL", &ready)
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !ready.exists() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(ready.exists(), "worker start was not witnessed");
+    let lock = fs::File::open(ready.with_extension("lock")).unwrap();
+    assert!(lock.try_lock().is_err(), "worker must hold the lock before test");
+
+    adapter.kill().unwrap();
+    assert!(!adapter.wait().unwrap().success());
+    assert_eq!(get(&db, 1).unwrap().state, State::Active);
+    parrots_all_the_way_down::cancel(&db, "external-stop", 1).unwrap();
+    assert_eq!(get(&db, 1).unwrap().state, State::Cancelled);
+    assert!(
+        lock.try_lock().is_err(),
+        "cancelling redb after adapter death must not be counted as process termination"
+    );
+
+    // The fixture voluntarily exits. The lock becomes available to us,
+    // but this does not retroactively prove cancellation stopped it.
+    fs::write(ready.with_extension("leave"), b"").unwrap();
+    let until = Instant::now() + Duration::from_secs(10);
+    let mut stopped = false;
+    while Instant::now() < until {
+        if lock.try_lock().is_ok() {
+            stopped = true;
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(stopped, "orphan did not release the lock after the test signal");
+    assert_eq!(get(&db, 1).unwrap().state, State::Cancelled);
 }
