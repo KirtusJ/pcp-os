@@ -1,4 +1,4 @@
-name: Public resident worker Core readback
+name: Director 1 resident Core recovery
 
 on:
   pull_request:
@@ -19,7 +19,7 @@ permissions:
 jobs:
   public-worker:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 85
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -57,11 +57,67 @@ jobs:
             --kernel "$kernel/target/pcpos-kernel.elf32" \
             --model inputs/checkpoint.bin --reference inputs/run.c \
             --method adapter/method --out receipts
+      - name: Admit the Director 1 Core-reading cohort and verify a fresh round
+        env:
+          PCPOS_CORE_MODULE: ${{ github.workspace }}/receipts/core-spec.md
+          PCPOS_REAL_QEMU: /usr/bin/qemu-system-x86_64
+        run: |
+          set -euo pipefail
+          python3 examples/resident-workers/supervise.py \
+            --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            --worker receipts/resident.elf --oracle receipts/control/oracle.json \
+            --qemu "$GITHUB_WORKSPACE/examples/method-readback/qemu-worker" \
+            --run receipts/session --cycles 60 --interval 60 >receipts/session-console.log 2>&1 &
+          supervisor=$!
+          echo "$supervisor" > "$RUNNER_TEMP/director-1-supervisor.pid"
+          for attempt in {1..300}; do
+            if test -f receipts/session/readback.json; then
+              break
+            fi
+            kill -0 "$supervisor"
+            sleep 1
+          done
+          python3 -O examples/resident-workers/verify.py \
+            --run receipts/session --oracle receipts/control/oracle.json --cycle 1 | tee receipts/round-one.json
+          mkdir -p "$RUNNER_TEMP/d1-successor-round-one/session"
+          cp receipts/session/*.serial receipts/session/*.json* "$RUNNER_TEMP/d1-successor-round-one/session/"
+          cp receipts/control/oracle.json receipts/inputs.json receipts/round-one.json "$RUNNER_TEMP/d1-successor-round-one/"
+          python3 -O examples/resident-workers/verify.py \
+            --run "$RUNNER_TEMP/d1-successor-round-one/session" --oracle "$RUNNER_TEMP/d1-successor-round-one/oracle.json" --cycle 1
+      - name: Publish the independently replayable first round
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: director-1-core-first-round
+          path: ${{ runner.temp }}/d1-successor-round-one/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Verify every observed round after supervisor shutdown
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, time
+          from pathlib import Path
+          events = Path("receipts/session/events.jsonl")
+          for _ in range(4500):
+              rows = events.read_bytes().splitlines(keepends=True)
+              records = [json.loads(row) for row in rows if row.endswith(b"\n")]
+              if records and records[-1]["event"] == "finished":
+                  break
+              if records and records[-1]["event"] in ("failed", "stopped"):
+                  raise SystemExit(records[-1])
+              time.sleep(1)
+          else:
+              raise SystemExit("supervisor did not finish")
+          PY
+          for cycle in {1..60}; do
+            python3 -O examples/resident-workers/verify.py \
+              --run receipts/session --oracle receipts/control/oracle.json --cycle "$cycle"
+          done
       - name: Retain the oracle, serial logs and cohort receipts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: resident-worker-core-readback
+          name: director-1-core-session
           path: |
             receipts/**/*.serial
             receipts/**/*.stderr
@@ -69,5 +125,7 @@ jobs:
             receipts/**/readback.json
             receipts/control/oracle.json
             receipts/inputs.json
+            receipts/round-one.json
+            receipts/session-console.log
           if-no-files-found: warn
           retention-days: 14
