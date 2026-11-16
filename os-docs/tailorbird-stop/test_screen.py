@@ -94,6 +94,18 @@ class ScreenOutput(unittest.TestCase):
         put_row(pixels, 246, "", "Request denied", self.glyphs)
         self.assertIsNone(screen.matching_row(pixels, "Request denied", tag=screen.TOOL_TAG))
 
+    def test_checks_entire_event_label_before_message(self):
+        for tag, name, text in [(screen.OUTPUT_TAG, "OUTPUT", "original"),
+                                (screen.TOOL_TAG, "TOOL", "Request denied")]:
+            pixels = bytearray(bytes(BACKGROUND) * screen.WIDTH * screen.HEIGHT)
+            put_row(pixels, 218, name, text, self.glyphs)
+            self.assertEqual(screen.matching_row(pixels, text, tag=tag), 218)
+            for x in (372, 408, 421):
+                with self.subTest(label=name, x=x):
+                    altered = pixels.copy()
+                    put_pixel(altered, x, 220, AMBER)
+                    self.assertIsNone(screen.matching_row(altered, text, tag=tag))
+
     def test_frame_boundaries(self):
         header = b"P6\n960 540\n255\n"
         data = bytes(3 * screen.WIDTH * screen.HEIGHT)
