@@ -39,8 +39,13 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --offline --release --all-targets --manifest-path PCP_OS_Rust/crates/pcpos-kernel/mb2-inspect/Cargo.toml -- --nocapture
-      - name: Check no_std library (native compiler target only)
+      - name: Install official bare-metal core target (CI toolchain only)
         shell: bash
         run: |
           set -euo pipefail
-          cargo check --offline --lib --manifest-path PCP_OS_Rust/crates/pcpos-kernel/mb2-inspect/Cargo.toml
+          rustup target add x86_64-unknown-none
+      - name: Check no_std library for x86_64-unknown-none
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --offline --lib --target x86_64-unknown-none --manifest-path PCP_OS_Rust/crates/pcpos-kernel/mb2-inspect/Cargo.toml
