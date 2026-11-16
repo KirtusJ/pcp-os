@@ -28,6 +28,18 @@ The desktop and diagnostic boots exercise distinct paths. The diagnostic measure
 
 [QEMU invocation and snapshot controls](https://www.qemu.org/docs/master/system/invocation.html) · [QEMU disk images](https://www.qemu.org/docs/master/system/images.html)
 
+## Replay an archived boot transcript
+
+Use `replay.py` with the saved serial, the release manifest and the kernel ELF from that release. For example, to check the offline diagnostic against three independently obtained token IDs:
+
+```sh
+python3 os-docs/installed-acceptance/replay.py \
+  --mode diagnostic --serial /qa/readback-01/diagnostic.serial \
+  --manifest /qa/release.json --kernel-elf /qa/kernel.elf --expected-tokens 220 19 198
+```
+
+For recovery and desktop, select the corresponding mode and omit `--expected-tokens`. The command reads the files without starting QEMU. It checks the ELF digest against the manifest and the measured kernel against the transcript. Exit 0 prints a JSON receipt with the mode, release revision, input hashes and serial byte count. Verification errors go to standard error and return exit 1. A separate boot record supplies the source-disk identity and the emulator exit status.
+
 ## Read the installed Qwen model and license
 
 On a Linux host with Python 3.11 or later, util-linux `partx` and GNU mtools, run the following against an offline raw factory installation and its matching release manifest.
