@@ -40,6 +40,8 @@ jobs:
       - name: Build static, test-only Rust journal runner
         run: |
           set -euo pipefail
+          rustc --edition=2021 --test audit/director-12/guest-restart/runner.rs -o "$RUNNER_TEMP/d12-journal-tests"
+          "$RUNNER_TEMP/d12-journal-tests" --nocapture
           rustc --edition=2021 --target=x86_64-unknown-linux-musl -C opt-level=2 \
             audit/director-12/guest-restart/runner.rs \
             -o audit/director-12/guest-restart/d12-runner
