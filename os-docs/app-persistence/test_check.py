@@ -57,6 +57,23 @@ class ReadbackTests(unittest.TestCase):
         store = MARKER + slot(11, [self.app, self.app]) + slot(10, [])
         self.assertEqual(inspect(store, "tern", None)["generation"], 10)
 
+    def test_unlaunchable_names_cannot_pass_present_or_absent_checks(self):
+        for name in ("", "Tern", "7tern", "-tern", "tern.txt", "tern_1", "tern/app",
+                     "tern\n", "térn", "a" * 49):
+            with self.subTest(name=name):
+                record = (f"apps/{name}.txt", self.app[1])
+                for entries, expected in (([record], self.app[1]), ([], None)):
+                    store = MARKER + slot(1, entries) + slot(2, entries)
+                    with self.assertRaisesRegex(ValueError, "application name"):
+                        inspect(store, name, expected)
+
+    def test_names_at_the_guest_boundaries_are_launchable(self):
+        for name in ("a", "a-", "a" + "0-" * 23 + "9"):
+            with self.subTest(name=name):
+                entries = [(f"apps/{name}.txt", self.app[1]), ("apps/Tern.txt", b"other")]
+                store = MARKER + slot(1, []) + slot(2, entries)
+                self.assertTrue(inspect(store, name, self.app[1])["present"])
+
     def test_short_store_refused(self):
         with self.assertRaisesRegex(ValueError, "short store"):
             inspect(MARKER, "tern", None)
