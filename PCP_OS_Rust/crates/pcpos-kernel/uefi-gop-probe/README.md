@@ -280,6 +280,62 @@ This test does not make the optional mode-switch app safe for physical
 hardware or user installations. It remains a **draft development
 fixture**, not an automatically installed boot utility.
 
+## Adverse no-display / no-GOP runtime under Q35/OVMF
+
+The original standalone app refused to proceed when `SystemTable.ConOut`
+was null, **before** it could determine whether the machine offered GOP.
+The boot diagnostics already use an opt-in QEMU debugcon channel and
+`Line::send` was explicitly tolerant of null `ConOut`, so that preflight
+rejection was unnecessary for this diagnostic. It was removed without
+modifying either the GOP pointers or the original firmware handoff
+contract. This change is **not** a framebuffer mapping or headless
+desktop implementation.
+
+An additional **read-only, no-VGA QEMU firmware run** in
+[GitHub Actions #43809831472](https://github.com/KirtusJ/pcp-os/actions/runs/43809831472),
+[job 133108780272](https://github.com/KirtusJ/pcp-os/actions/runs/43809831472/job/133108780272),
+at exact head `596907543434881710da0d56a05acac809cd9f0f` deliberately
+disabled the emulated VGA device. An instrumented, **read-only**
+standalone EFI application entered normally, reported:
+
+```text
+PCPOS_EFI_ENTRY_V1
+PCPOS_GOP_PROBE_V1 NO_GOP status=0x800000000000000e
+PCPOS_EFI_RETURN_V1 0x800000000000000e
+```
+
+The returned EFI status is **EFI_NOT_FOUND**, a legitimate adverse
+discovery outcome, **not EFI_SUCCESS**, and the no-GOP arm correctly
+contained **no mode or framebuffer readback**. The CI assertion
+explicitly rejected evidence of a GOP instance or opt-in SetMode
+fixture in this arm. The VM was intentionally time-bounded after the
+diagnostic returned, with a QEMU timeout exit code of 124. A guest
+with no video card is not evidence that a display could be rendered.
+
+The **other two** CI arms passed at the same exact revision:
+a read-only GOP query that found **30 modes** on emulated VGA, and
+a disposable opt-in `SetMode` change and restore from
+**1280×800 → 640×480 → 1280×800**, with both firmware calls returning
+EFI_SUCCESS. Host-side **13 UEFI ABI + 23 EDID synthetic tests** passed
+in debug and release, and the normal standalone read-only PE32+ EFI
+build remained reproducible across two clean builds at that revision.
+The default release probe (no QEMU I/O and no SetMode) SHA-256 was
+`ab51965abdef2908ba9c278d0e3c1d495b188dda44cf26d2e3e47ee0240a93e4`
+(8,704 bytes). The separate QEMU-debugcon read-only feature build
+was `189b395e9ef581b3ee7360c828df02c77d34b000f1cf8f0d96d6b8bd222b41eb`.
+The opt-in mode-change build was
+`7f55b58831e70c39e647f4d4f0ca76f2f553b74b3d1d214b47510e9664c6657d`.
+These digests identify **distinct feature-gated ELF/PE binaries**, not
+a single interchangeable product binary.
+
+The **factual limit** is still decisive: this proves the standalone
+UEFI app observes and reports the lack of GOP in one real emulator
+configuration, not that the PCP-OS kernel preserves serial/headless
+startup or that a production machine has no display. All tests occurred
+on disposable emulated firmware and were **not a PCP OS boot**,
+installed-system verification, physical hardware test or true
+host-enforced PCP calibration.
+
 ## Source and safety boundaries
 
 The minimal unsafe region is confined to firmware-entry code: table pointer reads, function-pointer conversion, and calls to firmware interfaces. The source is intentionally **not linked** to the kernel or the existing Multiboot1/Multiboot2 path. UEFI returns references and dynamically allocated buffers that must remain valid until `FreePool`; the program operates only while Boot Services are active.
