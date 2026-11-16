@@ -37,6 +37,12 @@ jobs:
             --cli store/apps/parrots-all-the-way-down/host/target/release/parrots-all-the-way-down \
             --delegate store/apps/parrots-all-the-way-down/host/target/release/pcp-delegate \
             --output d13-evidence/process_group_boundary.json
+      - name: Distinguish admitted task limits from detached OS process count
+        run: |
+          python3 audit/director-13/budget_escape.py \
+            --cli store/apps/parrots-all-the-way-down/host/target/release/parrots-all-the-way-down \
+            --delegate store/apps/parrots-all-the-way-down/host/target/release/pcp-delegate \
+            --output d13-evidence/budget_escape.json
       - name: Read cgroup and pidfd support without changing host policy
         run: |
           python3 audit/director-13/cgroup_preflight.py \
@@ -49,6 +55,7 @@ jobs:
           path: |
             d13-evidence/process_boundary.json
             d13-evidence/process_group_boundary.json
+            d13-evidence/budget_escape.json
             d13-evidence/cgroup_preflight.json
           if-no-files-found: warn
           retention-days: 7
