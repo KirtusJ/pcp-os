@@ -112,12 +112,13 @@ class ScreenOutput(unittest.TestCase):
             (screen.OUTPUT_TAG, "OUTPUT", "original", "unrecognized"),
             (screen.TOOL_TAG, "TOOL", "Request denied", "Unexpected tool"),
         ]:
-            with self.subTest(kind=kind):
-                pixels = bytearray(bytes(BACKGROUND) * screen.WIDTH * screen.HEIGHT)
-                put_row(pixels, 218, kind, expected, self.glyphs)
-                self.assertEqual(screen.matching_row(pixels, expected, tag=tag), 218)
-                put_row(pixels, 246, kind, extra, self.glyphs)
-                self.assertIsNone(screen.matching_row(pixels, expected, tag=tag))
+            for expected_y, extra_y in ((218, 246), (246, 218)):
+                with self.subTest(kind=kind, expected_y=expected_y):
+                    pixels = bytearray(bytes(BACKGROUND) * screen.WIDTH * screen.HEIGHT)
+                    put_row(pixels, expected_y, kind, expected, self.glyphs)
+                    self.assertEqual(screen.matching_row(pixels, expected, tag=tag), expected_y)
+                    put_row(pixels, extra_y, kind, extra, self.glyphs)
+                    self.assertIsNone(screen.matching_row(pixels, expected, tag=tag))
 
     def test_frame_boundaries(self):
         header = b"P6\n960 540\n255\n"
