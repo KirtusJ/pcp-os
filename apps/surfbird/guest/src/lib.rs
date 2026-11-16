@@ -6,6 +6,7 @@
 pub mod dns_answer;
 #[cfg(any(test, feature = "https-probe"))]
 pub mod https_prefix;
+pub mod location;
 #[cfg(any(test, feature = "https-probe"))]
 pub mod watch_document;
 pub const CAPACITY: usize = 2048;
@@ -66,18 +67,32 @@ pub struct Link<'a> {
 #[derive(Debug)]
 pub struct Page<'a> {
     pub title: &'a str,
-    pub text: &'a str,
+    pub paragraphs: [Paragraph<'a>; 12],
+    pub paragraph_count: usize,
     pub links: [Link<'a>; 2],
     pub count: usize,
 }
 
-pub fn safe_path(path: &str) -> bool {
-    path.starts_with('/')
-        && !path.starts_with("//")
-        && path.len() <= 96
-        && path
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'-' | b'_'))
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Paragraph<'a> {
+    pub id: Option<&'a str>,
+    pub text: &'a str,
+}
+
+impl Page<'_> {
+    pub fn target_row(&self, fragment: Option<&str>, fallback: usize) -> usize {
+        match fragment {
+            Some("") | None => 0,
+            Some(id) => self.paragraphs[..self.paragraph_count]
+                .iter()
+                .position(|paragraph| paragraph.id == Some(id))
+                .unwrap_or(if id.eq_ignore_ascii_case("top") {
+                    0
+                } else {
+                    fallback
+                }),
+        }
+    }
 }
 
 fn take<'a>(input: &mut &'a str, end: &str) -> Result<&'a str, &'static str> {
@@ -105,24 +120,42 @@ pub fn parse(body: &[u8]) -> Result<Page<'_>, &'static str> {
         .strip_prefix("<title>")
         .ok_or("expected title")?;
     let title = text(take(&mut rest, "</title>")?)?;
-    rest = rest
-        .trim_start()
-        .strip_prefix("<p>")
-        .ok_or("expected paragraph")?;
-    let paragraph = text(take(&mut rest, "</p>")?)?;
     let mut page = Page {
         title,
-        text: paragraph,
+        paragraphs: [Paragraph::default(); 12],
+        paragraph_count: 0,
         links: [Link::default(); 2],
         count: 0,
     };
+    loop {
+        rest = rest.trim_start();
+        let id = if let Some(after) = rest.strip_prefix("<p>") {
+            rest = after;
+            None
+        } else if let Some(after) = rest.strip_prefix("<p id=\"") {
+            rest = after;
+            let id = text(take(&mut rest, "\">")?)?;
+            Some(id)
+        } else {
+            break;
+        };
+        let value = text(take(&mut rest, "</p>")?)?;
+        *page
+            .paragraphs
+            .get_mut(page.paragraph_count)
+            .ok_or("too many paragraphs")? = Paragraph { id, text: value };
+        page.paragraph_count += 1;
+    }
+    if page.paragraph_count == 0 {
+        return Err("expected paragraph");
+    }
     while !rest.trim_start().is_empty() {
         rest = rest
             .trim_start()
             .strip_prefix("<a href=\"")
             .ok_or("unsupported markup")?;
         let path = take(&mut rest, "\">")?;
-        if !safe_path(path) {
+        if !location::supported_reference(path) {
             return Err("unsupported link target");
         }
         let label = text(take(&mut rest, "</a>")?)?;
@@ -184,6 +217,17 @@ mod tests {
         );
     }
     #[test]
+    fn named_paragraph_navigation_preserves_view_on_a_missing_fragment() {
+        let page = parse(br##"<title>Pier</title><p>One</p><p>Two</p><p id="details">Three</p><a href="#details">Details</a>"##).unwrap();
+        assert_eq!(page.links[0].path, "#details");
+        assert_eq!(page.target_row(Some("details"), 0), 2);
+        assert_eq!(page.paragraphs[2].text, "Three");
+        assert_eq!(page.target_row(Some("missing"), 1), 1);
+        assert_eq!(page.target_row(Some("top"), 2), 0);
+        assert_eq!(page.target_row(Some(""), 2), 0);
+    }
+
+    #[test]
     fn rejects_ambiguous_framing_and_targets() {
         let head = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 4";
         for bad in [
@@ -197,8 +241,13 @@ mod tests {
             bytes[head.len()..total].copy_from_slice(bad.as_bytes());
             assert!(body_length(&bytes[..total]).is_err());
         }
-        for path in ["//other.test/a", "https://other.test", "/\r\nX", "/../a"] {
-            assert!(!safe_path(path));
+        for path in [
+            "//other.test/a",
+            "https://other.test",
+            "/\r\nX",
+            "/with space",
+        ] {
+            assert!(!location::supported_reference(path));
         }
     }
 }

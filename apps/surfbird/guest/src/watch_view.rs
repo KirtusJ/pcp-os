@@ -1,37 +1,9 @@
 //! Local views of the authenticated watch document, using the kernel's printable ASCII font.
-#[path = "../../../../PCP_OS_Rust/crates/pcpos-kernel/src/font.rs"]
-mod font;
-use super::{H, PIXELS, W};
+use super::{page_text::text, H, PIXELS, W};
 use pcp_game_guest::{ink::Frame, log, sleep_us, Display};
 use surfbird_cable::watch_document::Document;
 
 const BG: u32 = 0x10252c;
-fn text(frame: &mut Frame, x: usize, y: usize, line: &str, color: u32) {
-    for (i, c) in line.bytes().enumerate() {
-        let Some(glyph) = c
-            .checked_sub(font::FIRST)
-            .and_then(|k| font::GLYPHS.get(k as usize))
-        else {
-            continue;
-        };
-        for row in 0..font::CELL_HEIGHT {
-            for col in 0..font::CELL_WIDTH {
-                let a = glyph[row * font::CELL_WIDTH + col] as u32;
-                if a == 0 {
-                    continue;
-                }
-                let pos = (y + row) * W + x + i * font::CELL_WIDTH + col;
-                let Some(pixel) = frame.px.get_mut(pos) else {
-                    continue;
-                };
-                let shade = |shift: u32| {
-                    (((color >> shift) & 255) * a + ((*pixel >> shift) & 255) * (255 - a)) / 255
-                };
-                *pixel = shade(16) << 16 | shade(8) << 8 | shade(0);
-            }
-        }
-    }
-}
 pub fn show(doc: &Document) {
     let mut display = Display::new(W, H);
     let mut details = false;

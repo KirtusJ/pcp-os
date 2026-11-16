@@ -57,6 +57,22 @@ def hosted_check(binary, port, targets, tag):
                 browser.kill()
 
 
+def viewport_pixels(vm, work, name):
+    path = work / (name + ".ppm")
+    vm.stdin.write(f"screendump {path.name}\n".encode())
+    vm.stdin.flush()
+    # Compare the paragraph viewport only, so a changed URL cannot pass the test.
+    until = time.monotonic() + 20
+    while time.monotonic() < until:
+        if path.exists():
+            parts = path.read_bytes().split(b"\n", 3)
+            if len(parts) == 4 and parts[:3] == [b"P6", b"640 360", b"255"]:
+                if len(parts[3]) == 640 * 360 * 3:
+                    return parts[3][136 * 640 * 3 : 168 * 640 * 3]
+        time.sleep(.04)
+    raise RuntimeError(f"Incomplete capture at {path}")
+
+
 def run_arm(args, work, arm, dns):
     scenario = "allowed" if dns and arm not in DNS_ERRORS else arm
     work.mkdir()
@@ -86,8 +102,16 @@ def run_arm(args, work, arm, dns):
                 tag = secrets.token_hex(6)
                 targets.extend([f"/bar-{tag}", f"/jetty-{tag}"])
                 pages["/harbour"] = f'<title>Harbour</title><p>Tide {tag}</p><a href="{targets[0]}">Bar</a><a href="{targets[1]}">Jetty</a>'
-                for title, target in zip(["Bar", "Jetty"], targets):
-                    pages[target] = f"<title>{title}</title><p>Report {tag} {title}</p>"
+                if scenario == "fragment":
+                    targets[:] = [f"/jetty-{tag}?view=2"]
+                    pages["/harbour"] = (f'<title>Harbour</title><p>Tide {tag}</p><p>Middle</p>'
+                                         '<p id="details">Hidden details</p><a href="#details">Details</a>'
+                                         f'<a href="./jetty-{tag}?view=2#berth">Jetty</a>')
+                    pages[targets[0]] = ('<title>Jetty</title><p>Jetty start</p>'
+                                         '<p id="berth">Berth reached</p>')
+                else:
+                    for title, target in zip(["Bar", "Jetty"], targets):
+                        pages[target] = f"<title>{title}</title><p>Report {tag} {title}</p>"
             requests.append((self.path, self.headers.get("Host")))
             if self.path not in pages or self.headers.get("Host") not in (
                     "fixture.test", f"127.0.0.1:{self.server.server_port}"):
@@ -201,6 +225,25 @@ def run_arm(args, work, arm, dns):
                         key("esc")
                         wait("surf.elf ended DONE")
                         expected = ["/harbour", targets[1], targets[0]] + [targets[0]]*args.extra_visits
+                    elif scenario == "fragment":
+                        wait("SURFBIRD ready")
+                        first = viewport_pixels(vm, work, "home")
+                        require("SURFBIRD text Hidden details" not in log.read_text(), "target visible before activation")
+                        key("1")
+                        wait("SURFBIRD path /harbour#details")
+                        wait("SURFBIRD text Hidden details")
+                        wait("SURFBIRD ready", 2)
+                        require(viewport_pixels(vm, work, "details") != first, "fragment left viewport unchanged")
+                        key("b")
+                        wait("SURFBIRD ready", 3)
+                        require(viewport_pixels(vm, work, "back") == first, "Back failed to restore viewport")
+                        key("2")
+                        wait(f"SURFBIRD path {targets[0]}#berth")
+                        wait("SURFBIRD text Berth reached")
+                        wait("SURFBIRD ready", 4)
+                        key("esc")
+                        wait("surf.elf ended DONE")
+                        expected = ["/harbour", targets[0]]
                     elif scenario == "denied":
                         wait("SURFBIRD error Ethernet grant unavailable" if args.tcp else "SURFBIRD error cable grant unavailable")
                         expected = []
@@ -220,13 +263,13 @@ def run_arm(args, work, arm, dns):
                     key("p")
                     require(vm.wait(timeout=10) == 33, "Kernel did not power off normally")
                     require(requests == [(p, "fixture.test") for p in expected], requests)
-                    frames = 4 + 2*args.extra_visits if scenario == "allowed" else 0
+                    frames = {"fragment": 4, "allowed": 4 + 2*args.extra_visits}.get(scenario, 0)
                     require(f"; {frames} frames shown (" in log.read_text(), "Unexpected rendered frame count")
                     require("kernel's register of its own start, verification and stop verifies" in log.read_text(), "Register verification missing")
                     if args.hosted and scenario == "allowed":
                         hosted_check(args.hosted, server.server_port, targets, tag)
                         require(requests[len(expected):] == [(p,f"127.0.0.1:{server.server_port}") for p in expected[:3]], requests)
-                    if scenario != "allowed":
+                    if scenario not in ("allowed", "fragment"):
                         require("SURFBIRD ready" not in log.read_text(), "Unexpected page publication")
                 finally:
                     if vm.poll() is None:
@@ -263,7 +306,7 @@ def main():
     parser.add_argument("--tcp", action="store_true", help="use a guest-ethernet kernel, TCP-enabled guest and a virtual NIC instead of the COM2 cable")
     parser.add_argument("--dns", action="store_true", help="boot the DNS-enabled guest against the local authoritative fixture")
     parser.add_argument("--dns-port", type=int, default=0, help="UDP loopback port for the DNS fixture (default: ephemeral)")
-    parser.add_argument("--arm", choices=sorted(set(DNS_ARMS) | {"allowed","denied","ambiguous","space-before-colon","folded","refused"}),
+    parser.add_argument("--arm", choices=sorted(set(DNS_ARMS) | {"allowed","fragment","denied","ambiguous","space-before-colon","folded","refused"}),
                         help="run one arm and preserve its new logs separately")
     parser.add_argument("--extra-visits", type=int, default=0,
                         help="repeat Back and link 1 after the ordinary navigation for ring-reuse testing")
@@ -277,9 +320,11 @@ def main():
     root = Path(tempfile.mkdtemp(prefix="surfbird-", dir=args.output))
     if args.arm == "refused" and not args.tcp:
         parser.error("the closed-port arm requires --tcp")
+    if args.arm == "fragment" and args.extra_visits:
+        parser.error("extra visits apply to ordinary navigation only")
     if args.extra_visits < 0:
         parser.error("--extra-visits must be nonnegative")
-    arms = DNS_ARMS if args.dns else ["allowed", "denied", "ambiguous", "space-before-colon", "folded"] + (["refused"] if args.tcp else [])
+    arms = DNS_ARMS if args.dns else ["allowed", "fragment", "denied", "ambiguous", "space-before-colon", "folded"] + (["refused"] if args.tcp else [])
     if args.arm and args.arm not in arms:
         parser.error("the selected arm does not apply to this transport")
     for scenario in ([args.arm] if args.arm else arms):
