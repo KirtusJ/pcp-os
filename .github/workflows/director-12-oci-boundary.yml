@@ -31,6 +31,17 @@ jobs:
             -o audit/director-12/container-host/worker
           file audit/director-12/container-host/worker
           sha256sum audit/director-12/container-host/worker
+      - name: Compile real Rust Parrots host and process adapter for the same static target
+        run: |
+          cargo build --locked --release --target x86_64-unknown-linux-musl \
+            --manifest-path store/apps/parrots-all-the-way-down/host/Cargo.toml --bins
+          cp store/apps/parrots-all-the-way-down/host/target/x86_64-unknown-linux-musl/release/parrots-all-the-way-down \
+            audit/director-12/container-host/parrots-all-the-way-down
+          cp store/apps/parrots-all-the-way-down/host/target/x86_64-unknown-linux-musl/release/pcp-delegate \
+            audit/director-12/container-host/pcp-delegate
+          file audit/director-12/container-host/parrots-all-the-way-down
+          file audit/director-12/container-host/pcp-delegate
+          sha256sum audit/director-12/container-host/parrots-all-the-way-down audit/director-12/container-host/pcp-delegate
       - name: Build the test-only scratch image without fetching a base image
         run: |
           docker info --format '{{.ServerVersion}}'
