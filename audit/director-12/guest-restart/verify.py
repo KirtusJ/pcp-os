@@ -44,7 +44,7 @@ def inspect(name: str):
     return json.loads(invoke(["docker", "inspect", name]).stdout)[0]
 
 def start(image: str, name: str, directory: Path, kernel: Path,
-          measurement: str, request: str, *, fault: bool):
+          measurement: str, request: str, *, fault: bool, hold: bool = False):
     args = [
         "docker", "run", "-d", "--name", name,
         "--restart", "on-failure:2",
@@ -60,6 +60,8 @@ def start(image: str, name: str, directory: Path, kernel: Path,
     ]
     if fault:
         args += ["-e", "D12_FAULT_PRESPAWN=1"]
+    if hold:
+        args += ["-e", "D12_HOLD_GUEST=1"]
     args += [image]
     invoke(args)
     obj = inspect(name)
@@ -83,6 +85,41 @@ def start(image: str, name: str, directory: Path, kernel: Path,
         "drop_all_capabilities_configured": True,
         "synthetic_request": request,
     }
+
+def process_identity(pid: int):
+    # Host-procfs PID+start clock+boot identity, not a name-only oracle.
+    try:
+        raw = Path(f"/proc/{pid}/stat").read_text(encoding="ascii")
+    except FileNotFoundError:
+        return None
+    parts = raw.rsplit(") ", 1)[1].split()
+    return {"pid": pid, "state": parts[0], "start_tick": int(parts[19])}
+
+def qemu_child(name: str):
+    try:
+        output = invoke(["docker", "top", name, "-eo", "pid,args"], checked=True).stdout
+    except RuntimeError:
+        return None
+    matches = []
+    for row in output.splitlines()[1:]:
+        col = row.split(maxsplit=1)
+        if len(col) == 2 and col[0].isdigit() and "qemu-system-x86_64" in col[1]:
+            matches.append(int(col[0]))
+    if len(matches) != 1:
+        return None
+    identity = process_identity(matches[0])
+    if not identity or identity["state"] in {"Z", "X", "x"}:
+        return None
+    identity["boot_id_sha256"] = sha(
+        Path("/proc/sys/kernel/random/boot_id").read_bytes()
+    )
+    return identity
+
+def original_process_no_longer_running(original: dict):
+    if sha(Path("/proc/sys/kernel/random/boot_id").read_bytes()) != original["boot_id_sha256"]:
+        raise AssertionError("host boot identity changed during observation")
+    current = process_identity(original["pid"])
+    return current is None or current["start_tick"] != original["start_tick"] or current["state"] in {"Z", "X", "x"}
 
 def evidence(directory: Path, request: str, measurement: str, attempts: int) -> list[dict]:
     expected = set()
@@ -220,6 +257,72 @@ def interrupted_run(image: str, kernel: Path, measurement: str, evidence_dir: Pa
             capture(directory, evidence_dir / "fault", 1)
             invoke(["docker", "rm", "-f", name], checked=False)
 
+def interrupted_after_spawn(image: str, kernel: Path, measurement: str, evidence_dir: Path):
+    # The guest CPU is deliberately held with QEMU -S, so this is proof of
+    # actual process spawn, NOT proof that the kernel completed a boot.
+    with tempfile.TemporaryDirectory(prefix="d12-qemu-after-spawn-") as tmp:
+        directory = Path(tmp)
+        os.chmod(directory, 0o777)
+        request = secrets.token_hex(12)
+        name = "d12-after-spawn-" + secrets.token_hex(5)
+        try:
+            policy = start(image, name, directory, kernel, measurement, request, fault=False, hold=True)
+            await_true(
+                lambda: (directory / "start-1.txt").exists()
+                and (directory / "qemu-1.serial").exists()
+                and inspect(name)["State"]["Running"],
+                "START committed and QEMU stdout opened", 20,
+            )
+            identity = None
+            def have_child():
+                nonlocal identity
+                identity = qemu_child(name)
+                return identity is not None
+            await_true(have_child, "exact OS-live QEMU child process", 12)
+            assert identity and not original_process_no_longer_running(identity)
+            assert not list(directory.glob("end-*.txt"))
+            # This is a test-owned **operator kill** of a disposable container,
+            # not a spontaneous kernel crash and not automatically authorized
+            # recovery in a real service.
+            invoke(["docker", "kill", "--signal", "KILL", name])
+            await_true(lambda: not inspect(name)["State"]["Running"], "container stop after operator SIGKILL", 10)
+            await_true(
+                lambda: original_process_no_longer_running(identity),
+                "exact previously observed QEMU PID stopped/reaped", 12,
+            )
+            # Restart is explicit, not an inferred effect of ChatGPT or the
+            # Docker restart manager. The test controller restarts this same
+            # container to assess the journal's meaning.
+            invoke(["docker", "start", name])
+            await_true(
+                lambda: not inspect(name)["State"]["Running"]
+                and (directory / "attention.txt").exists(),
+                "manually restarted controller held incomplete assignment", 12,
+            )
+            assert "INDETERMINATE" in (directory / "attention.txt").read_text()
+            assert (directory / "start-1.txt").read_text() == f"REQUEST={request};ATTEMPT=1;START\n"
+            assert not list(directory.glob("end-*.txt"))
+            assert not list(directory.glob("start-2.txt"))
+            assert not list(directory.glob("qemu-2.serial"))
+            assert len(list(directory.glob("qemu-*.serial"))) == 1
+            assert original_process_no_longer_running(identity)
+            return {
+                "fault_window": "after START and actual OS-live QEMU spawn, before any END",
+                "paused_guest_execution": True,
+                "original_qemu_os_identity": identity,
+                "original_qemu_no_longer_running": True,
+                "operator_injected_container_SIGKILL": True,
+                "restart_performed_by_test_controller": True,
+                "no_automatic_duplicate_guest_launch": True,
+                "no_fabricated_completion": True,
+                "attention": (directory / "attention.txt").read_text().strip(),
+                "requested_policy": policy,
+                "guest_boot_completed_before_kill": False,
+            }
+        finally:
+            capture(directory, evidence_dir / "after_spawn", 1)
+            invoke(["docker", "rm", "-f", name], checked=False)
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--image", required=True)
@@ -256,6 +359,7 @@ def main() -> int:
         ]).stdout.strip()
         result["qualification"] = qualifying_run(a.image, kernel, a.measurement, evidence_dir)
         result["interrupted"] = interrupted_run(a.image, kernel, a.measurement, evidence_dir)
+        result["post_spawn_interrupted"] = interrupted_after_spawn(a.image, kernel, a.measurement, evidence_dir)
         result["status"] = "OBSERVED_IN_TEST_SCOPE"
         return 0
     except Exception as e:
