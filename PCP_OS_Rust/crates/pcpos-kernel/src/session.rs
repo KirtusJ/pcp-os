@@ -144,10 +144,15 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     }
     // The menu.
     let mut chosen = 0usize;
+    // The background only needs a fresh full-frame raster after another
+    // screen or guest takes the framebuffer. Selection changes redraw the
+    // compact foreground only, keeping keyboard navigation responsive.
+    let mut repaint_background = true;
     arch::interrupts_on();
     dev::keys_forget();
     loop {
-        draw_menu(start, &programs, &files, rec, chosen, &message, world.store.len());
+        draw_menu(start, &programs, &files, rec, chosen, &message, world.store.len(), repaint_background);
+        repaint_background = false;
         let key = wait_key();
         match key {
             (0x48, _) if chosen > 0 => chosen -= 1,
@@ -158,11 +163,12 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
                 let (m, w) = run_entry(rec, &programs[chosen], world, &mut tasks, start, failed);
                 world = w;
                 message = m;
+                repaint_background = true;
                 arch::interrupts_on();
                 dev::keys_forget();
             }
-            (0x21, false) => files_view(&files),
-            (0x13, false) => register_view(rec),
+            (0x21, false) => { files_view(&files); repaint_background = true; },
+            (0x13, false) => { register_view(rec); repaint_background = true; },
             (0x19, false) | (0x01, false) => break,
             _ => {}
         }
@@ -196,10 +202,12 @@ fn desktop_at(cols: u32, rows: u32, x: u32, y: u32, s: &str, fg: u32, bg: u32) {
 
 /// Keyboard-accessible first-launch shell drawn atop a per-resolution raster.
 /// It is not a multiwindow desktop and cannot choose a monitor's native mode.
-fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8], String)], rec: &Record, chosen: usize, message: &str, stored: usize) {
+fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8], String)], rec: &Record, chosen: usize, message: &str, stored: usize, repaint_background: bool) {
     use ui::{GROUND, PANEL, SOFT, TEXT};
-    if !ui::desktop_background() {
-        // Do not attempt even a flat fill into an inconsistent framebuffer.
+    if repaint_background && !ui::desktop_background() {
+        // The session checked this mode before entering interactive display.
+        // A valid mode that cannot rasterize still receives a flat fallback.
+        // Never paint into a changed or inconsistent framebuffer.
         let valid = dev::display().map(|d|
             pcpos_desktop::Surface::new(d.width, d.height, d.pitch, d.mapped).is_ok()
         ).unwrap_or(false);
