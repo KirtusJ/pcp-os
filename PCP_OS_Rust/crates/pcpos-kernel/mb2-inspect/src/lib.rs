@@ -233,9 +233,13 @@ fn framebuffer_tag(tag: &[u8]) -> Result<Framebuffer, Error> {
             PixelKind::DirectRgb
         }
         0 => {
-            // Multiboot2 framebuffer_palette_num_colors is u16 at offset
-            // 32, followed immediately by 3-byte RGB entries at offset 34.
-            // Reading a u32 here consumes two bytes of the first color.
+            // Compatibility profile: GNU Multiboot2 §3.6.12's prose table
+            // says u32, but the same publication's C struct uses u16, and
+            // GRUB writes a u16 count followed by 3-byte RGB entries.
+            // We intentionally decode the GRUB-produced form: count at
+            // 32..34, RGB entries starting at 34. This is NOT an assertion
+            // that the published specification is internally unambiguous.
+            // Other layouts need a separately sourced/profiled parser.
             if tag.len() < 34 {
                 return Err(Error::BadFramebuffer);
             }
@@ -243,9 +247,9 @@ fn framebuffer_tag(tag: &[u8]) -> Result<Framebuffer, Error> {
             let expected = 34usize
                 .checked_add(count.checked_mul(3).ok_or(Error::BadFramebuffer)?)
                 .ok_or(Error::BadFramebuffer)?;
-            // Palette length is a u16 field in Multiboot2, not limited
-            // to 256 by the wire contract. Actual renderer capability is
-            // a separate check (PixelKind::Indexed is not BGRX32).
+            // The GRUB-targeted u16 count is not limited to 256 by
+            // the wire profile. This is NOT approval to draw indexed pixels
+            // (PixelKind::Indexed is not the current BGRX32 renderer).
             if tag.len() != expected {
                 return Err(Error::BadFramebuffer);
             }
@@ -265,8 +269,14 @@ fn framebuffer_tag(tag: &[u8]) -> Result<Framebuffer, Error> {
         if bpp == 0 || bpp > 32 {
             return Err(Error::UnsupportedFramebufferDepth);
         }
-        let byte_width = u64::from(width)
-            .checked_mul(u64::from(bpp).div_ceil(8)).ok_or(Error::BadFramebuffer)?;
+        // Framebuffer pitch is bytes PER ROW; bpp is bits PER PIXEL.
+        // For packed depths (1/2/4 bpp), rounding each pixel up to one
+        // byte incorrectly rejects valid bit-packed rows. Round *once*
+        // after computing all row bits.
+        let row_bits = u64::from(width)
+            .checked_mul(u64::from(bpp)).ok_or(Error::BadFramebuffer)?;
+        let byte_width = row_bits.checked_add(7)
+            .ok_or(Error::BadFramebuffer)? / 8;
         let end = physical_base.checked_add(
             u64::from(pitch_bytes).checked_mul(u64::from(height)).ok_or(Error::BadFramebuffer)?
         ).ok_or(Error::BadFramebuffer)?;
