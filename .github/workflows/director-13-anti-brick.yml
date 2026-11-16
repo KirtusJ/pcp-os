@@ -1,0 +1,41 @@
+name: Director 13 synthetic anti-bricking selector audit
+
+on:
+  pull_request:
+    paths:
+      - 'audit/director-13/anti-brick/**'
+      - '.github/workflows/director-13-anti-brick.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-selector:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - name: Checkout exact PR source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Independent byte-prefix and forged-CRC controls (no hardware)
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/d13-anti-brick"
+          python3 -m unittest discover -s audit/director-13/anti-brick \
+            -p 'test_*.py' -v 2>&1 | tee "$RUNNER_TEMP/d13-anti-brick/tests.txt"
+      - name: Save bounded test-only selector readback
+        run: |
+          python3 audit/director-13/anti-brick/selector_model.py \
+            --output "$RUNNER_TEMP/d13-anti-brick/selector.json"
+      - name: Retain synthetic results even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: director-13-anti-brick-synthetic
+          path: |
+            ${{ runner.temp }}/d13-anti-brick/tests.txt
+            ${{ runner.temp }}/d13-anti-brick/selector.json
+          if-no-files-found: warn
+          retention-days: 7
