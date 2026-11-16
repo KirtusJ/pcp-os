@@ -58,7 +58,8 @@ def _copy(fd, disk_sectors, lba):
         raise ValueError("GPT partition entry CRC mismatch")
     return {
         "current": current, "alternate": alternate, "first": first_usable,
-        "last": last_usable, "guid": disk_guid,
+        "last": last_usable, "guid": disk_guid, "revision": revision,
+        "header_size": header_size, "entries_start": start, "entries_end": end,
         "count": count, "entry_size": entry_size,
         "entries_crc": entries_crc, "entries_digest": digest.digest(),
     }
@@ -73,7 +74,10 @@ def require_gpt_mirror(disk_fd, disk_size):
     backup = _copy(disk_fd, disk_sectors, disk_sectors - 1)
     if primary["alternate"] != backup["current"] or backup["alternate"] != 1:
         raise ValueError("GPT primary and backup locations disagree")
-    for field in ("first", "last", "guid", "count", "entry_size",
-                  "entries_crc", "entries_digest"):
+    if (primary["entries_end"] > primary["first"] * SECTOR_BYTES or
+            backup["entries_start"] < (backup["last"] + 1) * SECTOR_BYTES):
+        raise ValueError("GPT copies do not occupy distinct primary/backup entry regions")
+    for field in ("first", "last", "guid", "revision", "header_size",
+                  "count", "entry_size", "entries_crc", "entries_digest"):
         if primary[field] != backup[field]:
             raise ValueError(f"GPT primary and backup {field} disagree")
