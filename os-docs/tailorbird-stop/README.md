@@ -31,6 +31,8 @@ The runner opens the factory image read-only. It copies the GPT and application 
 
 Each boot must mount the store, launch the exact Tailorbird binary named by the manifest, and admit the model worker. The worker’s `Exited(3)` and the MCP connection can arrive in either order after admission. The runner checks the complete serial again after QEMU exits so a later relaunch cannot supply another process’s evidence.
 
+Every task-control receipt must occupy a complete LF- or CRLF-terminated line after the desktop handshake and before any recorded Tailorbird exit. The interrupted guest can end with its proposal still pending. A guest that exits normally can emit subsequent kernel shutdown records.
+
 A normal invocation writes `result.json`, serial transcripts, and QEMU diagnostics. The runner removes the temporary binaries and sparse disk on exit. A failed receipt, digest check, or deadline produces a nonzero exit. Inspect the first failing event and the matching transcript before rerunning. A harness-directed QEMU termination at a completed checkpoint appears separately in the result from the guest's worker exit.
 
 The keyboard test uses the QEMU monitor's `sendkey` command. See the [QEMU monitor reference](https://www.qemu.org/docs/master/system/monitor.html).
