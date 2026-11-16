@@ -138,7 +138,7 @@ class PreflightTests(unittest.TestCase):
 
     def test_boolean_epoch_cannot_pass_for_integer_one(self):
         inv, p = example()
-        self.assert_hold(replace(inv, epoch=True), p)
+        self.assert_hold(replace(inv, epoch=True), replace(p, inventory_epoch=1))
 
     def test_float_image_length_cannot_equal_int_bytes(self):
         inv, p = example()
@@ -171,11 +171,13 @@ class PreflightTests(unittest.TestCase):
     def test_nonstring_volume_marker_holds(self):
         inv, p = example()
         d = replace(inv.devices[0], volume_marker=None)
-        self.assert_hold(replace(inv, devices=(d,)), p)
+        self.assert_hold(replace(inv, devices=(d,)), replace(p, volume_marker=None))
 
     def test_boolean_plan_capacity_cannot_pass_integer_one(self):
         inv, p = example()
-        self.assert_hold(inv, replace(p, capacity_512=True))
+        d = replace(inv.devices[0], capacity_512=1)
+        self.assert_hold(replace(inv, devices=(d,)),
+                         replace(p, capacity_512=True, image_bytes=512))
 
     def test_raw_string_condition_cannot_masquerade_as_enum(self):
         inv, p = example()
