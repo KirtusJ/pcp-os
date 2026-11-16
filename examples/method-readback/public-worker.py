@@ -109,11 +109,12 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     for name in ("fixture", "kernel", "method", "model", "reference", "out"):
         p.add_argument("--" + name, required=True, type=Path)
+    p.add_argument("--fixture-revision", default=FIXTURE, help="expected full Git commit of the worker checkout")
     p.add_argument("--qemu", default="qemu-system-x86_64")
     a = p.parse_args()
     fixture = a.fixture.resolve(strict=True)
     head = subprocess.check_output(["git", "-C", fixture, "rev-parse", "HEAD"], text=True).strip()
-    check(head == FIXTURE, "checkout does not identify the expected public fixture")
+    check(head == a.fixture_revision, f"worker checkout is {head}, expected {a.fixture_revision}")
     manifest = (a.method / "MANIFEST.json").read_bytes()
     check(digest(manifest) == BUILD22, "unexpected build 22 method manifest")
     source_path = a.method / CORE
@@ -135,7 +136,9 @@ def main():
     hashes = {name: digest(path.read_bytes()) for name, path in
               (("kernel", kernel), ("worker", worker), ("control", out / "control/resident.elf"),
                ("oracle", oracle), ("Core", module))}
-    print(json.dumps(dict(fixture=head, measurement=measure, manifest=BUILD22, hashes=hashes)), flush=True)
+    provenance = dict(fixture=head, measurement=measure, manifest=BUILD22, hashes=hashes)
+    (out / "inputs.json").write_text(json.dumps(provenance, indent=2) + "\n")
+    print(json.dumps(provenance), flush=True)
     cohort(fixture, out / "control/resident.elf", oracle, out / "unaltered", kernel, qemu)
     negative_controls(out, kernel, measure, source, qemu, hashes["worker"])
     cohort(fixture, worker, oracle, out / "with-Core", kernel, qemu, module)
