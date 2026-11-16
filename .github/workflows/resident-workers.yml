@@ -46,6 +46,12 @@ jobs:
             --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
             --worker "$RUNNER_TEMP/fixture/resident.elf" --oracle "$RUNNER_TEMP/fixture/oracle.json" \
             --run "$RUNNER_TEMP/cohort" --cycles 2 --interval 5
+      - name: Recheck both historical rounds after guest shutdown
+        run: |
+          for cycle in 1 2; do
+            python3 -O examples/resident-workers/verify.py \
+              --run "$RUNNER_TEMP/cohort" --oracle "$RUNNER_TEMP/fixture/oracle.json" --cycle "$cycle"
+          done
       - name: Retain serials, emulator diagnostics and readbacks
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
