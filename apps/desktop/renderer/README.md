@@ -7,7 +7,7 @@ Source basis: `master` at `67e57f924ce0e2c86f9250c567796b745ed633c8`, requested 
 ## What this draft actually changes
 
 - Adds a pure, `no_std` Rust rasterizer under `apps/desktop/renderer/`, with bounded geometry, per-pixel gradient and normalized accent. The logical output is exactly `width × height`; each row contains `width` 32-bit RGB pixels. It never assumes a 1024 × 768 bitmap, fixed 16:9 ratio or zero row padding.
-- Connects the rasterizer to the existing **kernel-owned first-launch menu** through its safe `dev::display_row` abstraction. The display driver determines the actual width, height and stride. If the reported geometry is invalid, the menu falls back to its old flat background.
+- Connects the rasterizer to the existing **kernel-owned first-launch menu** through its safe `dev::display_row` abstraction. The display driver determines the actual width, height and stride. If the reported geometry is invalid at startup, the graphical menu is not entered and the kernel retains its serial/no-display fallback. A flat background is used only when a still-valid framebuffer cannot be rasterized.
 - Replaces rigid desktop menu placement with a responsive panel and an explicit selected-item highlight. Up/Down, Enter, F (full supplied-file identities), R (kernel register), P / Esc and kernel Ctrl+Alt+Delete remain keyboard reachable. Long supplied-program lists scroll within the visible viewport. No LLM is needed to draw or use the launcher.
 - Restores the original startup display mode after a guest exits, rather than forcing the prior fixed 1024 × 768 constant.
 
