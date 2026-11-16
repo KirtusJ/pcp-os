@@ -344,7 +344,7 @@ def fabricated_exit_33(image: str, kernel: Path, measurement: str, evidence_dir:
             assert inspect(name)["State"]["ExitCode"] == 0
             serial = (directory / "qemu-1.serial").read_bytes()
             assert serial.startswith(b"SYNTHETIC TEST:") and b"PCP OS kernel" not in serial
-            assert (directory / "start-1.txt").read_text() == f"REQUEST={request};ATTEMPT=1;START\\n"
+            assert (directory / "start-1.txt").read_text() == f"REQUEST={request};ATTEMPT=1;START\n"
             assert not list(directory.glob("end-*.txt"))
             assert not (directory / "qemu-2.serial").exists()
             receipt = (directory / "attention.txt").read_text()
