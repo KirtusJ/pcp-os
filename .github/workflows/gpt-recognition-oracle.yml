@@ -3,6 +3,7 @@ name: Synthetic GPT recognition cross-oracle (no disk access)
 on:
   push:
     branches:
+      - master
       - session-b/gpt-recognition-cross-oracle-20261116
     paths:
       - os-docs/gpt-recognition-oracle/**
