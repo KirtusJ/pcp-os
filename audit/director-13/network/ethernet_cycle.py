@@ -246,8 +246,57 @@ def run(args, directory):
                     raise AssertionError(f"wrong HTTP after virtual carrier restored: {urls}")
                 report["fresh_guest_after_link_up"] = True
                 report["http_after_link_restored"] = list(urls)
-            qmp.hmp("sendkey esc 70")
-            wait_serial(serial, "surf.elf ended DONE", child=qemu, seconds=20)
+            if args.arm == "flap-three":
+                # Three down/up link cycles within ONE boot. The app is
+                # relaunched each time; a network-manager reconnect is not
+                # implemented in this source. No app process survives a cycle.
+                report["flap_cycles"] = []
+                for cycle in (2, 3):
+                    qmp.hmp("sendkey esc 70")
+                    wait_serial(serial, "surf.elf ended DONE", count=cycle-1,
+                                child=qemu, seconds=20)
+                    time.sleep(0.30)
+                    qmp.link(False)
+                    time.sleep(0.25)
+                    qmp.hmp("sendkey ret 70")
+                    wait_serial(serial, "starting surf.elf", count=2*cycle-1,
+                                child=qemu, seconds=20)
+                    wait_serial(serial, "surf.elf ended FAILED", count=cycle,
+                                child=qemu, seconds=55)
+                    transcript = serial.read_text(errors="replace")
+                    if transcript.count("SURFBIRD error TCP connect timeout") != cycle:
+                        raise AssertionError("unexpected failure under virtual carrier-down")
+                    if urls != ["/harbour"] * (cycle-1):
+                        raise AssertionError("link-down app reached fixture unexpectedly")
+                    report["flap_cycles"].append({
+                        "cycle": cycle, "link_down_failed_cleanly": True,
+                        "http_count_while_link_down": len(urls),
+                    })
+                    qmp.link(True)
+                    time.sleep(0.30)
+                    qmp.hmp("sendkey ret 70")
+                    wait_serial(serial, "starting surf.elf", count=2*cycle,
+                                child=qemu, seconds=20)
+                    wait_serial(serial, "SURFBIRD ready", count=cycle,
+                                child=qemu, seconds=40)
+                    if urls != ["/harbour"] * cycle:
+                        raise AssertionError("freshly launched app failed restored carrier")
+                    report["flap_cycles"][-1]["link_up_fresh_app_connected"] = True
+                    report["flap_cycles"][-1]["http_count_after_reconnect"] = len(urls)
+                qmp.hmp("sendkey esc 70")
+                wait_serial(serial, "surf.elf ended DONE", count=3,
+                            child=qemu, seconds=20)
+                report["total_down_up_cycles"] = 3
+                report["fresh_process_launches"] = 6
+                report["total_qmp_set_link_calls"] = sum(
+                    e.get("request", {}).get("execute") == "set_link"
+                    for e in qmp_journal if e.get("kind") == "call"
+                )
+                if report["total_qmp_set_link_calls"] != 6:
+                    raise AssertionError("not all six carrier commands were acknowledged")
+            else:
+                qmp.hmp("sendkey esc 70")
+                wait_serial(serial, "surf.elf ended DONE", child=qemu, seconds=20)
             time.sleep(0.35)
             qmp.hmp("sendkey p 70")
             report["qemu_exit_code"] = qemu.wait(timeout=20)
@@ -264,6 +313,8 @@ def run(args, directory):
                 raise AssertionError(
                     "down-link guest terminated by processor fault; this is not a clean disconnect"
                 )
+            elif args.arm == "flap-three":
+                report["result"] = "THREE_FRESH_PROCESS_VIRTUAL_LINK_RESTORE_CYCLES"
             else:
                 report["result"] = "FRESH_PROCESS_AFTER_LINK_UP_NOT_IN_SESSION_RECONNECT"
         finally:
@@ -302,7 +353,7 @@ def main():
     p.add_argument("--guest", type=Path, required=True)
     p.add_argument("--measure", type=Path, required=True)
     p.add_argument("--qemu", default="qemu-system-x86_64")
-    p.add_argument("--arm", choices=("up-baseline", "down-up"), required=True,
+    p.add_argument("--arm", choices=("up-baseline", "down-up", "flap-three"), required=True,
                    help="separate positive control from carrier-change trial")
     p.add_argument("--output", type=Path, required=True)
     a = p.parse_args()
