@@ -27,7 +27,7 @@ jobs:
           rustc -Vv
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            build-essential git ninja-build meson libglib2.0-dev \
+            build-essential git ninja-build meson lld binutils libglib2.0-dev \
             libpixman-1-dev libslirp-dev pkg-config zlib1g-dev \
             python3-venv python3-pip python3-setuptools
       - name: Retrieve official QEMU source and validate independent published digest
