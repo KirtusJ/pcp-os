@@ -1,0 +1,52 @@
+name: Director 12 isolated OCI worker boundary
+
+on:
+  pull_request:
+    paths:
+      - 'audit/director-12/container-host/**'
+      - '.github/workflows/director-12-oci-boundary.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker-host:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install the static Rust target on the disposable runner
+        run: |
+          rustc -Vv
+          rustup target add x86_64-unknown-linux-musl
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends musl-tools file
+      - name: Compile one standalone unprivileged worker
+        run: |
+          rustc --edition 2021 --target x86_64-unknown-linux-musl -C opt-level=2 \
+            audit/director-12/container-host/worker.rs \
+            -o audit/director-12/container-host/worker
+          file audit/director-12/container-host/worker
+          sha256sum audit/director-12/container-host/worker
+      - name: Build the test-only scratch image without fetching a base image
+        run: |
+          docker info --format '{{.ServerVersion}}'
+          docker build --pull=false -f audit/director-12/container-host/Dockerfile \
+            -t pcp-d12-oci-test:"$GITHUB_SHA" audit/director-12/container-host
+      - name: Exercise Docker stop and independently managed restart
+        run: |
+          python3 -I -B audit/director-12/container-host/verify.py \
+            --image pcp-d12-oci-test:"$GITHUB_SHA" \
+            --worker audit/director-12/container-host/worker \
+            --output "$RUNNER_TEMP/d12-oci-evidence.json"
+      - name: Preserve exact bounded observation (also on failure)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: director-12-oci-runtime-boundary
+          path: ${{ runner.temp }}/d12-oci-evidence.json
+          if-no-files-found: warn
+          retention-days: 7
