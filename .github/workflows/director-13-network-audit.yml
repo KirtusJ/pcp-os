@@ -92,6 +92,14 @@ jobs:
             --measure PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py \
             --arm down-up \
             --output "$RUNNER_TEMP/d13-link-down-up"
+      - name: Three alternating virtual carrier down/up cycles in one native guest boot
+        run: |
+          python3 audit/director-13/network/ethernet_cycle.py \
+            --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            --guest apps/surfbird/guest/target/x86_64-unknown-none/release/surfcable \
+            --measure PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py \
+            --arm flap-three \
+            --output "$RUNNER_TEMP/d13-link-flap-three"
       - name: Control disabled-application Ethernet grant (same feature-on kernel)
         if: always()
         run: |
@@ -134,6 +142,11 @@ jobs:
             ${{ runner.temp }}/d13-link-baseline/serial.log
             ${{ runner.temp }}/d13-link-baseline/qemu.stderr
             ${{ runner.temp }}/d13-link-baseline/frames.pcap
+            ${{ runner.temp }}/d13-link-flap-three/result.json
+            ${{ runner.temp }}/d13-link-flap-three/qmp-journal.json
+            ${{ runner.temp }}/d13-link-flap-three/serial.log
+            ${{ runner.temp }}/d13-link-flap-three/qemu.stderr
+            ${{ runner.temp }}/d13-link-flap-three/frames.pcap
             ${{ runner.temp }}/d13-link-down-up/result.json
             ${{ runner.temp }}/d13-link-down-up/qmp-journal.json
             ${{ runner.temp }}/d13-link-down-up/serial.log
