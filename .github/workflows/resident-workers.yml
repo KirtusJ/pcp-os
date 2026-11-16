@@ -52,6 +52,11 @@ jobs:
             python3 -O examples/resident-workers/verify.py \
               --run "$RUNNER_TEMP/cohort" --oracle "$RUNNER_TEMP/fixture/oracle.json" --cycle "$cycle"
           done
+      - name: Freeze both rounds and verify their packed evidence
+        run: |
+          python3 -O examples/resident-workers/archive.py \
+            --run "$RUNNER_TEMP/cohort" --oracle "$RUNNER_TEMP/fixture/oracle.json" \
+            --cycle 2 --output "$RUNNER_TEMP/through-2.zip"
       - name: Retain serials, emulator diagnostics and readbacks
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

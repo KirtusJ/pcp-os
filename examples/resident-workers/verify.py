@@ -90,7 +90,7 @@ def check_row(run, row, node, active, config, oracle, previous):
     require(observed_prompt == prompt, f"{name}: final challenge differs from the round")
 
 
-def verify(run, oracle_path, cycle):
+def verify(run, oracle_path, cycle, *, check_history=False):
     integer(cycle, "cycle", 1)
     oracle_bytes = oracle_path.read_bytes()
     oracle = parse_oracle(oracle_bytes)
@@ -152,12 +152,13 @@ def verify(run, oracle_path, cycle):
                 for node, row in zip(NODES, rows):
                     require(node_id(row) == node and row["uuid"] == active[node]["uuid"],
                             f"node {node}: recorded identity mismatch")
-                    if event["cycle"] == cycle:
+                    if check_history or event["cycle"] == cycle:
                         check_row(run, row, node, active, config, oracle, previous)
                     previous[row["uuid"]] = integer(row["serial_bytes"], "serial length", 1)
-                if event["cycle"] == cycle:
+                if check_history or event["cycle"] == cycle:
                     require(isinstance(record["time"], str) and datetime.fromisoformat(record["time"]).utcoffset() is not None,
                             "invalid observation timestamp")
+                if event["cycle"] == cycle:
                     return {"cycle": cycle, "time": record["time"], "sha256": digest,
                             "root_uuid": active[1]["uuid"], "guests": len(rows),
                             "edges": len(rows) - 1, "repairs": repairs}
