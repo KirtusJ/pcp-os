@@ -40,7 +40,7 @@ python3 audit/director-13/group_boundary.py \
   --output d13-evidence/process_group_boundary.json
 ~~~
 
-The workflow at .github/workflows/director-13-containment.yml preserves the JSON observation as an ephemeral Actions artifact. A local dry-run against a **synthetic Python adapter** checks the harness's structure only. It is not a run of the Rust implementation; only the exact GitHub Actions source/runner and archived evidence can support a Rust-host finding.
+The workflow at .github/workflows/director-13-containment.yml builds and executes the **actual Rust adapter** on a transient Linux Actions runner and retains both JSON observations as one ephemeral artifact. A fake-adapter rehearsal, if separately performed, would check only harness structure, not Rust behavior. The actual code revision, job outcome and raw saved artifact must be inspected for any native-host finding. Neither this test nor a green Actions job establishes a resident runtime.
 
 ## Acceptance still missing
 
