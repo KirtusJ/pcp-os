@@ -216,7 +216,8 @@ def main():
         parser.error("Each boot path can be selected once per run")
     if args.model_memory_mib < 1 or args.timeout < 1:
         parser.error("RAM and timeout must be positive")
-    manifest = json.loads(args.manifest.read_bytes())
+    manifest_bytes = args.manifest.read_bytes()
+    manifest = json.loads(manifest_bytes)
     profile = manifest.get("tailorbird_request", {}).get("factory_profile", "")
     if not re.fullmatch(r"recovery (?:[1-9]|[1-5][0-9]|60)", profile):
         parser.error("This check requires the recovery-default Tailorbird release profile")
@@ -224,7 +225,8 @@ def main():
     if original != manifest["output_sha256"]["PCP-OS.img"]:
         parser.error("The installed disk does not match the release manifest")
     args.results.mkdir(parents=True, exist_ok=False)
-    result = {"source_revision": manifest["git_commit"], "disk_sha256_before": original,
+    result = {"source_revision": manifest["git_commit"],
+              "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(), "disk_sha256_before": original,
               "expected_tokens": args.expected_tokens, "selected_modes": args.modes,
               "model_memory_mib": args.model_memory_mib, "boots": {},
               "status": "in_progress", "active_mode": None}
@@ -234,7 +236,6 @@ def main():
         if args.kernel_elf is not None:
             args.kernel_measurement = pinned_kernel_measurement(args.kernel_elf, manifest)
         result["release_kernel_measurement"] = args.kernel_measurement
-        result["manifest_sha256"] = sha256(args.manifest)
         result["ovmf_code_sha256"] = sha256(args.ovmf_code)
         result["ovmf_vars_sha256"] = sha256(args.ovmf_vars)
         result["qemu"] = subprocess.check_output([args.qemu, "--version"], text=True).splitlines()[0]
