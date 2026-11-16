@@ -172,7 +172,7 @@ fn present(display: &mut Display, path: &str, page: &Page<'_>, row: usize) {
         let y = 185 + 32 * i as i32;
         f.text(26, y, if i == 0 { "1" } else { "2" }, 2, 0x65dedf);
         label(&mut f, 51, y + 4, l.label, 0xe4edef);
-        record(if i == 0 { "link1" } else { "link2" }, l.path);
+        record(if i == 0 { "link1" } else { "link2" }, l.path());
     }
     f.text(
         26,
@@ -241,7 +241,7 @@ fn browse_pages(stream: &mut impl Stream) -> Result<(), &'static str> {
         };
         let other = 1 - slot;
         if let Some(i) = index {
-            let target = match locations[slot].follow(page.links[i].path) {
+            let target = match locations[slot].follow(page.links[i].path()) {
                 Ok(target) => target,
                 Err(error) => {
                     record("navigation", error);

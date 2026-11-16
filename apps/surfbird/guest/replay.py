@@ -103,10 +103,10 @@ def run_arm(args, work, arm, dns):
                 targets.extend([f"/bar-{tag}", f"/jetty-{tag}"])
                 pages["/harbour"] = f'<title>Harbour</title><p>Tide {tag}</p><a href="{targets[0]}">Bar</a><a href="{targets[1]}">Jetty</a>'
                 if scenario == "fragment":
-                    targets[:] = [f"/jetty-{tag}?view=2"]
+                    targets[:] = [f"/jetty-{tag}?view=2&deck=upper"]
                     pages["/harbour"] = (f'<title>Harbour</title><p>Tide {tag}</p><p>Middle</p>'
                                          '<p id="details">Hidden details</p><a href="#details">Details</a>'
-                                         f'<a href="./jetty-{tag}?view=2#berth">Jetty</a>')
+                                         f'<a href="./jetty-{tag}?view=2&amp;deck=upper&#35;berth">Jetty</a>')
                     pages[targets[0]] = ('<title>Jetty</title><p>Jetty start</p>'
                                          '<p id="berth">Berth reached</p>')
                 else:
@@ -241,6 +241,8 @@ def run_arm(args, work, arm, dns):
                         wait(f"SURFBIRD path {targets[0]}#berth")
                         wait("SURFBIRD text Berth reached")
                         wait("SURFBIRD ready", 4)
+                        destination = viewport_pixels(vm, work, "berth")
+                        require(destination != first, "destination still shows the original viewport")
                         key("esc")
                         wait("surf.elf ended DONE")
                         expected = ["/harbour", targets[0]]

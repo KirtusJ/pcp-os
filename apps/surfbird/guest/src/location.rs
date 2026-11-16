@@ -1,5 +1,5 @@
 //! The fixed-origin guest stores bounded ASCII URL references without a heap.
-const LIMIT: usize = 96;
+pub(crate) const LIMIT: usize = 96;
 
 #[derive(Clone, Copy)]
 pub struct Location {
