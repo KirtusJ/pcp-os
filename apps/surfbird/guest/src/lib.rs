@@ -6,6 +6,7 @@
 pub mod dns_answer;
 #[cfg(any(test, feature = "https-probe"))]
 pub mod https_prefix;
+mod href;
 pub mod location;
 #[cfg(any(test, feature = "https-probe"))]
 pub mod watch_document;
@@ -62,7 +63,13 @@ pub fn body_length(head: &[u8]) -> Result<usize, &'static str> {
 #[derive(Default, Debug, PartialEq, Clone, Copy)]
 pub struct Link<'a> {
     pub label: &'a str,
-    pub path: &'a str,
+    target: href::Href,
+}
+
+impl Link<'_> {
+    pub fn path(&self) -> &str {
+        self.target.as_str()
+    }
 }
 #[derive(Debug)]
 pub struct Page<'a> {
@@ -154,12 +161,9 @@ pub fn parse(body: &[u8]) -> Result<Page<'_>, &'static str> {
             .trim_start()
             .strip_prefix("<a href=\"")
             .ok_or("unsupported markup")?;
-        let path = take(&mut rest, "\">")?;
-        if !location::supported_reference(path) {
-            return Err("unsupported link target");
-        }
+        let target = href::Href::parse(take(&mut rest, "\">")?)?;
         let label = text(take(&mut rest, "</a>")?)?;
-        *page.links.get_mut(page.count).ok_or("too many links")? = Link { label, path };
+        *page.links.get_mut(page.count).ok_or("too many links")? = Link { label, target };
         page.count += 1;
     }
     Ok(page)
@@ -208,18 +212,13 @@ mod tests {
             br#"<title>Pier</title><p>Rising tide.</p><a href="/b">Two</a><a href="/a">One</a>"#,
         )
         .unwrap();
-        assert_eq!(
-            p.links[1],
-            Link {
-                label: "One",
-                path: "/a"
-            }
-        );
+        assert_eq!(p.links[1].label, "One");
+        assert_eq!(p.links[1].path(), "/a");
     }
     #[test]
     fn named_paragraph_navigation_preserves_view_on_a_missing_fragment() {
         let page = parse(br##"<title>Pier</title><p>One</p><p>Two</p><p id="details">Three</p><a href="#details">Details</a>"##).unwrap();
-        assert_eq!(page.links[0].path, "#details");
+        assert_eq!(page.links[0].path(), "#details");
         assert_eq!(page.target_row(Some("details"), 0), 2);
         assert_eq!(page.paragraphs[2].text, "Three");
         assert_eq!(page.target_row(Some("missing"), 1), 1);
