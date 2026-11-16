@@ -23,7 +23,7 @@ Externally retrieved:
 
 ## Fixture contract
 
-`target_preflight.py` is a *pure model* taking caller-supplied facts; no device, user, permission mechanism, source file, cryptographic signer or OS is accessed. It can return only `HOLD` or **`ELIGIBLE_FOR_HOST_RECHECK`**, never `AUTHORIZED` or `SAFE_TO_WRITE`. `test_target_preflight.py` exercises expected consistency failures and **preserves an indistinguishability counterexample** where a same-port full clone can pass the pure model. Do not treat a green model test as disk safety.
+`target_preflight.py` is a *pure model* taking caller-supplied facts; no device, user, permission mechanism, source file, cryptographic signer or OS is accessed. It can return only `HOLD` or **`ELIGIBLE_FOR_HOST_RECHECK`**, never `AUTHORIZED` or `SAFE_TO_WRITE`. A virgin blank disk need not contain a pre-existing media ID; the mock plan may therefore match an empty ID without asserting uniqueness. This initial restrictive profile holds when there are two writable block devices **even if one is on an unsupported bus**, because unsupported is not invisible. An externally sourced cache that is accessible offline but unread is `NOT_INSPECTED`, not `UNAVAILABLE`. `test_target_preflight.py` exercises expected consistency failures and **preserves an indistinguishability counterexample** where a same-port full clone can pass the pure model. Do not treat a green model test as disk safety.
 
 Run the tests with `python3 -m unittest -v test_target_preflight.py` in this directory.
 
