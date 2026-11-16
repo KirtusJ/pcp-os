@@ -81,54 +81,51 @@ def verify_log(data, mode, manifest, expected_tokens, kernel_measurement=None):
     commands = [line for line in lines if line.startswith("command line: ")]
     if len(commands) != 1 or sorted(commands[0].removeprefix("command line: ").split()) != sorted(arguments):
         raise ValueError(f"{mode}: kernel command line differs from the release boot profile")
-    markers = [
-        "PCP OS EFI amd64 entry, native 64-bit handoff",
-        "long mode true",
-        commands[0],
-        measured[0][0],
+    records = [
+        r".*PCP OS EFI amd64 entry, native 64-bit handoff.*",
+        r"protections: .*long mode true",
+        re.escape(commands[0]),
+        re.escape(measured[0][0]),
     ]
+    launches = [line for line in lines if line.startswith("starting ")]
     if mode == "recovery":
-        markers.append("PCP OS launcher ready: 0 programs, 0 files")
-        if any(line.startswith(("starting ", "QWEN READY")) for line in lines):
+        records.append(r"PCP OS launcher ready: 0 programs, 0 files")
+        if launches or any(line.startswith("QWEN READY") for line in lines):
             raise ValueError("The recovery entry started a payload")
-    elif mode == "desktop":
-        if not re.search(r"^starting Tailorbird \(\d+ bytes, SHA-256 " +
-                         re.escape(components["tailorbird"]) + r"\)$", "\n".join(lines), re.M):
-            raise ValueError("The desktop started a different Tailorbird executable")
-        markers.extend([
-            "Persistent application store mounted:",
-            "PCP OS launcher ready:",
-            "starting Tailorbird (",
-            "Qwen worker admitted in separate address space:",
-            "TAILORBIRD MCP CONNECTED",
-            "QWEN READY",
-            "Tailorbird ended DONE: exit 0",
-        ])
     else:
-        worker_start = next((line for line in lines if re.fullmatch(
-            r"starting qwen\.elf \(\d+ bytes, SHA-256 " + re.escape(components["qwen-worker"]) +
-            r"\) with: 3 17 488 220 17 284", line)), None)
-        if worker_start is None:
-            raise ValueError("The installed diagnostic started a different worker or prompt")
-        markers.extend([
-            worker_start,
-            "QWEN READY",
-            *[f"QWEN TOKEN {token}" for token in expected_tokens],
-            "QWEN COMPLETE",
-            "qwen.elf ended DONE: exit 0",
-        ])
-        tokens = [int(line.removeprefix("QWEN TOKEN ")) for line in lines
-                  if line.startswith("QWEN TOKEN ")]
-        if tokens != expected_tokens:
-            raise ValueError(f"Qwen generated {tokens}; expected {expected_tokens}")
-    markers.append("ALL SELF-TESTS PASS")
-    cursor = 0
-    for marker in markers:
-        while cursor < len(lines) and marker not in lines[cursor]:
-            cursor += 1
-        if cursor == len(lines):
-            raise ValueError(f"{mode}: missing or out-of-order marker {marker!r}")
-        cursor += 1
+        if mode == "desktop":
+            launch = (r"starting Tailorbird \([0-9]+ bytes, SHA-256 " +
+                      re.escape(components["tailorbird"]) + r"\)")
+            records.extend([
+                r"Persistent application store mounted: .*",
+                r"PCP OS launcher ready: .*",
+                launch,
+                r"Qwen worker admitted in separate address space: .*",
+                r"TAILORBIRD MCP CONNECTED",
+                r"QWEN READY",
+                r"Tailorbird ended DONE: exit 0(?: after [0-9]+ s; .+)?",
+            ])
+        else:
+            launch = (r"starting qwen\.elf \([0-9]+ bytes, SHA-256 " +
+                      re.escape(components["qwen-worker"]) + r"\) with: 3 17 488 220 17 284")
+            records.extend([
+                launch,
+                r"QWEN READY",
+                *[f"QWEN TOKEN {token}" for token in expected_tokens],
+                r"QWEN COMPLETE",
+                r"qwen\.elf ended DONE: exit 0(?: after [0-9]+ s; .+)?",
+            ])
+            tokens = [int(line.removeprefix("QWEN TOKEN ")) for line in lines
+                      if line.startswith("QWEN TOKEN ")]
+            if tokens != expected_tokens:
+                raise ValueError(f"Qwen generated {tokens}; expected {expected_tokens}")
+        if len(launches) != 1 or not re.fullmatch(launch, launches[0]):
+            raise ValueError(f"{mode}: expected exactly one manifest-matched payload launch")
+    records.append(r"ALL SELF-TESTS PASS(?:\. .+)?")
+    remaining = iter(lines)
+    for record in records:
+        if not any(re.fullmatch(record, line) for line in remaining):
+            raise ValueError(f"{mode}: missing or out-of-order record {record!r}")
     if any(line.lstrip().startswith(("FAIL ", "QWEN ERROR")) for line in lines):
         raise ValueError(f"{mode}: guest reported a failure")
 
