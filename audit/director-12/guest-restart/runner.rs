@@ -78,6 +78,14 @@ fn attest_guest_serial(serial: &str, measurement: &str) -> Result<(), &'static s
     Ok(())
 }
 
+// Test-first placeholder: it presently fails to bind a valid native serial to
+// the expected per-request/attempt ticket. The adverse unit test demonstrates it.
+fn attest_guest_serial_for(
+    serial: &str, measurement: &str, _request: &str, _attempt: usize,
+) -> Result<(), &'static str> {
+    attest_guest_serial(serial, measurement)
+}
+
 fn attest_guest_serial_file(path: &Path, measurement: &str) -> io::Result<()> {
     let file = File::open(path)?;
     let mut data = String::new();
@@ -217,7 +225,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::attest_guest_serial;
+    use super::{attest_guest_serial, attest_guest_serial_for};
 
     fn candidate(digest: &str, measurement: &str) -> String {
         format!(
@@ -250,4 +258,26 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn wrong_request_or_attempt_replay_must_not_satisfy_native_receipt() {
+        let digest = "a".repeat(64);
+        let measurement = "b".repeat(64);
+        let old_request = "f".repeat(24);
+        let expected_request = "e".repeat(24);
+        let otherwise_valid = format!(
+            "command line: /kernel.elf32 then=off image={measurement} d12_ticket={old_request} d12_attempt=1\n{}",
+            candidate(&digest, &measurement),
+        );
+        // Positive control: all existing image/self-test/register checks pass.
+        assert!(attest_guest_serial(&otherwise_valid, &measurement).is_ok());
+        // Mandatory independent binding to *this* request and attempt:
+        // the current implementation incorrectly accepts both.
+        assert!(attest_guest_serial_for(
+            &otherwise_valid, &measurement, &expected_request, 1,
+        ).is_err(), "valid-looking prior serial must not prove a new request");
+        assert!(attest_guest_serial_for(
+            &otherwise_valid, &measurement, &old_request, 2,
+        ).is_err(), "an earlier serial must not prove a second attempt");
+    }
+
 }
