@@ -1,0 +1,78 @@
+{
+  "profile": "x86-64 direct boot, model unavailable",
+  "passed": true,
+  "boots": [
+    {
+      "name": "first",
+      "uuid": "f9428126-4566-4a5b-8d88-c58ece4f1a8f",
+      "stopped_by_harness": true,
+      "exit_code": 0,
+      "serial_sha256": "941c85dd4436b34a5ceb43cf549cc2693ea753b91e6ea523bfb9f8bee2f10249"
+    },
+    {
+      "name": "cold",
+      "uuid": "a23ce3ac-816a-4b95-85a0-99d1bf4282b1",
+      "stopped_by_harness": true,
+      "exit_code": 0,
+      "serial_sha256": "5f65e5f42ded096a6fd721886c47abce4e68c7b417849a701bdbdfb827cd01f2"
+    }
+  ],
+  "checkpoints": {
+    "factory": {
+      "generation": 1,
+      "source": null,
+      "store_sha256": "16a33e72672c48052770a93435126e76464cfd85a079a4170e35881adb1a2cab"
+    },
+    "approved": {
+      "generation": 2,
+      "source": "print original",
+      "store_sha256": "aff2bfc13d7fa4db611258ffd0dbaa0aec0f504eb62f6a929579b1030ffe045b"
+    },
+    "after_stop": {
+      "generation": 2,
+      "source": "print original",
+      "store_sha256": "aff2bfc13d7fa4db611258ffd0dbaa0aec0f504eb62f6a929579b1030ffe045b"
+    },
+    "cold": {
+      "generation": 2,
+      "source": "print original",
+      "store_sha256": "aff2bfc13d7fa4db611258ffd0dbaa0aec0f504eb62f6a929579b1030ffe045b"
+    },
+    "fresh_approval": {
+      "generation": 3,
+      "source": "print replacement",
+      "store_sha256": "933216437ab649598c9eaa79fb7ae2143e76a54c08aa275359a704179e3249fd"
+    }
+  },
+  "whole_image_verified": false,
+  "source_commit": "99634e4025a238aa44346cf89563b0178e664151",
+  "manifest_sha256": "949f7d306d47dc2066eaab1401e63ff4d6282887aa8afc9b21e966e72991f1b5",
+  "component_sha256": {
+    "kernel": "5c029a9ad1ced743a0861b5e504f4cba1667fc7a16794aaf461bac2900d8d96a",
+    "tailorbird": "b5acb971d222184970b647d13e79cedf60bba681151cc40e0ae12cfb9503c465",
+    "qwen-worker": "4fff66f19598c36c918653c0be091e807b59f1873bb0c3357bd95ae6eb5741f9"
+  },
+  "qemu_version": "QEMU emulator version 10.0.13 (Debian 1:10.0.13+ds-0+deb13u1)",
+  "manifest_factory_sha256": "2df15613aa104054d16156be66d058865aeee3d6096d55d793e4a6810fc39f4a",
+  "fixture_sha256": "0a21c3c4bed520e94e8df03020ec5e753a5aeabb3f1dcf7d50ec415cae390400",
+  "frames": {
+    "after_stop": {
+      "file": "after-stop.ppm",
+      "sha256": "95f5fa03ba1317b11107b9c6f832736463b5c65cbdc624942dd6b2b6cad98738",
+      "output": "original",
+      "row_y": 218
+    },
+    "cold": {
+      "file": "cold-original.ppm",
+      "sha256": "95f5fa03ba1317b11107b9c6f832736463b5c65cbdc624942dd6b2b6cad98738",
+      "output": "original",
+      "row_y": 218
+    },
+    "fresh_approval": {
+      "file": "approved-replacement.ppm",
+      "sha256": "7a89330176213d45f7edb33e746ea53df63c50516d2deda79511014ce8e3d4b1",
+      "output": "replacement",
+      "row_y": 330
+    }
+  }
+}
