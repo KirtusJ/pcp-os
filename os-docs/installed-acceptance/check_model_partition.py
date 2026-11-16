@@ -12,6 +12,8 @@ import struct
 import subprocess
 import sys
 
+from gpt_integrity import require_gpt_mirror
+
 SECTOR_BYTES = 512
 
 
@@ -75,6 +77,7 @@ def check(disk_path, manifest_path):
         disk_hash = hashlib.file_digest(disk, "sha256").hexdigest()
         if disk_hash != manifest["output_sha256"]["PCP-OS.img"]:
             raise ValueError("Installed disk SHA-256 differs from the release manifest")
+        require_gpt_mirror(disk.fileno(), before.st_size)
         number, offset, length = model_partition(disk, before.st_size)
         for name, field in (("qwen.gguf", "model_sha256"), ("LICENSE.txt", "license_sha256")):
             path = f"{directory}/{name}"
