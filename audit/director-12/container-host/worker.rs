@@ -17,9 +17,13 @@ fn touch(path: &str, content: &[u8]) -> io::Result<()> {
     fs::write(path, content)
 }
 
-fn heartbeat(path: &str, duration: Duration) -> io::Result<()> {
+fn heartbeat(path: &str, duration: Duration, crash_marker: Option<&str>) -> io::Result<()> {
     let start = Instant::now();
     while start.elapsed() < duration && !Path::new("/state/release").exists() {
+        if crash_marker.is_some_and(|marker| Path::new(marker).exists()) {
+            // Explicit controller fault injection, never a production control.
+            process::abort();
+        }
         let mut file = OpenOptions::new().create(true).append(true).open(path)?;
         file.write_all(b"x")?;
         file.sync_data()?;
@@ -38,7 +42,7 @@ fn run(mode: &str) -> io::Result<i32> {
                 return Err(io::Error::last_os_error());
             }
             touch("/state/grandchild-setsid", b"true")?;
-            heartbeat("/state/grandchild.tick", Duration::from_secs(40))?;
+            heartbeat("/state/grandchild.tick", Duration::from_secs(40), None)?;
             Ok(0)
         }
         "parent" => {
@@ -49,7 +53,7 @@ fn run(mode: &str) -> io::Result<i32> {
                 .stderr(Stdio::null())
                 .spawn()?;
             touch("/state/parent-start", b"true")?;
-            heartbeat("/state/parent.tick", Duration::from_secs(40))?;
+            heartbeat("/state/parent.tick", Duration::from_secs(40), Some("/state/parent-crash"))?;
             Ok(0)
         }
         "restart" => {
@@ -57,11 +61,11 @@ fn run(mode: &str) -> io::Result<i32> {
                 touch("/state/restart-first", b"first boot; deliberate nonzero exit")?;
                 // The Docker restart manager only considers a container
                 // successfully started after it has remained up for 10 seconds.
-                heartbeat("/state/restart-first.tick", Duration::from_millis(11_500))?;
+                heartbeat("/state/restart-first.tick", Duration::from_millis(11_500), None)?;
                 Ok(23)
             } else {
                 touch("/state/restart-second", b"second process after runtime restart")?;
-                heartbeat("/state/restart-second.tick", Duration::from_secs(40))?;
+                heartbeat("/state/restart-second.tick", Duration::from_secs(40), None)?;
                 Ok(0)
             }
         }
