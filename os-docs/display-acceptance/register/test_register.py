@@ -14,9 +14,9 @@ def fixture_font():
     return [[((code * 19 + x * 5 + y * 11) % 256) for y in range(20) for x in range(10)] for code in range(95)]
 
 
-def ppm(width, height, content, *, col=2, row=2, prefix="HEAD ", clipped=False):
+def ppm(width, height, content, *, col=2, row=2, prefix="HEAD ", clipped=False, glyphs=None):
     pixels = bytearray(b"\x10\x28\x3f" * (width * height))
-    lines = c.expected_text(prefix, content, fixture_font(), b"\x41\xba\xd7", b"\x10\x28\x3f")
+    lines = c.expected_text(prefix, content, glyphs if glyphs is not None else fixture_font(), b"\x41\xba\xd7", b"\x10\x28\x3f")
     for y, line in enumerate(lines):
         for x in range(len(line) // 3):
             px = col*10+x
@@ -78,6 +78,47 @@ class RegisterPixelChecks(unittest.TestCase):
             for h in (HEAD.upper(), HEAD[:-1], HEAD+"0", "q"*64):
                 with self.assertRaises(ValueError):
                     c.check_scanout(frame, h, fixture_font())
+
+    def test_actual_kernel_font_all_single_nibble_changes(self):
+        # Stronger than the synthetic fixture-font tests: test every possible
+        # one-digit substitution in a full 64-character head with the actual
+        # committed kernel glyphs and integer RGB blending formula.
+        font = c.glyphs_from_file(c.FONT)
+        fg, bg = bytes.fromhex("41bad7"), bytes.fromhex("10283f")
+        alphabet = "0123456789abcdef"
+        self.assertEqual(20 + 10 * (len("HEAD ") + 64), 710)
+        self.assertLessEqual(710, 800)  # last digest cell x=700..709
+        raster = {
+            ch: b"".join(c.expected_text("", ch, font, fg, bg))
+            for ch in alphabet
+        }
+        count = 0
+        least = 200
+        for position, shown in enumerate(HEAD):
+            original = raster[shown]
+            for alternative in alphabet:
+                if alternative == shown:
+                    continue
+                other = raster[alternative]
+                differing_pixels = sum(
+                    original[k:k+3] != other[k:k+3]
+                    for k in range(0, len(original), 3)
+                )
+                self.assertGreater(differing_pixels, 0,
+                                   f"indistinguishable hex glyph at {position}: {shown}/{alternative}")
+                least = min(least, differing_pixels)
+                count += 1
+        self.assertEqual(count, 64 * 15)
+        self.assertGreater(least, 0)
+
+        # Host-synthesized P6, not a boot or a native guest capture. Test the
+        # real-font positive and a changed final hex digit at minimum width.
+        with tempfile.TemporaryDirectory() as tmp:
+            frame = Path(tmp) / "real-font-synthetic.ppm"
+            frame.write_bytes(ppm(800, 600, HEAD, glyphs=font))
+            self.assertTrue(c.check_scanout(frame, HEAD, font)["accepted"])
+            alternative_head = HEAD[:-1] + ("0" if HEAD[-1] != "0" else "1")
+            self.assertFalse(c.check_scanout(frame, alternative_head, font)["accepted"])
 
     def test_reject_bad_ppm_size(self):
         with tempfile.TemporaryDirectory() as tmp:
