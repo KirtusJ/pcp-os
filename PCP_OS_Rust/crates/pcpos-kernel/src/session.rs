@@ -222,11 +222,12 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
     };
     let l = layout.pane_left;
     let inner = l + 2;
+    let right = l + layout.pane_cols - 1; // clip within the overlay, not screen-wide
     let bg = PANEL;
     let focus = 0x27526A;
     ui::fill(l * ui::CELL_W, layout.top * ui::CELL_H,
              layout.pane_cols * ui::CELL_W, (rows - layout.top) * ui::CELL_H, bg);
-    desktop_at(cols, rows, inner, layout.top, "PCP OS | FIRST-LAUNCH DESKTOP", ui::TEAL, bg);
+    desktop_at(right, rows, inner, layout.top, "PCP OS | FIRST-LAUNCH DESKTOP", ui::TEAL, bg);
     if layout.pane_cols >= 82 {
         ui::emblem((l + layout.pane_cols - 8) * ui::CELL_W,
                    (layout.top + 1) * ui::CELL_H, 42, bg);
@@ -236,19 +237,19 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
     } else {
         format!("SAFE: {}/{} checks failed; no programs may start", start.failed, start.passed + start.failed)
     };
-    desktop_at(cols, rows, inner, layout.top + 1, &status,
+    desktop_at(right, rows, inner, layout.top + 1, &status,
                if start.failed == 0 { ui::GOOD } else { ui::BAD }, bg);
     if let Some(d) = dev::display() {
         let origin = if d.kind == dev::DisplayKind::Bochs { "Bochs" } else { "loader" };
-        desktop_at(cols, rows, inner, layout.top + 2,
+        desktop_at(right, rows, inner, layout.top + 2,
                    &format!("Display: {}x{}  stride {} bytes  source {}", d.width, d.height, d.pitch, origin),
                    SOFT, bg);
     }
     let head = rec.ledger().head();
-    desktop_at(cols, rows, inner, layout.top + 3,
+    desktop_at(right, rows, inner, layout.top + 3,
                &format!("Register: {} events  head {}...", rec.ledger().len(), &head[..head.len().min(16)]),
                SOFT, bg);
-    desktop_at(cols, rows, inner, layout.list_row - 1,
+    desktop_at(right, rows, inner, layout.list_row - 1,
                &format!("APPLICATIONS ({} supplied by loader)", programs.len()), ui::TEAL, bg);
 
     let first = layout.first_visible(chosen, programs.len());
@@ -262,33 +263,33 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
         }
         let line = format!("{} {:>3}/{}  {}  ({})", if highlighted { ">" } else { " " },
                            n + 1, programs.len(), p.name, size_text(p.image.len()));
-        desktop_at(cols, rows, inner, row, &line,
+        desktop_at(right, rows, inner, row, &line,
                    if highlighted { TEXT } else { SOFT }, line_bg);
     }
     if programs.is_empty() {
-        desktop_at(cols, rows, inner, layout.list_row,
+        desktop_at(right, rows, inner, layout.list_row,
                    "No applications installed. Manual kernel operation remains available.", SOFT, bg);
     }
     if let Some(p) = programs.get(chosen) {
-        desktop_at(cols, rows, inner, layout.info_row,
+        desktop_at(right, rows, inner, layout.info_row,
                    &format!("Selected SHA-256: {}", p.digest), SOFT, bg);
     } else {
-        desktop_at(cols, rows, inner, layout.info_row, "Select a loader-supplied application to run.", SOFT, bg);
+        desktop_at(right, rows, inner, layout.info_row, "Select a loader-supplied application to run.", SOFT, bg);
     }
     let (pool, free, _, _) = crate::mem::census();
-    desktop_at(cols, rows, inner, layout.info_row + 1,
+    desktop_at(right, rows, inner, layout.info_row + 1,
                &format!("Loader files: {}  RAM: {} MiB / {} MiB free  session store: {}",
                         files.len(), pool * 4096 >> 20, free * 4096 >> 20, stored),
                SOFT, bg);
-    desktop_at(cols, rows, inner, layout.info_row + 2,
+    desktop_at(right, rows, inner, layout.info_row + 2,
                if message.is_empty() { "No Qwen or Tailorbird needed to use this launcher." } else { message },
                if message.is_empty() { SOFT } else { ui::AMBER }, bg);
 
     ui::fill(l * ui::CELL_W, layout.footer_row * ui::CELL_H,
              layout.pane_cols * ui::CELL_W, 2 * ui::CELL_H, GROUND);
-    desktop_at(cols, rows, inner, layout.footer_row,
+    desktop_at(right, rows, inner, layout.footer_row,
                "Up/Down select  Enter launch  F files  R register  P power off", TEXT, GROUND);
-    desktop_at(cols, rows, inner, layout.footer_row + 1,
+    desktop_at(right, rows, inner, layout.footer_row + 1,
                "Esc quit  Ctrl+Alt+Delete: kernel stops active guest", SOFT, GROUND);
 }
 
@@ -296,14 +297,21 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
 /// This is still the kernel's supplied-file view, not a persistent file explorer.
 fn files_view(files: &[(String, &'static [u8], String)]) {
     let (cols, rows) = ui::grid();
-    let page = rows.saturating_sub(5).max(1) as usize;
+    // Display both halves of the full hex digest even at 640x480.
+    let page = rows.saturating_sub(5).max(3) as usize / 3;
     let mut top = 0usize;
     loop {
         ui::clear(ui::GROUND);
         desktop_at(cols, rows, 1, 1, &format!("LOADER FILES: {}  (not persistent storage)", files.len()), ui::TEAL, ui::GROUND);
         for (n, entry) in files.iter().skip(top).take(page).enumerate() {
-            let line = format!("{}  {}  SHA-256 {}", entry.0, size_text(entry.1.len()), entry.2);
-            desktop_at(cols, rows, 1, n as u32 + 3, &line, ui::TEXT, ui::GROUND);
+            let y = n as u32 * 3 + 3;
+            desktop_at(cols, rows, 1, y,
+                       &format!("{}  {}  SHA-256:", entry.0, size_text(entry.1.len())),
+                       ui::TEXT, ui::GROUND);
+            desktop_at(cols, rows, 1, y + 1, entry.2.get(..32).unwrap_or(&entry.2),
+                       ui::SOFT, ui::GROUND);
+            desktop_at(cols, rows, 1, y + 2, entry.2.get(32..).unwrap_or(""),
+                       ui::SOFT, ui::GROUND);
         }
         desktop_at(cols, rows, 1, rows.saturating_sub(2), "Up/Down scroll  Esc return", ui::SOFT, ui::GROUND);
         match wait_key() {
