@@ -79,6 +79,18 @@ class GptMirrorTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "entries_crc disagree"):
             self.validate()
 
+    def test_backup_header_aliases_primary_table(self):
+        with self.disk.open("r+b") as fd:
+            fd.seek((SECTORS - 1) * 512)
+            hdr = bytearray(fd.read(92))
+            struct.pack_into("<Q", hdr, 72, 2)
+            struct.pack_into("<I", hdr, 16, 0)
+            struct.pack_into("<I", hdr, 16, zlib.crc32(hdr))
+            fd.seek((SECTORS - 1) * 512)
+            fd.write(hdr)
+        with self.assertRaisesRegex(ValueError, "distinct primary/backup"):
+            self.validate()
+
     def test_unsupported_sector_size_or_truncated(self):
         with self.disk.open("r+b") as fd:
             fd.truncate(SECTORS * 512 - 1)
