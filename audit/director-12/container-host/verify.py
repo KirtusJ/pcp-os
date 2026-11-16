@@ -307,16 +307,49 @@ def run_test(image: str, result: dict) -> None:
             assert size(directory / "grandchild.tick") == stopped, (
                 "retry caused unexpected new worker activity"
             )
+
+            # The test controller has separately seen Docker stop and the
+            # detached heartbeat cease. It now makes an *explicit* recovery
+            # decision, not an automatic inference from a stale redb node.
+            _, recovered = parrots_container(
+                image, directory, "/parrots-all-the-way-down",
+                ["cancel", desk, "observed-container-stop-01", "1"],
+            )
+            cancel_receipt = json.loads(recovered.stdout)
+            assert cancel_receipt["node"] == 1
+            assert cancel_receipt["replayed"] is False
+
+            # A different, short-lived authorized logical task can now use
+            # the freed live slot. Its real hosted adapter waits for exit.
+            _, resumed = parrots_container(
+                image, directory, "/pcp-delegate",
+                [desk, "logical-02", "post-recovery-worker", "--",
+                 "/parrots-all-the-way-down", "help"],
+            )
+            assert resumed.returncode == 0
+            _, final_status = parrots_container(
+                image, directory, "/parrots-all-the-way-down", ["status", desk]
+            )
+            final = json.loads(final_status.stdout)
+            assert [node["state"] for node in final["nodes"]] == [
+                "Cancelled", "Finished"
+            ], final
+            assert final["revision"] == after["revision"] + 3
+
             result["actual_parrots_container"] = {
                 "observed": True,
                 "product_binary": "statically built real Parrots redb host and pcp-delegate",
                 "native_desk_revision_after_stop": after["revision"],
-                "original_node_still_active": True,
+                "original_node_still_active_before_recovery": True,
                 "same_logical_request_refused": True,
                 "fresh_request_refused_due_to_stale_live_slot": True,
-                "new_worker_launch_after_restart": False,
+                "new_worker_launch_before_reconciliation": False,
                 "detached_worker_heartbeat_stopped": True,
-                "note": "correctly refuses duplication but does not reconcile the lost supervisor",
+                "controller_performed_explicit_cancel_after_external_stop_witness": True,
+                "new_distinct_worker_finished_after_explicit_cancel": True,
+                "final_states": [node["state"] for node in final["nodes"]],
+                "final_revision": final["revision"],
+                "note": "manual recovery is a synthetic operator act, not automatic host reconciliation",
             }
         finally:
             if name:
