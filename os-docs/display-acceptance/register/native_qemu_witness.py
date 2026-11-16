@@ -16,7 +16,7 @@ import time
 
 HERE = Path(__file__).resolve()
 sys.path.insert(0, str(HERE.parents[1]))
-sys.path.insert(0, str(HERE.parents[2] / "register"))
+sys.path.insert(0, str(HERE.parents[4] / "checker/os-docs/display-acceptance/register"))
 from check_display import Monitor, wait_serial  # existing QMP driver
 from check_register import check_scanout, glyphs_from_file, read_ppm
 
