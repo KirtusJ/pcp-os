@@ -174,7 +174,7 @@ def evidence(directory: Path, request: str, measurement: str, attempts: int) -> 
 def capture(directory: Path, destination: Path, attempts: int) -> None:
     """Positive allowlist only: this fixture has no secrets or real task data."""
     destination.mkdir(parents=True, exist_ok=True)
-    names = ["request.txt", "attention.txt"]
+    names = ["request.txt", "attention.txt", "busy-same.stderr", "busy-other.stderr"]
     for n in range(1, attempts + 1):
         names.extend([
             f"start-{n}.txt", f"end-{n}.txt",
@@ -625,17 +625,23 @@ def completed_journal_wrong_attempt_serial(image: str, kernel: Path, measurement
 
 
 def concurrent_duplicate_admission(image: str, kernel: Path, measurement: str, evidence_dir: Path):
-    # A second container with the same logical ticket must not mistake
-    # the *other still-running* QEMU owner for a crashed incomplete attempt.
-    # This is same-host Linux cooperation, not protection from hostile peers.
+    # Concurrent contenders with the *same or a different* ticket must not
+    # infer a crash from a first controller's genuinely live paused QEMU.
+    # Linux flock here is cooperative, local, and does not prevent a hostile
+    # process with same-user write privileges from replacing the lock inode.
     with tempfile.TemporaryDirectory(prefix="d12-concurrent-request-") as tmp:
         directory = Path(tmp)
         os.chmod(directory, 0o777)
         request = secrets.token_hex(12)
+        other_request = secrets.token_hex(12)
+        while other_request == request:
+            other_request = secrets.token_hex(12)
         name_a = "d12-active-owner-" + secrets.token_hex(5)
         name_b = "d12-second-owner-" + secrets.token_hex(5)
+        name_c = "d12-third-owner-" + secrets.token_hex(5)
         first_started = False
         second_started = False
+        third_started = False
         try:
             start(image, name_a, directory, kernel, measurement, request, fault=False, hold=True)
             first_started = True
@@ -651,35 +657,64 @@ def concurrent_duplicate_admission(image: str, kernel: Path, measurement: str, e
 
             policy_b = start(image, name_b, directory, kernel, measurement, request, fault=False)
             second_started = True
-            await_true(lambda: not inspect(name_b)["State"]["Running"], "second controller stopped", 12)
+            await_true(lambda: not inspect(name_b)["State"]["Running"], "same-request contender stopped", 12)
             info_b = inspect(name_b)
             assert info_b["State"]["ExitCode"] == 0 and info_b["RestartCount"] == 0
+            log_b = invoke(["docker", "logs", name_b])
+            observed_b = (log_b.stdout + log_b.stderr).encode("utf-8")
+            assert b"D12_BUSY: another same-host controller holds the journal; no dispatch" in observed_b
+            (directory / "busy-same.stderr").write_bytes(observed_b)
             assert inspect(name_a)["State"]["Running"]
-            assert not original_process_no_longer_running(original), (
-                "the still-healthy first QEMU process should not be stopped by a contender"
-            )
+            assert not original_process_no_longer_running(original)
             assert not (directory / "attention.txt").exists(), (
-                "a second controller falsely quarantined the first genuinely live "
-                "QEMU assignment as INDETERMINATE"
+                "a same-ticket contender falsely quarantined the actually live QEMU assignment"
             )
+
+            policy_c = start(
+                image, name_c, directory, kernel, measurement, other_request,
+                fault=False,
+            )
+            third_started = True
+            await_true(lambda: not inspect(name_c)["State"]["Running"], "different-request contender stopped", 12)
+            info_c = inspect(name_c)
+            assert info_c["State"]["ExitCode"] == 0 and info_c["RestartCount"] == 0
+            log_c = invoke(["docker", "logs", name_c])
+            observed_c = (log_c.stdout + log_c.stderr).encode("utf-8")
+            assert b"D12_BUSY: another same-host controller holds the journal; no dispatch" in observed_c
+            (directory / "busy-other.stderr").write_bytes(observed_c)
+
+            assert (directory / "request.txt").read_text(encoding="ascii") == request
+            assert not (directory / "attention.txt").exists(), (
+                "different-ticket contender overwrote/quarantined live owner's journal"
+            )
+            assert inspect(name_a)["State"]["Running"]
+            assert not original_process_no_longer_running(original)
             assert len(list(directory.glob("start-*.txt"))) == 1
             assert not (directory / "start-2.txt").exists()
             assert len(list(directory.glob("qemu-*.serial"))) == 1
             return {
                 "duplicate_same_ticket_controller": True,
+                "concurrent_distinct_ticket_controller": True,
+                "original_ticket": request,
+                "blocked_second_ticket": other_request,
                 "concurrent_original_qemu_os_identity": original,
                 "first_qemu_still_running": True,
-                "contender_exited_without_automatic_restart": True,
-                "contender_could_not_poison_live_owner": True,
+                "both_contenders_report_busy_not_completion": True,
+                "same_ticket_busy_log_sha256": sha(observed_b),
+                "different_ticket_busy_log_sha256": sha(observed_c),
+                "contenders_exited_without_automatic_restart": True,
+                "contenders_could_not_poison_live_owner": True,
                 "no_duplicate_guest_launch": True,
-                "contender_policy": policy_b,
+                "same_ticket_contender_policy": policy_b,
+                "other_ticket_contender_policy": policy_c,
             }
         finally:
-            if first_started:
-                invoke(["docker", "kill", "--signal", "KILL", name_a], checked=False)
+            if third_started:
+                invoke(["docker", "rm", "-f", name_c], checked=False)
             if second_started:
                 invoke(["docker", "rm", "-f", name_b], checked=False)
             if first_started:
+                invoke(["docker", "kill", "--signal", "KILL", name_a], checked=False)
                 invoke(["docker", "rm", "-f", name_a], checked=False)
             capture(directory, evidence_dir / "concurrent", 1)
 
