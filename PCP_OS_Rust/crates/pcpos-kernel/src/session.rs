@@ -254,31 +254,64 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
     at(2, rows - 1, "Ctrl+Alt+Delete stops a running program and returns here. No program can take that key.", SOFT, PANEL);
 }
 
+/// What the register screen is allowed to claim. An invalid chain has no accepted event list or head.
+pub(crate) enum RegisterReadback {
+    Verified { events: Vec<Value>, head: String },
+    Refused(ledger::LedgerError),
+}
+
+pub(crate) fn register_readback(bytes: &[u8]) -> RegisterReadback {
+    match ledger::verify(bytes) {
+        Ok((events, head)) => RegisterReadback::Verified { events, head },
+        Err(reason) => RegisterReadback::Refused(reason),
+    }
+}
+
 /// The kernel's register, newest events last, a screen at a time.
 fn register_view(rec: &Record) {
     use ui::{at, GROUND, SOFT, TEXT};
-    let events = match ledger::verify(rec.ledger().bytes()) {
-        Ok((e, _)) => e,
-        Err(_) => Vec::new(),
+    let readback = register_readback(rec.ledger().bytes());
+    let (_, rows) = ui::grid();
+    // Leave room for the complete independently verified SHA-256 head and the footer.
+    let per = rows.saturating_sub(7) as usize;
+    let mut top = match &readback {
+        RegisterReadback::Verified { events, .. } => events.len().saturating_sub(per),
+        RegisterReadback::Refused(_) => 0,
     };
-    let (cols, rows) = ui::grid();
-    let per = (rows - 6) as usize;
-    let mut top = events.len().saturating_sub(per);
     loop {
         ui::clear(GROUND);
-        at(2, 1, &format!("THE KERNEL'S REGISTER: {} events, chain intact, head {}", events.len(), rec.ledger().head()), ui::TEAL, GROUND);
-        at(2, 2, "seq  time                  actor     kind                 what", SOFT, GROUND);
-        for (n, e) in events.iter().skip(top).take(per).enumerate() {
-            let field = |k: &str| e.get(k).and_then(Value::as_str).unwrap_or("").to_string();
-            let body = e.get("body");
-            let what = ["label", "event", "name", "id", "outcome", "note", "to"].iter().filter_map(|k| body.and_then(|b| b.get(k)).and_then(Value::as_str).map(|v| format!("{} {}", k, v))).collect::<Vec<_>>().join("; ");
-            let line = format!("{:<4} {:<21} {:<9} {:<20} {}", e.get("seq").and_then(Value::as_int).unwrap_or(0), field("ts"), field("actor"), field("kind"), what);
-            at(2, 3 + n as u32, &line.chars().take(cols as usize - 4).collect::<String>(), TEXT, GROUND);
+        match &readback {
+            RegisterReadback::Verified { events, head } => {
+                at(2, 1, &format!("THE KERNEL'S REGISTER: {} events, chain intact", events.len()), ui::TEAL, GROUND);
+                at(2, 2, &format!("Verified SHA-256 head: {}", head), SOFT, GROUND);
+                at(2, 3, "seq  time                  actor     kind                 what", SOFT, GROUND);
+                for (n, e) in events.iter().skip(top).take(per).enumerate() {
+                    let field = |k: &str| e.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+                    let body = e.get("body");
+                    let what = ["label", "event", "name", "id", "outcome", "note", "to"].iter().filter_map(|k| body.and_then(|b| b.get(k)).and_then(Value::as_str).map(|v| format!("{} {}", k, v))).collect::<Vec<_>>().join("; ");
+                    let line = format!("{:<4} {:<21} {:<9} {:<20} {}", e.get("seq").and_then(Value::as_int).unwrap_or(0), field("ts"), field("actor"), field("kind"), what);
+                    at(2, 4 + n as u32, &line.chars().take(98).collect::<String>(), TEXT, GROUND);
+                }
+                at(2, rows - 2, "Up/Down scroll    Esc back", SOFT, GROUND);
+            }
+            RegisterReadback::Refused(reason) => {
+                at(2, 1, "THE KERNEL'S REGISTER: VERIFICATION FAILED", ui::BAD, GROUND);
+                at(2, 3, &format!("Refused: {:?}", reason), TEXT, GROUND);
+                at(2, 4, "No events accepted. No chain head asserted.", SOFT, GROUND);
+                at(2, rows - 2, "Esc back", SOFT, GROUND);
+            }
         }
-        at(2, rows - 2, "Up/Down scroll    Esc back", SOFT, GROUND);
         match wait_key() {
-            (0x48, _) => top = top.saturating_sub(per / 2),
-            (0x50, _) => top = (top + per / 2).min(events.len().saturating_sub(per)),
+            (0x48, _) => {
+                if let RegisterReadback::Verified { .. } = &readback {
+                    top = top.saturating_sub((per / 2).max(1));
+                }
+            }
+            (0x50, _) => {
+                if let RegisterReadback::Verified { events, .. } = &readback {
+                    top = (top + (per / 2).max(1)).min(events.len().saturating_sub(per));
+                }
+            }
             (0x01, _) | (0x1C, _) => return,
             _ => {}
         }

@@ -136,6 +136,13 @@ fn self_test() -> u32 {
     }
     check("one changed byte in an earlier event is refused", ledger::verify(&edited).is_err(), &mut failed);
     check("an incomplete final line is refused", ledger::verify(&REFERENCE_REGISTER[..REFERENCE_REGISTER.len() - 1]).is_err(), &mut failed);
+    // The exact state feeding the visible R screen must not turn a refusal into a false chain-intact label.
+    check("register display accepts a verified head and refuses a changed event",
+          matches!(session::register_readback(REFERENCE_REGISTER), session::RegisterReadback::Verified { events, head }
+                   if events.len() == 4 && head == REFERENCE_HEAD)
+              && matches!(session::register_readback(&edited), session::RegisterReadback::Refused(_)), &mut failed);
+    check("register display refuses an incomplete final event",
+          matches!(session::register_readback(&REFERENCE_REGISTER[..REFERENCE_REGISTER.len() - 1]), session::RegisterReadback::Refused(_)), &mut failed);
 
     // 3. Appending in the kernel yields bytes any other implementation accepts.
     let mut l = Ledger::new();
