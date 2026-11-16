@@ -54,13 +54,14 @@ def make_disk(path, names):
 
 @unittest.skipUnless(all(shutil.which(tool) for tool in TOOLS), "requires util-linux partx and GNU mtools")
 class InstalledModelTests(unittest.TestCase):
-    def run_case(self, *, model=MODEL, license_text=LICENSE, misplaced=False, duplicate=False):
+    def run_case(self, *, model=MODEL, license_text=LICENSE, misplaced=False, duplicate=False,
+                 scope="factory", after_release=None, invalid_factory_hash=False):
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
             disk = work / "installed.raw"
             label = "PCP OS models"
             # Put the model partition in slot 1 deliberately. Its label determines the location.
-            models, other = make_disk(disk, (label, label if duplicate else "PCP OS boot"))
+            models, other = make_disk(disk, (label, label if duplicate else "PCP OS user data"))
             volume = other if misplaced else models
             parent = "::"
             for name in DIRECTORY[3:].split("/"):
@@ -74,17 +75,28 @@ class InstalledModelTests(unittest.TestCase):
             with disk.open("rb") as fd:
                 disk_digest = hashlib.file_digest(fd, "sha256").hexdigest()
             manifest = work / "release.json"
-            # Repin the disk in every case so the negative tests reach the per-file check.
             manifest.write_text(json.dumps({
-                "git_commit": "b" * 40, "output_sha256": {"PCP-OS.img": disk_digest},
+                "git_commit": "b" * 40,
+                "output_sha256": {"PCP-OS.img": "" if invalid_factory_hash else disk_digest},
                 "qwen": {"revision": REVISION, "model_sha256": hashlib.sha256(MODEL).hexdigest(),
                          "license_sha256": hashlib.sha256(LICENSE).hexdigest()},
             }))
-            return check(disk, manifest)
+            if after_release:
+                volume, destination = (other, "::/notes.txt") if after_release == "notes.txt" else (
+                    models, f"{DIRECTORY}/{after_release}")
+                source = work / "replacement"
+                source.write_bytes(b"saved after release\n")
+                subprocess.run(["mcopy", "-o", "-i", volume, source, destination], check=True)
+                self.assertEqual(subprocess.check_output(["mcopy", "-i", volume, destination, "-"]),
+                                 source.read_bytes())
+            return check(disk, manifest, scope=scope)
 
     def test_read_both_files(self):
         result = self.run_case()
         self.assertEqual(result["partition"]["number"], 1)
+        self.assertEqual(result["scope"], "factory")
+        self.assertIs(result["factory_disk_matches"], True)
+        self.assertEqual(result["disk_sha256"], result["factory_disk_sha256"])
         self.assertEqual(result["files"][DIRECTORY[2:] + "/qwen.gguf"]["bytes"], len(MODEL))
         self.assertEqual(result["files"][DIRECTORY[2:] + "/LICENSE.txt"]["bytes"], len(LICENSE))
 
@@ -103,6 +115,28 @@ class InstalledModelTests(unittest.TestCase):
     def test_ambiguous_partition(self):
         with self.assertRaisesRegex(ValueError, "found 2"):
             self.run_case(duplicate=True)
+
+    def test_factory_rejects_user_save(self):
+        with self.assertRaisesRegex(ValueError, "Installed disk SHA-256 differs"):
+            self.run_case(after_release="notes.txt")
+
+    def test_model_files_after_user_save(self):
+        result = self.run_case(scope="model-files", after_release="notes.txt")
+        self.assertEqual(result["scope"], "model-files")
+        self.assertIs(result["factory_disk_matches"], False)
+        self.assertNotEqual(result["disk_sha256"], result["factory_disk_sha256"])
+        for name, content in (("qwen.gguf", MODEL), ("LICENSE.txt", LICENSE)):
+            self.assertEqual(result["files"][f"{DIRECTORY[2:]}/{name}"],
+                             {"bytes": len(content), "sha256": hashlib.sha256(content).hexdigest()})
+
+    def test_changed_files_against_original_manifest(self):
+        for name in ("qwen.gguf", "LICENSE.txt"):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, f"{name}: .* differs"):
+                self.run_case(scope="model-files", after_release=name)
+
+    def test_model_files_requires_factory_reference(self):
+        with self.assertRaisesRegex(ValueError, "Expected a factory disk SHA-256"):
+            self.run_case(scope="model-files", invalid_factory_hash=True)
 
 
 if __name__ == "__main__":

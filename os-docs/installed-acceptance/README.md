@@ -38,3 +38,12 @@ python3 os-docs/installed-acceptance/check_model_partition.py \
 The checker opens the image read-only, compares its whole-disk SHA-256 with the manifest, validates the primary and backup GPT headers and both entry arrays (including their CRCs and matching identities), and locates the uniquely named GPT partition `PCP OS models` on the release's 512-byte-sector image. It reads both files through the FAT filesystem under the manifest's Qwen revision and prints their byte counts and hashes as JSON. It exits unsuccessfully if either file differs or the partition cannot be identified uniquely. Use this check for the factory disk before user changes. Its result covers installed content. Boot selection and model execution have their own checks above.
 
 The model-content fixture tests use `mformat`, `mmd` and `mcopy` to create disposable volumes and run through the same file-reading path. The seven GPT-integrity fixtures use Python's standard library alone, including corrupt secondary metadata, self-consistent but divergent partition arrays, and a backup header improperly aliasing the primary entry array. Run `python3 -m unittest discover -v -s os-docs/installed-acceptance` and check for skipped tests if the tools are unavailable. [GNU mtools manual](https://www.gnu.org/s/mtools/manual/mtools.pdf) · [UEFI GPT layout](https://uefi.org/specs/UEFI/2.9_A/05_GUID_Partition_Table_Format.html)
+
+After a user saves work, shut down the installation or take a consistent offline snapshot. To compare the installed model and license with the original release, run:
+
+```sh
+python3 os-docs/installed-acceptance/check_model_partition.py \
+  --scope model-files --disk /qa/used.raw --manifest /qa/release.json
+```
+
+In this mode, `disk_sha256` records the image you supplied, `factory_disk_sha256` records the manifest's reference, and `factory_disk_matches` reports their equality. When the two digests differ, the checker gives mtools a temporary copy of the selected partition. Allow temporary space equal to that partition's size (`TMPDIR` selects the directory). Success verifies the two named files against the supplied manifest. The `source_revision` field identifies that manifest's release. It does not establish the running kernel version, the origin of user changes, or the publisher's identity.
