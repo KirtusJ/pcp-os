@@ -90,6 +90,19 @@ def wait_serial(path, marker, count=1, seconds=35.0, child=None):
     raise RuntimeError(f"serial timeout for {marker!r}: {text[-2000:]}")
 
 
+def wait_any_serial(path, markers, seconds=40.0, child=None):
+    stop = time.monotonic() + seconds
+    while time.monotonic() < stop:
+        transcript = path.read_text(errors="replace") if path.exists() else ""
+        for marker in markers:
+            if marker in transcript:
+                return marker
+        if child is not None and child.poll() is not None:
+            raise RuntimeError("QEMU ended before observed guest outcome")
+        time.sleep(0.05)
+    raise RuntimeError("no bounded guest outcome observed: " + " | ".join(markers))
+
+
 def run(args, directory):
     directory.mkdir(parents=True)
     report = {
@@ -168,35 +181,60 @@ def run(args, directory):
             )
             qmp = QMP(directory / "qmp.sock", qmp_journal)
             serial = directory / "serial.log"
-            # Start with link down before the first guest is launched.
-            qmp.link(False)
-            report["first_virtual_link_command"] = "off"
+            initial_up = args.arm == "up-baseline"
+            qmp.link(initial_up)
+            report["first_virtual_link_command"] = "on" if initial_up else "off"
+            report["arm"] = args.arm
             wait_serial(serial, "a program that cannot be admitted", child=qemu)
             time.sleep(0.40)
             qmp.hmp("sendkey ret 70")
-            wait_serial(serial, "SURFBIRD error ", child=qemu, seconds=55)
-            wait_serial(serial, "surf.elf ended FAILED", child=qemu, seconds=15)
-            report["first_guest_error"] = next(
-                (line.strip() for line in serial.read_text(errors="replace").splitlines()
-                 if "SURFBIRD error " in line), "NO_ERROR_STRING"
-            )
-            report["http_before_link_restored"] = list(urls)
-            # Failure while the virtual NIC carrier is off does NOT prove the
-            # kernel sensed a link transition. It may just be a TCP timeout.
-            if urls:
-                raise AssertionError("HTTP reached the fixture despite QMP carrier-down")
-            qmp.link(True)
-            report["second_virtual_link_command"] = "on"
-            time.sleep(0.35)
-            # This is a FRESH launch of the application, not network-manager
-            # reconnection of an existing socket/session.
-            qmp.hmp("sendkey ret 70")
-            wait_serial(serial, "SURFBIRD title Harbour", child=qemu, seconds=55)
-            wait_serial(serial, "SURFBIRD ready", child=qemu, seconds=20)
-            if urls != ["/harbour"]:
-                raise AssertionError(f"unexpected host HTTP paths after relaunch: {urls}")
-            report["fresh_guest_after_link_up"] = True
-            report["http_after_link_restored"] = list(urls)
+            if initial_up:
+                first = wait_any_serial(serial, ("SURFBIRD ready", "surf.elf ended FAILED"),
+                                        seconds=55, child=qemu)
+                report["first_guest_observation"] = first
+                report["http_before_any_link_transition"] = list(urls)
+                if first != "SURFBIRD ready" or urls != ["/harbour"]:
+                    raise AssertionError(
+                        "positive never-disconnected Ethernet control did not open HTTP"
+                    )
+                report["http_on_normal_link"] = list(urls)
+                report["normal_guest_connected"] = True
+            else:
+                first = wait_any_serial(serial, ("SURFBIRD error ", "surf.elf ended FAILED"),
+                                        seconds=55, child=qemu)
+                wait_serial(serial, "surf.elf ended FAILED", child=qemu, seconds=15)
+                report["first_guest_observation"] = first
+                transcript = serial.read_text(errors="replace")
+                report["first_guest_error"] = next(
+                    (line.strip() for line in transcript.splitlines()
+                     if "SURFBIRD error " in line), "NO_APPLICATION_ERROR"
+                )
+                report["first_guest_exit"] = next(
+                    (line.strip() for line in transcript.splitlines()
+                     if "surf.elf ended FAILED" in line), "NO_KERNEL_END_EVENT"
+                )
+                report["first_guest_refused_instruction"] = (
+                    "processor refused an act of the program" in report["first_guest_exit"]
+                )
+                report["http_before_link_restored"] = list(urls)
+                # The boot might have an actual kernel-reported user fault.
+                # Preserve and investigate it, never relabel it a TCP timeout.
+                if urls:
+                    raise AssertionError("HTTP reached fixture despite QMP carrier-down")
+                qmp.link(True)
+                report["second_virtual_link_command"] = "on"
+                time.sleep(0.35)
+                # This is a NEW app process, not a connected socket resuming.
+                qmp.hmp("sendkey ret 70")
+                # Wait for second program start and for a completed page/error.
+                wait_serial(serial, "starting surf.elf", count=2, child=qemu)
+                second = wait_any_serial(serial, ("SURFBIRD ready",),
+                                         seconds=55, child=qemu)
+                report["second_guest_observation"] = second
+                if urls != ["/harbour"]:
+                    raise AssertionError(f"wrong HTTP after virtual carrier restored: {urls}")
+                report["fresh_guest_after_link_up"] = True
+                report["http_after_link_restored"] = list(urls)
             qmp.hmp("sendkey esc 70")
             wait_serial(serial, "surf.elf ended DONE", child=qemu, seconds=20)
             time.sleep(0.35)
@@ -208,7 +246,15 @@ def run(args, directory):
             if "kernel's register of its own start, verification and stop verifies" not in transcript:
                 raise AssertionError("native kernel's final register verification missing")
             report["verified_register_at_shutdown"] = True
-            report["result"] = "FRESH_GUEST_RECONNECT_AFTER_VIRTUAL_LINK_RESTORE"
+            if initial_up:
+                report["result"] = "POSITIVE_BASELINE_VIRTUAL_ETHERNET"
+            elif report["first_guest_refused_instruction"]:
+                report["result"] = "ADVERSE_FIRST_GUEST_FAULT_WITH_FRESH_PROCESS_RECOVERY"
+                raise AssertionError(
+                    "down-link guest terminated by processor fault; this is not a clean disconnect"
+                )
+            else:
+                report["result"] = "FRESH_PROCESS_AFTER_LINK_UP_NOT_IN_SESSION_RECONNECT"
         finally:
             if qmp is not None:
                 qmp.close()
@@ -245,6 +291,8 @@ def main():
     p.add_argument("--guest", type=Path, required=True)
     p.add_argument("--measure", type=Path, required=True)
     p.add_argument("--qemu", default="qemu-system-x86_64")
+    p.add_argument("--arm", choices=("up-baseline", "down-up"), required=True,
+                   help="separate positive control from carrier-change trial")
     p.add_argument("--output", type=Path, required=True)
     a = p.parse_args()
     run(a, a.output.resolve())
