@@ -17,7 +17,7 @@ import tempfile
 import time
 
 from containment_probe import (cleanup_escaped_child, has_exited, invoke,
-                               proc_identity, read_ticks, wait_for)
+                               proc_identity, read_actor_identity, read_ticks, wait_for)
 
 
 def scenario(root, cli, delegate, request, mode, node):
@@ -44,6 +44,7 @@ def scenario(root, cli, delegate, request, mode, node):
     try:
         wait_for(
             lambda: (directory / "leaf.identity.json").exists()
+            and (directory / f"{mode}.identity.json").exists()
             and (directory / "leaf.pid").exists()
             and read_ticks(directory / "leaf.tick") >= 3,
             f"{mode} child ready",
@@ -58,10 +59,15 @@ def scenario(root, cli, delegate, request, mode, node):
         )
         observations["descendant_pid"] = pid
         observations["descendant_group"] = group
+        parent = read_actor_identity(directory, mode)
+        assert parent["pid"] != pid and not has_exited(parent["pid"], parent["start_tick"])
         invoke(str(cli), "cancel", str(db), f"cancel-{mode}", "1")
         out, err = adapter.communicate(timeout=8)
         observations["adapter_exit_code"] = adapter.returncode
         assert adapter.returncode != 0, (out, err)
+        wait_for(lambda: has_exited(parent["pid"], parent["start_tick"]),
+                 "registered parent OS exit", 2.0)
+        observations["registered_parent_os_exited_or_reaped"] = True
         status = json.loads(invoke(str(cli), "status", str(db)).stdout)
         assert len(status["nodes"]) == 1 and status["nodes"][0]["state"] == "Cancelled"
         observations["registered_state"] = "Cancelled"
@@ -111,7 +117,9 @@ def scenario(root, cli, delegate, request, mode, node):
                 adapter.communicate(timeout=3)
         if (directory / "leaf.pid").exists():
             try:
-                observations["cleanup"] = cleanup_escaped_child(directory)
+                observations["cleanup"] = cleanup_escaped_child(
+                    directory, expected_group=(adapter.pid if mode == "same-group-parent" else None)
+                )
             except Exception as exc:
                 observations["cleanup_error"] = f"{type(exc).__name__}: {exc}"
                 failure = failure or observations["cleanup_error"]
