@@ -13,11 +13,12 @@ DISK_GUID = bytes(range(1, 17))
 EFI_SYSTEM_TYPE = bytes.fromhex('28732ac11ff8d211ba4b00a0c93ec93b')  # GUID wire order
 
 
-def _entry(start, end, guid_seed):
+def _entry(start, end, guid_seed, attributes=0):
     b = bytearray(ENTRY_SIZE)
     b[:16] = EFI_SYSTEM_TYPE
     b[16:32] = bytes([guid_seed]) * 16
     struct.pack_into('<QQ', b, 32, start, end)
+    struct.pack_into('<Q', b, 48, attributes)
     return bytes(b)
 
 
@@ -38,8 +39,11 @@ def factory(lba_bytes=512, total_lba=512, entries=None):
     if entries is None:
         entries = [(64, 91, 0x17)]
     array = bytearray(BLOCK_ENTRIES * ENTRY_SIZE)
-    for i, (start, end, seed) in enumerate(entries):
-        array[i * ENTRY_SIZE:(i+1)*ENTRY_SIZE] = _entry(start, end, seed)
+    for i, item in enumerate(entries):
+        start, end, seed = item[:3]
+        attributes = item[3] if len(item) == 4 else 0
+        array[i * ENTRY_SIZE:(i+1)*ENTRY_SIZE] = _entry(
+            start, end, seed, attributes)
     arr_crc = zlib.crc32(array)
     nblocks = len(array) // lba_bytes
     backup_array = total_lba - nblocks - 1
@@ -57,6 +61,16 @@ def factory(lba_bytes=512, total_lba=512, entries=None):
     mbr[446] = 0
     mbr[447:450] = b"\x00\x02\x00"
     mbr[450] = 0xee
+    # Synthetic fixture uses a declared conventional 255-head/63-sector CHS
+    # translation, solely to keep its protective MBR internally plausible.
+    # This is NOT a claim about firmware geometry or physical media.
+    track, sector_index = divmod(total_lba - 1, 63)
+    cylinder, head = divmod(track, 255)
+    mbr[451:454] = (
+        b'\xff\xff\xff' if cylinder >= 1024 else
+        bytes((head, (sector_index + 1) | ((cylinder >> 2) & 0xc0),
+               cylinder & 0xff))
+    )
     struct.pack_into('<II', mbr, 454, 1, min(total_lba-1, 0xffffffff))
     mbr[510:512] = b'\x55\xaa'
     blocks[0] = bytes(mbr)
@@ -114,6 +128,33 @@ class GPTMetadataTests(unittest.TestCase):
         del d[s.total_lba-1]
         self.held(replace(s, blocks=d), 'missing-snapshot-sector')
 
+    def test_header_size_96_with_zero_reserved_bytes_is_supported(self):
+        s = factory()
+        s = header_edit(s, 1, 12, '<I', 96)
+        s = header_edit(s, s.total_lba - 1, 12, '<I', 96)
+        self.ok(s)
+
+    def test_header_size_96_cannot_hide_nonzero_reserved_bytes(self):
+        s = factory()
+        blocks = dict(s.blocks)
+        for lba in (1, s.total_lba - 1):
+            header = bytearray(blocks[lba])
+            struct.pack_into('<I', header, 12, 96)
+            header[92:96] = b'BAD!'
+            struct.pack_into('<I', header, 16, 0)
+            struct.pack_into('<I', header, 16, zlib.crc32(header[:96]))
+            blocks[lba] = bytes(header)
+        self.held(replace(s, blocks=blocks), 'nonzero-header-reserved')
+
+    def test_reserved_partition_attribute_bit_with_valid_crcs_is_held(self):
+        # UEFI 2.11 GPT Entry Bits 3..47 are reserved/zero, even if CRCs
+        # have been recalculated around an invalid attribute.
+        self.held(factory(entries=[(64, 91, 0x17, 1 << 3)]),
+                  'reserved-partition-attribute-bits')
+
+    def test_defined_partition_attribute_bits_are_not_falsely_rejected(self):
+        self.ok(factory(entries=[(64, 91, 0x17, 1 << 2)]))
+
     def test_header_crc_corrupted(self):
         self.held(change_block(factory(), 1, 80, b'X'), 'bad-header-crc')
 
@@ -156,6 +197,10 @@ class GPTMetadataTests(unittest.TestCase):
 
     def test_protective_mbr_signature_missing(self):
         self.held(change_block(factory(), 0, 510, b'\x00\x00'), 'bad-protective-mbr-signature')
+
+    def test_zero_ending_chs_is_not_a_valid_protective_mbr_fixture(self):
+        self.held(change_block(factory(), 0, 451, b'\x00\x00\x00'),
+                  'bad-protective-mbr-end-chs')
 
     def test_protective_mbr_bad_start_chs_holds(self):
         self.held(change_block(factory(), 0, 447, b'\x00\x00\x00'),
