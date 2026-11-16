@@ -6,6 +6,7 @@ on:
       - director-11/register-default-build-parity-20261116
     paths:
       - "os-docs/register-forensics/evaluate_default_image.py"
+      - "os-docs/register-forensics/compare_elf_sections.py"
       - ".github/workflows/d11-default-register-image-parity.yml"
   workflow_dispatch:
 
@@ -65,6 +66,9 @@ jobs:
             local elf="$source/PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32"
             sha256sum "$elf" | awk '{print $1}' > "witness/$name.elf_sha256"
             python3 "$source/PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py" "$elf" > "witness/$name.measurement"
+            if [[ "$name" != "candidate_on" ]]; then
+              cp "$elf" "witness/$name.compare.elf32"
+            fi
             printf '%s file=%s measured=%s\n' "$name" "$(cat witness/$name.elf_sha256)" "$(cat witness/$name.measurement)"
           }
           build baseline base_1 none
@@ -73,6 +77,12 @@ jobs:
           # Keep the no-feature candidate image for its own actual QEMU test.
           cp candidate/PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 witness/default-test.elf32
           build candidate candidate_on register-view-diagnostic
+          # Compare all ELF sections while the three pinned binaries are present.
+          # Only publish section lengths/flags/hashes, never the binaries.
+          python3 os-docs/register-forensics/compare_elf_sections.py \
+            witness/base_1.compare.elf32 witness/base_2.compare.elf32 \
+            witness/candidate_off.compare.elf32 witness/elf-section-differential.json
+          rm witness/*.compare.elf32
       - name: Boot the actual no-feature candidate in disposable QEMU
         run: |
           set -euo pipefail
@@ -98,6 +108,7 @@ jobs:
             witness/*.measurement
             witness/*.txt
             witness/result.json
+            witness/elf-section-differential.json
             witness/*serial.log
             witness/qemu.stdout.log
             witness/qemu.stderr.log
