@@ -40,4 +40,40 @@ This code cannot itself establish a **real** legacy virtio-blk PCI binding, nego
 
 A future end-to-end acceptance exercise must attach two separate disposable QEMU virtio-blk controllers with matching GPT identities, remove one during pending operations, corrupt each metadata copy and both, shorten device capacity, toggle `VIRTIO_BLK_F_RO`, inject flush failures, cut power between phases and compare **both full disk-image hashes**. It must then reproduce on physical supported hardware with installer/recovery media before daily-driver use. Keep an actual bootable ISO, whole-system source generation and rollback distinct.
 
-**Status until CI execution:** authored source and independent test specifications only. Do not infer passing Rust tests or correct virtio/GPT hardware behavior until a job with exact source SHA has executed and its logs are reviewed. No merged product or true calibration is claimed.
+## Independently inspected CI result
+
+[GitHub Actions run 43820644509](https://github.com/KirtusJ/pcp-os/actions/runs/43820644509)
+and [job 133142701824](https://github.com/KirtusJ/pcp-os/actions/runs/43820644509/job/133142701824)
+**completed successfully** at exactly checked-out source
+`70215b43c0bdff18bf4704013d3e23ed20a84fad`.
+The real decoded log records Rust/Cargo **1.99.1**, Python's
+generation of **18 separately named** GPT test images, the positive
+image SHA-256
+`cd58140150f89f60377672afc8e014e48551cd3def35b116a08bc5f7b76ca157`,
+and the independent `sgdisk --verify` outcome **“No problems found.”**
+
+The crate's **26 synthetic GPT/device-facts tests passed in debug
+(26/26) and release (26/26)**, including independent Python-zlib
+header/entry CRC, primary/backup corruption, unsupported profile,
+bounds, clone ambiguity, injected read failure, read-only and
+generation-change refusal. The `no_std` library was separately
+compiled with `cargo check --lib --target x86_64-unknown-none`.
+No connected PCI/virtio queue or kernel I/O path ran in this CI.
+
+**Preserved CI setup failure:** The first workflow submission was
+rejected before any job started because `runner.temp` was used in
+a job-level expression that cannot access the runner context.
+The temporary test path is now initialized from `RUNNER_TEMP` inside
+the job step and passed to subsequent steps through `GITHUB_ENV`.
+That initial workflow did **not** provide a product or parser test
+result; the successful receipt above was executed after the fix.
+
+**Hard acceptance boundary:** Validation of a synthetic GPT image by
+both tools supports *this exact parser profile*, not physical drive
+selection, trusted complete device enumeration, actual virtio-blk
+feature negotiation, crash-safe GPT repair, authenticated storage or
+installer permission. A clone with identical GUID/CRC metadata
+remains ambiguous. The source performs **no writes**. No product
+source merge, release, physical disk boot or host-enforced PCP
+calibration is claimed.
+
