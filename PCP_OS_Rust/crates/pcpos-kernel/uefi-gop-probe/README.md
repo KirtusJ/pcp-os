@@ -16,6 +16,63 @@ The `pcpos-gop-probe` PE32+ application is an x86-64 `no_std`, `extern "efiapi"`
 
 No EDID discovery/override or active-mode association is performed. A `LocateProtocol` result alone does **not** establish that an EDID record belongs to the same video output device or that the selected mode is the monitor's preferred timing. A UEFI console print is only an application-observed report, not host-authenticated evidence of physical pixels, firmware correctness or PCP OS behavior.
 
+## Copied-byte EDID preference decoding: evidence preparation, not mode selection
+
+The separate pure `src/edid.rs` module now decodes a **bounded, complete
+EDID 1.3 or 1.4 byte slice** supplied by a caller, without any UEFI pointer,
+device access, memory allocation, or GOP mode call. The normal standalone
+EFI executable is **unchanged** and does not read or use EDID. The library
+also declares the native `EFI_EDID_ACTIVE_PROTOCOL` and
+`EFI_EDID_DISCOVERED_PROTOCOL` GUIDs and C-layout structure for future
+review; these are **not connected** to any GOP instance or dereferenced.
+
+The parser uses the 128-byte EDID 1.x base header/checksum, advertised
+extension block count, checksums of **all supplied complete blocks**, and
+a conservative maximum of **16 extensions**. It does **not** decode CTA,
+DisplayID or other extension timing, validate all monitor vendor semantics,
+or infer that the byte source is trusted. A base-only EDID that advertises
+missing extensions is **rejected as incomplete**, rather than silently
+described as an entirely checked EDID.
+
+The first 18-byte detailed timing descriptor at byte offset **54** encodes
+the preferred mode. For EDID **1.3**, this profile requires byte 24 bit 1
+to indicate preferred timing. For EDID **1.4**, the first DTD is required
+regardless of this bit, which instead says whether the timing includes
+the native pixel format/preferred refresh characteristic. Misusing the
+1.3 interpretation for 1.4 would reject valid displays. The decoder
+returns horizontal/vertical **active and blanking values**, pixel-clock
+ticks of **10 kHz**, and the **interlaced flag** separately. It does not
+promote the raw active vertical count to a progressive frame height,
+conflate equal resolution with equal refresh/timing, calculate a validated
+GPU refresh, or choose a GOP mode.
+
+The `matches_dimensions_only()` helper explicitly compares **only**
+horizontal and vertical active counts. It cannot establish the EDID
+preferred timing was chosen: GOP `QueryMode` supplies resolution and
+pixel layout but not a complete refresh/timing agreement, and EDID must
+first be associated with the **same physical output(s)** and an actual
+supported GOP mode. The UEFI spec says `EFI_EDID_DISCOVERED_PROTOCOL`
+appears on individual video-output child handles; `EFI_EDID_ACTIVE_PROTOCOL`
+reflects the selected/overridden active output(s). A `LocateProtocol`
+result for the first GOP does **not** establish that an EDID protocol
+on another handle belongs to that display, particularly with combined
+outputs. No active/discovered/override association is claimed here.
+
+**Tests:** `tests/edid.rs` adds **23 host-only synthetic cases** for EDID
+1.3 versus 1.4 bit interpretation; a known 1920×1080 detailed-timing
+encoding; checksum, missing/extra/invalid extensions, unsupported EDID
+revisions, invalid/absent first DTD, interlacing, and the explicit
+dimensions-only matching limit. One additional `tests/abi.rs` case
+checks both UEFI EDID protocol GUIDs and the x86-64 C struct layout,
+giving **13 ABI tests**. The tests do not generate firmware records or
+prove native monitor selection. These new source tests require a fresh
+exact-revision GitHub CI receipt before they can be called executed.
+
+Source distinctions: [UEFI 2.11 GOP and EDID protocols](https://uefi.org/specs/UEFI/2.11/12_Protocols_Console_Support.html),
+[Linux `drm_edid.c` detailed timing conversion](https://github.com/torvalds/linux/blob/master/drivers/gpu/drm/drm_edid.c),
+and [open-source `edid-decode` preferred-timing version rules](https://android.googlesource.com/platform/external/edid-decode/+/refs/heads/android15-qpr1-s5-release/parse-base-block.cpp).
+The parser is deliberately narrower than a full EDID/E-EDID verifier.
+
 ## Explicit optional emulated mode-switch fixture
 
 Compiling with `--features exercise-mode-switch` enables a deliberately **non-default** branch that selects the first distinct, QueryMode-supported index, prints an `STANDALONE_FIXTURE_SET_MODE` event, invokes GOP `SetMode`, records raw return status and post-mode metadata, then attempts to restore the original mode and reports that status. It is only for an isolated disposable emulator with an explicit testing decision; **do not run this binary on personal hardware, production boot media, or before an existing installation**. The attempt to restore could fail. A standalone EFI application performing a mode change does **not** prove PCP-OS performed it.
