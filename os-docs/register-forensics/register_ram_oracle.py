@@ -34,6 +34,10 @@ def quote(s: str) -> str:
                "\t": r'\t', "\b": r'\b', "\f": r'\f'}
     pieces = ['"']
     for c in s:
+        if 0xd800 <= ord(c) <= 0xdfff:
+            # json.loads accepts isolated UTF-16 escapes. Rust's strict
+            # Parser::string refuses them, so reject before canonicalizing.
+            raise ValueError('unpaired UTF-16 surrogate')
         if c in special:
             pieces.append(special[c])
         elif ord(c) < 32 or ord(c) == 127:
@@ -124,6 +128,12 @@ def candidate_chain(memory, offset: int, max_events=MAX_EVENTS, workspace_label=
             break
         if count == 0:
             if obj['kind'] != 'WORKSPACE_CREATED' or obj['body'].get('label') != workspace_label:
+                break
+            # This is only a candidate locator, not authentication of the
+            # live Record pointer. The actual native kernel uses this exact
+            # workspace ID. Other pinned vectors can use their own labels.
+            if (workspace_label == 'kernel' and
+                    obj['body'].get('workspace') != 'acr:workspace:kernel'):
                 break
         last_head = hashlib.sha256(line).hexdigest()
         previous = last_head
