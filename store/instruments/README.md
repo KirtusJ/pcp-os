@@ -20,10 +20,15 @@ These instruments ship inside the Rust host. To browse downloadable applications
 | Instrument | When to use it | Input fields |
 | --- | --- | --- |
 | `cryptography.digest` | Compute the SHA-256 of supplied text and optionally compare a claimed digest. | `text`, optional `claimed` |
+| `cryptography.cipher_trial` | Recover a 16-bit public teaching key from four known block pairs and count output differences over the entire block space. | `rounds` (1, 2, 4 or 8), optional `delta` (1 to 65535, default 1) |
 | `quality.coverage` | Find claims without findings in a commissioned review and list recorded checks its findings do not cite. | `review` (label), plus the register |
 | `core.calibration` | Check the counts, thresholds and claimed result in a Calibration Record. | `record` (object) |
 
 ## Run an instrument
+
+For the cipher experiment, run `pcpos instrument cryptography.cipher_trial '{"rounds":4,"delta":1}'`. Exit 0 means the attack recovered the fixture key uniquely. The count is for one public key and the specified input difference. Each input and its XOR partner count separately. A lower peak for this difference measures dispersion under this experiment. All four variants have the same small key space.
+
+To reproduce the public fixture, number bits from zero at the least significant bit. In round `i` (starting at zero), XOR the round key, substitute each nibble using `E4D12FB83A6C5907`, then move bit `4*a+b` to `4*b+a`. Round key `i` is the 16-bit master key rotated left by `3*i` bits, XORed with the low 16 bits of `i*0x9e37`. After the last round XOR the next round key. The fixture uses master key `b7e1` and plaintexts `0000 1234 abcd ffff`. The S-box and permutation follow Howard Heys's teaching example. The key schedule and experiments are specified here. Use standard authenticated encryption for real data. [Heys, A Tutorial on Linear and Differential Cryptanalysis](https://www.engr.mun.ca/~howard/PAPERS/ldc_tutorial.pdf) · [ChaCha20-Poly1305 authenticated encryption, RFC 8439](https://www.rfc-editor.org/rfc/rfc8439#section-2.8)
 
 With `pcpos` on your path, these commands list the catalog and check a small calculation. The JSON example uses Bash or PowerShell 7.3+ native argument quoting.
 
