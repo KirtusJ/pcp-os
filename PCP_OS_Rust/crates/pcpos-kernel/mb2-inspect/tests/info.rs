@@ -242,12 +242,13 @@ fn efi_system_table_pointer_is_64_bit_without_map_authority() {
 }
 
 #[test]
-fn elf_header_tags_are_not_mb2_information_tags() {
-    // Byte pattern for an EFI image HEADER tag type 9 is not evidence of
-    // the separate OS-image header. The information parser just skips it.
+fn information_tag_nine_is_standardized_but_not_decoded_here() {
+    // Information tag 9 denotes ELF sections, regardless of the image
+    // header tag 9 meaning EFI-amd64 entry address. We deliberately do not
+    // decode ELF sections here; it is uninterpreted, not undefined.
     let data = mbi(&[tag(9, &[0x11; 12])]);
     let result = inspect(&data).unwrap();
-    assert_eq!(result.unknown_tag_count, 1);
+    assert_eq!(result.uninterpreted_tag_count, 1);
 }
 
 #[test]
@@ -422,7 +423,7 @@ fn reject_duplicate_overlapping_modules() {
 fn accept_unknown_tags_without_granting_semantics() {
     let data = mbi(&[tag(1000, &[1, 2, 3])]);
     let result = inspect(&data).unwrap();
-    assert_eq!(result.unknown_tag_count, 1);
+    assert_eq!(result.uninterpreted_tag_count, 1);
 }
 
 #[test]
