@@ -127,8 +127,8 @@ def visit(kernel, measured, root, width, height, vram, font, timeout):
                 path, (size, pixels) = screenshot("launcher")
                 if (size == (width, height)
                         and exact_cells(size, pixels, 190, 40, "PCP OS", font, TEXT)
-                        and exact_cells(size, pixels, 20, height-40, "Up/Down choose", font, TEXT, PANEL)
-                        and exact_cells(size, pixels, 20, height-20, "Ctrl+Alt+Delete", font, SOFT, PANEL)):
+                        and exact_cells(size, pixels, 20, (height//20-2)*20, "Up/Down choose", font, TEXT, PANEL)
+                        and exact_cells(size, pixels, 20, (height//20-1)*20, "Ctrl+Alt+Delete", font, SOFT, PANEL)):
                     report["frames"]["launcher"] = hashlib.sha256(path.read_bytes()).hexdigest()
                     initial = pixels
                     break
