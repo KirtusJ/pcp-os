@@ -7,6 +7,7 @@ on:
     paths:
       - "os-docs/register-forensics/evaluate_default_image.py"
       - "os-docs/register-forensics/compare_elf_sections.py"
+      - "os-docs/register-forensics/compare_load_segments.py"
       - ".github/workflows/d11-default-register-image-parity.yml"
   workflow_dispatch:
 
@@ -82,6 +83,9 @@ jobs:
           python3 os-docs/register-forensics/compare_elf_sections.py \
             witness/base_1.compare.elf32 witness/base_2.compare.elf32 \
             witness/candidate_off.compare.elf32 witness/elf-section-differential.json
+          python3 os-docs/register-forensics/compare_load_segments.py \
+            witness/base_1.compare.elf32 witness/base_2.compare.elf32 \
+            witness/candidate_off.compare.elf32 witness/elf-load-segments.json
           rm witness/*.compare.elf32
       - name: Boot the actual no-feature candidate in disposable QEMU
         run: |
@@ -109,6 +113,7 @@ jobs:
             witness/*.txt
             witness/result.json
             witness/elf-section-differential.json
+            witness/elf-load-segments.json
             witness/*serial.log
             witness/qemu.stdout.log
             witness/qemu.stderr.log
