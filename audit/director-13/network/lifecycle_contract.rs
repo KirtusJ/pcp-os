@@ -15,7 +15,7 @@ pub enum Carrier { Unknown, Absent, Down, Up }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
-    Disabled, WaitingLink, WaitingAuthentication, Configuring,
+    Disabled, WaitingManual, WaitingLink, WaitingAuthentication, Configuring,
     LanReady, InternetConfirmed, Limited, Error,
 }
 
@@ -40,6 +40,10 @@ pub struct Network {
     pub carrier: Carrier,
     pub operator_enabled: bool,
     pub auto_reconnect: bool,
+    // Operator activation is separate from the interface being enabled.
+    // After a link loss, a nonautomatic profile requires a fresh Connect.
+    pub activation_armed: bool,
+    pub attempt_seen: bool,
     pub generation: u64,
     pub address_valid: bool,
     pub route_valid: bool,
@@ -54,6 +58,7 @@ impl Network {
         Self {
             medium, phase: Phase::Disabled, carrier: Carrier::Unknown,
             operator_enabled: false, auto_reconnect: false,
+            activation_armed: false, attempt_seen: false,
             generation: 1, address_valid: false, route_valid: false,
             dns_valid: false, wifi_authenticated: false,
             firewall_policy_revision,
@@ -73,18 +78,22 @@ impl Network {
     }
 
     fn can_configure(&self) -> bool {
-        self.operator_enabled && self.carrier == Carrier::Up &&
+        self.operator_enabled && self.activation_armed && self.carrier == Carrier::Up &&
             (self.medium == Medium::Ethernet || self.wifi_authenticated)
     }
 
     fn choose_phase(&mut self) {
         self.phase = if !self.operator_enabled {
             Phase::Disabled
+        } else if !self.activation_armed {
+            Phase::WaitingManual
         } else if self.carrier != Carrier::Up {
             Phase::WaitingLink
         } else if self.medium == Medium::Wifi && !self.wifi_authenticated {
+            self.attempt_seen = true;
             Phase::WaitingAuthentication
         } else {
+            self.attempt_seen = true;
             Phase::Configuring
         };
     }
@@ -98,6 +107,8 @@ impl Network {
                 self.bump()?;
                 self.operator_enabled = true;
                 self.auto_reconnect = allow_auto_reconnect;
+                self.activation_armed = true;
+                self.attempt_seen = false;
                 self.invalidate();
                 self.choose_phase();
             }
@@ -105,6 +116,8 @@ impl Network {
                 self.bump()?;
                 self.operator_enabled = false;
                 self.auto_reconnect = false;
+                self.activation_armed = false;
+                self.attempt_seen = false;
                 self.invalidate();
                 self.phase = Phase::Disabled;
             }
@@ -113,6 +126,12 @@ impl Network {
                 self.bump()?;
                 self.carrier = carrier;
                 self.invalidate();
+                // Do not let a rising carrier silently renew an old explicit
+                // one-shot activation. An initially absent carrier can still
+                // complete the *first* operator-requested connection.
+                if carrier != Carrier::Up && self.attempt_seen && !self.auto_reconnect {
+                    self.activation_armed = false;
+                }
                 self.choose_phase();
             }
             Event::WifiAuthenticated { generation } => {
@@ -129,6 +148,7 @@ impl Network {
                    self.phase != Phase::WaitingAuthentication {
                     return Ok(false)
                 }
+                if !self.auto_reconnect { self.activation_armed = false; }
                 self.phase = Phase::Error;
             }
             Event::ConfigurationSucceeded { generation } => {
@@ -146,6 +166,7 @@ impl Network {
                     return Ok(false)
                 }
                 self.invalidate();
+                if !self.auto_reconnect { self.activation_armed = false; }
                 self.phase = Phase::Error;
             }
             Event::ReachabilitySucceeded { generation } => {
@@ -167,6 +188,9 @@ impl Network {
                 self.bump()?;
                 self.invalidate();
                 self.carrier = Carrier::Unknown;
+                if self.attempt_seen && !self.auto_reconnect {
+                    self.activation_armed = false;
+                }
                 self.choose_phase();
             }
         }
@@ -256,6 +280,63 @@ mod tests {
         assert_eq!(n.phase, Phase::WaitingLink);
         assert!(!n.address_valid && !n.route_valid && !n.dns_valid);
         assert!(!n.step(Event::ReachabilitySucceeded { generation: first }).unwrap());
+    }
+
+    #[test]
+    fn manual_only_link_loss_requires_new_user_connect_even_if_carrier_comes_back() {
+        let mut n = Network::new(Medium::Ethernet, 44);
+        n.step(Event::OperatorConnect { allow_auto_reconnect: false }).unwrap();
+        n.step(Event::ObservedCarrier(Carrier::Up)).unwrap();
+        let first = n.generation;
+        n.step(Event::ConfigurationSucceeded { generation: first }).unwrap();
+        n.step(Event::ReachabilitySucceeded { generation: first }).unwrap();
+        assert_eq!(n.phase, Phase::InternetConfirmed);
+
+        n.step(Event::ObservedCarrier(Carrier::Down)).unwrap();
+        assert_eq!(n.phase, Phase::WaitingManual);
+        assert!(n.operator_enabled && !n.activation_armed);
+        n.step(Event::ObservedCarrier(Carrier::Up)).unwrap();
+        assert_eq!(n.phase, Phase::WaitingManual);
+        let stale = n.generation;
+        assert!(!n.step(Event::ConfigurationSucceeded { generation: stale }).unwrap());
+        assert!(!n.step(Event::ReachabilitySucceeded { generation: stale }).unwrap());
+        assert!(!n.address_valid);
+
+        n.step(Event::OperatorConnect { allow_auto_reconnect: false }).unwrap();
+        assert_eq!(n.phase, Phase::Configuring);
+        let fresh = n.generation;
+        n.step(Event::ConfigurationSucceeded { generation: fresh }).unwrap();
+        n.step(Event::ReachabilitySucceeded { generation: fresh }).unwrap();
+        assert_eq!(n.phase, Phase::InternetConfirmed);
+        assert_eq!(n.firewall_policy_revision, 44);
+    }
+
+    #[test]
+    fn manual_only_resume_requires_user_action_but_initial_down_can_connect_once() {
+        let mut n = Network::new(Medium::Wifi, 11);
+        n.step(Event::OperatorConnect { allow_auto_reconnect: false }).unwrap();
+        n.step(Event::ObservedCarrier(Carrier::Down)).unwrap();
+        assert_eq!(n.phase, Phase::WaitingLink); // first attempt has not started
+        n.step(Event::ObservedCarrier(Carrier::Up)).unwrap();
+        assert_eq!(n.phase, Phase::WaitingAuthentication);
+        let first = n.generation;
+        n.step(Event::WifiAuthenticated { generation: first }).unwrap();
+        n.step(Event::ConfigurationSucceeded { generation: first }).unwrap();
+        assert_eq!(n.phase, Phase::LanReady);
+
+        n.step(Event::SuspendOrResume).unwrap();
+        assert_eq!(n.phase, Phase::WaitingManual);
+        assert!(!n.activation_armed);
+        n.step(Event::ObservedCarrier(Carrier::Up)).unwrap();
+        assert_eq!(n.phase, Phase::WaitingManual);
+        let after_resume = n.generation;
+        assert!(!n.step(Event::WifiAuthenticated { generation: after_resume }).unwrap());
+        n.step(Event::OperatorConnect { allow_auto_reconnect: false }).unwrap();
+        assert_eq!(n.phase, Phase::WaitingAuthentication);
+        let renewed = n.generation;
+        assert!(n.step(Event::WifiAuthenticated { generation: renewed }).unwrap());
+        assert!(n.step(Event::ConfigurationSucceeded { generation: renewed }).unwrap());
+        assert_eq!(n.firewall_policy_revision, 11);
     }
 
     #[test]
