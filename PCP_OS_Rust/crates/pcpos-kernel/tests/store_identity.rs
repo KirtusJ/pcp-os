@@ -5,7 +5,7 @@ mod store_identity;
 
 use store_identity::{requested_id, marker_sector, matches_marker, MARKER_V2, ID_OFFSET};
 const SELECTOR_A: &str = "0123456789abcdeffedcba9876543210";
-const SELECTOR_B: &str = "123456789abcdeffedcba9876543211";
+const SELECTOR_B: &str = "1123456789abcdeffedcba9876543211";
 
 fn parsed(hex: &str) -> [u8; 16] {
     requested_id(&format!("auto=action1.elf store=ide0 store_id={hex} then=off")).unwrap()
