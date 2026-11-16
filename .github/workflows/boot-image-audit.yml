@@ -21,6 +21,16 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Provision documented linker and objcopy on ephemeral CI runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v ld.lld >/dev/null 2>&1 || ! command -v objcopy >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends lld binutils
+          fi
+          command -v ld.lld
+          command -v objcopy
       - name: Print exact source and toolchain identities
         shell: bash
         run: |
