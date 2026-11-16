@@ -58,12 +58,15 @@ jobs:
             --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
             --measurement "$(cat "$RUNNER_TEMP/d12-measurement.txt")" \
             --source-head "$(git rev-parse HEAD)" \
-            --out "$RUNNER_TEMP/d12-guest-restart.json"
+            --out "$RUNNER_TEMP/d12-guest-restart.json" \
+            --evidence-dir "$RUNNER_TEMP/d12-guest-restart-evidence"
       - name: Preserve bounded result also when a test fails
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: director-12-kernel-restart-journal
-          path: ${{ runner.temp }}/d12-guest-restart.json
+          path: |
+            ${{ runner.temp }}/d12-guest-restart.json
+            ${{ runner.temp }}/d12-guest-restart-evidence/**
           if-no-files-found: warn
           retention-days: 7
