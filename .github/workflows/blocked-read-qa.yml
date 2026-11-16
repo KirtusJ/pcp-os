@@ -30,6 +30,14 @@ jobs:
           RUSTUP_TOOLCHAIN: stable
         run: |
           bash "$GITHUB_WORKSPACE/.github/blocked-read-check.sh" healthy
+      - name: Compile all four optional pre-launch device checks together
+        working-directory: PCP_OS_Rust/crates/pcpos-kernel
+        env:
+          RUSTUP_TOOLCHAIN: stable
+          PCPOS_KERNEL_FEATURES: virtio-register-probe,virtio-worker-probe
+        run: |
+          PCPOS_KERNEL_STAGE="$RUNNER_TEMP/kernel-probes" bash run.sh build
+          sha256sum target/pcpos-kernel.elf32 > "$RUNNER_TEMP/receipts/probes-elf.sha256"
       - name: Check rejection of reversed Shift in a disposable test build
         working-directory: PCP_OS_Rust/crates/pcpos-kernel
         env:
