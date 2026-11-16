@@ -20,6 +20,22 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
+      - name: Build default kernel and prove diagnostic serial code absent
+        env:
+          PCPOS_KERNEL_STAGE: /tmp/d10-register-default-build
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 binutils lld
+          rustup target add x86_64-unknown-none
+          rustup component add rust-src
+          sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          kernel=PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
+          if grep -aFq 'D10_REGISTER_RAW_BEGIN' "$kernel"; then
+            echo 'unsafe: raw-register export marker in default image' >&2
+            exit 1
+          fi
+          sha256sum "$kernel" | tee default-image-sha256.txt
       - name: Build opt-in diagnostic feature (NOT release kernel)
         env:
           PCPOS_KERNEL_STAGE: /tmp/d10-register-diagnostic-build
@@ -32,6 +48,7 @@ jobs:
           rustup component add rust-src
           sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
           kernel=PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
+          grep -aFq 'D10_REGISTER_RAW_BEGIN' "$kernel"
           echo "DIAGNOSTIC_KERNEL_SHA256 $(sha256sum "$kernel")"
           python3 PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py "$kernel" > measurement.txt
           cat measurement.txt
@@ -52,5 +69,6 @@ jobs:
           path: |
             captures/d10-diagnostic/
             measurement.txt
+            default-image-sha256.txt
           if-no-files-found: warn
           retention-days: 14
