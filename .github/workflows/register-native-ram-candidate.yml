@@ -5,11 +5,7 @@ on:
     branches:
       - director-11/register-ram-candidate-oracle-20261116
     paths:
-      - "os-docs/register-forensics/**"
-      - ".github/workflows/register-native-ram-candidate.yml"
-  pull_request:
-    paths:
-      - "os-docs/register-forensics/**"
+      - "os-docs/register-forensics/probe_native_ram.py"
       - ".github/workflows/register-native-ram-candidate.yml"
   workflow_dispatch:
 
@@ -75,6 +71,13 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: register-ram-candidate-${{ matrix.mode }}
-          path: captures/
+          # Strict allowlist, not captures/: a runner kill/timeout can skip
+          # Python's finally and leave raw 128 MiB guest RAM on disk.
+          path: |
+            captures/**/result.json
+            captures/**/serial.log
+            captures/**/qemu.stderr
+            captures/**/register-paused.ppm
+            captures/**/returned-launcher.ppm
           if-no-files-found: warn
           retention-days: 7
