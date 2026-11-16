@@ -43,8 +43,24 @@ marker and returns success **without retrying the task**, resetting budget
 or fabricating a successful `END`. The external host oracle requires
 `RestartCount=1`, one `START`, no `END`, and **zero guest serials**.
 This is a test of a fail-closed control at a specified fault window, not
-generalized worker recovery. Additional windows (post-spawn, external effects,
-host crash, store corruption and liveness during partition) remain open.
+generalized worker recovery.
+
+A **third test** opens a separate disposable QEMU process with its vCPUs
+deliberately held at `-S`, after the same `START` marker. The host observes
+the exact QEMU process by Docker's host-PID view and `/proc/<pid>/stat`
+start clock, plus the host boot identifier. The test controller then
+deliberately kills that container, checks that **the same original QEMU
+process identity** is gone or terminal, and **manually** starts the same
+container once. The re-entered Rust runner detects incomplete prior work,
+writes `INDETERMINATE`, performs no second guest launch, and never invents
+an `END`. This test's post-spawn guest was **paused before kernel boot**:
+it is a process-start / termination / journal witness, not an additional
+self-test or a claim of QEMU failure. The restart in this arm is explicitly
+made by the controller, **not** by ChatGPT, PCP OS, or an autonomous service.
+
+Other fault windows, including actual guest execution in progress,
+external durable effects, host power loss, store corruption, cross-machine
+identity and liveness during network partition, remain open.
 
 The journal is *not* a cryptographically authenticated, fsync-directory
 transactional register and supplies no publisher or permission binding.
