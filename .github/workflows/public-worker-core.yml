@@ -1,4 +1,4 @@
-name: Public resident worker Core readback
+name: Director 4 resident Core handoff
 
 on:
   pull_request:
@@ -19,7 +19,7 @@ permissions:
 jobs:
   public-worker:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 95
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -70,11 +70,166 @@ jobs:
             case_dir="receipts/text-input/$arm"
             python3 examples/method-readback/text-input/compare.py "$arm" "$case_dir/boot.serial" "$case_dir/oracle.stdout"
           done
+      - name: Admit the Director 4 Core-reading cohort and verify a fresh round
+        env:
+          PCPOS_CORE_MODULE: ${{ github.workspace }}/receipts/core-spec.md
+          PCPOS_REAL_QEMU: /usr/bin/qemu-system-x86_64
+        run: |
+          set -euo pipefail
+          python3 examples/resident-workers/supervise.py \
+            --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            --worker receipts/resident.elf --oracle receipts/control/oracle.json \
+            --qemu "$GITHUB_WORKSPACE/examples/method-readback/qemu-worker" \
+            --run receipts/session --cycles 60 --interval 60 >receipts/session-console.log 2>&1 &
+          supervisor=$!
+          echo "$supervisor" > "$RUNNER_TEMP/director-4-supervisor.pid"
+      - name: Freeze and replay the journal through round 1
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import time
+          from pathlib import Path
+          events = Path("receipts/session/events.jsonl")
+          for _ in range(1500):
+              if events.is_file():
+                  lines = events.read_bytes().splitlines(keepends=True)
+                  rows = [json.loads(line) for line in lines if line.endswith(b"\n")]
+                  if any(row["event"] == "readback" and row["cycle"] == 1 for row in rows):
+                      break
+                  if rows and rows[-1]["event"] in ("failed", "stopped", "finished"):
+                      raise SystemExit(f"supervisor ended before checkpoint: {rows[-1]['event']}")
+              time.sleep(1)
+          else:
+              raise SystemExit("round 1 unavailable")
+          PY
+          python3 -O examples/resident-workers/archive.py \
+            --run receipts/session --oracle receipts/control/oracle.json \
+            --cycle 1 --output "$RUNNER_TEMP/d4-through-1.zip"
+      - name: Publish the verified evidence through round 1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: director-4-through-1
+          path: ${{ runner.temp }}/d4-through-1.zip
+          if-no-files-found: error
+          retention-days: 14
+      - name: Freeze and replay the journal through round 15
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import time
+          from pathlib import Path
+          events = Path("receipts/session/events.jsonl")
+          for _ in range(1500):
+              if events.is_file():
+                  lines = events.read_bytes().splitlines(keepends=True)
+                  rows = [json.loads(line) for line in lines if line.endswith(b"\n")]
+                  if any(row["event"] == "readback" and row["cycle"] == 15 for row in rows):
+                      break
+                  if rows and rows[-1]["event"] in ("failed", "stopped", "finished"):
+                      raise SystemExit(f"supervisor ended before checkpoint: {rows[-1]['event']}")
+              time.sleep(1)
+          else:
+              raise SystemExit("round 15 unavailable")
+          PY
+          python3 -O examples/resident-workers/archive.py \
+            --run receipts/session --oracle receipts/control/oracle.json \
+            --cycle 15 --output "$RUNNER_TEMP/d4-through-15.zip"
+      - name: Publish the verified evidence through round 15
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: director-4-through-15
+          path: ${{ runner.temp }}/d4-through-15.zip
+          if-no-files-found: error
+          retention-days: 14
+      - name: Freeze and replay the journal through round 30
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import time
+          from pathlib import Path
+          events = Path("receipts/session/events.jsonl")
+          for _ in range(1500):
+              if events.is_file():
+                  lines = events.read_bytes().splitlines(keepends=True)
+                  rows = [json.loads(line) for line in lines if line.endswith(b"\n")]
+                  if any(row["event"] == "readback" and row["cycle"] == 30 for row in rows):
+                      break
+                  if rows and rows[-1]["event"] in ("failed", "stopped", "finished"):
+                      raise SystemExit(f"supervisor ended before checkpoint: {rows[-1]['event']}")
+              time.sleep(1)
+          else:
+              raise SystemExit("round 30 unavailable")
+          PY
+          python3 -O examples/resident-workers/archive.py \
+            --run receipts/session --oracle receipts/control/oracle.json \
+            --cycle 30 --output "$RUNNER_TEMP/d4-through-30.zip"
+      - name: Publish the verified evidence through round 30
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: director-4-through-30
+          path: ${{ runner.temp }}/d4-through-30.zip
+          if-no-files-found: error
+          retention-days: 14
+      - name: Freeze and replay the journal through round 45
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import time
+          from pathlib import Path
+          events = Path("receipts/session/events.jsonl")
+          for _ in range(1500):
+              if events.is_file():
+                  lines = events.read_bytes().splitlines(keepends=True)
+                  rows = [json.loads(line) for line in lines if line.endswith(b"\n")]
+                  if any(row["event"] == "readback" and row["cycle"] == 45 for row in rows):
+                      break
+                  if rows and rows[-1]["event"] in ("failed", "stopped", "finished"):
+                      raise SystemExit(f"supervisor ended before checkpoint: {rows[-1]['event']}")
+              time.sleep(1)
+          else:
+              raise SystemExit("round 45 unavailable")
+          PY
+          python3 -O examples/resident-workers/archive.py \
+            --run receipts/session --oracle receipts/control/oracle.json \
+            --cycle 45 --output "$RUNNER_TEMP/d4-through-45.zip"
+      - name: Publish the verified evidence through round 45
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: director-4-through-45
+          path: ${{ runner.temp }}/d4-through-45.zip
+          if-no-files-found: error
+          retention-days: 14
+      - name: Verify every observed round after supervisor shutdown
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, time
+          from pathlib import Path
+          events = Path("receipts/session/events.jsonl")
+          for _ in range(4500):
+              rows = events.read_bytes().splitlines(keepends=True)
+              records = [json.loads(row) for row in rows if row.endswith(b"\n")]
+              if records and records[-1]["event"] == "finished":
+                  break
+              if records and records[-1]["event"] in ("failed", "stopped"):
+                  raise SystemExit(records[-1])
+              time.sleep(1)
+          else:
+              raise SystemExit("supervisor did not finish")
+          PY
+          for cycle in {1..60}; do
+            python3 -O examples/resident-workers/verify.py \
+              --run receipts/session --oracle receipts/control/oracle.json --cycle "$cycle"
+          done
       - name: Retain the oracle, serial logs and cohort receipts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: resident-worker-core-readback
+          name: director-4-core-session-final
           path: |
             receipts/**/*.serial
             receipts/**/*.stderr
@@ -82,6 +237,7 @@ jobs:
             receipts/**/readback.json
             receipts/control/oracle.json
             receipts/inputs.json
+            receipts/session-console.log
             receipts/text-input/*/oracle.stdout
             receipts/text-input/*/*.status
             receipts/text-input/results.json
