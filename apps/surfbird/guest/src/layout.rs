@@ -66,18 +66,16 @@ impl View {
 
 impl Page<'_> {
     pub fn lines(&self) -> impl Iterator<Item = Line<'_>> {
-        let title = core::iter::once((Source::Title, self.title, TEXT_COLUMNS));
-        let paragraphs = self.paragraphs[..self.paragraph_count]
-            .iter()
-            .enumerate()
-            .map(|(i, p)| (Source::Paragraph(i), p.text, TEXT_COLUMNS));
-        let links = self.links[..self.count]
-            .iter()
-            .enumerate()
-            .map(|(i, link)| (Source::Link(i), link.label, LINK_COLUMNS));
-        title
-            .chain(paragraphs)
-            .chain(links)
+        core::iter::once(Source::Title)
+            .chain(self.blocks().iter().copied())
+            .map(|source| {
+                let (text, columns) = match source {
+                    Source::Title => (self.title, TEXT_COLUMNS),
+                    Source::Paragraph(i) => (self.paragraphs[i].text, TEXT_COLUMNS),
+                    Source::Link(i) => (self.links[i].label, LINK_COLUMNS),
+                };
+                (source, text, columns)
+            })
             .flat_map(|(source, text, columns)| {
                 wrap(text, columns).enumerate().map(move |(i, text)| Line {
                     source,
@@ -123,6 +121,29 @@ mod tests {
         let mut idle = View::default();
         idle.tab(&empty, false);
         assert_eq!(idle, View::default());
+    }
+
+    #[test]
+    fn mixed_blocks_preserve_fragment_and_keyboard_order() {
+        let page = parse(br##"<title>T</title><a href="#p">First</a><p id="p">Pier</p><a href="/last">Second</a><p>After</p>"##).unwrap();
+        let mut lines = page.lines().map(|line| (line.source, line.text));
+        for expected in [
+            (Source::Title, "T"),
+            (Source::Link(0), "First"),
+            (Source::Paragraph(0), "Pier"),
+            (Source::Link(1), "Second"),
+            (Source::Paragraph(1), "After"),
+        ] {
+            assert_eq!(lines.next(), Some(expected));
+        }
+        assert_eq!(lines.next(), None);
+        assert_eq!(page.target_row(Some("p"), 0), 1);
+        assert_eq!(page.fragment_line(Some("p"), 0), 2);
+        let mut view = View::default();
+        for expected in [0, 1, 0] {
+            view.tab(&page, false);
+            assert_eq!(view.focus, Some(expected));
+        }
     }
 
     #[test]
