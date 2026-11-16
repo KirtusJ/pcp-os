@@ -30,3 +30,28 @@ The example head is the previously **pixel-decoded** observation from Director 1
 - A complete RAM dump can contain secrets, program contents, and historical copies. Do not publish, upload, or retain a full RAM dump from installed Qwen, a live workstation, or any non-disposable guest. Work only on a disposable model-free QEMU instance. For public archives retain the independent *summary*, QMP status/parameters, scan counts, and hashes. Treat even extracted raw records according to actual disclosure permissions.
 
 No persistent container, independent PCP OS worker, installed LLM, runtime authorization, or current liveness is established by these files. They provide one bounded observation method for the already-open Director 10 acceptance question.
+
+
+## RAM provenance negative controls (16 November 2026)
+
+The phrase **unique candidate** means one *physical byte-range*, not merely one
+distinct sequence of event bytes or one SHA-256 digest. A paused guest may contain
+two byte-for-byte identical full copies of a valid chain at different addresses.
+Neither copy is automatically the live Rust `Record`.
+
+The bounded synthetic fixture `test_candidate_provenance.py` now distinguishes
+those cases: equal-length, identical full copies **must fail closed** with
+`multiple equally long RAM candidate locations`; different equal-length chains
+fail as `ambiguous longest chains`. Shorter stale copies do not disqualify a
+single, unique maximal 41-event candidate. A longer unrelated decoy fails the
+visible-count comparison. Conversely, a *single fabricated chain in bytes that
+contain no real kernel at all* can satisfy the tool's canonical/count/head
+checks: this explicitly demonstrates that even a successful single
+candidate is **not proof of live-record-pointer identity or authenticated
+origin**. The tool does not promote it to one.
+
+Before the change, identical maximal copies with the same content digest were
+incorrectly collapsed into one "unique" candidate. Retain the test-first red
+Actions log, not as a kernel failure but as an overstrong **host-side forensics
+predicate**. The updated predicate explicitly refuses duplicate physical
+locations regardless of their equal hashes.
