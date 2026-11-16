@@ -25,6 +25,17 @@ jobs:
         run: |
           python3 -m unittest discover -s os-docs/tailorbird-stop -v
           python3 -O -m unittest discover -s os-docs/tailorbird-stop -v
+      - name: Get the recorded installed Tailorbird run
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 179c7f455a82f3508232b555fd7f74689083d83a
+          path: installed-evidence
+          sparse-checkout: raw
+          persist-credentials: false
+      - name: Replay the installed serials, stores and full output frames
+        run: |
+          python3 installed-evidence/raw/replay.py os-docs/tailorbird-stop
+          python3 -O installed-evidence/raw/replay.py os-docs/tailorbird-stop
       - name: Install disk fixture tools
         run: |
           sudo apt-get update -qq
