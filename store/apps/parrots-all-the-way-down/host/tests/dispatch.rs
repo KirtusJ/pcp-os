@@ -292,3 +292,63 @@ fn register_admission_precedes_launch_and_releases_the_exact_task() {
     assert!(String::from_utf8_lossy(&verified.stdout).contains("guards replayed: 0 problem(s)"));
     ok(verified);
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn killed_adapter_leaves_admission_active_after_orphan_exits() {
+    // Characterization, NOT a passing test of independent worker recovery.
+    // Losing the dispatcher does not close a live worker or record its later exit.
+    let (a, db) = arena("adapter-kill", 0, 1, 2);
+    let ready = a.0.join("orphan-ready");
+    let mut adapter = command(&db, "crash-window")
+        .arg(std::env::current_exe().unwrap())
+        .args(["--exact", "slow_child"])
+        .env("PARROTS_TEST_SENTINEL", &ready)
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+
+    let start = Instant::now();
+    while !ready.exists() && start.elapsed() < Duration::from_secs(10) {
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(ready.exists(), "worker did not establish its start witness");
+    let lock = fs::File::open(ready.with_extension("lock")).unwrap();
+    assert!(lock.try_lock().is_err(), "start witness must be held by the worker");
+
+    // Kill only the host adapter. The child has a separate Unix process
+    // identity and can keep executing even though the desk still says Active.
+    adapter.kill().unwrap();
+    assert!(!adapter.wait().unwrap().success());
+    assert_eq!(get(&db, 1).unwrap().state, State::Active);
+    assert!(
+        lock.try_lock().is_err(),
+        "worker should still hold its start witness after adapter loss"
+    );
+
+    // Request replay remains blocked. It neither observes the old worker's
+    // exit nor relaunches it. The live limit and history must not be reset.
+    let duplicate = command(&db, "crash-window")
+        .arg(DISPATCH)
+        .arg("--help")
+        .output()
+        .unwrap();
+    assert!(!duplicate.status.success());
+    assert!(String::from_utf8_lossy(&duplicate.stderr).contains("already admitted"));
+    assert_eq!(status(&db).unwrap().nodes.len(), 1);
+
+    // Release the orphan through the test's explicit cooperation mechanism.
+    // A worker exit after supervisor loss does NOT appear as a desk FINISH.
+    fs::write(ready.with_extension("leave"), b"").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut worker_exited = false;
+    while Instant::now() < deadline {
+        if lock.try_lock().is_ok() {
+            worker_exited = true;
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(worker_exited, "orphan worker failed to release its witness");
+    assert_eq!(get(&db, 1).unwrap().state, State::Active);
+}
