@@ -403,6 +403,50 @@ def sparse_future_attempt(image: str, kernel: Path, measurement: str, evidence_d
             capture(directory, evidence_dir / "sparse", 3)
             invoke(["docker", "rm", "-f", name], checked=False)
 
+def invalid_prior_receipt(image: str, kernel: Path, measurement: str, evidence_dir: Path):
+    # A prior syntactically valid END marker with no real native kernel
+    # readback cannot authorize a second QEMU attempt on service restart.
+    with tempfile.TemporaryDirectory(prefix="d12-false-prior-END-") as tmp:
+        directory = Path(tmp)
+        os.chmod(directory, 0o777)
+        request = secrets.token_hex(12)
+        name = "d12-false-prior-" + secrets.token_hex(5)
+        (directory / "start-1.txt").write_text(
+            f"REQUEST={request};ATTEMPT=1;START\n", encoding="ascii"
+        )
+        (directory / "end-1.txt").write_text(
+            f"REQUEST={request};ATTEMPT=1;QEMU_EXIT=33;END\n", encoding="ascii"
+        )
+        (directory / "qemu-1.serial").write_bytes(
+            b"SYNTHETIC ONLY: no native guest was launched for this END\n"
+        )
+        (directory / "qemu-1.stderr").write_bytes(b"")
+        try:
+            policy = start(image, name, directory, kernel, measurement, request, fault=False)
+            await_true(
+                lambda: not inspect(name)["State"]["Running"]
+                and (directory / "attention.txt").exists(),
+                "unverified prior END refused before new guest launch", 12,
+            )
+            info = inspect(name)
+            assert info["RestartCount"] == 0 and info["State"]["ExitCode"] == 0
+            attention = (directory / "attention.txt").read_text()
+            assert "INVALID_JOURNAL: prior attempt 1 END without valid native receipt" in attention
+            assert not (directory / "start-2.txt").exists()
+            assert not (directory / "qemu-2.serial").exists()
+            assert len(list(directory.glob("end-*.txt"))) == 1
+            return {
+                "false_prior_END_fixture": True,
+                "syntactic_prior_END_rejected_without_native_receipt": True,
+                "no_new_QEMU_guest_launched": True,
+                "host_restart_count": 0,
+                "attention": attention.strip(),
+                "requested_policy": policy,
+            }
+        finally:
+            capture(directory, evidence_dir / "forged_end", 2)
+            invoke(["docker", "rm", "-f", name], checked=False)
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--image", required=True)
@@ -442,6 +486,7 @@ def main() -> int:
         result["post_spawn_interrupted"] = interrupted_after_spawn(a.image, kernel, a.measurement, evidence_dir)
         result["falsified_exit_33"] = fabricated_exit_33(a.image, kernel, a.measurement, evidence_dir)
         result["noncontiguous_journal"] = sparse_future_attempt(a.image, kernel, a.measurement, evidence_dir)
+        result["false_prior_END"] = invalid_prior_receipt(a.image, kernel, a.measurement, evidence_dir)
         result["status"] = "OBSERVED_IN_TEST_SCOPE"
         return 0
     except Exception as e:
