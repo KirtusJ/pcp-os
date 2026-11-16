@@ -65,6 +65,40 @@ def _copy(fd, disk_sectors, lba):
     }
 
 
+
+def _active_entries(fd, primary):
+    """Check the active entry map after primary/backup CRC and identity validation."""
+    empty_guid = bytes(16)
+    seen_guids = set()
+    extents = []
+    entry_bytes = primary["entry_size"]
+    batch_count = max(1, (1024 * 1024) // entry_bytes)
+    for start_index in range(0, primary["count"], batch_count):
+        n = min(batch_count, primary["count"] - start_index)
+        size = n * entry_bytes
+        at = primary["entries_start"] + start_index * entry_bytes
+        data = os.pread(fd, size, at)
+        if len(data) != size:
+            raise ValueError("Truncated GPT partition entry")
+        for local_index in range(n):
+            index = start_index + local_index
+            type_guid, unique_guid, first, last = struct.unpack_from(
+                "<16s16sQQ", data, local_index * entry_bytes)
+            # Per UEFI, an entry with a zero type GUID is unused.
+            if type_guid == empty_guid:
+                continue
+            if unique_guid == empty_guid or unique_guid in seen_guids:
+                raise ValueError("GPT active partition has zero or duplicate unique GUID")
+            seen_guids.add(unique_guid)
+            if not primary["first"] <= first <= last <= primary["last"]:
+                raise ValueError("GPT active partition outside usable range or reversed")
+            extents.append((first, last, index + 1))
+    extents.sort()
+    for previous, current in zip(extents, extents[1:]):
+        if previous[1] >= current[0]:
+            raise ValueError(f"GPT active partitions {previous[2]} and {current[2]} overlap")
+
+
 def require_gpt_mirror(disk_fd, disk_size):
     """Reject an inconsistent primary/backup GPT, including recoverable damage."""
     if disk_size % SECTOR_BYTES or disk_size < 6 * SECTOR_BYTES:
@@ -81,3 +115,4 @@ def require_gpt_mirror(disk_fd, disk_size):
                   "count", "entry_size", "entries_crc", "entries_digest"):
         if primary[field] != backup[field]:
             raise ValueError(f"GPT primary and backup {field} disagree")
+    _active_entries(disk_fd, primary)
