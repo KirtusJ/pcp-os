@@ -16,7 +16,9 @@ python3 os-docs/tailorbird-stop/check.py \
   --output ./tailorbird-stop-run
 ```
 
-Choose a new output directory for each attempt. Use `--qemu` or `--objcopy` to select an executable and `--firmware` to supply QEMU's firmware directory when necessary. The default deadline is 180 seconds per expected serial event. `--timeout` changes that deadline. Hashing the full factory image can take additional time on a busy host.
+Choose a new output directory for each attempt. Use `--qemu` or `--objcopy` to select an executable and `--firmware` to supply QEMU's firmware directory when necessary. The default deadline is 180 seconds per expected serial event. `--timeout` changes that deadline. By default the runner verifies the full factory image against the manifest. Hashing the image can take additional time on a busy host.
+
+For repeat runs, pass `--fixture-sha256 DIGEST` with the fixture digest from a trusted prior full-image check or an independent read of the expected regions. This mode verifies every copied byte and its position. The digest covers the disk size as a little-endian unsigned 64-bit integer, followed by each range's byte offset and length in the same format and its contents. The range order is primary GPT, backup GPT, application partition. The report records `whole_image_verified: false` in this mode. Kernel, desktop, and worker digests are checked in both modes.
 
 The runner opens the factory image read-only. It copies the GPT and application partition into a new sparse disk, then boots two successive 48 MiB guests against that private disk. It converts the measured kernel to an ELF32 Multiboot container for QEMU's direct loader. The serial transcript must show execution in long mode, a mounted store, a connected desktop, and worker exit code 3. This scope excludes installation, EFI boot, display appearance, program output on screen, and inference with loaded weights.
 
