@@ -103,12 +103,20 @@ pub enum Assessment {
     /// Exact pre-exit, OS-attributed successful call with distinct mode and
     /// matched after-readback. Attribution still relies on producer honesty.
     ConsistentWithOsModeChange,
-    /// OS-attributed successful call to a mode that was already active.
+    /// Successful call to the already-active mode number, with identical
+    /// reported GOP metadata before and after. No pixel-content claim.
     ReassertedActiveMode,
+    /// The current mode number stayed the same, but reported GOP metadata
+    /// changed after a successful SetMode call. Do not silently call this
+    /// unchanged or infer who changed the framebuffer.
+    SameModeNumberChangedMetadata,
     /// Successful recorded call and change, but not OS-attributed.
     OtherActorModeChange,
     /// SetMode request failed or cannot be shown to have changed mode.
     AttemptNotConfirmed,
+    /// Reported SetMode failure with the same mode number but altered GOP
+    /// metadata. A failed call is not evidence of an unchanged framebuffer.
+    FailedCallChangedMetadata,
     /// Claimed success and reported post-state contradict the request, or
     /// a failed request coincides with an unexplained change.
     ContradictoryReadback,
@@ -121,14 +129,19 @@ fn checked_snapshot(s: ModeSnapshot) -> Result<(), Error> {
     if s.max_modes == 0 || s.current_mode >= s.max_modes {
         return Err(Error::ModeOutOfRange);
     }
+    if s.pixel_format > 3 {
+        return Err(Error::UnsupportedPixelFormat);
+    }
     if s.width == 0 || s.height == 0
         || s.width > 16384 || s.height > 16384
-        || s.pixels_per_scan_line < s.width
     {
         return Err(Error::InvalidGeometry);
     }
-    if s.pixel_format > 3 {
-        return Err(Error::UnsupportedPixelFormat);
+    // PixelBltOnly offers no directly addressable linear framebuffer.
+    // Its scan-line pitch must never be interpreted as a drawable byte
+    // stride. The width-vs-pitch bound applies to linear formats only.
+    if s.pixel_format != 3 && s.pixels_per_scan_line < s.width {
+        return Err(Error::InvalidGeometry);
     }
     // EFI PixelBltOnly does not supply a usable *linear* framebuffer.
     // A mode report can still exist; the addresses are not treated as a grant.
@@ -189,13 +202,18 @@ pub fn assess(c: &Capture) -> Result<Assessment, Error> {
     }
 
     let changed = c.before.current_mode != c.after.current_mode;
+    let metadata_changed = !same_reported_mode_state(c.before, c.after);
     match call.status {
         SetModeStatus::EfiSuccess => {
             if c.after.current_mode != call.requested_mode {
                 return Ok(Assessment::ContradictoryReadback);
             }
             if !changed {
-                return Ok(Assessment::ReassertedActiveMode);
+                return if metadata_changed {
+                    Ok(Assessment::SameModeNumberChangedMetadata)
+                } else {
+                    Ok(Assessment::ReassertedActiveMode)
+                };
             }
             match call.initiator {
                 Initiator::OsControlledPreExit => Ok(Assessment::ConsistentWithOsModeChange),
@@ -210,6 +228,8 @@ pub fn assess(c: &Capture) -> Result<Assessment, Error> {
         | SetModeStatus::Other => {
             if changed {
                 Ok(Assessment::ContradictoryReadback)
+            } else if metadata_changed {
+                Ok(Assessment::FailedCallChangedMetadata)
             } else {
                 Ok(Assessment::AttemptNotConfirmed)
             }
