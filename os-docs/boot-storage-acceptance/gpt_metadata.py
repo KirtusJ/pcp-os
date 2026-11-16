@@ -170,9 +170,11 @@ def inspect_gpt(s: SparseSnapshot) -> GPTResult:
     hardware, boot or recovery outcome is inferred from metadata consistency.
     """
     try:
-        _require(s.logical_block_bytes in SUPPORTED_LBA_BYTES,
+        _require(type(s.logical_block_bytes) is int and
+                 s.logical_block_bytes in SUPPORTED_LBA_BYTES,
                  "unsupported-gpt-lba-byte-size")
-        _require(100 <= s.total_lba <= MAX_U64 and
+        _require(type(s.total_lba) is int and
+                 100 <= s.total_lba <= MAX_U64 and
                  s.total_lba <= MAX_U64 // s.logical_block_bytes,
                  "invalid-or-overflowed-capacity")
         _check_protective_mbr(s)
