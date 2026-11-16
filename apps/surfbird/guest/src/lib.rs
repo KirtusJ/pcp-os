@@ -7,6 +7,7 @@ pub mod dns_answer;
 #[cfg(any(test, feature = "https-probe"))]
 pub mod https_prefix;
 mod href;
+pub mod history;
 pub mod layout;
 pub mod location;
 #[cfg(any(test, feature = "https-probe"))]

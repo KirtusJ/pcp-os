@@ -13,6 +13,7 @@ mod watch_view;
 mod page_text;
 const ORIGIN_HOST: &str = "fixture.test";
 use page_text::text;
+use surfbird_cable::history::{History, Visit};
 use surfbird_cable::layout::{Source, View, VISIBLE_ROWS};
 use surfbird_cable::{body_length, location::Location, parse, Page, CAPACITY, START};
 
@@ -199,7 +200,7 @@ fn present(display: &mut Display, path: &str, page: &Page<'_>, view: View) {
         "Tab / Shift+Tab  Select link    Enter / 1 / 2  Follow",
         0x96cace,
     );
-    text(&mut frame, 26, 337, "Up / Down  Scroll    B  Back    Esc  Exit", 0x96cace);
+    text(&mut frame, 26, 337, "Up/Down  Scroll    B  Back    F  Forward    Esc  Exit", 0x96cace);
     display.show(pixels);
     log(b"SURFBIRD ready\n");
 }
@@ -216,69 +217,83 @@ fn browse() -> Result<(), &'static str> {
 #[cfg(feature = "tcp-ip")]
 use tcp::browse;
 
+enum Navigation {
+    Back,
+    Forward,
+    Follow(usize),
+}
+
 fn browse_pages(stream: &mut impl Stream) -> Result<(), &'static str> {
     let mut display = Display::new(W, H);
-    let mut bodies = [[0; CAPACITY]; 2];
-    let mut lengths = [0; 2];
-    let mut locations = [Location::start(); 2];
-    let mut views = [View::default(); 2];
-    lengths[0] = fetch(stream, START, &mut bodies[0])?;
-    let mut slot = 0;
-    let mut previous = false;
+    let mut first = Visit::new(Location::start());
+    first.length = fetch(stream, START, &mut first.body)?;
+    let mut history = History::new(first);
     loop {
-        let page = parse(&bodies[slot][..lengths[slot]])?;
-        let path = locations[slot].address();
+        let can_back = history.can_back();
+        let can_forward = history.can_forward();
+        let current = history.current();
+        let page = parse(&current.body[..current.length])?;
+        let path = current.location.address();
         let last_full_view = page.lines().count().saturating_sub(VISIBLE_ROWS);
-        present(&mut display, path, &page, views[slot]);
-        let index = loop {
+        present(&mut display, path, &page, current.view);
+        let navigation = loop {
             stream.poll()?;
             let Some(key) = display.next_press() else {
                 sleep_us(2000);
                 continue;
             };
-            let old_view = views[slot];
+            let old_view = current.view;
             match key {
                 1 => return Ok(()),
-                48 if previous => break None,
-                2 if page.count > 0 => break Some(0),
-                3 if page.count > 1 => break Some(1),
-                15 => views[slot].tab(&page, display.held[42] || display.held[54]),
-                28 if old_view.focus.is_some() => break old_view.focus,
-                72 => views[slot].row = old_view.row.saturating_sub(1),
-                80 if old_view.row < last_full_view => views[slot].row += 1,
+                48 if can_back => break Navigation::Back,
+                33 if can_forward => break Navigation::Forward,
+                2 if page.count > 0 => break Navigation::Follow(0),
+                3 if page.count > 1 => break Navigation::Follow(1),
+                15 => current.view.tab(&page, display.held[42] || display.held[54]),
+                28 => {
+                    if let Some(index) = old_view.focus {
+                        break Navigation::Follow(index);
+                    }
+                }
+                72 => current.view.row = old_view.row.saturating_sub(1),
+                80 if old_view.row < last_full_view => current.view.row += 1,
                 _ => {}
             }
-            if views[slot] != old_view {
-                present(&mut display, path, &page, views[slot]);
+            if current.view != old_view {
+                present(&mut display, path, &page, current.view);
             }
         };
-        let other = 1 - slot;
-        if let Some(i) = index {
-            let target = match locations[slot].follow(page.links[i].path()) {
-                Ok(target) => target,
-                Err(error) => {
-                    record("navigation", error);
-                    continue;
-                }
-            };
-            views[other] = View::default();
-            if target.fragment().is_some()
-                && target.request_target() == locations[slot].request_target()
-            {
-                views[other].row = page.fragment_line(target.fragment(), views[slot].row);
-                lengths[other] = lengths[slot];
-                bodies[other] = bodies[slot];
-            } else {
-                lengths[other] = fetch(stream, target.request_target(), &mut bodies[other])?;
-                let next = parse(&bodies[other][..lengths[other]])?;
-                views[other].row = next.fragment_line(target.fragment(), 0);
+        let index = match navigation {
+            Navigation::Back => {
+                history.back();
+                continue;
             }
-            locations[other] = target;
-            previous = true;
+            Navigation::Forward => {
+                history.forward();
+                continue;
+            }
+            Navigation::Follow(index) => index,
+        };
+        let target = match current.location.follow(page.links[index].path()) {
+            Ok(target) => target,
+            Err(error) => {
+                record("navigation", error);
+                continue;
+            }
+        };
+        let mut next = Visit::new(target);
+        if target.fragment().is_some()
+            && target.request_target() == current.location.request_target()
+        {
+            next.view.row = page.fragment_line(target.fragment(), current.view.row);
+            next.body[..current.length].copy_from_slice(&current.body[..current.length]);
+            next.length = current.length;
         } else {
-            previous = false;
+            next.length = fetch(stream, target.request_target(), &mut next.body)?;
+            let destination = parse(&next.body[..next.length])?;
+            next.view.row = destination.fragment_line(target.fragment(), 0);
         }
-        slot = other;
+        history.push(next);
     }
 }
 
