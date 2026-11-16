@@ -1,0 +1,6 @@
+{
+  "post_boot_factory_sha256": "2229b91baeb20892748915443f704b64dcf53869a54d5ccef957bcfd1e050563",
+  "bytes": 1073741824,
+  "OVMF_CODE_4M.fd": "624e06de18b4fa535e90db7160d00d3d07d206422b89999bf1e27d920264e4e0",
+  "OVMF_VARS_4M.fd": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e"
+}
