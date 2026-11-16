@@ -50,23 +50,40 @@ pub struct Display {
 }
 impl Display {
     pub fn new(w: usize, h: usize) -> Self {
+        Self::open_mode(Some((w, h)))
+    }
+
+    /// Borrow the desktop mode without issuing a mode-setting ioctl.
+    pub fn current() -> Self {
+        Self::open_mode(None)
+    }
+
+    fn open_mode(requested: Option<(usize, usize)>) -> Self {
         let fd = open(b"/dev/fb0\0", 2);
         let kb = open(b"/dev/kbd\0", 0x800);
-        let mut d = [w as u32, h as u32, 0, 0, 0, 0];
-        if fd < 0
-            || kb < 0
-            || ioctl(fd, 0x5002, d.as_mut_ptr() as usize) != 0
-            || d[0] != w as u32
-            || d[1] != h as u32
-            || d[2] < w as u32 * 4
-            || d[3] == 0
-        {
+        let mut d = [0u32; 6];
+        let request = if let Some((w, h)) = requested {
+            d[0] = u32::try_from(w).unwrap_or_else(|_| exit(2));
+            d[1] = u32::try_from(h).unwrap_or_else(|_| exit(2));
+            0x5002
+        } else {
+            0x5001
+        };
+        if fd < 0 || kb < 0 || ioctl(fd, request, d.as_mut_ptr() as usize) != 0 {
             log(b"display setup failed\n");
             exit(2);
         }
+        let (w, h) = (d[0] as usize, d[1] as usize);
         let pitch = d[2] as usize / 4;
-        let page = pitch * h;
-        let base = call(9, 0, page * d[3] as usize * 4, 3, 1, fd as usize, 0);
+        if w == 0 || h == 0 || d[2] % 4 != 0 || pitch < w || !(1..=2).contains(&d[3])
+            || d[4] >= d[3] || requested.is_some_and(|size| size != (w, h))
+        {
+            log(b"invalid display geometry\n");
+            exit(2);
+        }
+        let page = pitch.checked_mul(h).unwrap_or_else(|| exit(2));
+        let bytes = page.checked_mul(d[3] as usize * 4).unwrap_or_else(|| exit(2));
+        let base = call(9, 0, bytes, 3, 1, fd as usize, 0);
         if base < 0 {
             exit(2);
         }
@@ -99,6 +116,22 @@ impl Display {
     }
     pub fn show(&mut self, px: &[u32]) {
         assert_eq!(px.len(), self.w * self.h);
+        self.draw(|surface, w, _, pitch| {
+            if pitch == w {
+                surface.copy_from_slice(px);
+            } else {
+                for (s, d) in px
+                    .chunks_exact(w)
+                    .zip(surface.chunks_exact_mut(pitch))
+                {
+                    d[..w].copy_from_slice(s);
+                }
+            }
+        });
+    }
+
+    /// Paint directly into the next display page, using its actual row stride.
+    pub fn draw(&mut self, paint: impl FnOnce(&mut [u32], usize, usize, usize)) {
         let dest = if self.pages > 1 { 1 - self.shown } else { 0 };
         let surface = unsafe {
             core::slice::from_raw_parts_mut(
@@ -106,16 +139,7 @@ impl Display {
                 self.page,
             )
         };
-        if self.pitch == self.w {
-            surface.copy_from_slice(px);
-        } else {
-            for (s, d) in px
-                .chunks_exact(self.w)
-                .zip(surface.chunks_exact_mut(self.pitch))
-            {
-                d[..self.w].copy_from_slice(s);
-            }
-        }
+        paint(surface, self.w, self.h, self.pitch);
         if self.pages > 1 && ioctl(self.fd, 0x5003, dest) != 0 {
             exit(2);
         }
