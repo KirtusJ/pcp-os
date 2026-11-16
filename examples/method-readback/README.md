@@ -28,12 +28,15 @@ All cases reuse the same executable. They measure whether this process read the 
 
 The public worker check repeats a complete 24-guest challenge using the original fixture, then links the byte reader into a second copy of the same Rust worker. Both builds use the pinned upstream checkpoint. The original fixture compares its 48 predicted token IDs with an independently compiled C reference. The second executable starts at `core_entry`, reads the separate boot module through EOF and passes the original process stack to the unchanged Rust entry point on a match. A same-length substitution and an absent file must produce different failed process exits before any model output. The same executable then completes a full challenge with the exact Core module attached. The supervisor and its wire protocol are unchanged.
 
-Use the Linux dependencies and two digest-checked inputs in the public fixture instructions. Check out the fixture and the Enterprise adapter at the revisions in the workflow. Build the kernel from the selected checkout and run:
+Use the Linux dependencies and two digest-checked inputs in the public fixture instructions. CI builds the worker, supervisor and kernel from the checkout GitHub tests. For a pull request, the tested commit includes its proposed merge with the base branch. The Enterprise adapter and model inputs have independent pins. The archived `inputs.json` records the actual checkout revision, measured kernel, method manifest and hashes of the worker, control, oracle and Core.
+
+For a local run, check out the desired worker revision in `fixture` and the pinned Enterprise method in `adapter`. Pass the expected full worker commit, obtained from the revision you intend to qualify. To reproduce the original #167 configuration, omit `--fixture-revision` and use `f1d1ec07ccc30dec4a8c54a6b454efec30cc0f6a`.
 
 ```sh
 sh fixture/PCP_OS_Rust/crates/pcpos-kernel/run.sh build
 python3 examples/method-readback/public-worker.py \
-  --fixture fixture --kernel fixture/PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+  --fixture fixture --fixture-revision "$expected_worker_commit" \
+  --kernel fixture/PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
   --model inputs/checkpoint.bin --reference inputs/run.c \
   --method adapter/method --out receipts
 ```
