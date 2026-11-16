@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'examples/method-readback/**'
+      - 'build/method/calibrate_tool.py'
       - '.github/workflows/guest-core-readback.yml'
   workflow_dispatch:
 
@@ -49,3 +50,29 @@ jobs:
             --kernel "$RUNNER_TEMP/kernel.elf32" \
             --method adapter/method \
             --manifest-sha256 7ff72eed9162e2c11fc62f6681c4afbc29524bfa96b87d45a455423d027d4707
+
+  retrieval:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: KirtusJ/pcp-claude
+          ref: 3187dc226cd9f51b81a940f7d986bc124b26bc12
+          sparse-checkout: method
+          path: text-adapter
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: KirtusJ/pcp-os-claude
+          ref: c0fbde739b4cc3bc409878d901de0974702c506e
+          sparse-checkout: method
+          path: os-adapter
+          persist-credentials: false
+      - name: Prepare both published methods and exercise the released assessor commands
+        run: |
+          python3 -I -B examples/method-readback/test-retrieval.py \
+            --text-method text-adapter/method --os-method os-adapter/method
