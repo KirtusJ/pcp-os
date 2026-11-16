@@ -1,0 +1,59 @@
+name: Resident worker qualification
+
+on:
+  pull_request:
+    paths:
+      - 'examples/resident-workers/**'
+      - '.github/workflows/resident-workers.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  default-clock:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Check the supervisor
+        working-directory: examples/resident-workers
+        run: |
+          python3 -m unittest -q
+          python3 -O -m unittest -q
+      - name: Install the guest build and emulator tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends binutils lld qemu-system-x86 seabios
+          rustup target add x86_64-unknown-none
+          rustup component add rust-src
+      - name: Build the kernel, worker and independent reference
+        run: |
+          mkdir -p "$RUNNER_TEMP/inputs"
+          cd "$RUNNER_TEMP/inputs"
+          curl --fail --location --retry 3 --output stories260K.bin https://huggingface.co/karpathy/tinyllamas/resolve/0bd21da7698eaf29a0d7de3992de8a46ef624add/stories260K/stories260K.bin
+          curl --fail --location --retry 3 --output run.c https://raw.githubusercontent.com/karpathy/llama2.c/350e04fe35433e6d2941dce5a1f53308f87058eb/run.c
+          cd "$GITHUB_WORKSPACE"
+          python3 examples/resident-workers/fixture/build.py \
+            --model "$RUNNER_TEMP/inputs/stories260K.bin" --reference "$RUNNER_TEMP/inputs/run.c" \
+            --out "$RUNNER_TEMP/fixture"
+          PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+      - name: Boot the 24 guests and challenge the complete tree twice
+        run: |
+          python3 examples/resident-workers/supervise.py \
+            --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            --worker "$RUNNER_TEMP/fixture/resident.elf" --oracle "$RUNNER_TEMP/fixture/oracle.json" \
+            --run "$RUNNER_TEMP/cohort" --cycles 2 --interval 5
+      - name: Retain serials, emulator diagnostics and readbacks
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: default-clock-guest-readbacks
+          path: |
+            ${{ runner.temp }}/cohort/*.json*
+            ${{ runner.temp }}/cohort/*.serial
+            ${{ runner.temp }}/cohort/*.stderr
+            ${{ runner.temp }}/fixture/oracle.json
+          if-no-files-found: warn

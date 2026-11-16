@@ -329,7 +329,7 @@ def supervise(opt, log):
                     else:
                         cycle += 1
                         record_cycle(run, dict(time=stamp(), cycle=cycle, repairs=repairs, nodes=rows), log)
-                        if opt.once:
+                        if cycle == opt.cycles:
                             return
                         time.sleep(opt.interval)
 
@@ -346,12 +346,17 @@ def main():
     parser.add_argument("--startup-timeout", type=int, default=DEFAULT_STARTUP_TIMEOUT)
     parser.add_argument("--startup-idle-timeout", type=int, help="seconds without new serial bytes while waiting for startup READY")
     parser.add_argument("--response-timeout", type=int, default=DEFAULT_RESPONSE_TIMEOUT)
-    parser.add_argument("--once", action="store_true", help="run one complete readback and shut down")
+    limit = parser.add_mutually_exclusive_group()
+    limit.add_argument("--once", dest="cycles", action="store_const", const=1,
+                       help="run one complete readback and shut down")
+    limit.add_argument("--cycles", type=int, help="shut down after this many complete readbacks")
     opt = parser.parse_args()
     if min(opt.interval, opt.startup_timeout, opt.response_timeout) < 1:
         parser.error("interval and timeouts must be positive")
     if opt.startup_idle_timeout is not None and opt.startup_idle_timeout < 1:
         parser.error("startup idle timeout must be positive")
+    if opt.cycles is not None and opt.cycles < 1:
+        parser.error("cycles must be positive")
     if opt.repairs < 0:
         parser.error("repairs cannot be negative")
     opt.run.mkdir(mode=0o700, exist_ok=False)

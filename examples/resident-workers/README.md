@@ -27,7 +27,7 @@ The checkpoint SHA-256 is `b0a507e7ad0f626624f17112325e66691f9076d622e1d3274d103
 
 ## Supervise a cohort
 
-Use `--qemu` and `--firmware` for a nonstandard QEMU installation. Supply `--once` for a single cycle followed by shutdown. The default interval between complete challenge cycles is 60 seconds. Interrupt or terminate the supervisor for orderly shutdown.
+Use `--qemu` and `--firmware` for a nonstandard QEMU installation. Supply `--once` for a single cycle followed by shutdown, or `--cycles N` for a bounded run of N complete rounds. The resident-worker workflow builds the kernel and worker and exercises two rounds under the default QEMU clock. The default interval between complete challenge cycles is 60 seconds. Interrupt or terminate the supervisor for orderly shutdown.
 
 The supervisor checks the measured kernel, admitted worker, argument values, the parent ticket and the exact child list on startup. At each subsequent cycle it queries the VM UUID, sends a fresh key, consumes only new serial bytes, compares the response to the supplied reference, and checks all running states again. QMP requests and replies carry matching IDs. [QMP specification](https://www.qemu.org/docs/master/interop/qmp-spec.html)
 
