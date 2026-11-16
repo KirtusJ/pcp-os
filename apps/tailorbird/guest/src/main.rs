@@ -74,10 +74,14 @@ fn paint_frame(f: &mut Frame<'_>, ui: &Ui) {
     }
 
     let stop_rect = tailorbird_ui::pointer::STOP_RECT;
-    f.rect(stop_rect.x, stop_rect.y, stop_rect.width, stop_rect.height,
-           if ui.controls().stop_enabled { BAD } else { GROUND });
-    label(f, 48, 331, "STOP", 3, TEXT);
-    label(f, 48, 361, ui.task.state.label(), 1, SOFT);
+    let (fill, title, caption) = if ui.controls().stop_enabled {
+        (BAD, GROUND, GROUND)
+    } else {
+        (GROUND, TEXT, SOFT)
+    };
+    f.rect(stop_rect.x, stop_rect.y, stop_rect.width, stop_rect.height, fill);
+    label(f, 48, 331, "STOP", 3, title);
+    label(f, 48, 361, ui.task.state.label(), 1, caption);
     label(f, 38, 408, "ALT S STOP TASK", 1, SOFT);
 
     f.rect(316, 94, 624, 352, PANEL);
