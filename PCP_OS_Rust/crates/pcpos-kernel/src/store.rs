@@ -56,10 +56,29 @@ fn read_slot(slot: u16) -> Result<Option<(Volume, Files)>, ()> {
     Ok(decode(&bytes).map(|files| (Volume { slot, generation }, files)))
 }
 
+#[cfg(not(feature = "store-id-gate"))]
 pub fn mount() -> Result<(Volume, Files), ()> {
     let mut marker = [0; 512];
     marker[..MARKER.len()].copy_from_slice(MARKER);
     if disk::read(0)? != marker { return Err(()); }
+    select_generation()
+}
+
+/// When the optional identity gate is built, the legacy unpinned mount()
+/// entrypoint is *not compiled*. This fixture reads the entire version-2
+/// sector, compares the externally selected ID and reserved bytes exactly,
+/// and refuses all v1 volumes instead of silently downgrading.
+/// This is cloneable metadata, NOT proof of physical drive identity.
+#[cfg(feature = "store-id-gate")]
+pub fn mount_pinned(id: [u8; 16]) -> Result<(Volume, Files), ()> {
+    let marker = disk::read(0)?;
+    if !crate::store_identity::matches_marker(&marker, &id) {
+        return Err(());
+    }
+    select_generation()
+}
+
+fn select_generation() -> Result<(Volume, Files), ()> {
     match (read_slot(0)?, read_slot(1)?) {
         (Some(a), Some(b)) if a.0.generation != b.0.generation =>
             Ok(if a.0.generation > b.0.generation { a } else { b }),
