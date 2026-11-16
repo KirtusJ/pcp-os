@@ -96,6 +96,11 @@ def check(disk_path, manifest_path, *, scope="factory", expected_disk_sha256=Non
     if expected_manifest_sha256 is not None and manifest_hash != expected_manifest_sha256.lower():
         raise ValueError(f"Manifest SHA-256 differs from expected: measured {manifest_hash}")
     manifest = json.loads(manifest_bytes)
+    source_revision = manifest["git_commit"]
+    if (not isinstance(source_revision, str) or
+            not re.fullmatch(r"[0-9a-fA-F]{40}(?:[0-9a-fA-F]{24})?", source_revision) or
+            not source_revision.strip("0")):
+        raise ValueError("Expected a full, non-null release Git commit ID in the manifest")
     factory_hash = manifest["output_sha256"]["PCP-OS.img"]
     if not isinstance(factory_hash, str) or not re.fullmatch("[0-9a-f]{64}", factory_hash):
         raise ValueError("Expected a factory disk SHA-256 in the release manifest")
@@ -134,7 +139,7 @@ def check(disk_path, manifest_path, *, scope="factory", expected_disk_sha256=Non
             raise ValueError("Disk changed during the read")
     return {
         "scope": scope, "factory_disk_matches": factory_matches, "factory_disk_sha256": factory_hash,
-        "source_revision": manifest["git_commit"], "qwen_revision": revision,
+        "source_revision": source_revision, "qwen_revision": revision,
         "manifest_sha256": manifest_hash, "disk_sha256": disk_hash,
         "partition": {"name": "PCP OS models", "number": number,
                       "byte_offset": offset, "bytes": length},
