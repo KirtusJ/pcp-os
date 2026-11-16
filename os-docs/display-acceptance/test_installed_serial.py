@@ -1,4 +1,5 @@
 """Drive the installed display checker through its Enter and Escape sequence."""
+import hashlib
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -32,7 +33,7 @@ class InstalledSerialTests(unittest.TestCase):
             args = SimpleNamespace(output=out, code=firmware, vars=firmware, image=firmware,
                                    qemu="unused", firmware_dir=None, mode=(1920, 1080),
                                    ram=1536, vram=32, timeout=0.04, require_qwen_ready=required,
-                                   app_sha256=pin, check_title_1080p=False)
+                                   app_sha256=pin, check_title_1080p=False, check_launcher_1080p=False)
             guest, monitor = MagicMock(), MagicMock()
             guest.poll.return_value = None
             monitor.receive.return_value = {"QMP": {}}
@@ -51,7 +52,7 @@ class InstalledSerialTests(unittest.TestCase):
                 elif name == "esc":
                     emit(ending)
 
-            def capture(_monitor, _out, name, *_):
+            def capture(_monitor, _out, name, *_, **kwargs):
                 return {"width": 1920, "height": 1080, "ppm_sha256": name}
 
             monitor.key.side_effect = key
@@ -120,6 +121,36 @@ class InstalledSerialTests(unittest.TestCase):
                 stream.write(b"_PENDING\nQWEN READY\r\n")
             launch.read()
             self.assertTrue(launch.ready)
+
+
+class LauncherCaptureTests(unittest.TestCase):
+    def test_fields_must_coincide_in_one_native_frame(self):
+        colors = [bytes([80+i, 120, 164]) for i in range(3)]
+        references = {str(i): ((i, 0, i+1, 1), hashlib.sha256(c).hexdigest())
+                      for i, c in enumerate(colors)}
+        captured = []
+        def paint(_action, *, filename):
+            mask = captured.pop(0)
+            pixels = bytearray(1920 * 1080 * 3)
+            for i, color in enumerate(colors):
+                if mask & (1 << i):
+                    pixels[3*i:3*i+3] = color
+            Path(filename).write_bytes(b"P6\n1920 1080\n255\n" + pixels)
+
+        with TemporaryDirectory() as directory, patch.object(display, "LAUNCHER_FIELDS", references), \
+             patch.object(display.time, "sleep"):
+            monitor = MagicMock(timeout=5)
+            monitor.execute.side_effect = paint
+            captured.extend([5, 2, 7])
+            with patch.object(display.time, "monotonic", side_effect=[0, 1, 2]):
+                result = display.capture(monitor, Path(directory), "launcher", check_launcher=True)
+            self.assertEqual(monitor.execute.call_count, 3)
+            self.assertEqual(result["launcher_field_sha256"], {k: v[1] for k,v in references.items()})
+            captured.append(5)
+            monitor.timeout = 0
+            with self.assertRaisesRegex(TimeoutError, "fields missing: 1"):
+                display.capture(monitor, Path(directory), "returned", check_launcher=True)
+            self.assertTrue((Path(directory)/"returned.ppm").exists())
 
 
 if __name__ == "__main__":
