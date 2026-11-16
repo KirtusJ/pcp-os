@@ -249,9 +249,10 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
     let (cols, rows) = ui::grid();
     // Screen size and list length determine whether the full information
     // panel fits without hiding the keyboard launcher or power controls.
-    let used_rows = 19usize + programs.len() * 2 + files.len().min(8)
-        + message.split('\n').count();
-    if cols < 102 || rows < used_rows as u32 {
+    let used_rows = 19usize.saturating_add(programs.len().saturating_mul(2))
+        .saturating_add(files.len().min(8))
+        .saturating_add(message.split('\n').count());
+    if cols < 102 || (rows as usize) < used_rows {
         draw_compact_menu(start, programs, rec, chosen, message);
         return;
     }
