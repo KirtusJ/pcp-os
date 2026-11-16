@@ -25,6 +25,7 @@ from check_display import Monitor, wait_serial
 GROUND = bytes.fromhex("10283f")
 TEAL = bytes.fromhex("41bad7")
 TEXT = bytes.fromhex("f2f7fc")
+SOFT = bytes.fromhex("9fb4c8")
 ALPHABET = "0123456789abcdef"
 
 
@@ -123,7 +124,10 @@ def visit(kernel, measured, root, width, height, vram, font, timeout):
             end = time.monotonic() + timeout
             while time.monotonic() < end:
                 path, (size, pixels) = screenshot("launcher")
-                if size == (width, height) and exact_cells(size, pixels, 190, 40, "PCP OS", font, TEXT):
+                if (size == (width, height)
+                        and exact_cells(size, pixels, 190, 40, "PCP OS", font, TEXT)
+                        and exact_cells(size, pixels, 20, height-40, "Up/Down choose", font, TEXT)
+                        and exact_cells(size, pixels, 20, height-20, "Ctrl+Alt+Delete", font, SOFT)):
                     report["frames"]["launcher"] = hashlib.sha256(path.read_bytes()).hexdigest()
                     initial = pixels
                     break
