@@ -16,7 +16,8 @@ def menu_positions(programs, ethernet_grants=0):
     """Directly follow session.rs draw_menu's explicit row arithmetic."""
     if not (0 <= ethernet_grants <= programs):
         raise ValueError("invalid granted program count")
-    row = 9
+    row = 9  # PROGRAMS heading
+    row += 1  # session.rs displays the first selectable program at row 10
     program_rows = []
     for i in range(programs):
         program_rows.append({"index": i, "selected_row": row,
@@ -118,6 +119,8 @@ def inspect(session, ui, font):
     assert evaluated["1024x768"]["first_store_overlap_case"]["programs"] == 7
     assert menu_positions(1, ethernet_grants=1)["message_first_row"] == 22
     assert menu_positions(1, ethernet_grants=1)["store_row"] == 20
+    assert menu_positions(4, ethernet_grants=1)["store_row"] == 29
+    assert menu_positions(7, ethernet_grants=1)["display_row"] == 37
     return evaluated
 
 
