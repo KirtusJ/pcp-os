@@ -78,22 +78,40 @@ fn attest_guest_serial(serial: &str, measurement: &str) -> Result<(), &'static s
     Ok(())
 }
 
-// Test-first placeholder: it presently fails to bind a valid native serial to
-// the expected per-request/attempt ticket. The adverse unit test demonstrates it.
+// Detect unintended replay of a *valid* kernel transcript from another
+// synthetic request or completed attempt. This is a correlation control,
+// NOT proof against a party who can forge kernel serial output and tickets.
 fn attest_guest_serial_for(
-    serial: &str, measurement: &str, _request: &str, _attempt: usize,
+    serial: &str, measurement: &str, request: &str, attempt: usize,
 ) -> Result<(), &'static str> {
-    attest_guest_serial(serial, measurement)
+    attest_guest_serial(serial, measurement)?;
+    if request.len() != 24
+        || !request.bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        || !(1..=3).contains(&attempt)
+    {
+        return Err("invalid synthetic request/attempt");
+    }
+    let expected = format!(
+        "command line: /kernel.elf32 then=off image={measurement} d12_ticket={request} d12_attempt={attempt}"
+    );
+    let mut command_lines = serial.lines().filter(|line| line.starts_with("command line: "));
+    if command_lines.next() != Some(expected.as_str()) || command_lines.next().is_some() {
+        return Err("native kernel command line does not match the exact request and attempt");
+    }
+    Ok(())
 }
 
-fn attest_guest_serial_file(path: &Path, measurement: &str) -> io::Result<()> {
+fn attest_guest_serial_file_for(
+    path: &Path, measurement: &str, request: &str, attempt: usize,
+) -> io::Result<()> {
     let file = File::open(path)?;
     let mut data = String::new();
     file.take(MAX_SERIAL_BYTES + 1).read_to_string(&mut data)?;
     if data.len() as u64 > MAX_SERIAL_BYTES {
         return Err(io::Error::new(io::ErrorKind::InvalidData, "native serial exceeds 1MiB limit"));
     }
-    attest_guest_serial(&data, measurement).map_err(|why| io::Error::new(io::ErrorKind::InvalidData, why))
+    attest_guest_serial_for(&data, measurement, request, attempt)
+        .map_err(|why| io::Error::new(io::ErrorKind::InvalidData, why))
 }
 
 fn test_service() -> io::Result<i32> {
@@ -130,7 +148,7 @@ fn test_service() -> io::Result<i32> {
     // stale journal if the serial was lost or replaced before restart.
     for previous in 1..next {
         let path = base.join(format!("qemu-{previous}.serial"));
-        if let Err(err) = attest_guest_serial_file(&path, &measurement) {
+        if let Err(err) = attest_guest_serial_file_for(&path, &measurement, &request, previous) {
             durable_attention(&base, &format!(
                 "INVALID_JOURNAL: prior attempt {previous} END without valid native receipt: {err}\n"
             ))?;
@@ -163,7 +181,7 @@ fn test_service() -> io::Result<i32> {
         "-serial", "stdio", "-net", "none",
         "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
     ])
-    .arg("-append").arg(format!("then=off image={measurement}"))
+    .arg("-append").arg(format!("then=off image={measurement} d12_ticket={request} d12_attempt={next}"))
     .stdout(Stdio::from(serial))
     .stderr(Stdio::from(stderr));
     if env::var("D12_HOLD_GUEST").as_deref() == Ok("1") {
@@ -187,7 +205,7 @@ fn test_service() -> io::Result<i32> {
     }
     // QEMU's diagnostic exit status alone is insufficient: another process
     // could produce it without executing the expected measured guest.
-    if let Err(err) = attest_guest_serial_file(&serial_path, &measurement) {
+    if let Err(err) = attest_guest_serial_file_for(&serial_path, &measurement, &request, next) {
         durable_attention(&base, &format!(
             "UNCONFIRMED: QEMU exited 33 but native receipt invalid: {err}; no END\n"
         ))?;
@@ -270,8 +288,11 @@ mod tests {
         );
         // Positive control: all existing image/self-test/register checks pass.
         assert!(attest_guest_serial(&otherwise_valid, &measurement).is_ok());
-        // Mandatory independent binding to *this* request and attempt:
-        // the current implementation incorrectly accepts both.
+        // The ordinary attester alone cannot establish this attempt; the
+        // per-request attester must reject a prior valid-looking transcript.
+        assert!(attest_guest_serial_for(
+            &otherwise_valid, &measurement, &old_request, 1,
+        ).is_ok(), "exact source request and attempt should remain accepted");
         assert!(attest_guest_serial_for(
             &otherwise_valid, &measurement, &expected_request, 1,
         ).is_err(), "valid-looking prior serial must not prove a new request");
