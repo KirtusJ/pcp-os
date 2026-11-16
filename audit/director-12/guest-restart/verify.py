@@ -363,6 +363,46 @@ def fabricated_exit_33(image: str, kernel: Path, measurement: str, evidence_dir:
             capture(directory, evidence_dir / "spoof", 1)
             invoke(["docker", "rm", "-f", name], checked=False)
 
+def sparse_future_attempt(image: str, kernel: Path, measurement: str, evidence_dir: Path):
+    # Adverse journal structure: a valid-looking future attempt 3 must not
+    # authorize dispatch of missing attempt 1 or 2.
+    with tempfile.TemporaryDirectory(prefix="d12-noncontiguous-journal-") as tmp:
+        directory = Path(tmp)
+        os.chmod(directory, 0o777)
+        request = secrets.token_hex(12)
+        name = "d12-noncontiguous-" + secrets.token_hex(5)
+        (directory / "start-3.txt").write_text(
+            f"REQUEST={request};ATTEMPT=3;START\\n", encoding="ascii"
+        )
+        (directory / "end-3.txt").write_text(
+            f"REQUEST={request};ATTEMPT=3;QEMU_EXIT=33;END\\n", encoding="ascii"
+        )
+        try:
+            policy = start(image, name, directory, kernel, measurement, request, fault=False)
+            await_true(
+                lambda: not inspect(name)["State"]["Running"]
+                and (directory / "attention.txt").exists(),
+                "noncontiguous journal causes fail-closed hold", 12,
+            )
+            info = inspect(name)
+            assert info["RestartCount"] == 0 and info["State"]["ExitCode"] == 0
+            reason = (directory / "attention.txt").read_text()
+            assert "INVALID_JOURNAL: noncontiguous attempt 3" in reason
+            assert not (directory / "start-1.txt").exists()
+            assert not list(directory.glob("qemu-*.serial"))
+            return {
+                "test_only_noncontiguous_journal": True,
+                "future_marker_attempt": 3,
+                "old_preenrolled_future_attempt_not_promoted": True,
+                "no_qemu_launched": True,
+                "host_restart_count": 0,
+                "attention": reason.strip(),
+                "requested_policy": policy,
+            }
+        finally:
+            capture(directory, evidence_dir / "sparse", 3)
+            invoke(["docker", "rm", "-f", name], checked=False)
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--image", required=True)
@@ -401,6 +441,7 @@ def main() -> int:
         result["interrupted"] = interrupted_run(a.image, kernel, a.measurement, evidence_dir)
         result["post_spawn_interrupted"] = interrupted_after_spawn(a.image, kernel, a.measurement, evidence_dir)
         result["falsified_exit_33"] = fabricated_exit_33(a.image, kernel, a.measurement, evidence_dir)
+        result["noncontiguous_journal"] = sparse_future_attempt(a.image, kernel, a.measurement, evidence_dir)
         result["status"] = "OBSERVED_IN_TEST_SCOPE"
         return 0
     except Exception as e:
