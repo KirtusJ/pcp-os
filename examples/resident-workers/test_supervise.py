@@ -58,7 +58,7 @@ class WorkerReadback(unittest.TestCase):
         m = object.__new__(sup.Machine)
         m.node, m.child = 7, Mock()
         m.child.poll.return_value = 9
-        with self.assertRaisesRegex(RuntimeError, "emulator exited"):
+        with self.assertRaisesRegex(ConnectionError, "emulator exited"):
             m.through_ready(.2)
 
 

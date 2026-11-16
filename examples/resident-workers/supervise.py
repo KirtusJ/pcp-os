@@ -50,15 +50,15 @@ def snapshot(path, contents):
 class Machine:
     """Own the child and its private stdio channel for the entire run."""
 
-    def __init__(self, node, args, run, cleanup, startup_timeout, response_timeout):
+    def __init__(self, node, args, run, cleanup, startup_timeout, response_timeout, attempt):
         self.node = node
         self.response_timeout = response_timeout
         self.uuid = str(uuid.uuid4())
-        self.serial = run / f"{node}.serial"
+        self.serial = run / f"{node}-{attempt}.serial"
         self.position = 0
         self.qmp_data = b""
         self.sequence = 0
-        error = cleanup.enter_context((run / f"{node}.stderr").open("xb"))
+        error = cleanup.enter_context((run / f"{node}-{attempt}.stderr").open("xb"))
         self.child = subprocess.Popen(
             args + ["-uuid", self.uuid, "-serial", f"file:{self.serial}", "-qmp", "stdio"],
             cwd=run, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=error, bufsize=0,
@@ -86,7 +86,8 @@ class Machine:
             if remaining <= 0 or not self.selector.select(remaining):
                 raise TimeoutError(f"guest {self.node}: QMP response")
             chunk = os.read(self.child.stdout.fileno(), 8192)
-            require(chunk, f"guest {self.node}: QMP disconnected")
+            if not chunk:
+                raise ConnectionError(f"guest {self.node}: QMP disconnected")
             self.qmp_data += chunk
             require(len(self.qmp_data) <= SERIAL_LIMIT, "oversized QMP message")
         line, self.qmp_data = self.qmp_data.split(b"\n", 1)
@@ -96,7 +97,11 @@ class Machine:
         self.sequence += 1
         packet = {"execute": name, "id": self.sequence, "arguments": arguments}
         wire = json.dumps(packet).encode() + b"\n"
-        require(self.child.stdin.write(wire) == len(wire), f"guest {self.node}: incomplete QMP request")
+        try:
+            written = self.child.stdin.write(wire)
+        except BrokenPipeError as error:
+            raise ConnectionError(f"guest {self.node}: {name} disconnected") from error
+        require(written == len(wire), f"guest {self.node}: incomplete QMP request")
         deadline = time.monotonic() + self.response_timeout
         while True:
             try:
@@ -117,7 +122,8 @@ class Machine:
         deadline = time.monotonic() + timeout
         end_marker = f"READY {self.node}\n".encode()
         while time.monotonic() < deadline:
-            require(self.child.poll() is None, f"guest {self.node}: emulator exited")
+            if self.child.poll() is not None:
+                raise ConnectionError(f"guest {self.node}: emulator exited")
             if self.serial.exists():
                 with self.serial.open("rb") as stream:
                     require(stream.seek(0, 2) >= self.position, f"guest {self.node}: serial log truncated")
@@ -199,43 +205,103 @@ def supervise(opt, log):
     log("inputs", kernel_sha256=sha(kernel.read_bytes()), measurement=kernel_hash, worker_sha256=elf_hash,
         oracle_sha256=sha(oracle_bytes), root_input=initial, salt=salt)
     with ExitStack() as cleanup:
-        queue = [(1, 0, initial)]
         machines = {}
-        identities = set()
-        while queue:
-            node, parent, incoming = queue.pop(0)
-            if parent:
-                machines[parent].live()
-            require(node not in machines, f"duplicate node {node}")
-            machine = Machine(node, args + ["-initrd", f"resident.elf {node} {incoming} {salt}"], run, cleanup,
-                              opt.startup_timeout, opt.response_timeout)
-            serial = machine.through_ready(opt.startup_timeout)
-            ticket, children = verify_start(machine, serial, parent, incoming, salt, kernel_hash, elf_hash, oracle)
-            require(machine.uuid not in identities, "duplicate VM UUID")
-            identities.add(machine.uuid)
-            machines[node] = machine
-            log("admitted", node=node, parent=parent, input=incoming, ticket=ticket,
-                uuid=machine.uuid, pid=machine.child.pid, children=children)
-            queue.extend((child, node, ticket) for child in children)
-        require(len(machines) == 24, "incomplete topology")
-        cycle = 0
+        attempts = {}
+        used_uuids = set()
         previous = {}
+        repairs = 0
+        cycle = 0
+
+        def remove_branch(node):
+            for child in list(machines):
+                if PARENTS[child] == node:
+                    remove_branch(child)
+            entry = machines.pop(node, None)
+            if entry:
+                machine, resources, _ = entry
+                resources.close()
+                log("retired", node=node, uuid=machine.uuid)
+                previous.pop(node, None)
+
+        def failed(node, error):
+            nonlocal repairs
+            log("interrupted", node=node, reason=str(error))
+            remove_branch(node)
+            if repairs >= opt.repairs:
+                raise RuntimeError(f"guest {node}: {error}; repair allowance exhausted") from error
+            repairs += 1
+
         while True:
-            rows = []
-            for node, machine in machines.items():
-                choices = [p for p in range(len(oracle)) if p != previous.get(node)]
-                prompt = secrets.choice(choices)
-                answer = machine.challenge(prompt, oracle)
-                rows.append(dict(node=node, parent=PARENTS[node], uuid=machine.uuid, **answer))
-                previous[node] = prompt
-            for machine in machines.values():
-                machine.live()
-            cycle += 1
-            snapshot(run / "readback.json", dict(time=stamp(), cycle=cycle, nodes=rows))
-            log("readback", cycle=cycle, sha256=sha((run / "readback.json").read_bytes()))
-            if opt.once:
-                return
-            time.sleep(opt.interval)
+            # Numbering visits parents first. A missing ancestor is restored before
+            # any descendant can consume its new ticket. Siblings keep their UUIDs.
+            for node in range(1, len(PARENTS)):
+                if node in machines:
+                    continue
+                parent = PARENTS[node]
+                if parent:
+                    parent_machine, _, admitted = machines[parent]
+                    try:
+                        parent_machine.live()
+                    except OSError as error:
+                        failed(parent, error)
+                        break
+                    require(node in admitted[1], f"parent {parent} did not issue child {node}")
+                    incoming = admitted[0]
+                else:
+                    incoming = initial
+                attempt = attempts[node] = attempts.get(node, 0) + 1
+                resources = ExitStack()
+                try:
+                    machine = Machine(node, args + ["-initrd", f"resident.elf {node} {incoming} {salt}"],
+                                      run, resources, opt.startup_timeout, opt.response_timeout, attempt)
+                    serial = machine.through_ready(opt.startup_timeout)
+                    admitted = verify_start(machine, serial, parent, incoming, salt, kernel_hash, elf_hash, oracle)
+                    require(machine.uuid not in used_uuids, "duplicate VM UUID")
+                except (OSError, RuntimeError, ValueError) as error:
+                    resources.close()
+                    # An incorrect program, token or edge is an evidence failure.
+                    # Retry only transport or liveness faults, never a contrary result.
+                    if not isinstance(error, OSError):
+                        raise
+                    failed(node, error)
+                    break
+                except BaseException:
+                    resources.close()
+                    raise
+                cleanup.callback(resources.close)
+                machines[node] = machine, resources, admitted
+                used_uuids.add(machine.uuid)
+                log("admitted", node=node, parent=parent, input=incoming, ticket=admitted[0],
+                    uuid=machine.uuid, pid=machine.child.pid, children=admitted[1], attempt=attempt)
+            else:
+                # Every node exists. Collect a full fresh cycle after any loss.
+                rows = []
+                for node in range(1, len(PARENTS)):
+                    machine = machines[node][0]
+                    choices = [p for p in range(len(oracle)) if p != previous.get(node)]
+                    prompt = secrets.choice(choices)
+                    try:
+                        answer = machine.challenge(prompt, oracle)
+                    except OSError as error:
+                        failed(node, error)
+                        break
+                    rows.append(dict(node=node, parent=PARENTS[node], uuid=machine.uuid, **answer))
+                    previous[node] = prompt
+                else:
+                    for node, (machine, _, _) in machines.items():
+                        try:
+                            machine.live()
+                        except OSError as error:
+                            failed(node, error)
+                            break
+                    else:
+                        cycle += 1
+                        snapshot(run / "readback.json", dict(time=stamp(), cycle=cycle, repairs=repairs, nodes=rows))
+                        log("readback", cycle=cycle, sha256=sha((run / "readback.json").read_bytes()))
+                        if opt.once:
+                            return
+                        time.sleep(opt.interval)
+
 
 
 def main():
@@ -245,12 +311,15 @@ def main():
     parser.add_argument("--qemu", default="qemu-system-x86_64")
     parser.add_argument("--firmware", type=Path)
     parser.add_argument("--interval", type=int, default=60)
+    parser.add_argument("--repairs", type=int, default=0, help="maximum branch restart attempts per run")
     parser.add_argument("--startup-timeout", type=int, default=DEFAULT_STARTUP_TIMEOUT)
     parser.add_argument("--response-timeout", type=int, default=DEFAULT_RESPONSE_TIMEOUT)
     parser.add_argument("--once", action="store_true", help="run one complete readback and shut down")
     opt = parser.parse_args()
     if min(opt.interval, opt.startup_timeout, opt.response_timeout) < 1:
         parser.error("interval and timeouts must be positive")
+    if opt.repairs < 0:
+        parser.error("repairs cannot be negative")
     opt.run.mkdir(mode=0o700, exist_ok=False)
     with (opt.run / "events.jsonl").open("x", buffering=1) as events:
         def log(event, **fields):
