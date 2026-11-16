@@ -1,6 +1,6 @@
 # Standalone GOP evidence probe (Session B, **not** PCP OS loader)
 
-**Status: isolated source artifact for native UEFI x86-64 ABI review. It is not installed, launched, merged, or authorized as an OS boot component.**
+**Status: isolated UEFI diagnostic source. The read-only probe and a separate opt-in SetMode fixture have been executed in disposable Q35/OVMF guests, but neither is installed in PCP-OS or connected to its bootloader. No actual PCP-OS kernel boot or automatic monitor-native mode selection is established by these tests.**
 
 Director PT's [coordinated firmware task](https://github.com/KirtusJ/pcp-os/issues/132) requires separating an already-active GOP mode from a mode explicitly selected by an OS-controlled `SetMode` invocation, and independently correlating EDID if claiming monitor preference. The local integrated EFI preview is not retrievable through the connected GitHub repository. This candidate provides a **standalone, opt-in experiment** without pretending to patch PT's private loader.
 
@@ -112,7 +112,7 @@ The associated read-only GitHub Actions workflow records the triggering exact so
 - Explicit opt-in mode-switch fixture (not run): SHA-256 `8892c9417a3ce53632fdf1a523e8c8224086ccde703da9bc760428a39d32e3f0`.
 - The binary identities are tied to the exact build and compiler reported above, not to PT's separate private preview or any installed disk.
 
-## PE/COFF reproducibility audit (source-bound, not an executed EFI program)
+## PE/COFF reproducibility audit (build evidence distinct from later EFI runtime)
 
 The source compiled, but **reproducibility was not automatic**: hashes of EFI
 binaries differed across earlier runs even when the Rust application source
@@ -217,6 +217,68 @@ changed to QEMU virtual FAT but failed at QEMU launch
 (`Block node is read-only`) because the drive was opened writable;
 corrected with `readonly=on`. Only then did the actual probe execute.
 Keep these distinct from faults in UEFI pointer layout or GOP logic.
+
+## Controlled disposable-emulator SetMode and restore experiment (not PCP OS)
+
+[Exact-head GitHub Actions run 43809207643](https://github.com/KirtusJ/pcp-os/actions/runs/43809207643),
+[job 133106835448](https://github.com/KirtusJ/pcp-os/actions/runs/43809207643/job/133106835448)
+successfully executed **two separate Q35/OVMF guests**, each with a
+fresh copy of the firmware NVRAM, no networking, virtual FAT read-only
+boot media and a hard timeout. The source revision was
+`357c0138468b5ca5605302b3582d1486291b7062`. The normal
+read-only arm repeated the previous observed 30 GOP modes with
+`END READ_ONLY` and a zero EFI status.
+
+The **separate opt-in** `exercise-mode-switch,ci-debugcon` build was
+deliberately used **only in a disposable emulator**, never on an actual
+computer or inside the PCP-OS private bootloader. Its logged observations
+from actual executed UEFI GOP functions were:
+
+| Observation | Firmware report |
+| --- | --- |
+| Initial active mode | Index 0, **1280 × 800** |
+| Initial framebuffer extent | 4,096,000 bytes |
+| Standalone test's requested mode | Index 1 |
+| `SetMode(1)` return | **EFI_SUCCESS** |
+| Immediately read active mode | Index 1, **640 × 480** |
+| Changed framebuffer extent | 1,228,800 bytes |
+| `SetMode(0)` restore return | **EFI_SUCCESS** |
+| Final active mode | Index 0, **1280 × 800** |
+| Final computed EFI return | **0** |
+
+The framebuffer physical base was reported as `0x80000000` in all
+three states. The CI verified that initial and changed mode indices
+differed, the after-readback matched the requested index, restoration
+returned to the initial index, both firmware return codes were zero and
+the special read-only-only completion marker **did not appear** in this
+opt-in arm.
+
+QEMU was terminated **after the probe completed**, at the deliberate
+25-second test timeout. The timeout exit code 124 is not a firmware
+`SetMode` return code. The `ci-debugcon` feature mirrors the
+firmware's text output to QEMU's `isa-debugcon` I/O port at 0xE9 and
+is **never** enabled in the default production-build profile.
+The `exercise-mode-switch` feature is independently non-default and
+does modify the **emulated video mode** before restoring it.
+
+**Exact evidentiary separation:**
+1. **Supported:** This particular standalone EFI diagnostic executed in
+   one identified emulated GOP environment, exercised `QueryMode`,
+   performed a distinct `SetMode` request with a successful immediate
+   readback, and restored the original emulated GOP mode.
+2. **Not demonstrated:** That PCP-OS itself invoked `SetMode`, that an
+   EDID active/discovered/override record was associated with this GOP,
+   that a mode was selected based on physical-monitor preferred timing,
+   that a real device would behave the same, or that a PCP-OS image or
+   kernel ever booted in this CI workflow.
+3. **Still required for the principal's acceptance target:** An
+   independently inspectable **implementation-owned** native
+   before/call/status/after trace inside PT's actual UEFI handoff, on the
+   same handle and with EDID/mode-selection provenance.
+
+This test does not make the optional mode-switch app safe for physical
+hardware or user installations. It remains a **draft development
+fixture**, not an automatically installed boot utility.
 
 ## Source and safety boundaries
 
