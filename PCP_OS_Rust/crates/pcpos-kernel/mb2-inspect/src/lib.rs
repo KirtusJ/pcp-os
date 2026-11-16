@@ -319,9 +319,6 @@ pub fn inspect_efi_amd64<'a>(
     let mut pos = 8usize;
     let mut ended = false;
     while pos < total {
-        if state.tag_count >= MAX_TAGS {
-            return Err(Error::TooManyTags);
-        }
         let ty = get32(raw, pos)?;
         let size = get32(raw, pos + 4)? as usize;
         if size < 8 {
@@ -335,6 +332,11 @@ pub fn inspect_efi_amd64<'a>(
             }
             ended = true;
             break;
+        }
+        // The terminal tag is not a data tag. Permit exactly MAX_TAGS
+        // nonterminal tags, but refuse a (MAX_TAGS+1)th data tag.
+        if state.tag_count >= MAX_TAGS {
+            return Err(Error::TooManyTags);
         }
         match ty {
             1 => {
