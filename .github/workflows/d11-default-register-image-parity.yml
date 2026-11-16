@@ -1,0 +1,105 @@
+name: D11 normal-build diagnostic nonintrusion check
+
+on:
+  push:
+    branches:
+      - director-11/register-default-build-parity-20261116
+    paths:
+      - "os-docs/register-forensics/evaluate_default_image.py"
+      - ".github/workflows/d11-default-register-image-parity.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned_no_feature_identity:
+    name: A/A reproducibility and D10 #240 no-feature image identity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout D11 checker
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Checkout D10 production draft #233 exact
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: 74c4d4a9934ad68e1b5be380971bf3377a464c6d
+          path: baseline
+      - name: Checkout D10 opt-in draft #240 exact
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: b6d3027fa67780835182305b4d777aa962fdf0d2
+          path: candidate
+      - name: Install needed kernel build and guest tools
+        run: |
+          set -euo pipefail
+          test "$(git -C baseline rev-parse HEAD)" = 74c4d4a9934ad68e1b5be380971bf3377a464c6d
+          test "$(git -C candidate rev-parse HEAD)" = b6d3027fa67780835182305b4d777aa962fdf0d2
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 binutils lld
+          rustup target add x86_64-unknown-none
+          rustup component add rust-src
+      - name: Compare three independently clean builds, plus explicitly opted-in diagnostic
+        env:
+          REPRO_STAGE: ${{ runner.temp }}/d11-pinned-kernel-stage
+        run: |
+          set -euo pipefail
+          mkdir -p witness
+          rustc -V | tee witness/rustc.txt
+          cargo -V | tee witness/cargo.txt
+          test "$(git -C baseline hash-object PCP_OS_Rust/crates/pcpos-kernel/src/session.rs)" = "0dffe0f7be2066fdb63aa32d9cd16bc98feb257d"
+          build() {
+            local source="$1" name="$2" feature="$3"
+            rm -rf "$REPRO_STAGE"
+            export PCPOS_KERNEL_STAGE="$REPRO_STAGE"
+            if [[ "$feature" == "none" ]]; then
+              unset PCPOS_KERNEL_FEATURES
+            else
+              export PCPOS_KERNEL_FEATURES="$feature"
+            fi
+            sh "$source/PCP_OS_Rust/crates/pcpos-kernel/run.sh" build
+            local elf="$source/PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32"
+            sha256sum "$elf" | awk '{print $1}' > "witness/$name.elf_sha256"
+            python3 "$source/PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py" "$elf" > "witness/$name.measurement"
+            printf '%s file=%s measured=%s\n' "$name" "$(cat witness/$name.elf_sha256)" "$(cat witness/$name.measurement)"
+          }
+          build baseline base_1 none
+          build baseline base_2 none
+          build candidate candidate_off none
+          # Keep the no-feature candidate image for its own actual QEMU test.
+          cp candidate/PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 witness/default-test.elf32
+          build candidate candidate_on register-view-diagnostic
+      - name: Boot the actual no-feature candidate in disposable QEMU
+        run: |
+          set -euo pipefail
+          measurement="$(cat witness/candidate_off.measurement)"
+          set +e
+          timeout 180 qemu-system-x86_64 \
+            -machine q35 -accel tcg -cpu max -icount shift=3 \
+            -m 128M -nic none -display none -serial file:witness/guest-serial.log \
+            -no-reboot -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+            -kernel witness/default-test.elf32 -append "image=$measurement then=off" \
+            > witness/qemu.stdout.log 2> witness/qemu.stderr.log
+          code="$?"
+          set -e
+          echo "$code" | tee witness/qemu-exit.txt
+          python3 os-docs/register-forensics/evaluate_default_image.py witness witness/qemu-exit.txt
+      - name: Preserve exact verdict, source/toolchain identities and normal guest serial
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: d11-default-register-image-identity
+          path: |
+            witness/*.elf_sha256
+            witness/*.measurement
+            witness/*.txt
+            witness/result.json
+            witness/*serial.log
+            witness/qemu.stdout.log
+            witness/qemu.stderr.log
+          if-no-files-found: warn
+          retention-days: 14
