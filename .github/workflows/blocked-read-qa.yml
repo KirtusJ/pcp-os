@@ -66,11 +66,23 @@ jobs:
           cmp candidate.conf candidate/limine.conf
           python - <<'PY'
           from pathlib import Path
+          import os
           a,b=Path('original'),Path('candidate')
           names=lambda p:{f.relative_to(p) for f in p.rglob('*') if f.is_file()}
           assert names(a)==names(b)
           for name in sorted(names(a)):
-              if name.as_posix() not in {'kernel.elf32','limine.conf','boot.cat'}:
+              if name.as_posix() == 'limine-bios-cd.bin':
+                  import struct
+                  src,dst=(a/name).read_bytes(),(b/name).read_bytes()
+                  assert src[:8]==dst[:8] and src[24:]==dst[24:], name
+                  for image,boot in ((Path(os.environ['GITHUB_WORKSPACE'])/'distribution'/'PCP-OS.iso',src),(Path('candidate.iso'),dst)):
+                      raw=image.read_bytes()
+                      pvd,lba,length,check=struct.unpack_from('<4I',boot,8)
+                      assert raw[pvd*2048:pvd*2048+7]==b'\x01CD001\x01'
+                      assert len(boot)==length and raw[lba*2048:lba*2048+length]==boot
+                      data=boot[64:]+bytes(-len(boot[64:])%4)
+                      assert sum(v[0] for v in struct.iter_unpack('<I',data)) % (2**32) == check
+              elif name.as_posix() not in {'kernel.elf32','limine.conf','boot.cat'}:
                   assert (a/name).read_bytes()==(b/name).read_bytes(),name
           PY
           export OPTICAL_ISO_SHA="$(sha256sum candidate.iso | cut -d' ' -f1)"
