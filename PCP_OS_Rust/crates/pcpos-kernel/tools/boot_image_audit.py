@@ -107,12 +107,50 @@ def elf(raw, klass, machine):
     for name in RELEVANT:
         if name not in result:
             raise AuditError(f"missing {name} section")
+    # The firmware/Multiboot loader acts on PT_LOAD headers, not the section table.
+    # Compare loaded bytes, addresses, lengths and permissions as well as sections.
+    if klass == 2:
+        phoff, phentsize, phnum = (number(raw, 32, "<Q", "e_phoff"),
+                                 number(raw, 54, "<H", "e_phentsize"),
+                                 number(raw, 56, "<H", "e_phnum"))
+        width = 56
+    else:
+        phoff, phentsize, phnum = (number(raw, 28, "<I", "e_phoff"),
+                                 number(raw, 42, "<H", "e_phentsize"),
+                                 number(raw, 44, "<H", "e_phnum"))
+        width = 32
+    if phentsize != width or not (1 <= phnum <= 64):
+        raise AuditError("unsupported or malformed program header table")
+    need(raw, phoff, width * phnum, "program headers")
+    loads = []
+    for i in range(phnum):
+        p = phoff + width * i
+        if klass == 2:
+            typ, flags, off, virt, phys, filesz, memsz, align = struct.unpack(
+                "<IIQQQQQQ", need(raw, p, 56, "ELF64 program header"))
+        else:
+            typ, off, virt, phys, filesz, memsz, flags, align = struct.unpack(
+                "<IIIIIIII", need(raw, p, 32, "ELF32 program header"))
+        if typ != 1:  # PT_LOAD
+            continue
+        if (filesz > memsz or memsz == 0 or phys >= (1 << 32)
+                or phys + memsz > (1 << 32) or virt >= (1 << 32)
+                or virt + memsz > (1 << 32)):
+            raise AuditError("PT_LOAD size or address incompatible with legacy low-memory boot")
+        if align > 1 and (align & (align - 1) or (virt - off) % align):
+            raise AuditError("PT_LOAD alignment invalid")
+        data = need(raw, off, filesz, "PT_LOAD file bytes")
+        loads.append((virt, phys, filesz, memsz, flags, data))
+    if not loads:
+        raise AuditError("image has no loadable segments")
+    if not any(v <= entry < v + m and (f & 1) for v, _, _, m, f, _ in loads):
+        raise AuditError("entry not covered by an executable PT_LOAD")
     if entry > 0xFFFFFFFF:
         raise AuditError("Multiboot trampoline entry exceeds 32 bits")
     addr, length, _, _ = result[".boot"]
     if not (addr <= entry < addr + length) or addr >= (1 << 30):
         raise AuditError("entry outside the low-address .boot trampoline")
-    return entry, result
+    return entry, result, loads
 
 
 def multiboot(raw):
@@ -140,14 +178,16 @@ def multiboot(raw):
 def audit(linked, wrapper):
     if len(linked) > MAX_SIZE or len(wrapper) > MAX_SIZE:
         raise AuditError("image exceeds 128 MiB read-only audit limit")
-    source_entry, source_sections = elf(linked, 2, 62)   # ELF64 x86_64
-    target_entry, target_sections = elf(wrapper, 1, 3)  # ELF32 i386 Multiboot container
+    source_entry, source_sections, source_loads = elf(linked, 2, 62)
+    target_entry, target_sections, target_loads = elf(wrapper, 1, 3)
     if source_entry != target_entry:
         raise AuditError("the ELF32 conversion changed the entry point")
     for name in RELEVANT:
         a, b = source_sections[name], target_sections[name]
         if a != b:
             raise AuditError(f"the ELF32 conversion changed {name} address, size, type or content")
+    if source_loads != target_loads:
+        raise AuditError("the ELF32 conversion changed PT_LOAD mapping, permissions or bytes")
     header = multiboot(wrapper)
     return {
         "result": "PASS: STRUCTURAL ONLY (not a boot, signature or authorization)",
@@ -156,6 +196,7 @@ def audit(linked, wrapper):
         "entry": f"0x{source_entry:x}",
         "multiboot_header_file_offset": header,
         "compared_sections": list(RELEVANT),
+        "compared_load_segments": len(source_loads),
     }
 
 
