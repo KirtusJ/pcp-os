@@ -86,6 +86,24 @@ def launch(image: str, name: str, directory: Path, role: str, *, restart: bool) 
     cmd(*flags)
 
 
+def parrots_container(
+    image: str, directory: Path, entrypoint: str, argv: list[str],
+    *, detach: bool = False, check: bool = True
+) -> tuple[str, subprocess.CompletedProcess]:
+    name = "pcp-d12-parrots-" + secrets.token_hex(5)
+    flags = [
+        "docker", "run", "--name", name,
+        "--network", "none", "--read-only",
+        "--pids-limit", "16", "--memory", "96m", "--cpus", "0.5",
+        "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+        "--user", "65534:65534", "--init",
+        "--mount", f"type=bind,source={directory},target=/state",
+    ]
+    flags += ["--detach"] if detach else ["--rm"]
+    flags += ["--entrypoint", entrypoint, image, *argv]
+    return name, cmd(*flags, check=check, timeout=30)
+
+
 def run_test(image: str, result: dict) -> None:
     result["docker_server_version"] = cmd(
         "docker", "version", "--format", "{{.Server.Version}}"
