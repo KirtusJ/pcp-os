@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'os-docs/installed-acceptance/**'
+      - 'os-docs/tailorbird-stop/**'
+      - 'PCP_OS_Rust/crates/pcpos-kernel/src/font.rs'
       - 'PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py'
       - '.github/workflows/installed-acceptance.yml'
   workflow_dispatch:
@@ -19,6 +21,10 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
+      - name: Check Tailorbird task receipts and rendered output
+        run: |
+          python3 -m unittest discover -s os-docs/tailorbird-stop -v
+          python3 -O -m unittest discover -s os-docs/tailorbird-stop -v
       - name: Install disk fixture tools
         run: |
           sudo apt-get update -qq
