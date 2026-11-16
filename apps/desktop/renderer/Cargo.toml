@@ -1,0 +1,9 @@
+[package]
+name = "pcpos-desktop"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Pure no_std resolution-aware raster and desktop layout for the PCP OS kernel"
+
+[lib]
+path = "src/lib.rs"
