@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Compare the installed model and license in a PCP OS raw factory disk with its manifest."""
+"""Compare the installed Qwen model and license with a PCP OS release manifest."""
 import argparse
+from contextlib import ExitStack
 import hashlib
 import json
 import os
@@ -11,6 +12,7 @@ import stat
 import struct
 import subprocess
 import sys
+import tempfile
 
 from gpt_integrity import require_gpt_mirror
 
@@ -62,26 +64,46 @@ def read_file(disk, offset, path):
     return size, digest.hexdigest()
 
 
-def check(disk_path, manifest_path):
+def check(disk_path, manifest_path, *, scope="factory"):
+    if scope not in ("factory", "model-files"):
+        raise ValueError(f"Unknown verification scope: {scope}")
     manifest_bytes = manifest_path.read_bytes()
     manifest = json.loads(manifest_bytes)
+    factory_hash = manifest["output_sha256"]["PCP-OS.img"]
+    if not isinstance(factory_hash, str) or not re.fullmatch("[0-9a-f]{64}", factory_hash):
+        raise ValueError("Expected a factory disk SHA-256 in the release manifest")
     revision = manifest["qwen"]["revision"]
     if not isinstance(revision, str) or not re.fullmatch("[0-9a-f]{40}", revision):
         raise ValueError("Expected a full Qwen revision in the release manifest")
     directory = f"/models/qwen/qwen2.5-coder-0.5b/{revision}"
     files = {}
-    with disk_path.open("rb") as disk:
+    with disk_path.open("rb") as disk, ExitStack() as resources:
         before = os.fstat(disk.fileno())
         if not stat.S_ISREG(before.st_mode):
             raise ValueError("Supply an offline regular raw disk image")
         disk_hash = hashlib.file_digest(disk, "sha256").hexdigest()
-        if disk_hash != manifest["output_sha256"]["PCP-OS.img"]:
+        factory_matches = disk_hash == factory_hash
+        if scope == "factory" and not factory_matches:
             raise ValueError("Installed disk SHA-256 differs from the release manifest")
         require_gpt_mirror(disk.fileno(), before.st_size)
         number, offset, length = model_partition(disk, before.st_size)
+        volume, volume_offset = disk, offset
+        if not factory_matches:
+            # Give mtools only the selected extent of a disk changed since release.
+            volume = resources.enter_context(tempfile.TemporaryFile())
+            volume_offset = 0
+            disk.seek(offset)
+            remaining = length
+            while remaining:
+                block = disk.read(min(1024 * 1024, remaining))
+                if not block:
+                    raise ValueError("Incomplete model partition")
+                volume.write(block)
+                remaining -= len(block)
+            volume.flush()
         for name, field in (("qwen.gguf", "model_sha256"), ("LICENSE.txt", "license_sha256")):
             path = f"{directory}/{name}"
-            size, digest = read_file(disk, offset, path)
+            size, digest = read_file(volume, volume_offset, path)
             if not size or digest != manifest["qwen"][field]:
                 raise ValueError(f"{path}: {size} bytes, SHA-256 {digest} differs from the release or file is empty")
             files[path] = {"bytes": size, "sha256": digest}
@@ -90,6 +112,7 @@ def check(disk_path, manifest_path):
                 after.st_size, after.st_mtime_ns, after.st_ctime_ns):
             raise ValueError("Disk changed during the read")
     return {
+        "scope": scope, "factory_disk_matches": factory_matches, "factory_disk_sha256": factory_hash,
         "source_revision": manifest["git_commit"], "qwen_revision": revision,
         "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(), "disk_sha256": disk_hash,
         "partition": {"name": "PCP OS models", "number": number,
@@ -102,9 +125,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--disk", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--scope", choices=("factory", "model-files"), default="factory",
+                        help="factory requires the release disk hash; model-files also accepts a changed disk")
     args = parser.parse_args()
     try:
-        result = check(args.disk, args.manifest)
+        result = check(args.disk, args.manifest, scope=args.scope)
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
         sys.exit(f"Model partition check failed: {exc}")
     print(json.dumps(result, indent=2))
