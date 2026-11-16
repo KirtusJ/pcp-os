@@ -16,10 +16,17 @@ from check import verify_log
 
 class SerialAcceptance(unittest.TestCase):
     components = {"qwen-worker": "1" * 64, "tailorbird": "2" * 64}
+    manifest = {"component_sha256": components, "factory_disk_guid": "00112233-4455-6677-8899-aabbccddeeff"}
+    image = "3" * 64
+    command = {
+        "recovery": "image=" + image,
+        "desktop": f"image={image} tailor_ui={components['tailorbird']} "
+                   f"userdisk=33221100554477668899aabbccddeeff q={components['qwen-worker']}",
+        "diagnostic": "auto=qwen.elf grant=files then=off image=" + image,
+    }
     common = [
         "PCP OS EFI amd64 entry, native 64-bit handoff",
         "protections: long mode true",
-        "abcd (measured; equal to the value the loader named)",
     ]
     diagnostic = [
         f"starting qwen.elf (123 bytes, SHA-256 {components['qwen-worker']}) with: 3 17 488 220 17 284",
@@ -27,9 +34,33 @@ class SerialAcceptance(unittest.TestCase):
         "qwen.elf ended DONE: exit 0", "ALL SELF-TESTS PASS",
     ]
 
-    def check(self, mode, lines):
-        data = "\r\n".join(self.common + lines).encode()
-        verify_log(data, mode, self.components, [220, 19, 198])
+    def check(self, mode, lines, *, command=None, grub="", kernel_measurement=None):
+        arguments = self.command[mode] if command is None else command
+        header = [grub, *self.common, "command line: " + arguments,
+                  f"running image (code and read-only data), SHA-256: {self.image} "
+                  "(measured; equal to the value the loader named)"]
+        data = "\r\n".join(header + lines).encode()
+        verify_log(data, mode, self.manifest, [220, 19, 198], kernel_measurement)
+
+    def test_selected_entry_must_agree_with_measured_boot_arguments(self):
+        lines = ["PCP OS launcher ready: 0 programs, 0 files", "ALL SELF-TESTS PASS"]
+        good = "Booting `PCP OS recovery (no model)'"
+        wrong = "Booting `Offline Qwen acquisition test'"
+        self.check("recovery", lines, grub=good + good)
+        self.check("recovery", lines, kernel_measurement=self.image)
+        with self.assertRaisesRegex(ValueError, "manifest-matched ELF"):
+            self.check("recovery", lines, kernel_measurement="4" * 64)
+        for grub in (wrong, good + wrong):
+            with self.subTest(grub=grub), self.assertRaisesRegex(ValueError, "GRUB selected"):
+                self.check("recovery", lines, grub=grub)
+        for command in ("", self.command["diagnostic"], "image=" + "4" * 64,
+                        self.command["recovery"] + " image=" + self.image):
+            with self.subTest(command=command), self.assertRaisesRegex(ValueError, "command line"):
+                self.check("recovery", lines, command=command)
+        for field in ("tailor_ui", "userdisk", "q"):
+            wrong = self.command["desktop"].replace(field + "=", field + "=0")
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "command line"):
+                self.check("desktop", [], command=wrong)
 
     def test_diagnostic_requires_expected_tokens_from_completed_worker(self):
         self.check("diagnostic", self.diagnostic)

@@ -5,10 +5,12 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import runpy
 import shutil
 import subprocess
 import tempfile
 import time
+import uuid
 
 
 def sha256(path):
@@ -41,12 +43,49 @@ def key(process, name):
     time.sleep(0.18)
 
 
-def verify_log(data, mode, components, expected_tokens):
+def pinned_kernel_measurement(path, manifest):
+    raw = path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != manifest["component_sha256"]["kernel"]:
+        raise ValueError("Kernel ELF SHA-256 differs from the release manifest")
+    tool = Path(__file__).resolve().parents[2] / "PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py"
+    try:
+        return runpy.run_path(str(tool))["measure"](raw)
+    except SystemExit as error:
+        raise ValueError(f"Cannot measure release kernel: {error}") from error
+
+
+def verify_log(data, mode, manifest, expected_tokens, kernel_measurement=None):
     lines = data.decode(errors="replace").replace("\r", "").splitlines()
+    components = manifest["component_sha256"]
+    titles = {"recovery": "PCP OS recovery (no model)",
+              "desktop": "PCP OS with Tailorbird and local Qwen",
+              "diagnostic": "Offline Qwen acquisition test"}
+    # GRUB can echo the same selection on both terminals. A menu listing is not a selection.
+    selections = re.findall(r"Booting `([^'\r\n]+)'", "\n".join(lines))
+    if any(title != titles[mode] for title in selections):
+        raise ValueError(f"{mode}: GRUB selected a different entry: {selections}")
+    measured = [match for line in lines if (match := re.fullmatch(
+        r"running image \(code and read-only data\), SHA-256: ([0-9a-f]{64}) "
+        r"\(measured; equal to the value the loader named\)", line))]
+    if len(measured) != 1:
+        raise ValueError(f"{mode}: expected one measured running image")
+    if kernel_measurement is not None and measured[0][1] != kernel_measurement:
+        raise ValueError(f"{mode}: running kernel differs from the manifest-matched ELF")
+    arguments = ["image=" + measured[0][1]]
+    if mode == "desktop":
+        arguments.extend(["tailor_ui=" + components["tailorbird"],
+                          "userdisk=" + uuid.UUID(manifest["factory_disk_guid"]).bytes_le.hex(),
+                          "q=" + components["qwen-worker"]])
+    elif mode == "diagnostic":
+        arguments.extend(["auto=qwen.elf", "grant=files", "then=off"])
+    commands = [line for line in lines if line.startswith("command line: ")]
+    if len(commands) != 1 or sorted(commands[0].removeprefix("command line: ").split()) != sorted(arguments):
+        raise ValueError(f"{mode}: kernel command line differs from the release boot profile")
     markers = [
         "PCP OS EFI amd64 entry, native 64-bit handoff",
         "long mode true",
-        "(measured; equal to the value the loader named)",
+        commands[0],
+        measured[0][0],
     ]
     if mode == "recovery":
         markers.append("PCP OS launcher ready: 0 programs, 0 files")
@@ -94,7 +133,7 @@ def verify_log(data, mode, components, expected_tokens):
         raise ValueError(f"{mode}: guest reported a failure")
 
 
-def boot(args, mode, components, expected_tokens, temp):
+def boot(args, mode, manifest, expected_tokens, temp):
     log = args.results / f"{mode}.serial"
     variables = temp / f"{mode}.fd"
     shutil.copyfile(args.ovmf_vars, variables)
@@ -145,7 +184,7 @@ def boot(args, mode, components, expected_tokens, temp):
             status = process.wait(timeout=max(0.1, deadline - time.monotonic()))
             if status != 33:
                 raise RuntimeError(f"{mode}: QEMU exited {status}, expected 33")
-            verify_log(log.read_bytes(), mode, components, expected_tokens)
+            verify_log(log.read_bytes(), mode, manifest, expected_tokens, args.kernel_measurement)
         finally:
             if process.poll() is None:
                 process.kill()
@@ -160,6 +199,8 @@ def main():
     for arg in ("disk", "manifest", "ovmf-code", "ovmf-vars", "results"):
         parser.add_argument("--" + arg, type=Path, required=True)
     parser.add_argument("--qemu", default="qemu-system-x86_64")
+    parser.add_argument("--kernel-elf", type=Path,
+                        help="verify the running measurement against the manifest-matched kernel ELF")
     parser.add_argument("--modes", nargs="+", choices=("recovery", "desktop", "diagnostic"),
                         default=("recovery", "desktop", "diagnostic"),
                         help="boot paths to exercise, in order (default: all three)")
@@ -189,6 +230,10 @@ def main():
               "status": "in_progress", "active_mode": None}
     checkpoint(args.results, result)
     try:
+        args.kernel_measurement = None
+        if args.kernel_elf is not None:
+            args.kernel_measurement = pinned_kernel_measurement(args.kernel_elf, manifest)
+        result["release_kernel_measurement"] = args.kernel_measurement
         result["manifest_sha256"] = sha256(args.manifest)
         result["ovmf_code_sha256"] = sha256(args.ovmf_code)
         result["ovmf_vars_sha256"] = sha256(args.ovmf_vars)
@@ -197,7 +242,7 @@ def main():
             for mode in args.modes:
                 result["active_mode"] = mode
                 checkpoint(args.results, result)
-                result["boots"][mode] = boot(args, mode, manifest["component_sha256"],
+                result["boots"][mode] = boot(args, mode, manifest,
                                              args.expected_tokens, Path(directory))
                 result["active_mode"] = None
                 checkpoint(args.results, result)
