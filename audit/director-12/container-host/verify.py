@@ -43,6 +43,47 @@ def state(name: str) -> dict:
     return json.loads(cmd("docker", "inspect", name).stdout)[0]
 
 
+def process_identity(pid: int) -> dict | None:
+    # Linux host PID identity, not an in-container /proc PID.
+    try:
+        text = Path(f"/proc/{pid}/stat").read_text(encoding="ascii")
+    except FileNotFoundError:
+        return None
+    parts = text.rsplit(") ", 1)[1].split()
+    return {"pid": pid, "state": parts[0], "start_tick": int(parts[19])}
+
+
+def host_grandchild_identity(container: str) -> dict:
+    # Docker top obtains host-visible PIDs for the container. The exact command
+    # is restricted to this test image; do not parse an untrusted generic name.
+    rows = cmd("docker", "top", container, "-eo", "pid,ppid,args").stdout.splitlines()
+    matches = []
+    for row in rows[1:]:
+        fields = row.split(maxsplit=2)
+        if len(fields) != 3:
+            continue
+        if fields[2].strip().endswith("/worker grandchild"):
+            matches.append(int(fields[0]))
+    assert len(matches) == 1, f"expected one real grandchild in docker top, got {matches}"
+    identity = process_identity(matches[0])
+    assert identity and identity["state"] not in {"Z", "X"}
+    assert identity["start_tick"] > 0
+    identity["boot_id"] = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+    return identity
+
+
+def original_process_terminated(identity: dict) -> bool:
+    assert Path("/proc/sys/kernel/random/boot_id").read_text().strip() == identity["boot_id"], (
+        "host changed across process-identity observation"
+    )
+    current = process_identity(identity["pid"])
+    return (
+        current is None
+        or current["start_tick"] != identity["start_tick"]
+        or current["state"] in {"Z", "X"}
+    )
+
+
 def started_policy(check: dict) -> dict:
     settings = check["HostConfig"]
     facts = {
