@@ -336,6 +336,58 @@ on disposable emulated firmware and were **not a PCP OS boot**,
 installed-system verification, physical hardware test or true
 host-enforced PCP calibration.
 
+## Director PT's adverse review: exact negative-status oracle repair
+
+Director PT's [independent public-source/CI assessment](https://github.com/KirtusJ/pcp-os/issues/132#issuecomment-6908414143)
+identified an actual **test-harness false-positive risk**, not a
+demonstrated UEFI firmware bug. The initial headless Python assertion
+accepted the **presence** of `NO_GOP status=` and any 16-hex-digit
+`EFI_RETURN`. A future bad UEFI status or a disagreement between
+those two values would still have passed, despite the old
+[run 43809831472](https://github.com/KirtusJ/pcp-os/actions/runs/43809831472)
+recording the expected result.
+
+The new pure `tools/headless_receipt.py` test oracle demands exactly
+one full-line `PCPOS_EFI_ENTRY_V1`, exactly one full-line
+`PCPOS_GOP_PROBE_V1 NO_GOP status=0x800000000000000e`, exactly one
+full-line `PCPOS_EFI_RETURN_V1 0x800000000000000e`, and strict
+entry → no-GOP → EFI-return ordering. Both codes must be the exact
+UEFI `EFI_NOT_FOUND` value. Duplicate/contradictory observations,
+malformed or trailing status bytes, a normal GOP readback, a SetMode
+event, bad ordering or QEMU abnormal exit are rejected. A QEMU exit
+code **124** is tolerated **only as the bounded outer timeout after an
+already observed EFI app return**; it is never called EFI_SUCCESS.
+
+`tests/test_headless_receipt.py` supplies **18 host Python controls**,
+including contradictory EFI_SUCCESS/EFI_UNSUPPORTED mutations, mismatched
+status versus return, duplicate markers, extra framebuffer or mode
+change, missing/reordered entry and nonzero QEMU process exit. The test
+file does not claim any firmware execution. The actual emulator log
+is checked **separately** by exactly the same function. Commands:
+
+```sh
+python3 -m unittest discover -s PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/tests -p test_headless_receipt.py -v
+python3 PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/tools/headless_receipt.py <captured-qemu-debugcon.txt> 124
+```
+
+**Independently read execution receipt:** [GitHub Actions run 43812767462](https://github.com/KirtusJ/pcp-os/actions/runs/43812767462)
+at exact source `eb2d353b91a79f7dee2e61169b129ab42fc82cdb`
+executed all **18 Python cases successfully**, plus the existing
+**13 ABI / 23 EDID tests in debug and release**, two clean default-PE
+rebuilds with matching bytes, and all three disposable UEFI QEMU arms.
+The live no-VGA trace still returned
+`NO_GOP status=0x800000000000000e` and
+`EFI_RETURN_V1 0x800000000000000e`; its exact-status oracle passed.
+The ELF/PE firmware app code is unchanged by this harness fix.
+A separate sample's observed return cannot certify the actual PCP-OS
+kernel's no-display behavior or any physical hardware.
+
+**Disposition of PT's calibration request:** PT reported this source-level
+finding while withholding **true protocol calibration**. Successful
+correction of a specific CI oracle does not authenticate the participants,
+prove all PCP/ACR requirements were applied, certify firmware safety
+or authorize a merge or hardware deployment.
+
 ## Source and safety boundaries
 
 The minimal unsafe region is confined to firmware-entry code: table pointer reads, function-pointer conversion, and calls to firmware interfaces. The source is intentionally **not linked** to the kernel or the existing Multiboot1/Multiboot2 path. UEFI returns references and dynamically allocated buffers that must remain valid until `FreePool`; the program operates only while Boot Services are active.
