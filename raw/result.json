@@ -1,0 +1,74 @@
+{
+  "factory": {
+    "factory_sha256": "2229b91baeb20892748915443f704b64dcf53869a54d5ccef957bcfd1e050563",
+    "manifest_sha256": "c116fdf529feffe30cb004a3f9adae860a0e3c27881a456095e2b72c901b7455",
+    "source": "6cc994667c4a9826a70c11fb2c4d35f593d4342e",
+    "disk_bytes": 1073741824,
+    "working_inode": 27648,
+    "allocated_bytes": 435548160
+  },
+  "boots": [
+    {
+      "name": "first",
+      "uuid": "f73798f2-8886-4ac7-bda0-65a6978048f5",
+      "directory": "first-f73798f2-8886-4ac7-bda0-65a6978048f5",
+      "qmp_uuid_verified": true,
+      "exit_before_cleanup": -9,
+      "kill_requested": true,
+      "exit_code": -9,
+      "serial_sha256": "063b4b910dc7e9c1f965ad469ff182d4af1e72d6b2c640c69cf367e9bbcb5fdb"
+    },
+    {
+      "name": "cold",
+      "uuid": "c5e36e88-ee4d-4461-93f1-c7615ff3d78c",
+      "directory": "cold-c5e36e88-ee4d-4461-93f1-c7615ff3d78c",
+      "qmp_uuid_verified": true,
+      "exit_before_cleanup": 33,
+      "kill_requested": false,
+      "exit_code": 33,
+      "serial_sha256": "2bda52ce5178648bab80dd29375c57881c122bcdf535ed4bc286a32648586f6b"
+    }
+  ],
+  "stores": {
+    "factory": {
+      "generation": 1,
+      "source": null,
+      "store_sha256": "16a33e72672c48052770a93435126e76464cfd85a079a4170e35881adb1a2cab"
+    },
+    "approved": {
+      "generation": 2,
+      "source": "print original",
+      "store_sha256": "aff2bfc13d7fa4db611258ffd0dbaa0aec0f504eb62f6a929579b1030ffe045b"
+    },
+    "after_interrupt": {
+      "generation": 2,
+      "source": "print original",
+      "store_sha256": "aff2bfc13d7fa4db611258ffd0dbaa0aec0f504eb62f6a929579b1030ffe045b"
+    },
+    "late": {
+      "generation": 2,
+      "source": "print original",
+      "store_sha256": "aff2bfc13d7fa4db611258ffd0dbaa0aec0f504eb62f6a929579b1030ffe045b"
+    },
+    "replacement": {
+      "generation": 3,
+      "source": "print replacement",
+      "store_sha256": "933216437ab649598c9eaa79fb7ae2143e76a54c08aa275359a704179e3249fd"
+    }
+  },
+  "frames": {
+    "original": {
+      "file": "original.ppm",
+      "sha256": "95f5fa03ba1317b11107b9c6f832736463b5c65cbdc624942dd6b2b6cad98738",
+      "output": "original",
+      "row_y": 218
+    },
+    "replacement": {
+      "file": "replacement.ppm",
+      "sha256": "7a89330176213d45f7edb33e746ea53df63c50516d2deda79511014ce8e3d4b1",
+      "output": "replacement",
+      "row_y": 330
+    }
+  },
+  "passed": true
+}
