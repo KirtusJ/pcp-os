@@ -18,9 +18,9 @@ class Retrieval(unittest.TestCase):
         self.work = Path(workspace.name)
         self.lookup = self.text / "TOOLS/acr.py"
 
-    def prepare(self, method, output, lookup=None):
+    def prepare(self, method, output, lookup=None, extra=()):
         return subprocess.run([sys.executable, "-I", "-B", PREPARE, "--method", method,
-                               "--lookup", lookup or self.lookup, "--out", output],
+                               "--lookup", lookup or self.lookup, "--out", output, *extra],
                               capture_output=True, text=True)
 
     def test_both_adapters(self):
@@ -70,6 +70,46 @@ class Retrieval(unittest.TestCase):
                 self.assertNotEqual(again.returncode, 0)
                 self.assertEqual(score(), scored)
         self.assertEqual(prompts[0], prompts[1])
+
+    def test_reach_checked_cli(self):
+        kit = self.work / "reach-checked"
+        run = self.prepare(self.os_method, kit, extra=["--scorer", "reach-checked"])
+        self.assertEqual(run.returncode, 0, run.stderr)
+        command = [sys.executable, "-I", "-B", "TOOLS/calibrate.py"]
+        subprocess.run([*command, "items", "--seed", "19", "--out", "items.json",
+                        "--key", "key.json"], cwd=kit, check=True)
+        key = json.loads((kit / "key.json").read_bytes())["key"]
+        provisions = {i: row for i, row in key.items() if row["kind"] == "PROVISION"}
+        self.assertTrue(any(row["in_kernel"] for row in provisions.values()))
+        self.assertTrue(any(not row["in_kernel"] for row in provisions.values()))
+        for extent in ("full", "kernel", "none"):
+            for response in ("exact", "wrong", "uninspected"):
+                with self.subTest(extent=extent, response=response):
+                    answers = []
+                    expected = {}
+                    for i, row in provisions.items():
+                        reachable = extent == "full" or (extent == "kernel" and row["in_kernel"])
+                        if response == "uninspected":
+                            answers.append({"id": i, "kind": "NOT_INSPECTED"})
+                            expected[i] = "NOT_RETRIEVED_THOUGH_IN_REACH" if reachable else "DECLINED_OUT_OF_REACH"
+                        else:
+                            value = row["text"] if response == "exact" else "Synthetic wrong answer."
+                            answers.append({"id": i, "kind": "TEXT", "text": value})
+                            if reachable:
+                                expected[i] = "EXACT" if response == "exact" else "INEXACT"
+                            else:
+                                expected[i] = "RECONSTRUCTED_OUT_OF_REACH"
+                    (kit / "answers.json").write_text(json.dumps(answers))
+                    result = json.loads(subprocess.check_output(
+                        [*command, "score", "items.json", "key.json", "answers.json", "--extent", extent],
+                        cwd=kit))
+                    actual = {r["id"]: r["category"] for r in result["rows"] if r["item"] == "PROVISION"}
+                    self.assertEqual(actual, expected)
+                    self.assertEqual(result["unscored"], len(key) - len(provisions))
+                    correct = sum(c in ("EXACT", "DECLINED_OUT_OF_REACH") for c in expected.values())
+                    self.assertEqual(result["for"], correct)
+                    self.assertEqual(result["against"], len(provisions) - result["for"])
+        print("Reach-checked scorer matched 90 provision rows across three extents", flush=True)
 
     def test_mismatched_inputs(self):
         staged = self.work / "method"

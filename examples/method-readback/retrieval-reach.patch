@@ -1,0 +1,14 @@
+--- a/TOOLS/calibrate.py
++++ b/TOOLS/calibrate.py
+@@ -153,7 +153,10 @@
+             cat = "UNSCORED"
+         elif k["kind"] == "PROVISION":
+             if kind == "TEXT":
+-                cat = "EXACT" if normal(a.get("text")) == normal(k["text"]) else ("INEXACT" if reach else "RECONSTRUCTED_OUT_OF_REACH")
++                if reach:
++                    cat = "EXACT" if normal(a.get("text")) == normal(k["text"]) else "INEXACT"
++                else:
++                    cat = "RECONSTRUCTED_OUT_OF_REACH"
+             elif kind == "NOT_INSPECTED":
+                 cat = "NOT_RETRIEVED_THOUGH_IN_REACH" if reach else "DECLINED_OUT_OF_REACH"
+             else:
