@@ -427,6 +427,18 @@ fn accept_unknown_tags_without_granting_semantics() {
 }
 
 #[test]
+fn accept_exactly_maximum_data_tags_plus_required_terminator() {
+    let mut tags = Vec::new();
+    for _ in 0..MAX_TAGS {
+        tags.push(tag(99, &[]));
+    }
+    let data = mbi(&tags);
+    let result = inspect(&data).unwrap();
+    assert_eq!(result.tag_count, MAX_TAGS);
+    assert_eq!(result.uninterpreted_tag_count, MAX_TAGS);
+}
+
+#[test]
 fn reject_excessive_tag_count() {
     let mut tags = Vec::new();
     for _ in 0..=MAX_TAGS {
