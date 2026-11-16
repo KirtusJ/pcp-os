@@ -150,33 +150,47 @@ def find_candidates(memory, expected_events: int, max_events=MAX_EVENTS, workspa
     return candidates
 
 
-def compare(memory, visible_head, visible_events, workspace_label='kernel'):
-    """Return an evidence-limited result; never select by visible digest."""
-    if not HEX.fullmatch(visible_head) or visible_events <= 0 or visible_events > MAX_EVENTS:
-        raise ValueError('expected exactly 64 lowercase hex chars and bounded positive event count')
-    candidates = find_candidates(memory, visible_events, workspace_label=workspace_label)
+def select_candidate(memory, minimum_events=1, workspace_label='kernel'):
+    """Select *only by independently scanned register bytes*, not screen evidence.
+
+    A unique maximal canonical chain is a memory candidate. It is not a live
+    Rust Record pointer, and a stale or unrelated complete chain may be present.
+    """
+    if not 0 < minimum_events <= MAX_EVENTS:
+        raise ValueError('minimum event count must be positive and bounded')
+    candidates = find_candidates(memory, minimum_events, workspace_label=workspace_label)
     if not candidates:
-        return {'accepted': False, 'reason': 'no matching-length canonical kernel candidate',
+        return {'found': False, 'reason': 'no sufficiently long canonical kernel candidate',
                 'candidate_count': 0}
     count = max(x['events'] for x in candidates)
     leaders = [x for x in candidates if x['events'] == count]
     distinct = {(x['events'], x['head'], x['chain_bytes_sha256']) for x in leaders}
     if len(distinct) != 1:
-        return {'accepted': False, 'reason': 'ambiguous longest chains',
+        return {'found': False, 'reason': 'ambiguous longest chains',
                 'candidate_count': len(candidates), 'longest_events': count,
                 'distinct_longest_chains': len(distinct)}
     selected = leaders[0]
-    agree = count == visible_events and selected['head'] == visible_head
-    return {'accepted': agree,
-            'reason': ('matching independent RAM-candidate bytes' if agree else 'RAM candidate differs from pixels/count'),
+    return {'found': True, 'reason': 'unique maximal canonical RAM candidate',
             'candidate_count': len(candidates), 'longest_events': count,
             'independent_head': selected['head'],
             'chain_bytes_sha256': selected['chain_bytes_sha256'],
-            'offset': selected['start'], 'visible_events': visible_events,
-            'visible_head': visible_head,
+            'offset': selected['start'],
             'live_record_pointer_authenticated': False,
             'actual_boot_refusal_tested': False}
 
+
+def compare(memory, visible_head, visible_events, workspace_label='kernel'):
+    """Compare a memory-selected head to screen evidence supplied *after* selection."""
+    if not HEX.fullmatch(visible_head) or visible_events <= 0 or visible_events > MAX_EVENTS:
+        raise ValueError('expected exactly 64 lowercase hex chars and bounded positive event count')
+    result = select_candidate(memory, visible_events, workspace_label)
+    if not result['found']:
+        return {'accepted': False, **result}
+    agree = result['longest_events'] == visible_events and result['independent_head'] == visible_head
+    return {'accepted': agree,
+            'reason': ('matching independent RAM-candidate bytes' if agree else 'RAM candidate differs from pixels/count'),
+            **{k: v for k, v in result.items() if k not in ('found', 'reason')},
+            'visible_events': visible_events, 'visible_head': visible_head}
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
