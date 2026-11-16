@@ -64,6 +64,12 @@ jobs:
             --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
             --model inputs/checkpoint.bin --reference inputs/run.c --tokenizer inputs/tok512.bin \
             --method adapter/method --out receipts/text-input
+      - name: Replay the retained text-input transcripts
+        run: |
+          for arm in original alternate same-offset-control; do
+            case_dir="receipts/text-input/$arm"
+            python3 examples/method-readback/text-input/compare.py "$arm" "$case_dir/boot.serial" "$case_dir/oracle.stdout"
+          done
       - name: Retain the oracle, serial logs and cohort receipts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -76,6 +82,8 @@ jobs:
             receipts/**/readback.json
             receipts/control/oracle.json
             receipts/inputs.json
+            receipts/text-input/*/oracle.stdout
+            receipts/text-input/*/*.status
             receipts/text-input/results.json
           if-no-files-found: warn
           retention-days: 14

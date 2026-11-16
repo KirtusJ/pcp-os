@@ -59,3 +59,31 @@ python3 examples/method-readback/text-input/run.py \
   --method adapter/method --model inputs/checkpoint.bin \
   --reference inputs/run.c --tokenizer inputs/tok512.bin --out text-receipts
 ```
+
+### Check an archived text-input run
+
+The artifact `resident-worker-core-readback` contains the five boot directories under `text-input/`. Each attempted QEMU boot records its serial, stderr and host outcome in `qemu.status`. For each of the three cases that has a complete excerpt, `oracle.stdout`, `oracle.stderr` and `oracle.status` retain the upstream process output and outcome before the runner compares them. A return code of 33 is the expected emulator exit with this diagnostic device. The guest process exit appears separately in the serial. An interrupted run can end before a case starts or before its status is recorded.
+
+For a current extracted archive, set `receipts` to its directory and run this command from the repository root.
+
+```sh
+for arm in original alternate same-offset-control; do
+  case_dir="$receipts/text-input/$arm"
+  python3 examples/method-readback/text-input/compare.py "$arm" \
+    "$case_dir/boot.serial" "$case_dir/oracle.stdout"
+done
+```
+
+To repeat the reference calculation for the original published archive (which predates the per-case oracle files), run the following from the repository root with the same verified inputs as above. Set `receipts` to the extracted artifact directory. This example checks the original passage. Use `A Review Session is a bounded assessment cycle.` for both `alternate` and `same-offset-control`.
+
+```sh
+work=$(mktemp -d)
+cc -std=gnu11 -O2 -ffp-contract=off -I inputs \
+  examples/method-readback/text-input/oracle.c -lm -o "$work/oracle"
+"$work/oracle" inputs/checkpoint.bin inputs/tok512.bin \
+  'Any participant MAY halt its own participation.' > "$work/oracle.stdout"
+python3 examples/method-readback/text-input/compare.py original \
+  "$receipts/text-input/original/boot.serial" "$work/oracle.stdout"
+```
+
+The comparison checks the assigned excerpt, input IDs, three greedy output IDs and maximum absolute error across all 512 finite scores in a successful guest transcript. Kernel identity, the host exit and the two failure controls have separate checks in the live runner. [Download a workflow artifact](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts)
