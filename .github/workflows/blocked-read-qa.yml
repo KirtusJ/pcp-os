@@ -22,6 +22,7 @@ jobs:
         working-directory: PCP_OS_Rust
         run: |
           set -o pipefail
+          cargo +stable run --release --locked --bin pcpos-vectors -- vectors
           cargo +stable test --workspace --locked | tee "$RUNNER_TEMP/receipts/host-tests.txt"
       - name: Boot the integrated tree with ordinary and fixed clocks
         working-directory: PCP_OS_Rust/crates/pcpos-kernel
