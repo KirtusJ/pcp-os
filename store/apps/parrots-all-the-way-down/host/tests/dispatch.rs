@@ -409,3 +409,88 @@ fn cancelled_desk_after_adapter_loss_does_not_terminate_orphan() {
     assert!(stopped, "orphan did not release the lock after the test signal");
     assert_eq!(get(&db, 1).unwrap().state, State::Cancelled);
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "requires a separately built compatible pcpos; set PCPOS_BIN and run with --include-ignored"]
+fn register_adapter_sigkill_retains_admission_without_termination_proof() {
+    // A real PCP OS register gives us host-verified admission, not a
+    // persistent supervisor. Its chain can remain valid while work status
+    // becomes stale, and no worker-exit observation is fabricated.
+    use pcpos_core::{ledger, value::Value};
+    let host = std::env::var_os("PCPOS_BIN").expect("set PCPOS_BIN to a built pcpos executable");
+    let (a, _) = arena("register-orphan", 1, 1, 2);
+    let reg = a.0.join("register.jsonl");
+    let actor = "director";
+    ok(Command::new(&host)
+        .arg("init")
+        .arg(&reg)
+        .args(["--principal", actor])
+        .output()
+        .unwrap());
+    ok(Command::new(&host)
+        .arg("task-limits")
+        .arg(&reg)
+        .args([
+            "--by", actor, "--max-depth", "1", "--max-live", "1",
+            "--max-total", "2",
+        ])
+        .output()
+        .unwrap());
+
+    let ready = a.0.join("register-worker-ready");
+    let mut adapter = dispatch();
+    adapter
+        .env("PCPOS_BIN", &host)
+        .args(["--register"])
+        .arg(&reg)
+        .args([actor, "register orphan negative control", "--"])
+        .arg(std::env::current_exe().unwrap())
+        .args(["--exact", "slow_child"])
+        .env("PARROTS_TEST_SENTINEL", &ready)
+        .stdout(Stdio::null());
+    let mut adapter = adapter.spawn().unwrap();
+    let until = Instant::now() + Duration::from_secs(10);
+    while !ready.exists() && Instant::now() < until {
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(ready.exists(), "registered worker did not start");
+    let lock = fs::File::open(ready.with_extension("lock")).unwrap();
+    assert!(lock.try_lock().is_err(), "register worker must be running");
+
+    adapter.kill().unwrap();
+    assert!(!adapter.wait().unwrap().success());
+    assert!(lock.try_lock().is_err(), "worker must outlive the adapter");
+
+    let verified = |path: &Path| {
+        let (events, _) = ledger::verify(&fs::read(path).unwrap()).unwrap();
+        events
+            .iter()
+            .filter_map(|event| event.get("kind").and_then(Value::as_str))
+            .filter(|kind| *kind == "TASK_ADMITTED" || *kind == "TASK_RELEASED")
+            .map(str::to_owned)
+            .collect::<Vec<String>>()
+    };
+    assert_eq!(verified(&reg), ["TASK_ADMITTED"]);
+    let report = Command::new(&host).arg("verify").arg(&reg).output().unwrap();
+    ok(report);
+    assert!(
+        String::from_utf8_lossy(&report.stdout).contains("guards replayed: 0 problem(s)")
+    );
+
+    // The test requests voluntary worker exit; no remaining adapter exists
+    // to emit a release, so the register's chain stays intact but incomplete.
+    fs::write(ready.with_extension("leave"), b"").unwrap();
+    let end = Instant::now() + Duration::from_secs(10);
+    let mut exited = false;
+    while Instant::now() < end {
+        if lock.try_lock().is_ok() {
+            exited = true;
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(exited, "orphan did not release the test lock");
+    assert_eq!(verified(&reg), ["TASK_ADMITTED"]);
+    ok(Command::new(&host).arg("verify").arg(&reg).output().unwrap());
+}
