@@ -182,6 +182,9 @@ def boot(args, mode, manifest, expected_tokens, temp):
             if status != 33:
                 raise RuntimeError(f"{mode}: QEMU exited {status}, expected 33")
             verify_log(log.read_bytes(), mode, manifest, expected_tokens, args.kernel_measurement)
+        except (Exception, KeyboardInterrupt) as error:
+            error.qemu_exit_before_cleanup = process.poll()
+            raise
         finally:
             if process.poll() is None:
                 process.kill()
@@ -246,6 +249,20 @@ def main():
     except (Exception, KeyboardInterrupt) as error:
         result["failure"] = {"mode": result["active_mode"] or "setup",
                              "reason": str(error) or type(error).__name__}
+        if hasattr(error, "qemu_exit_before_cleanup"):
+            result["failure"]["qemu_exit_before_cleanup"] = error.qemu_exit_before_cleanup
+        if result["active_mode"] is not None:
+            streams = {}
+            for name in ("serial", "stderr"):
+                path = args.results / f"{result['active_mode']}.{name}"
+                try:
+                    streams[name] = {"bytes": path.stat().st_size, "sha256": sha256(path)}
+                except FileNotFoundError:
+                    continue
+                except OSError as read_error:
+                    streams[name] = {"read_error": str(read_error)}
+            if streams:
+                result["failure"]["streams"] = streams
         result["active_mode"] = None
         result["status"] = "failed"
         checkpoint(args.results, result)
