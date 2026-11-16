@@ -1,0 +1,41 @@
+{"time": "2026-11-16T13:40:22.555164+00:00", "event": "inputs", "kernel_sha256": "ec70c7fbd70b08cfc4d5672131d61dbc84f0e4a885d7563c5f5ba8b8430bb8b8", "measurement": "3ed504581444f47c156a4952cd7c3b8741e4677012e1205eaa637e12e5aa6d5b", "worker_sha256": "c14bc81c25d5d7012a88532a854e42583378c2285734d650667dc4a52cf297c8", "oracle_sha256": "7fb50b43c445058fe3d983a718aa73d65b7ba91d305c60c731b17fcff1cc9df1", "root_input": 837012, "salt": 12}
+{"time": "2026-11-16T13:40:30.353206+00:00", "event": "admitted", "node": 1, "parent": 0, "input": 837012, "ticket": 947323, "uuid": "fd231628-0a06-408a-abb2-3a7803c1b57b", "pid": 5, "children": [2, 3, 4], "attempt": 1}
+{"time": "2026-11-16T13:40:37.433684+00:00", "event": "admitted", "node": 2, "parent": 1, "input": 947323, "ticket": 366965, "uuid": "2b133327-d1cb-4103-903f-89b2770fe9e3", "pid": 9, "children": [5, 6, 7], "attempt": 1}
+{"time": "2026-11-16T13:40:45.089184+00:00", "event": "admitted", "node": 3, "parent": 1, "input": 947323, "ticket": 366978, "uuid": "7e812f6e-bdd4-42a5-b8d9-c154ebdccbda", "pid": 13, "children": [8, 9], "attempt": 1}
+{"time": "2026-11-16T13:40:51.326057+00:00", "event": "admitted", "node": 4, "parent": 1, "input": 947323, "ticket": 366991, "uuid": "5dddfc27-33ee-4e45-9100-dbf8c7036a80", "pid": 17, "children": [10, 11, 12], "attempt": 1}
+{"time": "2026-11-16T13:40:59.930447+00:00", "event": "admitted", "node": 5, "parent": 2, "input": 366965, "ticket": 375960, "uuid": "37522f4f-db85-4c40-ac80-6e8068e8f567", "pid": 21, "children": [13, 14, 15], "attempt": 1}
+{"time": "2026-11-16T13:41:24.027698+00:00", "event": "admitted", "node": 6, "parent": 2, "input": 366965, "ticket": 375973, "uuid": "cf0ae99a-4a31-42b5-9749-a48d22bc2587", "pid": 25, "children": [16, 17], "attempt": 1}
+{"time": "2026-11-16T13:41:34.760107+00:00", "event": "admitted", "node": 7, "parent": 2, "input": 366965, "ticket": 375986, "uuid": "0dfca6fd-2486-4492-bf38-a0cf593f9de8", "pid": 29, "children": [18], "attempt": 1}
+{"time": "2026-11-16T13:41:51.797633+00:00", "event": "admitted", "node": 8, "parent": 3, "input": 366978, "ticket": 376402, "uuid": "f135a9a3-02dd-4d89-a215-65d6977e9627", "pid": 33, "children": [19, 20], "attempt": 1}
+{"time": "2026-11-16T13:42:55.484169+00:00", "event": "admitted", "node": 9, "parent": 3, "input": 366978, "ticket": 376415, "uuid": "3d620b20-c116-4600-9c28-b2aa9746e2d0", "pid": 37, "children": [21], "attempt": 1}
+{"time": "2026-11-16T13:42:55.499304+00:00", "event": "interrupted", "node": 4, "reason": "guest 4: query-uuid: broken pipe; emulator exit status -9"}
+{"time": "2026-11-16T13:42:55.503644+00:00", "event": "retired", "node": 4, "uuid": "5dddfc27-33ee-4e45-9100-dbf8c7036a80"}
+{"time": "2026-11-16T13:42:55.512922+00:00", "event": "interrupted", "node": 1, "reason": "guest 1: query-uuid: broken pipe; emulator exit status -9"}
+{"time": "2026-11-16T13:42:55.513064+00:00", "event": "retired", "node": 5, "uuid": "37522f4f-db85-4c40-ac80-6e8068e8f567"}
+{"time": "2026-11-16T13:42:55.513238+00:00", "event": "retired", "node": 6, "uuid": "cf0ae99a-4a31-42b5-9749-a48d22bc2587"}
+{"time": "2026-11-16T13:42:55.849303+00:00", "event": "retired", "node": 7, "uuid": "0dfca6fd-2486-4492-bf38-a0cf593f9de8"}
+{"time": "2026-11-16T13:42:55.856269+00:00", "event": "retired", "node": 2, "uuid": "2b133327-d1cb-4103-903f-89b2770fe9e3"}
+{"time": "2026-11-16T13:42:55.930341+00:00", "event": "retired", "node": 8, "uuid": "f135a9a3-02dd-4d89-a215-65d6977e9627"}
+{"time": "2026-11-16T13:42:56.045499+00:00", "event": "retired", "node": 9, "uuid": "3d620b20-c116-4600-9c28-b2aa9746e2d0"}
+{"time": "2026-11-16T13:42:56.161438+00:00", "event": "retired", "node": 3, "uuid": "7e812f6e-bdd4-42a5-b8d9-c154ebdccbda"}
+{"time": "2026-11-16T13:42:56.161605+00:00", "event": "retired", "node": 1, "uuid": "fd231628-0a06-408a-abb2-3a7803c1b57b"}
+{"time": "2026-11-16T13:43:05.493012+00:00", "event": "admitted", "node": 1, "parent": 0, "input": 837012, "ticket": 947323, "uuid": "9dff8ea6-22d8-421d-8619-6d6e5edc79b5", "pid": 41, "children": [2, 3, 4], "attempt": 2}
+{"time": "2026-11-16T13:43:45.472421+00:00", "event": "interrupted", "node": 2, "reason": "guest 2: emulator exited with status -9"}
+{"time": "2026-11-16T13:43:45.478623+00:00", "event": "interrupted", "node": 1, "reason": "guest 1: query-uuid: broken pipe; emulator exit status -9"}
+{"time": "2026-11-16T13:43:45.478804+00:00", "event": "retired", "node": 1, "uuid": "9dff8ea6-22d8-421d-8619-6d6e5edc79b5"}
+{"time": "2026-11-16T13:45:04.572051+00:00", "event": "interrupted", "node": 1, "reason": "guest 1: emulator exited with status -9"}
+{"time": "2026-11-16T13:48:30.726981+00:00", "event": "interrupted", "node": 1, "reason": "guest 1: emulator exited with status -9"}
+{"time": "2026-11-16T13:50:13.337472+00:00", "event": "interrupted", "node": 1, "reason": "guest 1: emulator exited with status -9"}
+{"time": "2026-11-16T13:51:33.731042+00:00", "event": "interrupted", "node": 1, "reason": "guest 1: emulator exited with status -9"}
+{"time": "2026-11-16T13:56:02.086928+00:00", "event": "admitted", "node": 1, "parent": 0, "input": 837012, "ticket": 947323, "uuid": "ac303cff-76b1-45d5-9e06-afaa864496ad", "pid": 65, "children": [2, 3, 4], "attempt": 7}
+{"time": "2026-11-16T13:56:08.650360+00:00", "event": "admitted", "node": 2, "parent": 1, "input": 947323, "ticket": 366965, "uuid": "407dbd7d-4ad4-48db-86e7-a35ab7f3e473", "pid": 69, "children": [5, 6, 7], "attempt": 3}
+{"time": "2026-11-16T13:56:16.047670+00:00", "event": "admitted", "node": 3, "parent": 1, "input": 947323, "ticket": 366978, "uuid": "55476278-b308-4e17-ac86-3794c9c70d0b", "pid": 73, "children": [8, 9], "attempt": 2}
+{"time": "2026-11-16T13:56:24.867471+00:00", "event": "admitted", "node": 4, "parent": 1, "input": 947323, "ticket": 366991, "uuid": "a7274351-a51e-421f-94a9-8e627865ae77", "pid": 77, "children": [10, 11, 12], "attempt": 2}
+{"time": "2026-11-16T13:56:31.875520+00:00", "event": "admitted", "node": 5, "parent": 2, "input": 366965, "ticket": 375960, "uuid": "97272ab7-0692-4d02-9e91-04d5a39ec27a", "pid": 81, "children": [13, 14, 15], "attempt": 2}
+{"time": "2026-11-16T13:56:38.177884+00:00", "event": "admitted", "node": 6, "parent": 2, "input": 366965, "ticket": 375973, "uuid": "80356cf0-f217-4b52-9b40-c2796c61722a", "pid": 85, "children": [16, 17], "attempt": 2}
+{"time": "2026-11-16T13:56:44.700279+00:00", "event": "admitted", "node": 7, "parent": 2, "input": 366965, "ticket": 375986, "uuid": "9d3228aa-f6a0-455b-8174-5e6c52c7af1c", "pid": 89, "children": [18], "attempt": 2}
+{"time": "2026-11-16T13:56:51.433999+00:00", "event": "admitted", "node": 8, "parent": 3, "input": 366978, "ticket": 376402, "uuid": "f4d888bc-b91f-47d1-af75-c5e3aff119c9", "pid": 93, "children": [19, 20], "attempt": 2}
+{"time": "2026-11-16T13:57:37.400718+00:00", "event": "admitted", "node": 9, "parent": 3, "input": 366978, "ticket": 376415, "uuid": "62ef661d-0b5a-4222-8310-c7399de5a52f", "pid": 97, "children": [21], "attempt": 2}
+{"time": "2026-11-16T14:01:47.747161+00:00", "event": "admitted", "node": 10, "parent": 4, "input": 366991, "ticket": 376831, "uuid": "4d60aec8-ca26-4350-9545-0ecea610196f", "pid": 101, "children": [22], "attempt": 1}
+{"time": "2026-11-16T14:04:44.200213+00:00", "event": "interrupted", "node": 11, "reason": "guest 11: emulator exited with status -9"}
+{"time": "2026-11-16T14:04:44.237920+00:00", "event": "failed", "reason": "guest 11: guest 11: emulator exited with status -9; repair allowance exhausted"}

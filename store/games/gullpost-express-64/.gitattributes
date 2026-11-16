@@ -1,9 +1,0 @@
-# Preserve the Store entry's payload hashes in Windows and Unix checkouts.
-*.rs text eol=lf
-*.md text eol=lf
-*.txt text eol=lf
-*.toml text eol=lf
-*.lock text eol=lf
-*.ld text eol=lf
-*.png binary
-*.gif binary

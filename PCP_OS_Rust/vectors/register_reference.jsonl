@@ -1,4 +1,0 @@
-{"actor":"host","auth":"DECLARED","body":{"label":"vector","profile":"ACR-OS-RECORD-1"},"kind":"WORKSPACE_CREATED","prev":"0000000000000000000000000000000000000000000000000000000000000000","seq":0,"ts":"2026-11-12T00:00:00Z"}
-{"actor":"P","auth":"DECLARED","body":{"text":"first \u00e9 \u20ac \ud83d\ude00 \"quoted\" \\ back"},"kind":"NOTE","prev":"ec70f3843bba5336b496070b3c9ab4eabf2bb729502f660c2ba54b4d762b7882","seq":1,"ts":"2026-11-12T00:00:00Z"}
-{"actor":"P","auth":"DECLARED","body":{"nested":{"flag":true,"list":[1,2,{"deep":null}]},"text":"second"},"kind":"NOTE","prev":"cc3f0154d5fb50109230dd76e8a08a69d8810caacbe5cc3ed15cea889d991096","seq":2,"ts":"2026-11-12T00:00:00Z"}
-{"actor":"P","auth":"DECLARED","body":{"ctrl":"a\u0001b\nc","empty":"","n":-42},"kind":"X_LOCAL","prev":"7db1a25f45513857f776c9a8966d55b8b40b354ea44d2560776205bd194242a5","seq":3,"ts":"2026-11-12T00:00:00Z"}

@@ -1,8 +1,0 @@
-[package]
-name = "recursion-desk-core"
-version = "0.1.0"
-edition = "2021"
-publish = false
-
-[dependencies]
-pcpos-core = { path = "../../../../PCP_OS_Rust/crates/pcpos-core" }
