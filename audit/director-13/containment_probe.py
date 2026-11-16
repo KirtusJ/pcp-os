@@ -128,7 +128,9 @@ def probe(cli, delegate, output):
             direct = subprocess.Popen([
                 str(delegate), str(db), "direct-01", "direct worker", "--",
                 sys.executable, __file__, "direct-parent", str(direct_dir),
-            ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            ], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+               stderr=subprocess.PIPE, text=True, start_new_session=True,
+               close_fds=True)
             try:
                 wait_for(lambda: read_ticks(direct_dir / "parent.tick") >= 2,
                          "direct worker to start")
@@ -145,8 +147,16 @@ def probe(cli, delegate, output):
                 }
             finally:
                 if direct.poll() is None:
-                    direct.kill()
-                    direct.communicate(timeout=3.0)
+                    # This adapter was created as its own test-only session.
+                    try:
+                        os.killpg(direct.pid, signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass
+                    try:
+                        direct.communicate(timeout=3.0)
+                    except subprocess.TimeoutExpired:
+                        direct.kill()
+                        direct.communicate(timeout=3.0)
 
             # Negative: a descendant escapes the registered parent's process
             # tree and continues writing after the desk has closed its parent.
@@ -155,7 +165,9 @@ def probe(cli, delegate, output):
             rogue = subprocess.Popen([
                 str(delegate), str(db), "rogue-01", "unregistered child probe", "--",
                 sys.executable, __file__, "rogue-parent", str(rogue_dir),
-            ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            ], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+               stderr=subprocess.PIPE, text=True, start_new_session=True,
+               close_fds=True)
             try:
                 wait_for(lambda: (rogue_dir / "leaf.pid").exists()
                          and read_ticks(rogue_dir / "leaf.tick") >= 2,
@@ -181,8 +193,15 @@ def probe(cli, delegate, output):
                 )
             finally:
                 if rogue.poll() is None:
-                    rogue.kill()
-                    rogue.communicate(timeout=3.0)
+                    try:
+                        os.killpg(rogue.pid, signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass
+                    try:
+                        rogue.communicate(timeout=3.0)
+                    except subprocess.TimeoutExpired:
+                        rogue.kill()
+                        rogue.communicate(timeout=3.0)
                 report["cleanup"] = cleanup_escaped_child(rogue_dir)
             report["scope_result"] = (
                 "PASS: direct cancellation observed; detached unregistered "
