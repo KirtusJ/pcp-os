@@ -123,7 +123,7 @@ jobs:
           timeout -k 2s 25s "$QEMU" -machine q35,accel=tcg -cpu max -smp 1 -m 256M \
             -drive if=pflash,format=raw,readonly=on,file="$CODE" \
             -drive if=pflash,format=raw,file="$RUNNER_TEMP/OVMF_VARS_WORK.fd" \
-            -drive if=virtio,format=raw,file="fat:$ESP_DIR" \
+            -drive if=virtio,format=raw,readonly=on,file="fat:$ESP_DIR" \
             -display none -vga std -serial none -monitor none -net none -no-reboot \
             -chardev file,id=debug,path="$LOG" -device isa-debugcon,iobase=0xe9,chardev=debug
           EXIT="$?"
