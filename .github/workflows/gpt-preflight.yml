@@ -14,8 +14,6 @@ jobs:
   no-write-gpt-parser:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    env:
-      PCPOS_GPT_FIXTURES: ${{ runner.temp }}/pcpos-gpt-fixtures
     steps:
       - name: Checkout exact authored PR head
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -34,6 +32,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          export PCPOS_GPT_FIXTURES="$RUNNER_TEMP/pcpos-gpt-fixtures"
+          echo "PCPOS_GPT_FIXTURES=$PCPOS_GPT_FIXTURES" >> "$GITHUB_ENV"
           python3 PCP_OS_Rust/crates/pcpos-kernel/gpt-preflight/tools/make_fixtures.py --out "$PCPOS_GPT_FIXTURES"
           test -f "$PCPOS_GPT_FIXTURES/valid.raw"
           sha256sum "$PCPOS_GPT_FIXTURES/valid.raw" "$PCPOS_GPT_FIXTURES/clone.raw"
