@@ -113,7 +113,16 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
             *failed += 1;
             return tasks;
         }
-        match crate::store::mount() {
+        // In the opt-in v2 fixture, missing or malformed ID tokens MUST NOT
+        // fall back to the old unpinned store mount. A syntactically valid
+        // and exact boot command alone does not authenticate a disk.
+        #[cfg(feature = "store-id-gate")]
+        let mounted = crate::store_identity::requested_id(line)
+            .ok_or(())
+            .and_then(crate::store::mount_pinned);
+        #[cfg(not(feature = "store-id-gate"))]
+        let mounted = crate::store::mount();
+        match mounted {
             Ok((volume, files)) => {
                 say!("user store mounted on primary IDE master: {} file(s)", files.len());
                 world.volume = Some(volume);
