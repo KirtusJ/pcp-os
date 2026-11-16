@@ -110,18 +110,20 @@ jobs:
           PROBE="PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/target/x86_64-unknown-uefi/release/pcpos-gop-probe.efi"
           test -s "$PROBE"
           sha256sum "$PROBE"
-          ESP="$RUNNER_TEMP/gop-probe-esp.img"
-          mkfs.vfat -F 32 -C "$ESP" 32768
-          mmd -i "$ESP" ::/EFI
-          mmd -i "$ESP" ::/EFI/BOOT
-          mcopy -i "$ESP" "$PROBE" ::/EFI/BOOT/BOOTX64.EFI
+          # QEMU's documented read-only virtual FAT device supplies a
+          # partitioned firmware-visible disk, rather than the earlier
+          # 32 MiB partitionless FAT32 superfloppy that OVMF did not launch.
+          ESP_DIR="$RUNNER_TEMP/gop-uefi-esp"
+          mkdir -p "$ESP_DIR/EFI/BOOT"
+          cp "$PROBE" "$ESP_DIR/EFI/BOOT/BOOTX64.EFI"
+          sha256sum "$ESP_DIR/EFI/BOOT/BOOTX64.EFI"
           cp "$VARS" "$RUNNER_TEMP/OVMF_VARS_WORK.fd"
           LOG="$RUNNER_TEMP/gop-observation.txt"
           set +e
           timeout -k 2s 25s "$QEMU" -machine q35,accel=tcg -cpu max -smp 1 -m 256M \
             -drive if=pflash,format=raw,readonly=on,file="$CODE" \
             -drive if=pflash,format=raw,file="$RUNNER_TEMP/OVMF_VARS_WORK.fd" \
-            -drive if=virtio,format=raw,file="$ESP" \
+            -drive if=virtio,format=raw,file="fat:$ESP_DIR" \
             -display none -vga std -serial none -monitor none -net none -no-reboot \
             -chardev file,id=debug,path="$LOG" -device isa-debugcon,iobase=0xe9,chardev=debug
           EXIT="$?"
