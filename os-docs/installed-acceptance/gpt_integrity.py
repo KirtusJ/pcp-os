@@ -65,7 +65,6 @@ def _copy(fd, disk_sectors, lba):
     }
 
 
-
 def _active_entries(fd, primary):
     """Check the active entry map after primary/backup CRC and identity validation."""
     empty_guid = bytes(16)
@@ -75,7 +74,9 @@ def _active_entries(fd, primary):
     batch_count = max(1, (1024 * 1024) // entry_bytes)
     for start_index in range(0, primary["count"], batch_count):
         n = min(batch_count, primary["count"] - start_index)
-        size = n * entry_bytes
+        # Skip the unused tail of the last entry in the batch. A wide entry can
+        # exceed the read budget by itself, but its last required field ends at byte 48.
+        size = (n - 1) * entry_bytes + 48
         at = primary["entries_start"] + start_index * entry_bytes
         data = os.pread(fd, size, at)
         if len(data) != size:

@@ -4,10 +4,11 @@ from pathlib import Path
 import struct
 import tempfile
 import unittest
+from unittest.mock import patch
 import uuid
 import zlib
 
-from gpt_integrity import require_gpt_mirror
+from gpt_integrity import _active_entries, require_gpt_mirror
 
 SECTORS = 32768
 ENTRY_LEN = 128 * 128
@@ -50,6 +51,22 @@ class GptEntrySemanticsTest(unittest.TestCase):
                         require_gpt_mirror(opened.fileno(), os.fstat(opened.fileno()).st_size)
                 else:
                     require_gpt_mirror(opened.fileno(), os.fstat(opened.fileno()).st_size)
+
+    def test_large_entry_stride_reads_only_required_fields(self):
+        stride = 2 * 1024 * 1024
+        table = {"entries_start": 512, "entry_size": stride, "count": 2,
+                 "first": 34, "last": SECTORS - 34}
+        with tempfile.TemporaryFile() as disk:
+            for index, member in enumerate((entry(A, 2048, 8191), entry(B, 8192, 12287))):
+                disk.seek(table["entries_start"] + index * stride)
+                disk.write(member)
+            disk.truncate(table["entries_start"] + 2 * stride)
+            disk.flush()
+            with patch("gpt_integrity.os.pread", wraps=os.pread) as reads:
+                _active_entries(disk.fileno(), table)
+            self.assertEqual([c.args[2] for c in reads.call_args_list],
+                             [table["entries_start"], table["entries_start"] + stride])
+            self.assertLessEqual(max(c.args[1] for c in reads.call_args_list), 1024 * 1024)
 
     def test_disjoint_partitions(self):
         self.check((entry(A, 2048, 8191), entry(B, 8192, 12287)))
