@@ -1,4 +1,4 @@
-name: Public resident worker Core readback
+name: Director 1 rendezvous resident workers
 
 on:
   pull_request:
@@ -19,7 +19,7 @@ permissions:
 jobs:
   public-worker:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 78
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -57,6 +57,72 @@ jobs:
             --kernel "$kernel/target/pcpos-kernel.elf32" \
             --model inputs/checkpoint.bin --reference inputs/run.c \
             --method adapter/method --out receipts
+      - name: Start the Core-reading session cohort
+        run: |
+          export PCPOS_REAL_QEMU="$(command -v qemu-system-x86_64)"
+          export PCPOS_CORE_MODULE="$PWD/receipts/core-spec.md"
+          python3 examples/resident-workers/supervise.py \
+            --qemu "$PWD/examples/method-readback/qemu-worker" \
+            --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            --worker receipts/resident.elf --oracle receipts/control/oracle.json \
+            --run "$RUNNER_TEMP/cohort" --interval 60 --cycles 60 --repairs 12 > "$RUNNER_TEMP/resident.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/resident.pid"
+          python3 - <<'PY'
+          import json, os, time
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          for _ in range(300):
+              record = root / "cohort/readback.json"
+              if record.exists() and json.loads(record.read_text())["cycle"] >= 2:
+                  break
+              os.kill(int((root / "resident.pid").read_text()), 0)
+              time.sleep(1)
+          else:
+              raise SystemExit("missing second round")
+          PY
+          mkdir -p "$RUNNER_TEMP/initial/cohort" "$RUNNER_TEMP/initial/fixture" "$RUNNER_TEMP/initial/controls"
+          cp "$RUNNER_TEMP"/cohort/*.serial "$RUNNER_TEMP"/cohort/*.json* "$RUNNER_TEMP/initial/cohort/"
+          cp receipts/control/oracle.json receipts/inputs.json "$RUNNER_TEMP/initial/fixture/"
+          cp receipts/absent/boot.serial "$RUNNER_TEMP/initial/controls/absent.serial"
+          cp receipts/changed/boot.serial "$RUNNER_TEMP/initial/controls/changed.serial"
+      - name: Publish two rounds while the workers remain resident
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: core-resident-first-two-rounds
+          path: ${{ runner.temp }}/initial
+          if-no-files-found: error
+      - name: Continue the native session challenges
+        run: |
+          python3 - <<'PY'
+          import json, os, time
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          events = root / "cohort/events.jsonl"
+          for _ in range(2000):
+              with events.open() as stream:
+                  rows = [json.loads(line) for line in stream if line.endswith("\n")]
+              if rows and rows[-1]["event"] == "finished":
+                  if json.loads((root / "cohort/readback.json").read_text())["cycle"] != 60:
+                      raise SystemExit("cohort ended early")
+                  break
+              if rows and rows[-1]["event"] in ("failed", "stopped"):
+                  raise SystemExit(str(rows[-1]))
+              os.kill(int((root / "resident.pid").read_text()), 0)
+              time.sleep(2)
+          else:
+              raise SystemExit("final readback deadline")
+          PY
+      - name: Preserve the final session record
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: core-resident-final-rounds
+          path: |
+            ${{ runner.temp }}/cohort/*.serial
+            ${{ runner.temp }}/cohort/*.json*
+            ${{ runner.temp }}/cohort/*.stderr
+            ${{ runner.temp }}/resident.log
+          if-no-files-found: warn
       - name: Retain the oracle, serial logs and cohort receipts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
