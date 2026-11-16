@@ -6,6 +6,8 @@ on:
       - director-11/register-default-build-parity-20261116
     paths:
       - "os-docs/register-forensics/test_evaluate_default_image.py"
+      - "os-docs/register-forensics/compare_elf_sections.py"
+      - "os-docs/register-forensics/test_compare_elf_sections.py"
       - ".github/workflows/d11-parity-oracle-controls.yml"
   workflow_dispatch:
 
@@ -26,3 +28,5 @@ jobs:
           set -euo pipefail
           python3 -m unittest discover -s os-docs/register-forensics \
             -p 'test_evaluate_default_image.py' -v
+          python3 -m unittest discover -s os-docs/register-forensics \
+            -p 'test_compare_elf_sections.py' -v
