@@ -128,6 +128,48 @@ def run_test(image: str, result: dict) -> None:
         finally:
             cmd("docker", "rm", "--force", name, check=False)
 
+    # Distinct failure injection: an application process aborts itself.
+    # Docker's init exits with the failed child and tears down the entire PID
+    # namespace, including a grandchild in a different Unix session.
+    with tempfile.TemporaryDirectory(prefix="pcp-d12-oci-abort-") as d:
+        directory = Path(d)
+        os.chmod(directory, 0o777)
+        name = "pcp-d12-abort-" + secrets.token_hex(5)
+        try:
+            launch(image, name, directory, "parent", restart=False)
+            started_policy(state(name))
+            wait_for(
+                lambda: (directory / "grandchild-setsid").exists()
+                and size(directory / "grandchild.tick") >= 3
+                and size(directory / "parent.tick") >= 3,
+                "pre-crash child and parent heartbeats", 18,
+            )
+            (directory / "parent-crash").write_bytes(b"inject SIGABRT")
+            wait_for(
+                lambda: not state(name)["State"]["Running"],
+                "Docker stopping after Rust parent SIGABRT", 12,
+            )
+            exit_code = int(state(name)["State"]["ExitCode"])
+            assert exit_code != 0, f"unexpected successful parent exit: {exit_code}"
+            time.sleep(0.3)
+            before = size(directory / "grandchild.tick")
+            time.sleep(0.6)
+            after = size(directory / "grandchild.tick")
+            assert after == before, (
+                f"grandchild escaped its container after parent crash: {before}->{after}"
+            )
+            result["crash_boundary"] = {
+                "observed": True,
+                "parent_fault_injection": "controller marker triggers Rust process::abort",
+                "nonzero_container_exit_code": exit_code,
+                "setsid_grandchild": (directory / "grandchild-setsid").exists(),
+                "grandchild_heartbeat_after_container_stop": after,
+                "grandchild_heartbeat_did_not_advance": after == before,
+                "container_running_after_abort": state(name)["State"]["Running"],
+            }
+        finally:
+            cmd("docker", "rm", "--force", name, check=False)
+
     # Second witness: a Docker host restart manager, not ChatGPT, creates a
     # successor process when the static worker exits nonzero after >10 seconds.
     with tempfile.TemporaryDirectory(prefix="pcp-d12-oci-restart-") as d:
