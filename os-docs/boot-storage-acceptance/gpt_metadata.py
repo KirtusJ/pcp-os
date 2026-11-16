@@ -86,7 +86,10 @@ def _parse_header(s: SparseSnapshot, lba: int) -> _Header:
     revision, size, expected_crc, reserved = struct.unpack_from("<IIII", block, 8)
     _require(revision == 0x00010000, "unsupported-gpt-revision")
     _require(92 <= size <= s.logical_block_bytes, "invalid-header-size")
-    _require(reserved == 0 and not any(block[size:]),
+    # UEFI GPT revision 1.0 labels *all* bytes from offset 92 to the
+    # logical-block boundary as reserved/zero, even if HeaderSize > 92.
+    # The CRC covers HeaderSize, but CRC coverage does not relax this.
+    _require(reserved == 0 and not any(block[92:]),
              "nonzero-header-reserved")
     check = bytearray(block[:size])
     check[16:20] = b"\x00" * 4
@@ -134,6 +137,11 @@ def _check_partitions(array: bytes, h: _Header) -> int:
             continue
         unique = entry[16:32]
         begin, end = struct.unpack_from("<QQ", entry, 32)
+        attributes = struct.unpack_from("<Q", entry, 48)[0]
+        # GPT entry attribute bits 3..47 are reserved/zero in UEFI 2.11;
+        # bits 0..2 are defined, and 48..63 are partition-type specific.
+        _require(attributes & (((1 << 48) - 1) & ~7) == 0,
+                 "reserved-partition-attribute-bits")
         _require(unique != ZERO_GUID and unique not in guids,
                  "missing-or-duplicate-partition-guid")
         guids.add(unique)
@@ -154,6 +162,11 @@ def _check_protective_mbr(s: SparseSnapshot) -> None:
              "bad-protective-mbr-partition-type")
     _require(entry[1:4] == b"\x00\x02\x00",
              "bad-protective-mbr-start-chs")
+    # Only rule out the impossible all-zero end of the full-disk record.
+    # Correct last-LBA CHS cannot be established absent reported geometry;
+    # this is NOT a full CHS conformance or physical-device check.
+    _require(entry[5:8] != b"\x00\x00\x00",
+             "bad-protective-mbr-end-chs")
     _require(not any(mbr[440:446]), "nonzero-protective-mbr-reserved")
     start, size = struct.unpack_from("<II", entry, 8)
     _require(start == 1 and size == min(s.total_lba - 1, 0xffff_ffff),
