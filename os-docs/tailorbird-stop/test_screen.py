@@ -106,19 +106,15 @@ class ScreenOutput(unittest.TestCase):
                     put_pixel(altered, x, 220, AMBER)
                     self.assertIsNone(screen.matching_row(altered, text, tag=tag))
 
-    def test_rejects_unrecognized_additional_tagged_row(self):
-        """An exact expected row cannot conceal another same-tag outcome."""
-        for tag, kind, expected, extra in [
-            (screen.OUTPUT_TAG, "OUTPUT", "original", "unrecognized"),
-            (screen.TOOL_TAG, "TOOL", "Request denied", "Unexpected tool"),
-        ]:
-            for expected_y, extra_y in ((218, 246), (246, 218)):
-                with self.subTest(kind=kind, expected_y=expected_y):
-                    pixels = bytearray(bytes(BACKGROUND) * screen.WIDTH * screen.HEIGHT)
-                    put_row(pixels, expected_y, kind, expected, self.glyphs)
-                    self.assertEqual(screen.matching_row(pixels, expected, tag=tag), expected_y)
-                    put_row(pixels, extra_y, kind, extra, self.glyphs)
-                    self.assertIsNone(screen.matching_row(pixels, expected, tag=tag))
+    def test_source_echo_precedes_genuine_installed_output(self):
+        """A source echo must not suppress the separately rendered program result."""
+        pixels = bytearray(bytes(BACKGROUND) * screen.WIDTH * screen.HEIGHT)
+        put_row(pixels, 218, "OUTPUT", "print replacement", self.glyphs)
+        put_row(pixels, 330, "OUTPUT", "replacement", self.glyphs)
+        self.assertEqual(screen.matching_row(pixels, "replacement"), 330)
+        # A second independently known result remains a conflicting outcome.
+        put_row(pixels, 358, "OUTPUT", "changed", self.glyphs)
+        self.assertIsNone(screen.matching_row(pixels, "replacement"))
 
     def test_frame_boundaries(self):
         header = b"P6\n960 540\n255\n"
