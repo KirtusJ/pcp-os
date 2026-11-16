@@ -36,6 +36,9 @@ jobs:
           set -euo pipefail
           cargo test --offline --lib --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
           cargo test --offline --test abi --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+          cargo test --offline --test edid --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+          cargo test --offline --release --test abi --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+          cargo test --offline --release --test edid --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
       - name: Add official x86_64-unknown-uefi target to ephemeral compiler
         run: |
           set -euo pipefail
