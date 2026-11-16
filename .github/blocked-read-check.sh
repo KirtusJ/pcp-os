@@ -23,6 +23,8 @@ boot() {
   else
     [[ $rc == 35 ]]
     grep -Fq 'SELF-TEST(S) FAILED' "$log"
+    grep -Fq 'it is in SAFE and starts no program' "$log"
+    grep -Fq "pass the kernel's register of its own start, verification and stop verifies and replays without a problem" "$log"
     grep -Eiq 'fail[^[:alpha:]].*a program waiting in a read of the keyboard' "$log"
   fi
 }
