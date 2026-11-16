@@ -1,0 +1,50 @@
+name: Blocked keyboard integration receipt
+on:
+  push:
+    branches: [director-10/blocked-read-qa]
+permissions:
+  contents: read
+jobs:
+  boot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the kernel build and emulator tools
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y qemu-system-x86 lld binutils
+          rustup toolchain install stable --profile minimal --component rust-src
+          mkdir -p "$RUNNER_TEMP/receipts"
+          rustc +stable -vV | tee "$RUNNER_TEMP/receipts/rust.txt"
+          qemu-system-x86_64 --version | tee "$RUNNER_TEMP/receipts/qemu.txt"
+      - name: Run the register and host tests
+        working-directory: PCP_OS_Rust
+        run: |
+          set -o pipefail
+          cargo +stable test --workspace --locked | tee "$RUNNER_TEMP/receipts/host-tests.txt"
+      - name: Boot the integrated tree with ordinary and fixed clocks
+        working-directory: PCP_OS_Rust/crates/pcpos-kernel
+        env:
+          RUSTUP_TOOLCHAIN: stable
+        run: |
+          bash "$GITHUB_WORKSPACE/.github/blocked-read-check.sh" healthy
+      - name: Check rejection of reversed Shift in a disposable test build
+        working-directory: PCP_OS_Rust/crates/pcpos-kernel
+        env:
+          RUSTUP_TOOLCHAIN: stable
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/main.rs')
+          source = p.read_text()
+          expected = '&[0x2A, 0xAA, 0x1E, 0x9E], 20, BlockedRead'
+          assert source.count(expected) == 1
+          p.write_text(source.replace(expected, expected.replace('0x2A, 0xAA', '0xAA, 0x2A')))
+          PY
+          bash "$GITHUB_WORKSPACE/.github/blocked-read-check.sh" reversed
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: blocked-read-serial
+          path: ${{ runner.temp }}/receipts
