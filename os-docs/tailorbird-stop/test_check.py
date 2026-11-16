@@ -1,7 +1,11 @@
 """Negative controls for the cancellation trace and application-store reader."""
 import hashlib
+import os
 from pathlib import Path
+import signal
 import struct
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -82,6 +86,24 @@ class StopOracles(unittest.TestCase):
         for name, records in cases.items():
             with self.subTest(case=name), self.assertRaises(ValueError):
                 check.desktop_startup(transcript(records), launch)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX signal exit codes")
+    def test_requested_kill_is_distinct_from_a_prior_exit(self):
+        with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"]) as child:
+            guest = check.Guest(child, self.path, 1)
+            try:
+                guest.interrupt()
+                self.assertEqual(child.returncode, -signal.SIGKILL)
+                self.assertTrue(guest.kill_requested)
+            finally:
+                if child.poll() is None:
+                    child.kill()
+        with subprocess.Popen([sys.executable, "-c", "pass"]) as exited:
+            self.assertEqual(exited.wait(), 0)
+            guest = check.Guest(exited, self.path, 1)
+            with self.assertRaisesRegex(ValueError, "exited before interruption"):
+                guest.interrupt()
+            self.assertFalse(guest.kill_requested)
 
     def test_active_generation_requires_exact_path_and_bytes(self):
         region = bytearray(check.SECTOR * (1 + 2 * check.SLOT_SECTORS))
