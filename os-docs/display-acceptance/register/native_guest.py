@@ -26,12 +26,13 @@ GROUND = bytes.fromhex("10283f")
 TEAL = bytes.fromhex("41bad7")
 TEXT = bytes.fromhex("f2f7fc")
 SOFT = bytes.fromhex("9fb4c8")
+PANEL = bytes.fromhex("18364f")
 ALPHABET = "0123456789abcdef"
 
 
-def raster(text, font, fg):
+def raster(text, font, fg, background=GROUND):
     palette = [
-        bytes((bg * (255 - a) + ink * a + 127) // 255 for ink, bg in zip(fg, GROUND))
+        bytes((bg * (255 - a) + ink * a + 127) // 255 for ink, bg in zip(fg, background))
         for a in range(256)
     ]
     return [
@@ -44,11 +45,11 @@ def raster(text, font, fg):
     ]
 
 
-def exact_cells(size, pixels, x, y, text, font, fg):
+def exact_cells(size, pixels, x, y, text, font, fg, background=GROUND):
     width, height = size
     if x + 10 * len(text) > width or y + 20 > height:
         return False
-    rows = raster(text, font, fg)
+    rows = raster(text, font, fg, background)
     return all(
         pixels[(yy*width+x)*3:(yy*width+x+len(text)*10)*3] == row
         for yy, row in ((y+k, rows[k]) for k in range(20))
@@ -126,8 +127,8 @@ def visit(kernel, measured, root, width, height, vram, font, timeout):
                 path, (size, pixels) = screenshot("launcher")
                 if (size == (width, height)
                         and exact_cells(size, pixels, 190, 40, "PCP OS", font, TEXT)
-                        and exact_cells(size, pixels, 20, height-40, "Up/Down choose", font, TEXT)
-                        and exact_cells(size, pixels, 20, height-20, "Ctrl+Alt+Delete", font, SOFT)):
+                        and exact_cells(size, pixels, 20, height-40, "Up/Down choose", font, TEXT, PANEL)
+                        and exact_cells(size, pixels, 20, height-20, "Ctrl+Alt+Delete", font, SOFT, PANEL)):
                     report["frames"]["launcher"] = hashlib.sha256(path.read_bytes()).hexdigest()
                     initial = pixels
                     break
