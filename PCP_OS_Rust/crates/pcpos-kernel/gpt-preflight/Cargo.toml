@@ -1,0 +1,21 @@
+[package]
+name = "pcpos-gpt-preflight"
+version = "0.1.0"
+edition = "2021"
+authors = ["Kirtus Justus"]
+publish = false
+description = "Read-only UEFI GPT profile and virtio-blk device-facts check, no I/O implementation"
+
+[workspace]
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
