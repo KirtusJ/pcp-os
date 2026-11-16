@@ -1,0 +1,129 @@
+name: Optical boot with both timing fixes
+on:
+  push:
+    branches: [director-10/sleep-optical-qa]
+permissions:
+  contents: read
+jobs:
+  boot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the kernel build and emulator tools
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y qemu-system-x86 lld binutils
+          rustup toolchain install stable --profile minimal --component rust-src
+          mkdir -p "$RUNNER_TEMP/receipts"
+          rustc +stable -vV | tee "$RUNNER_TEMP/receipts/rust.txt"
+          qemu-system-x86_64 --version | tee "$RUNNER_TEMP/receipts/qemu.txt"
+      - name: Run the register and host tests
+        working-directory: PCP_OS_Rust
+        run: |
+          set -o pipefail
+          cargo +stable run --release --locked --bin pcpos-vectors -- vectors
+          cargo +stable test --workspace --locked | tee "$RUNNER_TEMP/receipts/host-tests.txt"
+      - name: Boot the integrated tree with ordinary and fixed clocks
+        working-directory: PCP_OS_Rust/crates/pcpos-kernel
+        env:
+          RUSTUP_TOOLCHAIN: stable
+        run: |
+          bash "$GITHUB_WORKSPACE/.github/blocked-read-check.sh" healthy
+      - name: Read the pinned distribution and CD acceptance test
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: KirtusJ/pcp
+          ref: 9943e1942430e0b37680a01daaf762d17d7edebb
+          path: distribution
+          persist-credentials: false
+      - name: Boot a private optical candidate with the integrated kernel
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          set -eu
+          sudo apt-get -qq install -y --no-install-recommends xorriso tesseract-ocr tesseract-ocr-eng
+          receipts="$RUNNER_TEMP/receipts"
+          kernel="$GITHUB_WORKSPACE/PCP_OS_Rust/crates/pcpos-kernel"
+          cd "$RUNNER_TEMP"
+          mkdir original candidate
+          release="$GITHUB_WORKSPACE/distribution/PCP-OS.iso"
+          echo "93ed3b599ad7be0e1e88a64813b1f2b5299d51507df2edca691aaf6189d10d15  $release" | sha256sum -c -
+          xorriso -osirrox on -indev "$release" -extract / original
+          test "$(python "$kernel/tools/measure.py" original/kernel.elf32)" = '0232c02a8946d66216da0ac65953a246ce3d41d7a966ae31aa83c3335b3259e3'
+          export OPTICAL_MEASUREMENT="$(python "$kernel/tools/measure.py" "$kernel/target/pcpos-kernel.elf32")"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          config = Path('original/limine.conf').read_bytes()
+          old = b'image=0232c02a8946d66216da0ac65953a246ce3d41d7a966ae31aa83c3335b3259e3'
+          assert config.count(old) == 1
+          Path('candidate.conf').write_bytes(config.replace(old, b'image=' + os.environ['OPTICAL_MEASUREMENT'].encode('ascii')))
+          PY
+          xorriso -indev "$release" -outdev "$RUNNER_TEMP/candidate.iso" -map "$kernel/target/pcpos-kernel.elf32" /kernel.elf32 -map candidate.conf /limine.conf -boot_image any replay -commit
+          xorriso -osirrox on -indev candidate.iso -extract / candidate
+          cmp "$kernel/target/pcpos-kernel.elf32" candidate/kernel.elf32
+          cmp candidate.conf candidate/limine.conf
+          python - <<'PY'
+          from pathlib import Path
+          import os
+          a,b=Path('original'),Path('candidate')
+          names=lambda p:{f.relative_to(p) for f in p.rglob('*') if f.is_file()}
+          assert names(a)==names(b)
+          for name in sorted(names(a)):
+              if name.as_posix() == 'limine-bios-cd.bin':
+                  import struct
+                  src,dst=(a/name).read_bytes(),(b/name).read_bytes()
+                  assert src[:8]==dst[:8] and src[24:]==dst[24:], name
+                  for image,boot in ((Path(os.environ['GITHUB_WORKSPACE'])/'distribution'/'PCP-OS.iso',src),(Path('candidate.iso'),dst)):
+                      raw=image.read_bytes()
+                      pvd,lba,length,check=struct.unpack_from('<4I',boot,8)
+                      assert raw[pvd*2048:pvd*2048+7]==b'\x01CD001\x01'
+                      assert len(boot)==length and raw[lba*2048:lba*2048+length]==boot
+                      data=boot[64:]+bytes(-len(boot[64:])%4)
+                      assert sum(v[0] for v in struct.iter_unpack('<I',data)) % (2**32) == check
+              elif name.as_posix() not in {'kernel.elf32','limine.conf','boot.cat'}:
+                  assert (a/name).read_bytes()==(b/name).read_bytes(),name
+          PY
+          export OPTICAL_ISO_SHA="$(sha256sum candidate.iso | cut -d' ' -f1)"
+          printf '%s  candidate.iso\n%s  measured-image\n' "$OPTICAL_ISO_SHA" "$OPTICAL_MEASUREMENT" | tee "$receipts/optical-identity.txt"
+          xorriso -indev candidate.iso -report_el_torito plain > "$receipts/optical-boot-catalog.txt"
+          cp candidate/limine.conf "$receipts/optical-limine.conf"
+          python - <<'PY'
+          import os,sys
+          from pathlib import Path
+          sys.path.insert(0,str(Path(os.environ['GITHUB_WORKSPACE'])/'distribution'/'audit'/'public-live-cd'))
+          import check
+          check.ISO_SHA = os.environ['OPTICAL_ISO_SHA']
+          check.IMAGE_SHA = os.environ['OPTICAL_MEASUREMENT']
+          receipts=Path(os.environ['RUNNER_TEMP'])/'receipts'
+          check.check(Path('candidate.iso').resolve(),receipts/'optical-wall',clock='wall',startup_only=True)
+          check.check(Path('candidate.iso').resolve(),receipts/'optical-instructions',clock='instructions')
+          PY
+      - name: Compile all four optional pre-launch device checks together
+        working-directory: PCP_OS_Rust/crates/pcpos-kernel
+        env:
+          RUSTUP_TOOLCHAIN: stable
+          PCPOS_KERNEL_FEATURES: virtio-register-probe,virtio-worker-probe
+        run: |
+          PCPOS_KERNEL_STAGE="$RUNNER_TEMP/kernel-probes" bash run.sh build
+          sha256sum target/pcpos-kernel.elf32 > "$RUNNER_TEMP/receipts/probes-elf.sha256"
+      - name: Check rejection of reversed Shift in a disposable test build
+        working-directory: PCP_OS_Rust/crates/pcpos-kernel
+        env:
+          RUSTUP_TOOLCHAIN: stable
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/main.rs')
+          source = p.read_text()
+          expected = '&[0x2A, 0xAA, 0x1E, 0x9E], 20, BlockedRead'
+          assert source.count(expected) == 1
+          p.write_text(source.replace(expected, expected.replace('0x2A, 0xAA', '0xAA, 0x2A')))
+          PY
+          bash "$GITHUB_WORKSPACE/.github/blocked-read-check.sh" reversed
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: blocked-read-serial
+          path: ${{ runner.temp }}/receipts
