@@ -24,6 +24,11 @@ fn heartbeat(path: &str, duration: Duration, crash_marker: Option<&str>) -> io::
             // Explicit controller fault injection, never a production control.
             process::abort();
         }
+        if path == "/state/grandchild.tick" && Path::new("/state/grandchild-quiet").exists() {
+            // Negative oracle: a live worker can be silent without having exited.
+            thread::sleep(Duration::from_millis(75));
+            continue;
+        }
         let mut file = OpenOptions::new().create(true).append(true).open(path)?;
         file.write_all(b"x")?;
         file.sync_data()?;
