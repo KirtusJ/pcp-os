@@ -1,0 +1,34 @@
+{
+  "profile": "x86-64 direct boot, model unavailable",
+  "passed": false,
+  "boots": [
+    {
+      "name": "first",
+      "uuid": "fc2b94be-d9ec-4114-b048-d256b30888b0",
+      "stopped_by_harness": true,
+      "exit_code": 0,
+      "serial_sha256": "129ad0052060ef0f420c7e76b392df23be63f53ab0e7c4c5c727edeb5129eb58"
+    }
+  ],
+  "checkpoints": {
+    "factory": {
+      "generation": 1,
+      "source": null,
+      "store_sha256": "16a33e72672c48052770a93435126e76464cfd85a079a4170e35881adb1a2cab"
+    }
+  },
+  "whole_image_verified": false,
+  "source_commit": "99634e4025a238aa44346cf89563b0178e664151",
+  "manifest_sha256": "949f7d306d47dc2066eaab1401e63ff4d6282887aa8afc9b21e966e72991f1b5",
+  "component_sha256": {
+    "kernel": "5c029a9ad1ced743a0861b5e504f4cba1667fc7a16794aaf461bac2900d8d96a",
+    "tailorbird": "b5acb971d222184970b647d13e79cedf60bba681151cc40e0ae12cfb9503c465",
+    "qwen-worker": "4fff66f19598c36c918653c0be091e807b59f1873bb0c3357bd95ae6eb5741f9"
+  },
+  "qemu_version": "QEMU emulator version 10.0.13 (Debian 1:10.0.13+ds-0+deb13u1)",
+  "manifest_factory_sha256": "2df15613aa104054d16156be66d058865aeee3d6096d55d793e4a6810fc39f4a",
+  "fixture_sha256": "0a21c3c4bed520e94e8df03020ec5e753a5aeabb3f1dcf7d50ec415cae390400",
+  "frames": {},
+  "decision": "interrupt",
+  "error": "first.serial: incomplete model-unavailable desktop startup"
+}
