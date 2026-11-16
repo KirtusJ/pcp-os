@@ -131,6 +131,43 @@ clear attention receipt, no extra guest and no synthetic END. These are
 deliberate falsifications of the fixture's inference logic, not observations
 of malicious real-world actors.
 
+## Concurrent controller and live-worker ambiguity
+
+One further failure window is **not** an actual crash. Two independently
+started Linux OCI controllers can see the same shared journal while the
+first controller and its deliberately paused QEMU process remain OS-live.
+Without a controller lease, a later controller may mistake the first's
+`START` without `END` as abandoned, write `INDETERMINATE`, and
+prematurely quarantine a healthy ongoing attempt.
+
+The diagnostic Rust controller now acquires a **nonblocking Linux advisory
+`flock`** on `controller.lock` before reading or changing any request
+state. The file descriptor is retained while the controller owns its
+attempt; an OS process exit releases the kernel lock. Another controller
+that observes this **same-host busy lease** must stop without launching a
+QEMU guest, overwriting the request, or writing `attention.txt`. It emits
+a distinctly labeled `D12_BUSY` stderr line so that a clean wrapper
+exit cannot silently be described as task completion.
+
+The external Docker oracle runs the *actual original QEMU process with
+vCPUs held at `-S`* and checks its host PID/start/boot identity is
+OS-live throughout. It then tests both a simultaneous **same-ticket**
+controller and a **different-ticket** controller using the same shared
+volume. Both must emit observable BUSY, neither may cause a retry or
+`INDETERMINATE`, and the original single START and QEMU process must
+remain unchanged. Original contender logs are included in the artifact's
+synthetic-file allowlist.
+
+This is **cooperative same-host process coordination only**. Advisory
+`flock` is neither a mandatory OS security boundary nor proof against
+another writer holding the same file permissions, symlink/inode
+replacement, a remote host, a noncooperating actor, or a lost host. Nor
+does an exit code of zero signify work completion: BUSY must be handled
+as a separate outcome by any future orchestrator. A real PCP OS/Qwen
+service needs an independently enforceable actor identity, exclusive
+service ownership, durable operator authority and external process
+reconciliation.
+
 ## Runtime and release limits
 
 The ephemeral OCI test container requests a read-only root, no network,
