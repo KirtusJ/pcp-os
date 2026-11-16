@@ -257,16 +257,27 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
 /// The kernel's register, newest events last, a screen at a time.
 fn register_view(rec: &Record) {
     use ui::{at, GROUND, SOFT, TEXT};
-    let events = match ledger::verify(rec.ledger().bytes()) {
-        Ok((e, _)) => e,
-        Err(_) => Vec::new(),
-    };
     let (cols, rows) = ui::grid();
+    let (events, head) = match ledger::verify(rec.ledger().bytes()) {
+        Ok(verified) => verified,
+        Err(error) => {
+            ui::clear(GROUND);
+            at(2, 1, "THE KERNEL'S REGISTER: verification failed", ui::BAD, GROUND);
+            at(2, 2, &format!("{error:?}"), TEXT, GROUND);
+            at(2, rows - 2, "Esc back", SOFT, GROUND);
+            loop {
+                match wait_key() {
+                    (0x01, _) | (0x1C, _) => return,
+                    _ => {}
+                }
+            }
+        }
+    };
     let per = (rows - 6) as usize;
     let mut top = events.len().saturating_sub(per);
     loop {
         ui::clear(GROUND);
-        at(2, 1, &format!("THE KERNEL'S REGISTER: {} events, chain intact, head {}", events.len(), rec.ledger().head()), ui::TEAL, GROUND);
+        at(2, 1, &format!("THE KERNEL'S REGISTER: {} events, chain intact, head {}", events.len(), head), ui::TEAL, GROUND);
         at(2, 2, "seq  time                  actor     kind                 what", SOFT, GROUND);
         for (n, e) in events.iter().skip(top).take(per).enumerate() {
             let field = |k: &str| e.get(k).and_then(Value::as_str).unwrap_or("").to_string();
