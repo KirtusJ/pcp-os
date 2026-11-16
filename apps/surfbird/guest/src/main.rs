@@ -12,6 +12,8 @@ mod tcp;
 mod watch_view;
 mod page_text;
 const ORIGIN_HOST: &str = "fixture.test";
+use page_text::text;
+use surfbird_cable::layout::{Source, VISIBLE_ROWS};
 use surfbird_cable::{body_length, location::Location, parse, Page, CAPACITY, START};
 
 const W: usize = 640;
@@ -136,49 +138,52 @@ fn record(key: &str, value: &str) {
     log(b"\n");
 }
 
-fn label(frame: &mut Frame, x: i32, y: i32, value: &str, color: u32) {
-    let mut bytes = [0; 96];
-    for (dst, src) in bytes.iter_mut().zip(value.bytes()) {
-        *dst = src.to_ascii_uppercase();
-    }
-    let upper = core::str::from_utf8(&bytes[..value.len()]).unwrap();
-    frame.text(x, y, upper, 1, color);
-}
-
 fn present(display: &mut Display, path: &str, page: &Page<'_>, row: usize) {
     let pixels = unsafe { &mut *(&raw mut PIXELS) };
     pixels.fill(0x102a33);
-    let mut f = Frame {
+    let mut frame = Frame {
         px: pixels,
         pitch: W,
     };
-    f.text(25, 26, "SURFBIRD", 3, 0x70e7e3);
+    text(&mut frame, 26, 10, "Surfbird", 0x70e7e3);
     for (line, chunk) in path.as_bytes().chunks(58).enumerate() {
-        page_text::text(&mut f, 26, 55 + 21 * line, core::str::from_utf8(chunk).unwrap(), 0xa5b9bc);
+        text(
+            &mut frame,
+            26,
+            39 + 21 * line,
+            core::str::from_utf8(chunk).unwrap(),
+            0xa5b9bc,
+        );
     }
-    f.rect(26, 99, 586, 1, 0x447078);
-    label(&mut f, 26, 109, page.title, 0xf2f6f7);
-    for (line, paragraph) in page.paragraphs[row..page.paragraph_count]
-        .iter()
-        .take(2)
-        .enumerate()
-    {
-        label(&mut f, 26, 136 + 18 * line as i32, paragraph.text, 0xcbdadd);
-        record("text", paragraph.text);
+    frame.rect(26, 92, 586, 1, 0x447078);
+    for (i, line) in page.lines().skip(row).take(VISIBLE_ROWS).enumerate() {
+        let y = 104 + i * 22;
+        let (x, color) = match line.source {
+            Source::Title => (26, 0xf2f6f7),
+            Source::Paragraph(_) => {
+                record("text", line.text);
+                (26, 0xcbdadd)
+            }
+            Source::Link(index) => {
+                if line.first {
+                    text(&mut frame, 26, y, if index == 0 { "1" } else { "2" }, 0x65dedf);
+                }
+                (56, 0xe4edef)
+            }
+        };
+        text(&mut frame, x, y, line.text, color);
     }
     record("path", path);
     record("title", page.title);
-    for (i, l) in page.links[..page.count].iter().enumerate() {
-        let y = 185 + 32 * i as i32;
-        f.text(26, y, if i == 0 { "1" } else { "2" }, 2, 0x65dedf);
-        label(&mut f, 51, y + 4, l.label, 0xe4edef);
-        record(if i == 0 { "link1" } else { "link2" }, l.path());
+    for (index, link) in page.links[..page.count].iter().enumerate() {
+        record(if index == 0 { "link1" } else { "link2" }, link.path());
     }
-    f.text(
+    frame.rect(26, 310, 586, 1, 0x447078);
+    text(
+        &mut frame,
         26,
-        315,
-        "1 / 2  FOLLOW     UP / DOWN  SCROLL     B  BACK     ESC  EXIT",
-        1,
+        322,
+        "1/2 Follow    Up/Down Scroll    B Back    Esc Exit",
         0x96cace,
     );
     display.show(pixels);
@@ -209,6 +214,7 @@ fn browse_pages(stream: &mut impl Stream) -> Result<(), &'static str> {
     loop {
         let page = parse(&bodies[slot][..lengths[slot]])?;
         let path = locations[slot].address();
+        let last_full_view = page.lines().count().saturating_sub(VISIBLE_ROWS);
         present(&mut display, path, &page, rows[slot]);
         // Keep the displayed document borrowed while waiting for the next selection.
         let index = loop {
@@ -228,8 +234,8 @@ fn browse_pages(stream: &mut impl Stream) -> Result<(), &'static str> {
             }
             let next = if display.pressed[72] {
                 rows[slot].saturating_sub(1)
-            } else if display.pressed[80] {
-                (rows[slot] + 1).min(page.paragraph_count - 1)
+            } else if display.pressed[80] && rows[slot] < last_full_view {
+                rows[slot] + 1
             } else {
                 rows[slot]
             };
@@ -251,13 +257,13 @@ fn browse_pages(stream: &mut impl Stream) -> Result<(), &'static str> {
             if target.fragment().is_some()
                 && target.request_target() == locations[slot].request_target()
             {
-                rows[other] = page.target_row(target.fragment(), rows[slot]);
+                rows[other] = page.fragment_line(target.fragment(), rows[slot]);
                 lengths[other] = lengths[slot];
                 bodies[other] = bodies[slot];
             } else {
                 lengths[other] = fetch(stream, target.request_target(), &mut bodies[other])?;
                 let next = parse(&bodies[other][..lengths[other]])?;
-                rows[other] = next.target_row(target.fragment(), 0);
+                rows[other] = next.fragment_line(target.fragment(), 0);
             }
             locations[other] = target;
             previous = true;

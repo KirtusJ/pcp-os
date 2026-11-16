@@ -14,6 +14,7 @@ AMBER = (227, 162, 75)
 TAG_GLYPHS = {
     "O": [14, 17, 17, 17, 17, 17, 14], "U": [17, 17, 17, 17, 17, 17, 14],
     "T": [31, 4, 4, 4, 4, 4, 4], "P": [30, 17, 17, 30, 16, 16, 16],
+    "L": [16, 16, 16, 16, 16, 16, 31],
 }
 
 
@@ -23,7 +24,7 @@ def put_pixel(pixels, x, y, color):
 
 
 def put_row(pixels, y, kind, message, glyphs):
-    if kind == "OUTPUT":
+    if kind:
         for index, char in enumerate(kind):
             for row, bits in enumerate(TAG_GLYPHS[char]):
                 for col in range(5):
@@ -75,6 +76,23 @@ class ScreenOutput(unittest.TestCase):
         put_row(pixels, 246, "OUTPUT", "original", self.glyphs)
         put_pixel(pixels, 925, 255, AMBER)
         self.assertIsNone(screen.matching_row(pixels, "original"))
+
+    def test_refusal_requires_the_tool_tag_and_complete_message_on_one_row(self):
+        for kind, message, accepted in [
+            ("TOOL", "Request denied", True),
+            ("OUTPUT", "Request denied", False),
+            ("TOOL", "Request denied!", False),
+            ("TOOL", "request denied", False),
+        ]:
+            with self.subTest(kind=kind, message=message):
+                pixels = bytearray(bytes(BACKGROUND) * screen.WIDTH * screen.HEIGHT)
+                put_row(pixels, 246, kind, message, self.glyphs)
+                self.assertEqual(screen.matching_row(pixels, "Request denied", tag=screen.TOOL_TAG),
+                                 246 if accepted else None)
+        pixels = bytearray(bytes(BACKGROUND) * screen.WIDTH * screen.HEIGHT)
+        put_row(pixels, 218, "TOOL", "", self.glyphs)
+        put_row(pixels, 246, "", "Request denied", self.glyphs)
+        self.assertIsNone(screen.matching_row(pixels, "Request denied", tag=screen.TOOL_TAG))
 
     def test_frame_boundaries(self):
         header = b"P6\n960 540\n255\n"

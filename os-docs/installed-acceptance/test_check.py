@@ -15,7 +15,7 @@ from check import verify_log
 
 
 class SerialAcceptance(unittest.TestCase):
-    components = {"qwen-worker": "1" * 64, "tailorbird": "2" * 64}
+    components = {"qwen-worker": "1" * 64, "tailorbird": "b5acb971d222184970b647d13e79cedf60bba681151cc40e0ae12cfb9503c465"}
     manifest = {"component_sha256": components, "factory_disk_guid": "00112233-4455-6677-8899-aabbccddeeff"}
     image = "3" * 64
     command = {
@@ -120,6 +120,27 @@ class SerialAcceptance(unittest.TestCase):
                          [*lines[:3], wrong_launch, *lines[3:]]):
             with self.subTest(launches=launches), self.assertRaises(ValueError):
                 self.check("desktop", launches)
+
+    def test_installed_desktop_negotiated_mcp_and_clean_exit(self):
+        # These eight lines come from guarded-child-child-desktop.serial (pcp-os#132,
+        # comment 6919490251). The surrounding boot records here are synthetic.
+        release = """starting Tailorbird (177232 bytes, SHA-256 b5acb971d222184970b647d13e79cedf60bba681151cc40e0ae12cfb9503c465)
+Qwen worker admitted in separate address space: UI pid 1, worker pid 2, model file and message endpoint
+TAILORBIRD MCP CONNECTED 2025-11-25
+QWEN READY
+TAILORBIRD RELEASE PROPOSAL STAGED
+Qwen worker execution ended: Stopped
+Qwen worker end Some(Stopped); 106299 frames released; W+X 0; supervisor reachable false
+Tailorbird ended DONE: exit 0 after 4 s; 1872 system calls; 22 frames shown (4.9 a second); the processor idled 93% of the time; 0 ms of sound played, the device ran out of sound 0 time(s); 0 music register writes so far, the latest 0 ms late; 1818 pages at the end, 1013 of them the display's, 0 both writable and executable; 817 frames given back, 131072 free before and 131072 after; the store holds 0 file(s), 0 bytes; Tailorbird holds 0 app(s)""".splitlines()
+        before = ["Persistent application store mounted: 0 file(s)",
+                  "PCP OS launcher ready: 2 programs, 3 files"]
+        self.check("desktop", before + release + ["ALL SELF-TESTS PASS"])
+        for text in ("TAILORBIRD MCP CONNECTED 2025-11-25_PENDING",
+                     "previous event: TAILORBIRD MCP CONNECTED 2025-11-25"):
+            with self.subTest(record=text), self.assertRaises(ValueError):
+                altered = release.copy()
+                altered[2] = text
+                self.check("desktop", before + altered + ["ALL SELF-TESTS PASS"])
 
     def test_repeated_diagnostic_launch_cannot_combine_two_workers(self):
         with self.assertRaises(ValueError):

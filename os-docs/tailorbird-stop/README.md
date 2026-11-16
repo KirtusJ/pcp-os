@@ -40,3 +40,10 @@ Add `--check-screen` to check what appears in the task output panel. This option
 The expected visible results are `original` after Stop, `original` after cold reopen, and `replacement` after fresh approval. The runner saves the three accepted PPM files and records each full-file SHA-256 and row position in `result.json`. If presentation times out, inspect the most recent complete frame and serial transcript. A different layout needs independently derived pixel expectations. The [initial pixel criteria](https://github.com/KirtusJ/pcp-os/pull/157#issuecomment-6914807429) identify the reference field digests.
 
 Run `python3 -m unittest discover -s os-docs/tailorbird-stop` from the repository to check the trace, disk and framebuffer comparisons. The screen tests independently render reference glyphs from the checked-in kernel font and exercise complete, truncated, oversized, and wrong-size images.
+
+
+## Refusing a replacement with Alt+D
+
+Pass `--decision deny` to test explicit refusal on the connected 960×540 preview. The runner stages a replacement with a queued run, presses Alt+D, and waits for the tool row to display the complete message `Request denied`. It saves that frame even when `--check-screen` is omitted. This gives the refusal its own visible acknowledgement before the runner sends a late Alt+A. The first guest then stages and cancels a separate proposal to show it has consumed further keyboard input. At that point the trace must contain only the original save and zero application reads.
+
+The remaining checks use the same disk and a second guest. They require the original source and generation after refusal and cold reopen, followed by a fresh approval that commits the replacement. Add `--check-screen` to retain the application output frames as well as the denial receipt. The default `--decision stop` exercises Alt+S and checks its serial acceptance and confirmation as before.

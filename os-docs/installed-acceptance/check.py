@@ -101,7 +101,7 @@ def verify_log(data, mode, manifest, expected_tokens, kernel_measurement=None):
                 r"PCP OS launcher ready: .*",
                 launch,
                 r"Qwen worker admitted in separate address space: .*",
-                r"TAILORBIRD MCP CONNECTED",
+                r"TAILORBIRD MCP CONNECTED(?: [0-9]{4}-[0-9]{2}-[0-9]{2})?",
                 r"QWEN READY",
                 r"Tailorbird ended DONE: exit 0(?: after [0-9]+ s; .+)?",
             ])

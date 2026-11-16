@@ -7,6 +7,7 @@ pub mod dns_answer;
 #[cfg(any(test, feature = "https-probe"))]
 pub mod https_prefix;
 mod href;
+pub mod layout;
 pub mod location;
 #[cfg(any(test, feature = "https-probe"))]
 pub mod watch_document;
@@ -86,18 +87,29 @@ pub struct Paragraph<'a> {
     pub text: &'a str,
 }
 
+enum FragmentTarget {
+    Top,
+    Paragraph(usize),
+    Missing,
+}
+
 impl Page<'_> {
     pub fn target_row(&self, fragment: Option<&str>, fallback: usize) -> usize {
-        match fragment {
-            Some("") | None => 0,
-            Some(id) => self.paragraphs[..self.paragraph_count]
-                .iter()
-                .position(|paragraph| paragraph.id == Some(id))
-                .unwrap_or(if id.eq_ignore_ascii_case("top") {
-                    0
-                } else {
-                    fallback
-                }),
+        match self.fragment_target(fragment) {
+            FragmentTarget::Top => 0,
+            FragmentTarget::Paragraph(index) => index,
+            FragmentTarget::Missing => fallback,
+        }
+    }
+
+    fn fragment_target(&self, fragment: Option<&str>) -> FragmentTarget {
+        let Some(id) = fragment.filter(|id| !id.is_empty()) else {
+            return FragmentTarget::Top;
+        };
+        match self.paragraphs[..self.paragraph_count].iter().position(|p| p.id == Some(id)) {
+            Some(index) => FragmentTarget::Paragraph(index),
+            None if id.eq_ignore_ascii_case("top") => FragmentTarget::Top,
+            None => FragmentTarget::Missing,
         }
     }
 }
