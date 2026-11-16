@@ -1,9 +1,0 @@
-[target.x86_64-unknown-none]
-rustflags = [
-  "-C", "relocation-model=static",
-  "-C", "code-model=large",
-  "-C", "link-arg=-Tguest.ld",
-  "-C", "link-arg=--build-id=none",
-  "-C", "link-arg=-z",
-  "-C", "link-arg=max-page-size=4096",
-]

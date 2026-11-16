@@ -1,9 +1,0 @@
-[workspace]
-members = ["game", "guest", "web"]
-resolver = "2"
-
-[profile.release]
-panic = "abort"
-lto = true
-opt-level = 2
-codegen-units = 1
