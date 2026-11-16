@@ -155,7 +155,16 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
                 arch::interrupts_on();
                 dev::keys_forget();
             }
-            (0x13, false) => register_view(rec),
+            (0x13, false) => {
+                #[cfg(feature = "register-view-diagnostic")]
+                if let Some(mode @ ("register-snapshot" | "register-corrupt")) = option(line, "test") {
+                    register_view_diagnostic(rec, mode);
+                } else {
+                    register_view(rec);
+                }
+                #[cfg(not(feature = "register-view-diagnostic"))]
+                register_view(rec);
+            },
             (0x19, false) | (0x01, false) => break,
             _ => {}
         }
@@ -256,9 +265,46 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
 
 /// The kernel's register, newest events last, a screen at a time.
 fn register_view(rec: &Record) {
+    register_view_with_bytes(rec.ledger().bytes());
+}
+
+/// Only compiled in deliberately instrumented test images, never in the release kernel.
+/// The raw canonical bytes, not a kernel-reported expected digest, let a separate
+/// verifier reconstruct the same register state that the display next renders.
+/// Do not enable on machines holding private task material: serial records raw events.
+#[cfg(feature = "register-view-diagnostic")]
+fn register_view_diagnostic(rec: &Record, mode: &str) {
+    let raw = rec.ledger().bytes();
+    say!("D10_REGISTER_RAW_BEGIN bytes={}", raw.len());
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    for &b in raw {
+        arch::serial_put(HEX[(b >> 4) as usize]);
+        arch::serial_put(HEX[(b & 15) as usize]);
+    }
+    say!("");
+    say!("D10_REGISTER_RAW_END bytes={}", raw.len());
+    if mode == "register-corrupt" {
+        // Corrupt an isolated copy, not the live append-only register.
+        let mut damaged = raw.to_vec();
+        if let Some(first) = damaged.first_mut() {
+            let before = *first;
+            *first ^= 1;
+            say!("D10_REGISTER_INJECT offset=0 before={:02x} after={:02x}", before, *first);
+            register_view_with_bytes(&damaged);
+        } else {
+            say!("D10_REGISTER_INJECT_EMPTY: intentionally malformed single-byte input");
+            register_view_with_bytes(b"{");
+        }
+    } else {
+        say!("D10_REGISTER_UNMODIFIED");
+        register_view_with_bytes(raw);
+    }
+}
+
+fn register_view_with_bytes(raw: &[u8]) {
     use ui::{at, GROUND, SOFT, TEXT};
     let (cols, rows) = ui::grid();
-    let (events, head) = match ledger::verify(rec.ledger().bytes()) {
+    let (events, head) = match ledger::verify(raw) {
         Ok(verified) => verified,
         Err(error) => {
             ui::clear(GROUND);

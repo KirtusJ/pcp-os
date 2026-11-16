@@ -21,6 +21,7 @@ virtio-worker-probe = ["virtio-rx-probe"] # two isolated guests and one allowlis
 fault-demo = []            # after the self-tests, fault on purpose to show that an unexpected exception is reported and stops the kernel
 
 overflow-demo = []         # after the self-tests, exhaust the stack on purpose to show that it is reported
+register-view-diagnostic = [] # TEST ONLY: print synthetic raw register bytes and inject copy-only corruption
 
 [profile.dev]
 panic = "abort"

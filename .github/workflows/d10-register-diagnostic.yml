@@ -1,0 +1,56 @@
+name: D10 opt-in register diagnostic (native QEMU)
+on:
+  pull_request:
+    branches:
+      - director-10/register-head-visible-20261116
+    paths:
+      - 'PCP_OS_Rust/crates/pcpos-kernel/src/session.rs'
+      - 'PCP_OS_Rust/crates/pcpos-kernel/Cargo.toml'
+      - 'os-docs/display-acceptance/register/d10_diagnostic_native.py'
+      - '.github/workflows/d10-register-diagnostic.yml'
+permissions:
+  contents: read
+
+jobs:
+  native-diagnostic:
+    name: Exact raw register vs P6; isolated-copy refusal
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Build opt-in diagnostic feature (NOT release kernel)
+        env:
+          PCPOS_KERNEL_STAGE: /tmp/d10-register-diagnostic-build
+          PCPOS_KERNEL_FEATURES: register-view-diagnostic
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 binutils lld
+          rustup target add x86_64-unknown-none
+          rustup component add rust-src
+          sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          kernel=PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
+          echo "DIAGNOSTIC_KERNEL_SHA256 $(sha256sum "$kernel")"
+          python3 PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py "$kernel" > measurement.txt
+          cat measurement.txt
+      - name: Capture immutable same-view raw bytes, independently replay and test QEMU pixels
+        run: |
+          set -euo pipefail
+          kernel=PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
+          measurement=$(cat measurement.txt)
+          python3 os-docs/display-acceptance/register/d10_diagnostic_native.py \
+            --kernel "$kernel" --measurement "$measurement" \
+            --font PCP_OS_Rust/crates/pcpos-kernel/src/font.rs \
+            --output captures/d10-diagnostic
+      - name: Preserve actual serials, native P6 frames, negative controls and partial failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: d10-same-view-diagnostic-native
+          path: |
+            captures/d10-diagnostic/
+            measurement.txt
+          if-no-files-found: warn
+          retention-days: 14
