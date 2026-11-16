@@ -13,6 +13,7 @@
 //! This file has no `unsafe`.
 use crate::arch;
 use crate::dev;
+use crate::desktop;
 use crate::exec;
 use crate::ui;
 use crate::user::{self, End, Grants, Program, World};
@@ -48,9 +49,6 @@ struct Entry {
     image: &'static [u8],
     digest: String,
 }
-
-/// The mode the kernel draws its own screens in.
-const OWN_MODE: (u32, u32) = (1024, 768);
 
 fn option<'a>(line: &'a str, key: &str) -> Option<&'a str> {
     line.split_whitespace().find_map(|w| w.strip_prefix(key).and_then(|r| r.strip_prefix('=')))
@@ -177,10 +175,88 @@ fn wait_key() -> (u8, bool) {
     }
 }
 
+/// Draw the desktop in the active device mode. Only checked row widths are
+/// emitted. If the framebuffer metadata is unusable or allocation fails,
+/// use the existing solid-color menu; never trust an invented resolution.
+fn draw_background() {
+    if let Some(d) = dev::display() {
+        if let Some(g) = desktop::Geometry::checked(d.width, d.height, d.pitch, d.mapped) {
+            if desktop::rasterize(g, |y, pixels| dev::display_row(0, y, pixels)) {
+                return;
+            }
+        }
+    }
+    ui::clear(ui::GROUND);
+}
+
+/// Small or crowded screens keep the keyboard launcher reachable rather
+/// than drawing program names behind the fixed footer. This is not yet
+/// text scaling or a complete desktop window manager.
+fn draw_compact_menu(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, message: &str) {
+    use ui::{at, GROUND, PANEL, SOFT, TEXT};
+    let (cols, rows) = ui::grid();
+    if cols < 20 || rows < 8 {
+        ui::clear(GROUND);
+        return;
+    }
+    let panel_cols = cols.saturating_sub(1).min(72);
+    let text_width = panel_cols.saturating_sub(4) as usize;
+    ui::fill(0, 0, panel_cols * ui::CELL_W, rows.saturating_sub(2) * ui::CELL_H, GROUND);
+    at(2, 1, "PCP OS  |  DESKTOP", ui::TEAL, GROUND);
+    let state = if start.failed != 0 {
+        "KERNEL NOT VERIFIED - NO PROGRAM START"
+    } else {
+        "KERNEL SELF-CHECKS REPORTED PASS"
+    };
+    at(2, 2, &state.chars().take(text_width).collect::<String>(),
+       if start.failed == 0 { ui::GOOD } else { ui::BAD }, GROUND);
+    at(2, 4, &format!("PROGRAMS: {}    REGISTER: {}", programs.len(), rec.ledger().len())
+       .chars().take(text_width).collect::<String>(), SOFT, GROUND);
+
+    if programs.is_empty() {
+        at(2, 6, "The loader supplied no programs.", SOFT, GROUND);
+    } else {
+        let visible = (rows.saturating_sub(11) as usize).clamp(1, 8);
+        let top = chosen.saturating_sub(visible / 2)
+            .min(programs.len().saturating_sub(visible));
+        for (i, p) in programs.iter().enumerate().skip(top).take(visible) {
+            let row = 6 + (i - top) as u32;
+            let surface = if i == chosen { PANEL } else { GROUND };
+            ui::fill(ui::CELL_W, row * ui::CELL_H,
+                     cols.saturating_sub(2) * ui::CELL_W, ui::CELL_H, surface);
+            at(2, row, if i == chosen { ">" } else { " " }, ui::AMBER, surface);
+            let selected = format!("{} / {}: {}", i + 1, programs.len(), p.name);
+            at(4, row, &selected.chars().take(text_width.saturating_sub(3))
+                .collect::<String>(), TEXT, surface);
+        }
+    }
+    if rows >= 14 && !message.is_empty() {
+        let first = message.split('\n').next().unwrap_or("");
+        at(2, rows - 4, &first.chars().take(text_width).collect::<String>(), ui::AMBER, GROUND);
+    }
+    ui::fill(0, (rows - 2) * ui::CELL_H, cols * ui::CELL_W, 2 * ui::CELL_H, PANEL);
+    let help = "UP/DOWN CHOOSE  ENTER START  R REGISTER  P POWER OFF";
+    let stop = "CTRL+ALT+DELETE STOPS A RUNNING PROGRAM";
+    at(1, rows - 2, &help.chars().take(cols.saturating_sub(2) as usize)
+        .collect::<String>(), TEXT, PANEL);
+    at(1, rows - 1, &stop.chars().take(cols.saturating_sub(2) as usize)
+        .collect::<String>(), SOFT, PANEL);
+}
+
 fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8], String)], rec: &Record, chosen: usize, message: &str, stored: usize) {
     use ui::{at, GROUND, PANEL, SOFT, TEXT};
-    ui::clear(GROUND);
+    draw_background();
     let (cols, rows) = ui::grid();
+    // Screen size and list length determine whether the full information
+    // panel fits without hiding the keyboard launcher or power controls.
+    let used_rows = 19usize + programs.len() * 2 + files.len().min(8)
+        + message.split('\n').count();
+    if cols < 102 || rows < used_rows as u32 {
+        draw_compact_menu(start, programs, rec, chosen, message);
+        return;
+    }
+    ui::fill(0, 0, cols.min(98) * ui::CELL_W,
+             rows.saturating_sub(2) * ui::CELL_H, GROUND);
     ui::emblem(30, 24, 132, GROUND);
     at(19, 2, "PCP OS", TEXT, GROUND);
     at(26, 2, &format!("kernel {}", start.version), SOFT, GROUND);
@@ -318,9 +394,12 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
     let (_, sound1, dry1) = dev::sound_state();
     let (sound_ms, dry) = ((sound1 - sound0) / (dev::SOUND_RATE as u64 * 4 / 1000), dry1 - dry0);
     let (_, fm_written, fm_late) = dev::fm_state();
-    // The display is the kernel's again, in the kernel's own mode.
-    if start.display.is_some() {
-        dev::display_set(OWN_MODE.0, OWN_MODE.1);
+    // Restore the display mode selected at startup, not a fixed 1024x768.
+    // The firmware/driver is responsible for selecting and validating that mode.
+    if let Some(d) = start.display {
+        if dev::display_set(d.width, d.height).is_none() {
+            say!("launcher: the selected {}x{} display mode could not be restored", d.width, d.height);
+        }
         dev::display_show(0);
     }
     let message = match result {
