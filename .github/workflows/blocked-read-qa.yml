@@ -30,6 +30,64 @@ jobs:
           RUSTUP_TOOLCHAIN: stable
         run: |
           bash "$GITHUB_WORKSPACE/.github/blocked-read-check.sh" healthy
+      - name: Read the pinned distribution and CD acceptance test
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: KirtusJ/pcp
+          ref: 9943e1942430e0b37680a01daaf762d17d7edebb
+          path: distribution
+          persist-credentials: false
+      - name: Boot a private optical candidate with the integrated kernel
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          set -eu
+          sudo apt-get -qq install -y --no-install-recommends xorriso tesseract-ocr tesseract-ocr-eng
+          receipts="$RUNNER_TEMP/receipts"
+          kernel="$GITHUB_WORKSPACE/PCP_OS_Rust/crates/pcpos-kernel"
+          cd "$RUNNER_TEMP"
+          mkdir original candidate
+          release="$GITHUB_WORKSPACE/distribution/PCP-OS.iso"
+          echo "93ed3b599ad7be0e1e88a64813b1f2b5299d51507df2edca691aaf6189d10d15  $release" | sha256sum -c -
+          xorriso -osirrox on -indev "$release" -extract / original
+          test "$(python "$kernel/tools/measure.py" original/kernel.elf32)" = '0232c02a8946d66216da0ac65953a246ce3d41d7a966ae31aa83c3335b3259e3'
+          export OPTICAL_MEASUREMENT="$(python "$kernel/tools/measure.py" "$kernel/target/pcpos-kernel.elf32")"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          config = Path('original/limine.conf').read_bytes()
+          old = b'image=0232c02a8946d66216da0ac65953a246ce3d41d7a966ae31aa83c3335b3259e3'
+          assert config.count(old) == 1
+          Path('candidate.conf').write_bytes(config.replace(old, b'image=' + os.environ['OPTICAL_MEASUREMENT'].encode('ascii')))
+          PY
+          xorriso -indev "$release" -outdev "$RUNNER_TEMP/candidate.iso" -map "$kernel/target/pcpos-kernel.elf32" /kernel.elf32 -map candidate.conf /limine.conf -boot_image any replay -commit
+          xorriso -osirrox on -indev candidate.iso -extract / candidate
+          cmp "$kernel/target/pcpos-kernel.elf32" candidate/kernel.elf32
+          cmp candidate.conf candidate/limine.conf
+          python - <<'PY'
+          from pathlib import Path
+          a,b=Path('original'),Path('candidate')
+          names=lambda p:{f.relative_to(p) for f in p.rglob('*') if f.is_file()}
+          assert names(a)==names(b)
+          for name in sorted(names(a)):
+              if name.as_posix() not in {'kernel.elf32','limine.conf','boot.cat'}:
+                  assert (a/name).read_bytes()==(b/name).read_bytes(),name
+          PY
+          export OPTICAL_ISO_SHA="$(sha256sum candidate.iso | cut -d' ' -f1)"
+          printf '%s  candidate.iso\n%s  measured-image\n' "$OPTICAL_ISO_SHA" "$OPTICAL_MEASUREMENT" | tee "$receipts/optical-identity.txt"
+          xorriso -indev candidate.iso -report_el_torito plain > "$receipts/optical-boot-catalog.txt"
+          cp candidate/limine.conf "$receipts/optical-limine.conf"
+          python - <<'PY'
+          import os,sys
+          from pathlib import Path
+          sys.path.insert(0,str(Path(os.environ['GITHUB_WORKSPACE'])/'distribution'/'audit'/'public-live-cd'))
+          import check
+          check.ISO_SHA = os.environ['OPTICAL_ISO_SHA']
+          check.IMAGE_SHA = os.environ['OPTICAL_MEASUREMENT']
+          receipts=Path(os.environ['RUNNER_TEMP'])/'receipts'
+          check.check(Path('candidate.iso').resolve(),receipts/'optical-wall',clock='wall',startup_only=True)
+          check.check(Path('candidate.iso').resolve(),receipts/'optical-instructions',clock='instructions')
+          PY
       - name: Compile all four optional pre-launch device checks together
         working-directory: PCP_OS_Rust/crates/pcpos-kernel
         env:
