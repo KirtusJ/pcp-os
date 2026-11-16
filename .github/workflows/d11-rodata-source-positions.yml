@@ -1,0 +1,89 @@
+name: D11 rodata location versus cfg source controls
+
+on:
+  push:
+    branches:
+      - director-11/register-default-build-parity-20261116
+    paths:
+      - "os-docs/register-forensics/prepare_rodata_cases.py"
+      - "os-docs/register-forensics/compare_rodata_cases.py"
+      - ".github/workflows/d11-rodata-source-positions.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bounded_source_position_test:
+    name: Five source-position contrasts plus reproducibility control
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Pin independent experiment files
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Pin exact D10 original register source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: 74c4d4a9934ad68e1b5be380971bf3377a464c6d
+          path: baseline
+      - name: Pin exact D10 diagnostic source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: 9fa9819103a67b0f2b124991a2d0d88b4c64b755
+          path: diagnostic
+      - name: Check pins and install fixed build toolchain dependencies
+        run: |
+          set -euo pipefail
+          test "$(git -C baseline rev-parse HEAD)" = 74c4d4a9934ad68e1b5be380971bf3377a464c6d
+          test "$(git -C diagnostic rev-parse HEAD)" = 9fa9819103a67b0f2b124991a2d0d88b4c64b755
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends binutils lld
+          rustup target add x86_64-unknown-none
+          rustup component add rust-src
+      - name: Execute no-feature blank, comment and cfg source-position discriminators
+        env:
+          REPRO_STAGE: ${{ runner.temp }}/d11-rodata-position-stage
+        run: |
+          set -euo pipefail
+          mkdir -p witness
+          rustc -V > witness/rustc.txt
+          cargo -V > witness/cargo.txt
+          for name in base_1 base_2 blank_before_arm comment_before_arm cfg_inline_arm cfg_original_arm; do
+            echo "BEGIN=$name"
+            python3 os-docs/register-forensics/prepare_rodata_cases.py \
+              --baseline baseline --diagnostic diagnostic --target case --case "$name" \
+              > "witness/$name.source.json"
+            rm -rf "$REPRO_STAGE"
+            export PCPOS_KERNEL_STAGE="$REPRO_STAGE"
+            unset PCPOS_KERNEL_FEATURES || :
+            sh case/PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+            elf=case/PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
+            sha256sum "$elf" | awk '{print $1}' > "witness/$name.elf_sha256"
+            python3 case/PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py "$elf" \
+              > "witness/$name.measurement"
+            objcopy --only-section=.text -O binary "$elf" "witness/$name.text.bin"
+            objcopy --only-section=.rodata -O binary "$elf" "witness/$name.rodata.bin"
+            sha256sum "witness/$name.text.bin" | awk '{print $1}' > "witness/$name.text_sha256"
+            echo "$name ELF=$(cat witness/$name.elf_sha256) TEXT=$(cat witness/$name.text_sha256)"
+          done
+          python3 os-docs/register-forensics/compare_rodata_cases.py witness
+          rm witness/*.text.bin witness/*.rodata.bin
+      - name: Retain bounded section-diff summary, no executables or section bytes
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: d11-rodata-source-position-evidence
+          path: |
+            witness/*.source.json
+            witness/*.elf_sha256
+            witness/*.measurement
+            witness/*.text_sha256
+            witness/rodata-differential.json
+            witness/rustc.txt
+            witness/cargo.txt
+          if-no-files-found: warn
+          retention-days: 14
