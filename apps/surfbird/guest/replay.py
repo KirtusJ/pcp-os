@@ -102,7 +102,7 @@ def run_arm(args, work, arm, dns):
                 tag = secrets.token_hex(6)
                 targets.extend([f"/bar-{tag}", f"/jetty-{tag}"])
                 pages["/harbour"] = f'<title>Harbour</title><p>Tide {tag}</p><a href="{targets[0]}">Bar</a><a href="{targets[1]}">Jetty</a>'
-                if scenario == "fragment":
+                if scenario in ("fragment", "focus"):
                     targets[:] = [f"/jetty-{tag}?view=2&deck=upper"]
                     # These line endings are fixed independently of the renderer.
                     fillers = "".join(f"<p>Marker {n}</p>" for n in range(5))
@@ -276,6 +276,58 @@ def run_arm(args, work, arm, dns):
                         key("esc")
                         wait("surf.elf ended DONE")
                         expected = ["/harbour", targets[0]]
+                    elif scenario == "focus":
+                        wait("SURFBIRD ready")
+                        glyphs = load_glyphs()
+                        border = bytes.fromhex("70e7e3")
+                        bg = 0x102a33
+
+                        def check_focus(name, first_row, last_row):
+                            frame = capture_frame(vm, work, name)
+                            top, bottom = 102 + 22 * first_row, 124 + 22 * last_row
+                            for y in range(102, 303):
+                                start = 3 * (640 * y + 20)
+                                wanted = border if top <= y <= bottom else bg.to_bytes(3, "big")
+                                require(frame[start:start+3] == wanted, f"{name}: focus extent at y={y}")
+                            for y in (top, top + 1, bottom - 1, bottom):
+                                start = 3 * (640 * y + 20)
+                                require(frame[start:start+596*3] == border * 596, f"{name}: focus border at y={y}")
+                            return frame
+
+                        def move(name, count):
+                            key(name)
+                            wait("SURFBIRD ready", count)
+
+                        key("ret")  # No initial selection.
+                        move("tab", 2)
+                        first = check_focus("focus-first", 7, 8)
+                        check_line(first, glyphs, 56, 104+7*22, "Read the Port Notice and check the MixedCase passenger", 0xe4edef, bg)
+                        check_line(first, glyphs, 56, 104+8*22, "access code today.", 0xe4edef, bg)
+                        move("tab", 3)
+                        second = check_focus("focus-second", 8, 8)
+                        check_line(second, glyphs, 56, 104+8*22, "Jetty", 0xe4edef, bg)
+                        move("tab", 4)
+                        wrapped = check_focus("focus-wrap", 6, 7)
+                        move("shift-tab", 5)
+                        require(check_focus("focus-reverse", 8, 8) == second, "reverse traversal changed the viewport")
+                        move("shift_r-tab", 6)
+                        require(check_focus("focus-reverse-first", 6, 7) == wrapped, "right Shift did not move to the previous link")
+                        require(requests == [("/harbour", "fixture.test")], requests)
+                        move("ret", 7)
+                        wait("SURFBIRD path /harbour#details")
+                        require(requests == [("/harbour", "fixture.test")], requests)
+                        move("b", 8)
+                        require(check_focus("focus-back", 6, 7) == wrapped, "Back failed to restore focus and viewport")
+                        move("tab", 9)
+                        move("ret", 10)
+                        wait(f"SURFBIRD path {targets[0]}#berth")
+                        destination = capture_frame(vm, work, "focus-destination")
+                        check_line(destination, glyphs, 26, 104, "Berth reached", 0xcbdadd, bg)
+                        key("tab")  # The destination has no links.
+                        key("ret")
+                        key("esc")
+                        wait("surf.elf ended DONE")
+                        expected = ["/harbour", targets[0]]
                     elif scenario == "denied":
                         wait("SURFBIRD error Ethernet grant unavailable" if args.tcp else "SURFBIRD error cable grant unavailable")
                         expected = []
@@ -295,13 +347,13 @@ def run_arm(args, work, arm, dns):
                     key("p")
                     require(vm.wait(timeout=10) == 33, "Kernel did not power off normally")
                     require(requests == [(p, "fixture.test") for p in expected], requests)
-                    frames = {"fragment": 7, "allowed": 4 + 2*args.extra_visits}.get(scenario, 0)
+                    frames = {"fragment": 7, "focus": 10, "allowed": 4 + 2*args.extra_visits}.get(scenario, 0)
                     require(f"; {frames} frames shown (" in log.read_text(), "Unexpected rendered frame count")
                     require("kernel's register of its own start, verification and stop verifies" in log.read_text(), "Register verification missing")
                     if args.hosted and scenario == "allowed":
                         hosted_check(args.hosted, server.server_port, targets, tag)
                         require(requests[len(expected):] == [(p,f"127.0.0.1:{server.server_port}") for p in expected[:3]], requests)
-                    if scenario not in ("allowed", "fragment"):
+                    if scenario not in ("allowed", "fragment", "focus"):
                         require("SURFBIRD ready" not in log.read_text(), "Unexpected page publication")
                 finally:
                     if vm.poll() is None:
@@ -338,7 +390,7 @@ def main():
     parser.add_argument("--tcp", action="store_true", help="use a guest-ethernet kernel, TCP-enabled guest and a virtual NIC instead of the COM2 cable")
     parser.add_argument("--dns", action="store_true", help="boot the DNS-enabled guest against the local authoritative fixture")
     parser.add_argument("--dns-port", type=int, default=0, help="UDP loopback port for the DNS fixture (default: ephemeral)")
-    parser.add_argument("--arm", choices=sorted(set(DNS_ARMS) | {"allowed","fragment","denied","ambiguous","space-before-colon","folded","refused"}),
+    parser.add_argument("--arm", choices=sorted(set(DNS_ARMS) | {"allowed","fragment","focus","denied","ambiguous","space-before-colon","folded","refused"}),
                         help="run one arm and preserve its new logs separately")
     parser.add_argument("--extra-visits", type=int, default=0,
                         help="repeat Back and link 1 after the ordinary navigation for ring-reuse testing")
@@ -352,11 +404,11 @@ def main():
     root = Path(tempfile.mkdtemp(prefix="surfbird-", dir=args.output))
     if args.arm == "refused" and not args.tcp:
         parser.error("the closed-port arm requires --tcp")
-    if args.arm == "fragment" and args.extra_visits:
+    if args.arm in ("fragment", "focus") and args.extra_visits:
         parser.error("extra visits apply to ordinary navigation only")
     if args.extra_visits < 0:
         parser.error("--extra-visits must be nonnegative")
-    arms = DNS_ARMS if args.dns else ["allowed", "fragment", "denied", "ambiguous", "space-before-colon", "folded"] + (["refused"] if args.tcp else [])
+    arms = DNS_ARMS if args.dns else ["allowed", "fragment", "focus", "denied", "ambiguous", "space-before-colon", "folded"] + (["refused"] if args.tcp else [])
     if args.arm and args.arm not in arms:
         parser.error("the selected arm does not apply to this transport")
     for scenario in ([args.arm] if args.arm else arms):

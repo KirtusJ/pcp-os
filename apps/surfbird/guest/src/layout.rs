@@ -35,6 +35,35 @@ fn wrap(text: &str, columns: usize) -> impl Iterator<Item = &str> {
     })
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct View {
+    pub row: usize,
+    pub focus: Option<usize>,
+}
+
+impl View {
+    pub fn tab(&mut self, page: &Page<'_>, reverse: bool) {
+        if page.count == 0 {
+            return;
+        }
+        let next = match (self.focus, reverse) {
+            (None, false) => 0,
+            (None | Some(0), true) => page.count - 1,
+            (Some(i), true) => i - 1,
+            (Some(i), false) => (i + 1) % page.count,
+        };
+        self.focus = Some(next);
+        let mut rows = page
+            .lines()
+            .enumerate()
+            .filter_map(|(i, line)| (line.source == Source::Link(next)).then_some(i));
+        if let Some(first) = rows.next() {
+            let end = rows.last().unwrap_or(first) + 1;
+            self.row = self.row.clamp(end.saturating_sub(VISIBLE_ROWS), first);
+        }
+    }
+}
+
 impl Page<'_> {
     pub fn lines(&self) -> impl Iterator<Item = Line<'_>> {
         let title = core::iter::once((Source::Title, self.title, TEXT_COLUMNS));
@@ -74,6 +103,27 @@ impl Page<'_> {
 mod tests {
     use super::*;
     use crate::parse;
+
+    #[test]
+    fn tab_cycles_in_document_order_and_reveals_wrapped_labels() {
+        let page = parse(br##"<title>T</title><p>1</p><p>2</p><p>3</p><p>4</p><p>5</p><p>6</p><p>7</p><a href="#a">The first label is just long enough to need more than one line</a><a href="#b">Last</a>"##).unwrap();
+        let mut view = View::default();
+        view.tab(&page, false);
+        assert_eq!((view.focus, view.row), (Some(0), 1));
+        view.tab(&page, false);
+        assert_eq!((view.focus, view.row), (Some(1), 2));
+        view.tab(&page, false);
+        assert_eq!(view.focus, Some(0));
+        view.tab(&page, true);
+        assert_eq!(view.focus, Some(1));
+        let mut backward = View::default();
+        backward.tab(&page, true);
+        assert_eq!((backward.focus, backward.row), (Some(1), 2));
+        let empty = parse(b"<title>T</title><p>No links</p>").unwrap();
+        let mut idle = View::default();
+        idle.tab(&empty, false);
+        assert_eq!(idle, View::default());
+    }
 
     #[test]
     fn wraps_at_spaces_and_breaks_long_words_without_losing_the_suffix() {

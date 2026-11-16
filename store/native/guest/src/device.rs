@@ -84,17 +84,28 @@ impl Display {
             pressed: [false; 128],
         }
     }
+    /// Read one new key press in event order. Held modifiers reflect this
+    /// press, even when their releases are already waiting in the queue.
+    pub fn next_press(&mut self) -> Option<usize> {
+        loop {
+            let mut event = [0u8; 2];
+            if call(0, self.kb as usize, event.as_mut_ptr() as usize, 2, 0, 0, 0) != 2 {
+                return None;
+            }
+            let key = (event[0] & 127) as usize;
+            let down = event[1] & 1 == 0;
+            let pressed = down && !self.held[key];
+            self.held[key] = down;
+            if pressed {
+                return Some(key);
+            }
+        }
+    }
+
     pub fn poll(&mut self) {
         self.pressed.fill(false);
-        loop {
-            let mut e = [0u8; 2];
-            if call(0, self.kb as usize, e.as_mut_ptr() as usize, 2, 0, 0, 0) != 2 {
-                break;
-            }
-            let k = (e[0] & 127) as usize;
-            let down = e[1] & 1 == 0;
-            self.pressed[k] |= down && !self.held[k];
-            self.held[k] = down;
+        while let Some(key) = self.next_press() {
+            self.pressed[key] = true;
         }
     }
     pub fn show(&mut self, px: &[u32]) {
