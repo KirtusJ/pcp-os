@@ -1,0 +1,21 @@
+[package]
+name = "sunspur-rally"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "sunspur"
+path = "src/main.rs"
+test = false
+bench = false
+
+[dependencies]
+heliograph = { path = "../../engines/heliograph" }
+pcp-game-guest = { path = "../../native/guest" }
+
+[profile.release]
+opt-level = 3
+panic = "abort"
+codegen-units = 1
+strip = "symbols"

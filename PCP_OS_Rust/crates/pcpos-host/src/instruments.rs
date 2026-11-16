@@ -8,6 +8,8 @@
 use pcpos_core::sha256_hex;
 use pcpos_core::value::Value;
 
+mod protected_bins;
+
 /// What an instrument found: whether the property it computes holds, and the account of it in words.
 pub struct Outcome {
     pub holds: bool,
@@ -15,14 +17,16 @@ pub struct Outcome {
 }
 
 /// The instruments this program offers, with the module each belongs to and what it computes.
-pub const LIST: [(&str, &str); 9] = [
+pub const LIST: &[(&str, &str)] = &[
     ("mathematics.exact", "the value of an expression in whole numbers and fractions, exactly; input: expression"),
-    ("mathematics.statement", "whether a Lean theorem's statement is the one that was pinned, and whether it is trivially true; input: source (Lean text), theorem (name), pinned (optional SHA-256)"),
+    ("mathematics.protected_bins", "compare signed integer columns at a common scale: both squared totals must equal 2^scale_exponent (0..127); corresponding bins must have equal squared norms and odd gcds. Input: scale_exponent, source, target (ordered lists of bins of signed 64-bit integers; at most 64 bins and 4096 entries per column; squared totals must fit u128)"),
+    ("mathematics.statement", "whether a Lean theorem's statement is the one that was pinned, and whether it is trivially true; it holds only against a pin, and without one it returns the digest to pin and does not hold; input: source (Lean text), theorem (name), pinned (SHA-256 of the statement)"),
     ("statistics.grim", "whether a reported mean of whole-number observations can arise from the stated count; input: mean (text, as reported), n"),
     ("statistics.percent", "whether a reported percentage can arise from a whole count out of the stated total; input: percent (text, as reported), total"),
     ("engineering.units", "whether a quantity in one unit equals a quantity in another, exactly; input: from, to (each a number and a unit, such as \"25 psi\")"),
     ("cryptography.digest", "the SHA-256 digest of given text, after reproducing published known answers; input: text, claimed (optional)"),
     ("science.order", "from the register: whether one artifact entered the record before another; input: earlier, later (SHA-256 digests)"),
+    ("science.incident_bounds", "whether every completion of unread binary outcomes in a finite incident table has its hit fraction inside the supplied closed band. Input integers: incidents, hits, misses, unread, lower_numerator, upper_numerator, denominator"),
     ("quality.coverage", "from the register: for each claim of a review, whether a finding is recorded and how it was executed; input: review"),
     ("core.calibration", "whether a Calibration Record's counts agree with each other and its thresholds and claim say no more than its counts; input: record"),
 ];
@@ -33,10 +37,11 @@ pub fn run(name: &str, input: &Value, events: &[Value]) -> Result<Outcome, Strin
     let whole = |k: &str| input.get(k).and_then(Value::as_int).filter(|n| *n > 0).ok_or(format!("this instrument needs {k}, a whole number above zero"));
     match name {
         "mathematics.exact" => exact(text("expression")?),
+        "mathematics.protected_bins" => protected_bins::compare(input),
         "mathematics.statement" => {
             let pinned = match input.get("pinned") {
                 None | Some(Value::Null) => None,
-                Some(Value::Str(p)) => Some(p.as_str()),
+                Some(Value::Str(p)) if p.trim().len() == 64 && p.trim().chars().all(|ch| ch.is_ascii_hexdigit()) => Some(p.as_str()),
                 Some(_) => return Err("pinned was supplied and is not a string of 64 hexadecimal digits; a pin that cannot be read is not the same as no pin, and nothing was compared".to_string()),
             };
             statement(text("source")?, text("theorem")?, pinned)
@@ -44,8 +49,16 @@ pub fn run(name: &str, input: &Value, events: &[Value]) -> Result<Outcome, Strin
         "statistics.grim" => granularity(text("mean")?, whole("n")?, 1, "mean"),
         "statistics.percent" => granularity(text("percent")?, whole("total")?, 100, "percentage"),
         "engineering.units" => units(text("from")?, text("to")?),
-        "cryptography.digest" => digest(text("text")?, input.get("claimed").and_then(Value::as_str)),
+        "cryptography.digest" => {
+            let claimed = match input.get("claimed") {
+                None => None,
+                Some(Value::Str(s)) => Some(s.as_str()),
+                Some(_) => return Err("claimed must be text when supplied; no digest comparison was made".to_string()),
+            };
+            digest(text("text")?, claimed)
+        }
         "science.order" => order(text("earlier")?, text("later")?, events),
+        "science.incident_bounds" => incident_bounds(input),
         "quality.coverage" => coverage(text("review")?, events),
         "core.calibration" => calibration(input.get("record").ok_or("this instrument needs record, the Calibration Record")?),
         _ => Err(format!("there is no instrument named {name}. Those offered: {}", LIST.iter().map(|i| i.0).collect::<Vec<_>>().join(", "))),
@@ -752,7 +765,7 @@ fn statement(source: &str, name: &str, pinned: Option<&str>) -> Result<Outcome, 
         (from..end.saturating_sub(want.len() - 1)).find(|&j| {
             k[j] == 0 && j > 0 && c[j - 1] == '.' && k[j - 1] == 0
                 && c[j..j + want.len()] == want[..] && k[j..j + want.len()].iter().all(|m| *m == 0)
-                && c.get(j + want.len()).map_or(true, |ch| !lean_wordy(*ch) || k[j + want.len()] != 0)
+                && !c.get(j + want.len()).is_some_and(|ch| lean_wordy(*ch) && k[j + want.len()] == 0)
         }).map(|_| "sorryAx (qualified)".to_string())
     });
     let mut lines = probe("(a), a proof left open", gap.map(|w| format!("{w} stands in the statement or proof of {full}")), "no sorry and no admit between the name and the next declaration".to_string());
@@ -791,7 +804,8 @@ fn statement(source: &str, name: &str, pinned: Option<&str>) -> Result<Outcome, 
             let m = p.trim().eq_ignore_ascii_case(&got);
             (m, format!("{}: the digest pinned is {}", if m { "THE PINNED STATEMENT" } else { "NOT THE PINNED STATEMENT" }, p.trim()))
         }
-        None => (true, format!("NOT PINNED: the digest to pin for this statement is {got}")),
+        // No pin: the statement was read and probed, and its identity was compared with nothing. That is not a check that passed.
+        None => (false, format!("NOT PINNED: no digest was given, so the statement was compared with nothing and this result does not hold; the digest to pin for this statement is {got}")),
     };
     Ok(Outcome { holds: matches && fired == 0, text: format!("{full}\nstatement: {}\nSHA-256 of the statement, comments removed and white space collapsed: {got}\n{pin}{lines}\nThis instrument read text. It did not run Lean: whether the proof is accepted, and whether the statement says what is meant, it does not know.", lean_text(&stated)) })
 }
@@ -907,6 +921,43 @@ fn digest(text: &str, claimed: Option<&str>) -> Result<Outcome, String> {
         }
         None => Outcome { holds: true, text: line },
     })
+}
+
+// ---- science.incident_bounds ------------------------------------------------------------------------------------
+
+/// Extremal completions of a submitted binary experiment on its full incident denominator.
+/// Products of two nonnegative i64 inputs fit i128. The sum of the three counts fits as well.
+fn incident_bounds(input: &Value) -> Result<Outcome, String> {
+    const FIELDS: [&str; 7] = ["incidents", "hits", "misses", "unread", "lower_numerator", "upper_numerator", "denominator"];
+    let Value::Map(fields) = input else { return Err("incident bounds need a table of counts and a closed band".into()); };
+    if let Some(extra) = fields.keys().find(|key| !FIELDS.contains(&key.as_str())) {
+        return Err(format!("unknown incident_bounds field {extra}"));
+    }
+    let count = |key: &str| {
+        input.get(key).and_then(Value::as_int).filter(|n| *n >= 0).map(i128::from)
+            .ok_or_else(|| format!("{key} must be a nonnegative integer"))
+    };
+    let incidents = count("incidents")?;
+    let hits = count("hits")?;
+    let misses = count("misses")?;
+    let unread = count("unread")?;
+    let lower = count("lower_numerator")?;
+    let upper = count("upper_numerator")?;
+    let denom = count("denominator")?;
+    if incidents == 0 || hits + misses + unread != incidents {
+        return Err("incidents must be positive and equal hits + misses + unread".into());
+    }
+    if denom == 0 || lower > upper || upper > denom {
+        return Err("the closed band requires 0 <= lower_numerator <= upper_numerator <= denominator and denominator > 0".into());
+    }
+    let max_hits = hits + unread;
+    let holds = lower * incidents <= hits * denom && max_hits * denom <= upper * incidents;
+    let verdict = if holds { "EVERY completion is inside" } else { "AT LEAST ONE completion is outside" };
+    Ok(Outcome { holds, text: format!(
+        "{hits} hits, {misses} misses, {unread} unread in {incidents} reported incidents\n\
+         attainable hit counts: {hits} through {max_hits} inclusive, each over {incidents}\n\
+         {verdict} the closed band [{lower}/{denom}, {upper}/{denom}]. This compares finite records. A population interval requires a sampling model."
+    ) })
 }
 
 // ---- science.order, quality.coverage: what the register holds ---------------------------------------------------
@@ -1117,6 +1168,44 @@ fn calibration(record: &Value) -> Result<Outcome, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn incident_bounds_agree_with_enumerating_all_unread_completions() {
+        for incidents in 1..=6 {
+            for hits in 0..=incidents {
+                for unread in 0..=incidents-hits {
+                    let misses = incidents-hits-unread;
+                    for lower in 0..=4 {
+                        for upper in lower..=4 {
+                            let input = v(&format!(r#"{{"incidents":{incidents},"hits":{hits},"misses":{misses},"unread":{unread},"lower_numerator":{lower},"upper_numerator":{upper},"denominator":4}}"#));
+                            let expected = (0..(1u32<<unread)).all(|mask| {
+                                let scaled = 4 * (hits + mask.count_ones());
+                                lower * incidents <= scaled && scaled <= upper * incidents
+                            });
+                            assert_eq!(super::run("science.incident_bounds", &input, &[]).unwrap().holds, expected);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn incident_bounds_refuse_invalid_tables_and_handle_large_counts() {
+        let base = r#"{"incidents":128,"hits":66,"misses":59,"unread":3,"lower_numerator":66,"upper_numerator":69,"denominator":128}"#;
+        assert!(super::incident_bounds(&v(base)).unwrap().holds);
+        for (from, to) in [
+            ("\"hits\":66", "\"hits\":65"), ("\"unread\":3", "\"unread\":-1"),
+            ("\"misses\":59", "\"misses\":true"), ("\"unread\":3,", ""),
+            ("\"denominator\":128", "\"denominator\":0"), ("\"upper_numerator\":69", "\"upper_numerator\":65"),
+            ("\"upper_numerator\":69", "\"upper_numerator\":129"), ("\"hits\":66", "\"hits\":66,\"lost\":3"),
+        ] {
+            assert!(super::incident_bounds(&v(&base.replace(from,to))).is_err());
+        }
+        let max = i64::MAX;
+        let large = format!(r#"{{"incidents":{max},"hits":{max},"misses":0,"unread":0,"lower_numerator":{max},"upper_numerator":{max},"denominator":{max}}}"#);
+        assert!(super::incident_bounds(&v(&large)).unwrap().holds);
+        assert!(super::incident_bounds(&v(&large.replace("\"unread\":0", "\"unread\":1"))).is_err());
+    }
     use super::*;
     fn v(json: &str) -> Value {
         Value::parse(json.as_bytes()).unwrap()
@@ -1158,14 +1247,51 @@ mod tests {
             assert!(e.contains("local binding"), "{e}");
         }
         // A let inside brackets does not own the separator and is read.
-        assert!(run(r#"{"source":"theorem t (n : Nat) : (let m := n + 1; n < m) := Nat.lt_succ_self n","theorem":"t"}"#).unwrap().holds);
+        let o = run(r#"{"source":"theorem t (n : Nat) : (let m := n + 1; n < m) := Nat.lt_succ_self n","theorem":"t"}"#).unwrap();
+        assert!(o.text.contains("statement: (n : Nat) : (let m := n + 1; n < m)\n") && o.text.matches("clear:").count() == 3, "{}", o.text);
         // 2. The reserved axiom with a qualifier fires probe (a); a field that merely ends in other letters does not.
         let o = run(r#"{"source":"theorem t (n : Nat) : n < n+1 := _root_.sorryAx _ false","theorem":"t"}"#).unwrap();
         assert!(!o.holds && o.text.contains("probe (a), a proof left open: FIRES"), "{}", o.text);
-        assert!(run(r#"{"source":"theorem t (n : Nat) : n < n+1 := x.sorryAxis n","theorem":"t"}"#).unwrap().holds);
+        let o = run(r#"{"source":"theorem t (n : Nat) : n < n+1 := x.sorryAxis n","theorem":"t"}"#).unwrap();
+        assert!(o.text.matches("clear:").count() == 3, "{}", o.text);
         // 3. A pinned that is supplied and is not a string is an error; null and absence are no pin.
         assert!(run(r#"{"source":"theorem t (n : Nat) : n < n+1 := Nat.lt_succ_self n","theorem":"t","pinned":1234}"#).is_err());
-        assert!(run(r#"{"source":"theorem t (n : Nat) : n < n+1 := Nat.lt_succ_self n","theorem":"t","pinned":null}"#).unwrap().holds);
+        let o = run(r#"{"source":"theorem t (n : Nat) : n < n+1 := Nat.lt_succ_self n","theorem":"t","pinned":null}"#).unwrap();
+        assert!(!o.holds && o.text.contains("NOT PINNED"), "{}", o.text);
+    }
+
+    #[test]
+    fn a_lean_statement_holds_only_against_a_pin() {
+        // What each case measures is said beside it. Lean is never run here.
+        let src = "theorem t (a b : Nat) : a + b = b + a := by omega";
+        let call = |extra: &str| run("mathematics.statement", &v(&format!(r#"{{"source":"{src}","theorem":"t"{extra}}}"#)), &[]);
+        let pin = sha256_hex("(a b : Nat) : a + b = b + a".as_bytes());
+        // No pin: the statement is read and probed, nothing is compared, and the result does not hold. The digest to pin is returned.
+        let o = call("").unwrap();
+        assert!(!o.holds && o.text.contains("NOT PINNED") && o.text.contains(&pin) && o.text.matches("clear:").count() == 3, "{}", o.text);
+        // The matching pin: identity compared and equal, no probe fires. This and nothing else holds.
+        let o = call(&format!(r#","pinned":"{pin}""#)).unwrap();
+        assert!(o.holds && o.text.contains("\nTHE PINNED STATEMENT"), "{}", o.text);
+        // A well-formed pin of another statement: identity compared and different.
+        let other = sha256_hex(b"(a b : Nat) : a + b = a + b");
+        let o = call(&format!(r#","pinned":"{other}""#)).unwrap();
+        assert!(!o.holds && o.text.contains("NOT THE PINNED STATEMENT"), "{}", o.text);
+        // A pin that is not a digest is refused, whatever it is: too short, too long, not hexadecimal, not text.
+        let long = format!("{pin}0");
+        for bad in [r#""""#, r#""00""#, &format!(r#""{}""#, &pin[..63]), &format!(r#""{long}""#), &format!(r#""{}""#, pin.replace(|ch: char| ch.is_ascii_digit(), "g")), "1234", "true", "[]"] {
+            let e = call(&format!(r#","pinned":{bad}"#)).err().unwrap_or_else(|| panic!("{bad} must be refused"));
+            assert!(e.contains("64 hexadecimal digits") && e.contains("nothing was compared"), "{bad}: {e}");
+        }
+        // With the right pin, a probe that fires still makes it not hold: an open proof, and a conclusion true by its form.
+        let open = "theorem t (a b : Nat) : a + b = b + a := by sorry";
+        let o = run("mathematics.statement", &v(&format!(r#"{{"source":"{open}","theorem":"t","pinned":"{pin}"}}"#)), &[]).unwrap();
+        assert!(!o.holds && o.text.contains("THE PINNED STATEMENT") && o.text.contains("probe (a), a proof left open: FIRES"), "{}", o.text);
+        let trivial = "theorem t (a b : Nat) : a + b = a + b := rfl";
+        let o = run("mathematics.statement", &v(&format!(r#"{{"source":"{trivial}","theorem":"t","pinned":"{other}"}}"#)), &[]).unwrap();
+        assert!(!o.holds && o.text.contains("\nTHE PINNED STATEMENT") && o.text.contains("probe (b)") && o.text.contains("FIRES"), "{}", o.text);
+        // A statement that needs a real proof: with its pin it holds, and the text says Lean was not run.
+        let o = call(&format!(r#","pinned":"{}""#, pin.to_uppercase())).unwrap();
+        assert!(o.holds && o.text.contains("It did not run Lean"), "{}", o.text);
     }
 
     #[test]
@@ -1173,7 +1299,7 @@ mod tests {
         let pin = sha256_hex(STATED.as_bytes());
         // Not pinned: the statement and the digest to pin. A := in a default argument does not end it; the statement is not ASCII.
         let o = statement(LEAN, "foo", None).unwrap();
-        assert!(o.holds && o.text.starts_with("Chain.foo\n") && o.text.contains(&format!("statement: {STATED}\n")) && o.text.contains(&format!("NOT PINNED: the digest to pin for this statement is {pin}")), "{}", o.text);
+        assert!(!o.holds && o.text.starts_with("Chain.foo\n") && o.text.contains(&format!("statement: {STATED}\n")) && o.text.contains("NOT PINNED: no digest was given") && o.text.contains(&format!("the digest to pin for this statement is {pin}")), "{}", o.text);
         assert_eq!(o.text.matches("clear:").count(), 3, "{}", o.text);
         // Pinned and matching, the digest in either case, the name with or without its namespace.
         let o = statement(LEAN, "Chain.foo", Some(&pin.to_uppercase())).unwrap();
@@ -1189,14 +1315,14 @@ mod tests {
         assert_eq!(o.text.matches("clear:").count(), 3, "only the pin fails: {}", o.text);
         // A name that begins another name: each is found, and only itself.
         let o = statement(LEAN, "foo_bar", None).unwrap();
-        assert!(o.holds && o.text.contains("statement: (n : Nat) : n + 0 = n\n"), "{}", o.text);
+        assert!(!o.holds && o.text.contains("statement: (n : Nat) : n + 0 = n\n") && o.text.matches("clear:").count() == 3, "{}", o.text);
         // White space inside a string is the statement's own, and a string may hold anything.
         let (one, two) = ("theorem s (h : t = \"a :=  -- b\") : t ≠ \"\" := by simp [h]", "theorem s (h : t = \"a := -- b\") : t ≠ \"\" := by simp [h]");
         let (a, b) = (statement(one, "s", None).unwrap(), statement(two, "s", None).unwrap());
-        assert!(a.holds && b.holds && a.text.contains("statement: (h : t = \"a :=  -- b\") : t ≠ \"\"\n") && a.text.lines().nth(2) != b.text.lines().nth(2), "{}", a.text);
+        assert!(!a.holds && !b.holds && a.text.contains("statement: (h : t = \"a :=  -- b\") : t ≠ \"\"\n") && a.text.lines().nth(2) != b.text.lines().nth(2), "{}", a.text);
         // Through the list, as a caller reaches it.
         let o = go("mathematics.statement", r#"{"source":"theorem t (a b : Nat) :\n  a + b = b + a := by\n  omega","theorem":"t"}"#);
-        assert!(o.holds && o.text.contains("statement: (a b : Nat) : a + b = b + a\n"), "{}", o.text);
+        assert!(!o.holds && o.text.contains("statement: (a b : Nat) : a + b = b + a\n") && o.text.contains("NOT PINNED"), "{}", o.text);
         assert!(!go("mathematics.statement", &format!(r#"{{"source":"theorem t (a b : Nat) : a + b = b + a := by omega","theorem":"t","pinned":"{pin}"}}"#)).holds);
     }
 
@@ -1214,12 +1340,14 @@ mod tests {
         fires("theorem foo (n : Nat) (h : 0 < n) : True := trivial", "b");
         // What only looks like it: the two sides are not the sides.
         for honest in ["theorem foo (a b : Nat) : a = b ∧ b = a ∧ b := by omega", "theorem foo (a b : Nat) (h : a = b) : b = a := h.symm", "theorem foo (a : Nat) : a + 1 ≥ a := by omega"] {
-            assert!(statement(honest, "foo", None).unwrap().holds, "{honest}");
+            let o = statement(honest, "foo", None).unwrap();
+            assert!(o.text.matches("clear:").count() == 3 && !o.text.contains("FIRES"), "{honest}: {}", o.text);
         }
         // A proof left open, and what is not one: the word in a comment, in a longer name, in the next declaration.
         fires("theorem foo (a b : Nat) : a + b = b + a := by\n  sorry", "a");
         fires("lemma foo (a b : Nat) : a + b = b + a := by\n  cases a\n  · admit\n  · omega", "a");
-        assert!(statement("theorem foo (a b : Nat) : a + b = b + a := by\n  -- sorry, not yet /- sorry -/\n  exact sorry_free a b\n\ntheorem next : 1 = 2 := sorry", "foo", None).unwrap().holds);
+        let o = statement("theorem foo (a b : Nat) : a + b = b + a := by\n  -- sorry, not yet /- sorry -/\n  exact sorry_free a b\n\ntheorem next : 1 = 2 := sorry", "foo", None).unwrap();
+        assert!(o.text.matches("clear:").count() == 3 && !o.text.contains("FIRES"), "{}", o.text);
         // A hypothesis nothing satisfies.
         fires("theorem foo (a b : Nat) (h : False) : a + b = 7 := h.elim", "c");
         fires("theorem foo (a b : Nat) : False → a + b = 7 := False.elim", "c");
@@ -1390,7 +1518,8 @@ mod tests {
     #[test]
     fn an_instrument_that_does_not_exist_is_not_invented() {
         assert!(run("mathematics.prove", &v("{}"), &[]).is_err());
-        assert_eq!(LIST.len(), 9);
+        let unique: std::collections::BTreeSet<_> = LIST.iter().map(|(name, _)| name).collect();
+        assert_eq!(unique.len(), LIST.len());
         for (name, _) in LIST {
             assert!(!matches!(run(name, &v("{}"), &[]), Err(e) if e.starts_with("there is no instrument")), "{name} is listed and must exist");
         }

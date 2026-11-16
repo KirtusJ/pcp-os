@@ -1,0 +1,16 @@
+{
+  "kernel_measurement": "0232c02a8946d66216da0ac65953a246ce3d41d7a966ae31aa83c3335b3259e3",
+  "guest_sha256": "49107154cd8d6a9d399d504ca2f94710a07c147b67431d92b904258ad4156b32",
+  "pcap_sha256": "b0e30fda0ab5df8f10fdda80bb5ad59ed40f9742e5ada596135478d70ca33f60",
+  "port": 64425,
+  "paths": [
+    "/harbour",
+    "/jetty-9cf8e0e895f8",
+    "/bar-9cf8e0e895f8"
+  ],
+  "pages": {
+    "/harbour": "<title>Harbour</title><p>Tide 9cf8e0e895f8</p><a href=\"/bar-9cf8e0e895f8\">Bar</a><a href=\"/jetty-9cf8e0e895f8\">Jetty</a>",
+    "/jetty-9cf8e0e895f8": "<title>Jetty</title><p>Report 9cf8e0e895f8 Jetty</p>",
+    "/bar-9cf8e0e895f8": "<title>Bar</title><p>Report 9cf8e0e895f8 Bar</p>"
+  }
+}

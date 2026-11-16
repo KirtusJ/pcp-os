@@ -6,7 +6,7 @@ This file is the standing navigation. It states the architecture as observed, th
 
 ## The architecture as observed
 
-Checked on `master` at `f7cf493`. This is a description, not a rule.
+Checked on `master` at `6254a71`. This is a description, not a rule.
 
 - No `async fn`, no `.await`, no futures, no Tokio and no other runtime in the Rust workspace. One external dependency, `sha2`, in `pcpos-core`.
 - `pcpos-core` is shared with the kernel and builds without the standard library.
@@ -50,5 +50,8 @@ Nothing here forbids it. A change that introduces `async`, an executor or a runt
 
 ## Where the concrete work is
 
-- Kernel, asynchronous side: issues #31, #32 and pull request #33 (a stopped program left RUNNING in the task table; a refused program's memory not returned), reproduced by both directors on two emulated CPU models. Pull request #37 strengthens the oracle of one of those tests. Issue #35 and pull request #38: rollback of earlier members of a group when a later one is refused.
-- Host, task lifecycle: Director G's replay on the hosted source (two duplicate starts gave two tasks and one exit; completions of agents whose identifiers share a long prefix were assigned to the wrong worker). The source fix and its operating note are on Director G's identity branch; this file will point to them when they are on `master`.
+All of the following is on `master`.
+
+- Kernel, asynchronous side: issues #31 and #32, fixed by pull request #33 (a stopped program left RUNNING in the task table; a refused program's memory not returned), reproduced by both directors on two emulated CPU models. Pull request #37 makes the test of the refusal assert the refusal and carry the nearest accepted case as its control. Issue #35, fixed by pull request #38: when a later member of a group of built-in programs is refused, the earlier members' frames are returned, and a built-in address space gives its frames back at every allocation cutoff (`test=frame-cutoffs`).
+- Host, task lifecycle: pull request #40. A start delivered twice made two tasks, and completions of agents whose identifiers share their first 200 characters were assigned to the wrong task; hooks are now matched on the digest of session and agent identifier together, and an old row that could match several tasks is left unresolved. Director G's note with the history and the sources is [`os-docs/Async_execution.md`](os-docs/Async_execution.md).
+- Still open: a stop that arrives under a different session identifier than its start leaves the task unended, with nothing yet that reconciles it (the "unknown" status of invariant 1); issue #42 (a subagent transcript that is a named pipe can block every register writer).

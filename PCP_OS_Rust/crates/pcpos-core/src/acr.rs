@@ -17,6 +17,7 @@
 //! 3. the guard of the kind, which may fill in computed fields;
 //! 4. the installation's standard, which narrows and never widens.
 use crate::authority::{Method, ModelFindings, Standard};
+use crate::task::RecursionLimits;
 use crate::ledger::{Ledger, LedgerError};
 use crate::machine::{self, Class, Delivery, DeliveryEvent, Link, LinkEvent, Review, ReviewEvent, System, SystemEvent, Use};
 use crate::sha256_hex;
@@ -93,19 +94,19 @@ const RESERVED: [&str; 22] = ["CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3"
 pub const STRUCTURED: [&str; 10] = ["REVIEW_COMMISSIONED", "CLAIM_ADDED", "GATE_COMMITTED", "OBJECTION_RAISED", "OBJECTION_RESOLVED",
                                     "FINDING_RECORDED", "REVIEW_CLOSED", "SESSION_OPENED", "REVIEW_PAUSED", "REVIEW_RESUMED"];
 const HOST_KINDS: [&str; 7] = ["WORKSPACE_CREATED", "METHOD_PINNED", "SYSTEM_STATE", "LINK_STATE", "HOST_EVENT", "ENVIRONMENT_RECORDED", "TASK_ENDED"];
-const DIRECTION_KINDS: [&str; 3] = ["ADOPTED", "PARTICIPANT_ADDED", "STANDARD_SET"];
+const DIRECTION_KINDS: [&str; 4] = ["ADOPTED", "PARTICIPANT_ADDED", "STANDARD_SET", "TASK_LIMITS_SET"];
 const RECORD_KINDS: [&str; 13] = ["DELIVERY_STATE", "HALTED", "ARTIFACT_ADDED", "TREE_PINNED", "ARTIFACT_READ", "INSPECTION_DECLARED", "CHECK_RAN", "CONDITION_REGISTERED",
                                   "SUBMISSION_ADMITTED", "OBLIGATION_OPENED", "OBLIGATION_CLOSED", "RUN_COMPLETED", "NOTE"];
 const UNREGISTERED_OK: [&str; 8] = ["DELIVERY_STATE", "WORKSPACE_CREATED", "METHOD_PINNED", "PARTICIPANT_ADDED", "HOST_EVENT", "SYSTEM_STATE", "LINK_STATE", "TASK_ENDED"];
 
 /// True if this implementation defines the kind.
 pub fn is_kind(kind: &str) -> bool {
-    STRUCTURED.contains(&kind) || HOST_KINDS.contains(&kind) || DIRECTION_KINDS.contains(&kind) || RECORD_KINDS.contains(&kind) || kind == "TASK_STARTED"
+    STRUCTURED.contains(&kind) || HOST_KINDS.contains(&kind) || DIRECTION_KINDS.contains(&kind) || RECORD_KINDS.contains(&kind) || matches!(kind, "TASK_STARTED" | "TASK_ADMITTED" | "TASK_RELEASED")
 }
 
 /// The class of a kind of event, for the composition rule.
 pub fn class_of(kind: &str) -> Class {
-    if HOST_KINDS.contains(&kind) || kind.starts_with("X_") {
+    if HOST_KINDS.contains(&kind) || kind == "TASK_RELEASED" || kind.starts_with("X_") {
         Class::Host
     } else if kind == "HALTED" {
         Class::Halt
@@ -113,7 +114,7 @@ pub fn class_of(kind: &str) -> Class {
         Class::Direction
     } else if STRUCTURED.contains(&kind) {
         Class::Review
-    } else if kind == "TASK_STARTED" {
+    } else if matches!(kind, "TASK_STARTED" | "TASK_ADMITTED") {
         Class::Task
     } else {
         Class::Record
@@ -278,23 +279,31 @@ struct Finding {
     disposition: String,
 }
 
+/// A reservation in this register. Keeping the depth makes admission independent of tree height.
+pub struct Admission {
+    /// The earlier governed task that requested this child, or no parent for a root.
+    pub parent: Option<String>,
+    /// Number of parent links back to a root.
+    pub depth: u32,
+}
+
 /// One task as the record has it.
 pub struct TaskState {
     /// Its label.
     pub label: String,
-    /// PROGRAM or MODEL.
+    /// PROGRAM or MODEL for a start observation, RESERVED for a pre-launch admission.
     pub worker: String,
     /// The review it belongs to, if any.
     pub review: Option<String>,
     /// Who started it.
     pub actor: String,
-    /// How it ended, once it has: DONE, FAILED, STOPPED or LOST.
+    /// Observed outcome (DONE, FAILED, STOPPED or LOST), or RELEASED for an admission.
     pub outcome: Option<String>,
     /// What it had spent when it ended.
     pub spent: i64,
     /// Its budget.
     pub budget: i64,
-    /// Sequence number of the event that started it.
+    /// Sequence number of its start observation or pre-launch admission.
     pub started: i64,
     /// Sequence number of the event that asked it to stop (a halt, or a system transition that stops work), if any.
     /// A request to stop is not a stop: until the task's end is recorded, its worker may still be acting.
@@ -303,6 +312,8 @@ pub struct TaskState {
     pub result: Option<String>,
     /// The supervisor's identifier for this attempt, where one was recorded.
     pub attempt: Option<String>,
+    /// Present only for an explicit pre-launch reservation. Ordinary host observations retain their original meaning.
+    pub admission: Option<Admission>,
     /// Identity evidence supplied by the host's subagent-start hook.
     pub hook_attempt: Option<HookAttempt>,
 }
@@ -346,6 +357,12 @@ pub struct State {
     standard: Option<StandardNow>,
     /// Whether each participant holds the method text in its present context, as recorded.
     pub delivery: BTreeMap<String, Delivery>,
+    /// Optional limits for pre-launch reservations in this register.
+    pub recursion_limits: Option<RecursionLimits>,
+    /// Outstanding pre-launch reservations, including stop requests awaiting release.
+    pub recursion_live: u32,
+    /// Lifetime admissions, across releases and policy changes.
+    pub recursion_total: u32,
     /// Tasks by id.
     pub tasks: BTreeMap<String, TaskState>,
     /// How many starts found that the run before had not stopped in order.
@@ -373,6 +390,11 @@ impl State {
 
     fn next_id(&self, which: usize) -> String {
         format!("{}{}", LETTERS[which], self.counters[which] + 1)
+    }
+
+    /// Next task ID shared by observations and explicit admissions in this register.
+    pub fn next_task_id(&self) -> String {
+        self.next_id(T)
     }
 
     /// Whether ACR is in use.
@@ -677,7 +699,16 @@ pub fn guard(state: &State, kind: &str, body: &Value, actor: &str) -> R<Value> {
         "RUN_COMPLETED" => g_run(state, b)?,
         "SYSTEM_STATE" => g_system(state, b)?,
         "LINK_STATE" => g_link(state, b)?,
-        "TASK_STARTED" => g_task_start(state, b)?,
+        "TASK_STARTED" => {
+            // Before the first policy, historical observers could include arbitrary extra metadata.
+            if state.recursion_limits.is_some() && (!is_null(get(&b, "parent")) || b.contains_key("depth") || b.contains_key("admission")) {
+                return refuse(None, "a governed task needs TASK_ADMITTED before launch; TASK_STARTED records an observation".to_string());
+            }
+            g_task_start(state, b)?
+        }
+        "TASK_LIMITS_SET" => g_task_limits(state, b, actor)?,
+        "TASK_ADMITTED" => g_task_admit(state, b, actor)?,
+        "TASK_RELEASED" => g_task_release(state, b, actor)?,
         "TASK_ENDED" => g_task_end(state, b)?,
         "STANDARD_SET" => g_standard(state, b, actor)?,
         "DELIVERY_STATE" => g_delivery(state, b, actor)?,
@@ -1220,7 +1251,10 @@ fn g_session(state: &State, mut b: Map) -> R<Map> {
     if r.lifecycle.step(ReviewEvent::OpenSession).is_err() {
         return refuse(Some("Core 7.1"), format!("review {} has an open session", r.label));
     }
-    b.insert("session".to_string(), Value::Int(r.session + 1));
+    let Some(next) = r.session.checked_add(1) else {
+        return refuse(None, "the successor session number exceeds the record's signed 64-bit range".to_string());
+    };
+    b.insert("session".to_string(), Value::Int(next));
     let reason = text(get(&b, "reason"), "the reason for a successor session", 2000, true)?;
     b.insert("reason".to_string(), reason);
     Ok(b)
@@ -1367,6 +1401,90 @@ fn g_delivery(state: &State, mut b: Map, actor: &str) -> R<Map> {
     Ok(b)
 }
 
+fn limits(b: &Map) -> R<RecursionLimits> {
+    let max_depth = get(b, "max_depth").as_int().and_then(|n| u16::try_from(n).ok());
+    let max_live = get(b, "max_live").as_int().and_then(|n| u16::try_from(n).ok());
+    let max_total = get(b, "max_total").as_int().and_then(|n| u32::try_from(n).ok());
+    let (Some(max_depth), Some(max_live), Some(max_total)) = (max_depth, max_live, max_total) else {
+        return refuse(None, "limits need max_depth and max_live in 0..65535 and max_total in 0..4294967295".to_string());
+    };
+    let limits = RecursionLimits { max_depth, max_live, max_total };
+    limits.validate().map_err(|why| Refusal { code: REFUSED, clause: None, message: why.to_string() })?;
+    Ok(limits)
+}
+
+fn g_task_limits(state: &State, b: Map, actor: &str) -> R<Map> {
+    if b.keys().any(|k| !matches!(k.as_str(), "max_depth" | "max_live" | "max_total" | "second")) {
+        return refuse(None, "task limits accept max_depth, max_live, max_total and an optional second authorization".to_string());
+    }
+    if !state.human_principal(&s(actor)) {
+        return refuse(None, "task limits are set by a person directing this register".to_string());
+    }
+    let policy = limits(&b)?;
+    let second = get(&b, "second");
+    if !is_null(second) && (second.as_str() == Some(actor) || !state.human_principal(second)) {
+        return refuse(None, "second authorization must name a different directing person".to_string());
+    }
+    if let Some(old) = state.recursion_limits {
+        let increased = policy.max_depth > old.max_depth || policy.max_live > old.max_live || policy.max_total > old.max_total;
+        if increased && state.standard().dual_authorization && is_null(second) {
+            return refuse(None, "the standard requires a second person directing this register to increase task limits".to_string());
+        }
+    }
+    Ok(b)
+}
+
+fn g_task_admit(state: &State, mut b: Map, actor: &str) -> R<Map> {
+    if b.keys().any(|k| !matches!(k.as_str(), "id" | "parent" | "depth" | "label")) {
+        return refuse(None, "admission accepts only label, parent and its computed id and depth".to_string());
+    }
+    let Some(policy) = state.recursion_limits else {
+        return refuse(None, "set task limits on this register before requesting a governed task".to_string());
+    };
+    seq_id(state, &mut b, T, "task")?;
+    check_label(get(&b, "label"), "task label")?;
+    let depth = match get(&b, "parent") {
+        Value::Null => 0,
+        Value::Str(id) => {
+            let Some(parent) = state.tasks.get(id) else {
+                return refuse(None, "unknown parent task".to_string());
+            };
+            let Some(admission) = &parent.admission else {
+                return refuse(None, "the parent needs an explicit governed admission".to_string());
+            };
+            if parent.outcome.is_some() || parent.stop_requested.is_some() {
+                return refuse(None, "the parent is closed or has a pending stop request".to_string());
+            }
+            if parent.actor != actor && !state.human_principal(&s(actor)) {
+                return refuse(None, "only the parent admission's owner or a directing person can request its child".to_string());
+            }
+            admission.depth + 1
+        }
+        _ => return refuse(None, "parent must name a governed task, or be null for a root".to_string()),
+    };
+    if let Err(why) = policy.admit(depth, state.recursion_live, state.recursion_total) {
+        return refuse(None, why.to_string());
+    }
+    b.insert("depth".into(), Value::Int(i64::from(depth)));
+    Ok(b)
+}
+
+fn g_task_release(state: &State, b: Map, actor: &str) -> R<Map> {
+    if b.len() != 1 { return refuse(None, "release takes one admission id".to_string()); }
+    let id = check_label(get(&b, "id"), "task id")?;
+    let Some(task) = state.tasks.get(id) else { return refuse(None, "unknown task admission".to_string()); };
+    if task.admission.is_none() || task.outcome.is_some() {
+        return refuse(None, "task is not an outstanding governed admission".to_string());
+    }
+    if task.actor != actor && !state.human_principal(&s(actor)) {
+        return refuse(None, "only the admission's owner or a directing person can release it".to_string());
+    }
+    if state.tasks.values().any(|child| child.outcome.is_none() && child.admission.as_ref().and_then(|a| a.parent.as_deref()) == Some(id)) {
+        return refuse(None, "release outstanding children before their parent".to_string());
+    }
+    Ok(b)
+}
+
 fn g_task_start(state: &State, mut b: Map) -> R<Map> {
     seq_id(state, &mut b, T, "task")?;
     check_label(get(&b, "label"), "task label")?;
@@ -1393,6 +1511,9 @@ fn g_task_end(state: &State, mut b: Map) -> R<Map> {
     };
     if t.outcome.is_some() {
         return refuse(None, "the task has already ended".to_string());
+    }
+    if t.admission.is_some() {
+        return refuse(None, "an admission is released through TASK_RELEASED; TASK_ENDED settles an observed task".to_string());
     }
     let outcome = one_of(get(&b, "outcome"), &TASK_ENDS, "outcome")?;
     for k in ["result", "read_back"] {
@@ -1507,7 +1628,7 @@ fn standard_check(state: &State, kind: &str, b: &Map, actor: &str) -> R<()> {
             return refuse(None, "the standard in force keeps this system offline".to_string());
         }
     }
-    if st.std.static_tasks && kind == "TASK_STARTED" && !matches!(get(b, "label").as_str(), Some(l) if st.tasks.iter().any(|t| t == l)) {
+    if st.std.static_tasks && matches!(kind, "TASK_STARTED" | "TASK_ADMITTED") && !matches!(get(b, "label").as_str(), Some(l) if st.tasks.iter().any(|t| t == l)) {
         return refuse(None, "the standard in force fixes the set of tasks, and this is not one of them".to_string());
     }
     if st.std.dual_authorization && kind == "SYSTEM_STATE" && get(b, "event").as_str() == Some("MAINTENANCE_BEGIN") {
@@ -1731,17 +1852,31 @@ pub fn apply(state: &mut State, ev: &Value) -> R<()> {
             }
         }
         "LINK_STATE" => state.link = Some(st("to").and_then(|x| Link::from_name(&x)).ok_or(()).or_else(|_| integrity(seq, kind))?),
-        "TASK_STARTED" => {
-            let hook_attempt = if ev.get("auth").and_then(Value::as_str) == Some("HOST")
+        "TASK_LIMITS_SET" => state.recursion_limits = Some(limits(b).or_else(|_| integrity(seq, kind))?),
+        "TASK_RELEASED" => {
+            let id = need("id")?;
+            let Some(task) = state.tasks.get_mut(&id) else { return integrity(seq, kind); };
+            if task.admission.is_none() || task.outcome.is_some() { return integrity(seq, kind); }
+            task.outcome = Some("RELEASED".into());
+            state.recursion_live = state.recursion_live.checked_sub(1).ok_or(()).or_else(|_| integrity(seq, kind))?;
+        }
+        "TASK_STARTED" | "TASK_ADMITTED" => {
+            let admission = if kind == "TASK_ADMITTED" {
+                let depth = get(b, "depth").as_int().and_then(|n| u16::try_from(n).ok()).ok_or(()).or_else(|_| integrity(seq, kind))?;
+                state.recursion_live = state.recursion_live.checked_add(1).ok_or(()).or_else(|_| integrity(seq, kind))?;
+                state.recursion_total = state.recursion_total.checked_add(1).ok_or(()).or_else(|_| integrity(seq, kind))?;
+                Some(Admission { parent: st("parent"), depth: u32::from(depth) })
+            } else { None };
+            let hook_attempt = if admission.is_none() && ev.get("auth").and_then(Value::as_str) == Some("HOST")
                 && get(b, "observed").as_str() == Some("SUBAGENT_START") {
                 Some(st("hook_attempt_key").map_or(HookAttempt::Legacy, HookAttempt::Key))
             } else {
                 None
             };
-            state.tasks.insert(need("id")?, TaskState { label: need("label")?, worker: need("worker")?, review: st("review"), actor: actor.to_string(), outcome: None,
+            state.tasks.insert(need("id")?, TaskState { label: need("label")?, worker: if admission.is_some() { "RESERVED".into() } else { need("worker")? }, review: if admission.is_some() { None } else { st("review") }, actor: actor.to_string(), outcome: None,
                                                         spent: 0, budget: get(b, "budget").as_int().unwrap_or(0), started: seq, stop_requested: None,
                                                         result: None, attempt: st("attempt"),
-                                                        hook_attempt });
+                                                        admission, hook_attempt });
             state.counters[T] += 1;
         }
         "TASK_ENDED" => {
@@ -1851,10 +1986,9 @@ impl Record {
     /// Adopt a register received from elsewhere: its chain is verified and every guard replayed. Problems
     /// found by the replay are returned beside the record; the caller decides what follows from them.
     pub fn open(raw: &[u8]) -> Result<(Self, Vec<Problem>), SubmitError> {
-        let (events, _) = crate::ledger::verify(raw).map_err(SubmitError::Ledger)?;
-        let (state, problems) = fold(&events, true).map_err(SubmitError::Refused)?;
-        let ledger = Ledger::from_bytes(raw).map_err(SubmitError::Ledger)?;
-        Ok((Record { ledger, state }, problems))
+        let checked = crate::ledger::VerifiedRegister::check(raw).map_err(SubmitError::Ledger)?;
+        let (state, problems) = fold(checked.events(), true).map_err(SubmitError::Refused)?;
+        Ok((Record { ledger: checked.into_ledger(), state }, problems))
     }
 
     /// Take in events that were appended to the same register elsewhere since this record last saw it:

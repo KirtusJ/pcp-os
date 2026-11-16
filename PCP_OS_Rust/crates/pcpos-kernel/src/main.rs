@@ -14,6 +14,10 @@ mod dev;
 mod exec;
 mod font;
 mod mem;
+#[cfg(feature = "virtio-worker-probe")]
+mod worker_wire;
+#[cfg(feature = "virtio-register-probe")]
+mod register_wire;
 mod session;
 mod sys;
 mod ui;
@@ -784,6 +788,37 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     } else {
         say!("the asynchronous self-tests were not run: {}", if keyboard { "the kernel did not verify itself" } else { "there is no keyboard controller" });
     }
+    #[cfg(feature = "virtio-tx-probe")]
+    if failed == 0 && boot.command_line.split_whitespace().any(|word| word == "test=virtio-tx") {
+        let transmit = dev::virtio_tx::transmit(&bus);
+        say!("virtio TX fixture: {:?}", transmit);
+        check("the isolated virtio-net TX queue completed its single frame", transmit.is_ok(), &mut failed);
+    }
+    #[cfg(feature = "virtio-rx-probe")]
+    if failed == 0 && boot.command_line.split_whitespace().any(|word| word == "test=virtio-reply") {
+        let reply = dev::virtio_tx::reply(&bus, &boot.command_line);
+        say!("virtio reply fixture: {:?}", reply);
+        check("the isolated virtio-net RX queue received the exact reply", reply.is_ok(), &mut failed);
+    }
+    #[cfg(feature = "virtio-register-probe")]
+    if failed == 0 && boot.command_line.split_whitespace().any(|word| word == "test=virtio-register") {
+        let result = register_wire::fixture(&bus, &boot.command_line);
+        say!("virtio register fixture: {:?}", result);
+        check("the isolated peer supplied the verified register extension", result.is_ok(), &mut failed);
+    }
+    #[cfg(feature = "virtio-worker-probe")]
+    if failed == 0 {
+        let words = || boot.command_line.split_whitespace();
+        if words().any(|s| s == "test=worker-director") {
+            let result = worker_wire::director(&bus, &boot.command_line);
+            say!("virtio worker director: {:?}", result);
+            check("the native worker director verified two bound outcomes", result.is_ok(), &mut failed);
+        } else if words().any(|s| s == "test=worker-receiver") {
+            let result = worker_wire::receiver(&bus, &boot);
+            say!("virtio worker receiver: {:?}", result);
+            check("the native worker receiver finished its bounded dispatch", result.is_ok(), &mut failed);
+        }
+    }
     // Process and device checks run after VERIFIED_OK. Record a late failure before the launcher reads the register.
     if failed != 0 && rec.state().system() == Some(System::Operational) {
         system_event(&mut rec, "INTEGRITY_FAULT", "a self-test failed after initial verification", &mut failed);
@@ -810,7 +845,10 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     let (pool_frames, pool_free, taken, given) = mem::census();
     say!("kernel heap: {} bytes in use, {} bytes ever carved; frames: {} of {} free, {} handed out and {} given back since the start", live, carved, pool_free, pool_frames, taken, given);
     if failed == 0 {
+        #[cfg(not(feature = "guest-ethernet"))]
         say!("ALL SELF-TESTS PASS. Present: user mode and preemptive processes; programs loaded from the loader's files; a display, a keyboard, sound and music where the machine has ones this kernel drives. Not present: storage that outlasts power, a mouse, network, a second processor.");
+        #[cfg(feature = "guest-ethernet")]
+        say!("ALL SELF-TESTS PASS. Guest Ethernet support is compiled in. Access requires a matching image grant and a supported NIC.");
     } else {
         say!("{} SELF-TEST(S) FAILED", failed);
     }

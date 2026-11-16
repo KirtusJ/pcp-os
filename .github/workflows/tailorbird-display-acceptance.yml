@@ -1,0 +1,75 @@
+name: Public Tailorbird 1080p display control
+on:
+  pull_request:
+    paths:
+      - 'os-docs/display-acceptance/**'
+      - '.github/workflows/tailorbird-display-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  display:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Get pinned desktop kernel
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: 8f5992807e9b9c0bb8ce64e366c85ee4add31599
+          path: desktop
+      - name: Get original app
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: 8b0fdffcd500dc8986c1b931ba899e2f732ba1bd
+          path: original
+      - name: Get candidate app
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: 7e1be232a8f7e2da0c00069060329331fc5852c7
+          path: candidate
+      - name: Build both apps and the same desktop kernel
+        env:
+          CARGO_PROFILE_RELEASE_LTO: 'off'
+          PCPOS_KERNEL_STAGE: ${{ runner.temp }}/display-kernel
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 binutils lld
+          rustup target add x86_64-unknown-none
+          rustup component add rust-src
+          sh desktop/PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          for source in original candidate; do
+            (cd "$source/apps/tailorbird/guest" && cargo build --offline --release --target x86_64-unknown-none)
+          done
+          qemu-system-x86_64 --version
+          rustc -Vv
+      - name: Exercise both builds on the public guest
+        run: |
+          set -euo pipefail
+          kernel=desktop/PCP_OS_Rust/crates/pcpos-kernel
+          image="$kernel/target/pcpos-kernel.elf32"
+          measurement=$(python3 "$kernel/tools/measure.py" "$image")
+          status=0
+          for source in original candidate; do
+            python3 os-docs/display-acceptance/public_guest.py --kernel "$image" --measurement "$measurement" \
+              --app "$source/apps/tailorbird/guest/target/x86_64-unknown-none/release/tailorbird" \
+              --profile "$source" --output "captures/$source" || status=1
+          done
+          exit "$status"
+      - name: Keep guest frames and logs from both attempts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: public-tailorbird-display
+          path: captures/
+          if-no-files-found: warn
+          retention-days: 14

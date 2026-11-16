@@ -1,0 +1,4 @@
+[package]
+name = "night-post"
+version = "0.3.0"
+edition = "2021"

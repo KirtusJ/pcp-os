@@ -539,24 +539,30 @@ def _(ck):
 # ---------- F22: clause lookup against the machine form -----------------------------------------------------------------
 @scenario("F22 every provision the machine form lists is returned by the program, byte for byte", "all modules")
 def _(ck):
-    mf = json.load(open(os.environ["PCP_MACHINE"])); s = S(); n = bad = 0; calls = []; want = []
-    def walk(o):
-        if isinstance(o, dict):
-            if "module" in o and ("section" in o or "address" in o or "number" in o) and "sha256" in o: yield o
-            for v in o.values(): yield from walk(v)
-        elif isinstance(o, list):
-            for v in o: yield from walk(v)
-    for m in mf["modules"]:
-        for p in m["provisions"]: calls.append(("acr_clause", {"module": m["key"], "section": p["number"]})); want.append(p["text_sha256"])
-    res = s.mcp(calls); miss = [(c[1], r[:80]) for c, w, r in zip(calls, want, res) if w not in r]
-    ck(f"all {len(calls)} provisions returned with the machine form's digest", len(calls) == 260 and not miss, miss[:5])
-    import re as _re
-    bad = []
-    for c, w, r in zip(calls, want, res):
-        body = r.split("\n", 2)[2] if r.count("\n") >= 2 else ""
-        cands = [body, body.strip("\n"), body.strip("\n") + "\n", body.lstrip("\n")]; cands += [x + " " for x in cands] + [x.rstrip() + " \n" for x in cands]
-        if not any(hashlib.sha256(x.encode()).hexdigest() == w for x in cands): bad.append(c[1])
-    ck("the text returned hashes to the digest stated", len(bad) == 0, (len(bad), bad[:4]))
+    import re
+    with open(os.environ["PCP_MACHINE"]) as reference:
+        modules = json.load(reference)["modules"]
+    s = S()
+    calls, digests = [], []
+    for module in modules:
+        for provision in module["provisions"]:
+            calls.append(("acr_clause", {"module": module["key"], "section": provision["number"]}))
+            digests.append(provision["text_sha256"])
+    replies = s.mcp(calls)
+    ck("all 260 requested provisions have one reply", len(calls) == len(replies) == 260,
+       {"requests": len(calls), "replies": len(replies)})
+    bad_headers, bad_bodies = [], []
+    for (_, request), digest, reply in zip(calls, digests, replies):
+        header, separator, body = reply.partition("\n\n")
+        module_line, _, provision_line = header.partition("\n")
+        section = re.escape(request["section"])
+        if (not module_line.startswith(f"acr.{request['module']} ")
+                or not re.fullmatch(rf"PROVISION {section} \| lines [0-9]+\.\.[0-9]+ \| SHA-256 of this text {digest}", provision_line)):
+            bad_headers.append(request)
+        if not separator or hashlib.sha256(body.encode("utf-8")).hexdigest() != digest:
+            bad_bodies.append(request)
+    ck("each reply names its module, provision and expected text digest", not bad_headers, bad_headers[:5])
+    ck("the exact returned text hashes to the expected digest", not bad_bodies, bad_bodies[:5])
     ck("lookup puts nothing in use and writes nothing", not s.reg.exists())
     s.close()
 
@@ -1143,7 +1149,7 @@ def _(ck):
     s.close()
 
 # ---------- F33: instruments, and the calibrate skill (build 21) -----------------------------------------------------------------
-# The method's modules name instruments a host can run itself (Core 14.1). The program runs eight and records each as a
+# The method's modules name instruments a host can run itself (Core 14.1). The program runs nine and records each as a
 # check it ran. An instrument computes one property of its input and nothing else.
 F33 = "F33 an instrument is computed by the program itself and recorded as a check it ran"
 INSTR = lambda name, inp, **kw: ("acr_instrument", dict({"instrument": name, "input": inp}, **kw))
@@ -1183,7 +1189,11 @@ def _(ck):
                INSTR("statistics.grim", {"mean": "about 3", "n": 25}), INSTR("engineering.units", {"from": "3 furlongs", "to": "3 m"}), INSTR("science.order", {"earlier": H("x"), "later": H("y")}),
                INSTR("mathematics.exact", {"expression": "2 + 2 = 4"}, record=False), INSTR("list", {})])
     ck("seven refusals, each saying why, and the register untouched", s.bytes() == b0 and all(not x.startswith("WRITTEN") for x in r) and "division by zero" in r[0] and "no instrument named" in r[3], [x[:120] for x in r[:7]])
-    ck("record false computes and writes nothing; list names eight", "TRUE" in r[7] and "Nothing was written" in r[7] and r[8].count("\n  ") == 8, (r[7][:200], r[8][:200]))
+    ck("record false computes and writes nothing", "TRUE" in r[7] and "Nothing was written" in r[7], r[7][:200])
+    expected = {"mathematics.exact", "mathematics.protected_bins", "mathematics.statement", "statistics.grim", "statistics.percent",
+                "engineering.units", "cryptography.digest", "science.order", "science.incident_bounds", "quality.coverage", "core.calibration"}
+    names = [line.strip().split(":", 1)[0] for line in r[8].splitlines() if line.startswith("  ")]
+    ck("each supported instrument is listed once", sorted(names) == sorted(expected), names)
     s.close(); s = S(); s.begin_adopted(); b0 = s.bytes()
     r = s.mcp([INSTR("mathematics.exact", {"expression": "2 + 2 = 4"})]); ck("with no review open it is computed and not recorded", "TRUE" in r[0] and "No review is open" in r[0] and s.bytes() == b0, r[0][:300])
     s.close()

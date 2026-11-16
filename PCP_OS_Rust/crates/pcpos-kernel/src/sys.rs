@@ -51,6 +51,10 @@ pub enum Outcome {
 /// What an open file is.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Node {
+    #[cfg(feature = "guest-ethernet")]
+    Ethernet,
+    #[cfg(feature = "game-link")]
+    GameLink,
     Console,
     Display,
     Keys,
@@ -160,7 +164,11 @@ fn stat_bytes(mode: u32, size: usize) -> [u8; 144] {
 
 fn node_stat(world: &World, node: &Node) -> Option<[u8; 144]> {
     Some(match node {
+        #[cfg(feature = "guest-ethernet")]
+        Node::Ethernet => stat_bytes(0o020660, 0),
         Node::Console | Node::Display | Node::Keys | Node::Sound | Node::Music | Node::Null => stat_bytes(0o020666, 0),
+        #[cfg(feature = "game-link")]
+        Node::GameLink => stat_bytes(0o020666, 0),
         Node::Directory => stat_bytes(0o040755, 0),
         Node::File(i) => stat_bytes(0o100444, world.files.get(*i)?.1.len()),
         Node::Stored(n) => stat_bytes(0o100644, world.store.iter().find(|f| &f.0 == n)?.1.len()),
@@ -173,6 +181,10 @@ fn lookup(p: &Process, caps: &CapSpace, world: &World, path: &str) -> Result<Nod
     let need = |object: Object, right: Rights, node: Node| if p.holds(caps, object, right) { Ok(node) } else { Err(err(EACCES)) };
     match name.as_str() {
         "" => Ok(Node::Directory),
+        #[cfg(feature = "guest-ethernet")]
+        "dev/ethernet" => need(Object::Ethernet, Rights::READ.with(Rights::APPEND), Node::Ethernet),
+        #[cfg(feature = "game-link")]
+        "dev/game-link" => need(Object::GameLink, Rights::READ.with(Rights::APPEND), Node::GameLink),
         "dev/null" => Ok(Node::Null),
         "dev/console" | "dev/tty" => need(Object::Console, Rights::APPEND, Node::Console),
         "dev/fb0" => need(Object::Display, Rights::APPEND, Node::Display),
@@ -198,6 +210,8 @@ fn open(p: &mut Process, caps: &CapSpace, world: &mut World, path: u64, flags: u
     };
     let (writing, create, truncate) = (flags & 3 != 0, flags & 0x40 != 0, flags & 0x200 != 0);
     let node = match lookup(p, caps, world, &path) {
+        #[cfg(feature = "guest-ethernet")]
+        Ok(Node::Ethernet) if flags & 3 != 2 => return err(EINVAL), // raw packet sessions require O_RDWR
         Ok(Node::File(_)) if writing => return err(EACCES), // the loader's files are read and never written
         Ok(n) => n,
         Err(e) if e == err(ENOENT) && create => {
@@ -261,6 +275,31 @@ fn read(p: &mut Process, world: &World, fd: u64, addr: u64, len: u64) -> Outcome
     };
     let len = len.min(1 << 30) as usize;
     let bytes: &[u8] = match &f.node {
+        #[cfg(feature = "guest-ethernet")]
+        Node::Ethernet => {
+            let mut frame = [0u8; dev::virtio_tx::guest::MTU];
+            let result = if len < frame.len() { err(EINVAL) } else {
+                match dev::virtio_tx::guest::receive(&mut frame) {
+                    Ok(Some(n)) if put(p, addr, &frame[..n]) => n as u64,
+                    Ok(Some(_)) => err(EFAULT),
+                    Ok(None) => err(EAGAIN),
+                    Err(_) => err(5),
+                }
+            };
+            return Outcome::Return(result);
+        }
+        #[cfg(feature = "game-link")]
+        Node::GameLink => {
+            let mut buf = [0u8; 64];
+            let mut n = 0;
+            for slot in buf.iter_mut().take(len) {
+                let Some(byte) = arch::game_link_read() else { break };
+                *slot = byte;
+                n += 1;
+            }
+            let result = if n == 0 && len > 0 { err(EAGAIN) } else if put(p, addr, &buf[..n]) { n as u64 } else { err(EFAULT) };
+            return Outcome::Return(result);
+        }
         Node::Console | Node::Null => return Outcome::Return(0),
         Node::Display | Node::Directory | Node::Sound | Node::Music => return Outcome::Return(err(EINVAL)),
         Node::Keys => {
@@ -306,6 +345,22 @@ fn write(p: &mut Process, caps: &CapSpace, world: &mut World, fd: u64, addr: u64
     let len = len.min(1 << 24) as usize;
     match &f.node {
         Node::Null => len as u64,
+        #[cfg(feature = "guest-ethernet")]
+        Node::Ethernet => {
+            if !f.writable || !p.holds(caps, Object::Ethernet, Rights::APPEND) { return err(EBADF); }
+            if !(14..=dev::virtio_tx::guest::MTU).contains(&len) { return err(EINVAL); }
+            let Some(bytes) = p.space.as_ref().and_then(|s| s.read(addr as usize, len)) else { return err(EFAULT) };
+            if dev::virtio_tx::guest::send(&bytes).is_ok() { len as u64 } else { err(5) }
+        }
+
+        #[cfg(feature = "game-link")]
+        Node::GameLink => {
+            if !f.writable || !p.holds(caps, Object::GameLink, Rights::APPEND) { return err(EBADF); }
+            let Some(bytes) = p.space.as_ref().and_then(|s| s.read(addr as usize, len.min(16))) else { return err(EFAULT) };
+            let mut n = 0;
+            for b in bytes { if !arch::game_link_write(b) { break; } n += 1; }
+            if n == 0 && len > 0 { err(EAGAIN) } else { n }
+        }
         Node::Console => {
             if !p.holds(caps, Object::Console, Rights::APPEND) {
                 return err(EPERM);

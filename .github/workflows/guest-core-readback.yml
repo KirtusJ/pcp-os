@@ -1,0 +1,51 @@
+name: Guest Core source readback
+
+on:
+  pull_request:
+    paths:
+      - 'examples/method-readback/**'
+      - '.github/workflows/guest-core-readback.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  readback:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: KirtusJ/pcp
+          ref: e23784155622311cfff697468beb0ba8bbe83194
+          path: edition
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: KirtusJ/pcp-os-claude
+          ref: c0fbde739b4cc3bc409878d901de0974702c506e
+          sparse-checkout: method
+          path: adapter
+          persist-credentials: false
+      - name: Install the emulator and ISO reader
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 seabios xorriso
+      - name: Verify the public ISO and extract the kernel
+        run: |
+          echo '93ed3b599ad7be0e1e88a64813b1f2b5299d51507df2edca691aaf6189d10d15  edition/PCP-OS.iso' | sha256sum -c -
+          xorriso -osirrox on -indev edition/PCP-OS.iso -extract /kernel.elf32 "$RUNNER_TEMP/kernel.elf32"
+      - name: Read the bundled build 19 Core inside the guest
+        run: |
+          python3 examples/method-readback/check.py \
+            --kernel "$RUNNER_TEMP/kernel.elf32" \
+            --method edition/PCP_1.0_Plugins/plugins/pcp-os/method \
+            --manifest-sha256 6b6d3a680f3fdec811ce7105dd2124e951e272c28a24608f073914f4155853c6
+      - name: Read the standalone build 22 Core inside the guest
+        run: |
+          python3 examples/method-readback/check.py \
+            --kernel "$RUNNER_TEMP/kernel.elf32" \
+            --method adapter/method \
+            --manifest-sha256 7ff72eed9162e2c11fc62f6681c4afbc29524bfa96b87d45a455423d027d4707

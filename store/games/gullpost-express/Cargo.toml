@@ -1,0 +1,20 @@
+[package]
+name = "gullpost-express"
+version = "1.0.0-alpha.1"
+edition = "2021"
+publish = false
+
+[lib]
+name = "gullpost_routes"
+path = "src/game.rs"
+
+[[bin]]
+name = "gullpost"
+path = "src/main.rs"
+test = false
+bench = false
+
+[profile.release]
+opt-level = 2
+panic = "abort"
+strip = "symbols"

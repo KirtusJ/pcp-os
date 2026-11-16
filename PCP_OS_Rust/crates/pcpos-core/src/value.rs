@@ -64,6 +64,18 @@ impl Value {
         Ok(v)
     }
 
+    /// Does this in-memory value fit the parser's limit at its position in the enclosing value?
+    pub(crate) fn fits_depth(&self, depth: usize) -> bool {
+        if depth > MAX_DEPTH {
+            return false;
+        }
+        match self {
+            Value::List(items) => items.iter().all(|v| v.fits_depth(depth + 1)),
+            Value::Map(fields) => fields.values().all(|v| v.fits_depth(depth + 1)),
+            _ => true,
+        }
+    }
+
     /// The canonical JSON form: sorted keys, no spaces, ASCII only. One value has one byte form.
     pub fn canonical_json(&self) -> Vec<u8> {
         let mut out = Vec::new();
