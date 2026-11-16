@@ -16,8 +16,9 @@ import sys
 import tempfile
 import time
 
-from containment_probe import (cleanup_escaped_child, has_exited, invoke,
-                               proc_identity, read_actor_identity, read_ticks, wait_for)
+from containment_probe import (cleanup_escaped_child, cleanup_registered_actor,
+                               has_exited, invoke, proc_identity,
+                               read_actor_identity, read_ticks, wait_for)
 
 
 def scenario(root, cli, delegate, request, mode, node):
@@ -105,16 +106,13 @@ def scenario(root, cli, delegate, request, mode, node):
         # Reap/terminate only test-created processes, even after an assertion
         # failure. The detached case has a distinct process group.
         (directory / "release").touch()
-        if adapter.poll() is None:
-            try:
-                os.killpg(adapter.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-            try:
-                adapter.communicate(timeout=3)
-            except subprocess.TimeoutExpired:
-                adapter.kill()
-                adapter.communicate(timeout=3)
+        try:
+            observations["registered_actor_cleanup"] = cleanup_registered_actor(
+                adapter, directory, mode
+            )
+        except Exception as exc:
+            observations["parent_cleanup_error"] = f"{type(exc).__name__}: {exc}"
+            failure = failure or observations["parent_cleanup_error"]
         if (directory / "leaf.pid").exists():
             try:
                 observations["cleanup"] = cleanup_escaped_child(
