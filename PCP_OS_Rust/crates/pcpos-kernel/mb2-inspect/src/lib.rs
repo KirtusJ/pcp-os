@@ -148,7 +148,13 @@ fn map_tag<'a>(tag: &'a [u8], efi: bool) -> Result<MapView<'a>, Error> {
     let stride = get32(tag, 8).map_err(|_| bad)?;
     let version = get32(tag, 12).map_err(|_| bad)?;
     let minimum = if efi { 40 } else { 24 };
-    if stride < minimum || stride % 8 != 0 {
+    // Multiboot2 *basic* memory map tag 6 guarantees entries are a
+    // multiple of eight bytes. EFI tag 17 carries firmware-provided
+    // DescriptorSize, which UEFI requires consumers to honor as returned;
+    // it does not inherit the basic-map multiple-of-eight guarantee.
+    // We use slices/byte reads, not pointer casts, so no alignment is
+    // assumed for a future extended EFI descriptor.
+    if stride < minimum || (!efi && stride % 8 != 0) {
         return Err(bad);
     }
     let entries = &tag[16..];
@@ -234,7 +240,10 @@ fn framebuffer_tag(tag: &[u8]) -> Result<Framebuffer, Error> {
             let expected = 34usize
                 .checked_add(count.checked_mul(3).ok_or(Error::BadFramebuffer)?)
                 .ok_or(Error::BadFramebuffer)?;
-            if count > 256 || tag.len() != expected {
+            // Palette length is a u16 field in Multiboot2, not limited
+            // to 256 by the wire contract. Actual renderer capability is
+            // a separate check (PixelKind::Indexed is not BGRX32).
+            if tag.len() != expected {
                 return Err(Error::BadFramebuffer);
             }
             PixelKind::Indexed
