@@ -32,7 +32,7 @@ jobs:
           path: installed-evidence
           sparse-checkout: raw
           persist-credentials: false
-      - name: Replay the installed serials, stores and full output frames
+      - name: Replay the installed captures with standard and optimized Python
         run: |
           python3 installed-evidence/raw/replay.py os-docs/tailorbird-stop
           python3 -O installed-evidence/raw/replay.py os-docs/tailorbird-stop
