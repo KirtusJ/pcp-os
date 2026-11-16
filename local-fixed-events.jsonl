@@ -1,0 +1,5 @@
+{"time": "2026-11-16T14:32:15.584533+00:00", "event": "inputs", "kernel_sha256": "ec70c7fbd70b08cfc4d5672131d61dbc84f0e4a885d7563c5f5ba8b8430bb8b8", "measurement": "3ed504581444f47c156a4952cd7c3b8741e4677012e1205eaa637e12e5aa6d5b", "worker_sha256": "c14bc81c25d5d7012a88532a854e42583378c2285734d650667dc4a52cf297c8", "oracle_sha256": "7fb50b43c445058fe3d983a718aa73d65b7ba91d305c60c731b17fcff1cc9df1", "root_input": 115644, "salt": 6}
+{"time": "2026-11-16T14:35:20.026231+00:00", "event": "interrupted", "node": 1, "reason": "guest 1: overall deadline at 2202 serial bytes before READY"}
+{"time": "2026-11-16T14:38:21.938910+00:00", "event": "interrupted", "node": 1, "reason": "guest 1: overall deadline at 2202 serial bytes before READY"}
+{"time": "2026-11-16T14:41:22.925646+00:00", "event": "interrupted", "node": 1, "reason": "guest 1: overall deadline at 2202 serial bytes before READY"}
+{"time": "2026-11-16T14:41:22.938067+00:00", "event": "failed", "reason": "guest 1: guest 1: overall deadline at 2202 serial bytes before READY; repair allowance exhausted"}
