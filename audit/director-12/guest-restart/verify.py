@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 import subprocess
 import tempfile
 import time
@@ -122,7 +123,22 @@ def evidence(directory: Path, request: str, measurement: str, attempts: int) -> 
     }
     return entries
 
-def qualifying_run(image: str, kernel: Path, measurement: str):
+def capture(directory: Path, destination: Path, attempts: int) -> None:
+    """Positive allowlist only: this fixture has no secrets or real task data."""
+    destination.mkdir(parents=True, exist_ok=True)
+    names = ["request.txt", "attention.txt"]
+    for n in range(1, attempts + 1):
+        names.extend([
+            f"start-{n}.txt", f"end-{n}.txt",
+            f"qemu-{n}.serial", f"qemu-{n}.stderr",
+        ])
+    for name in names:
+        path = directory / name
+        if path.is_file() and not path.is_symlink():
+            shutil.copyfile(path, destination / name)
+
+
+def qualifying_run(image: str, kernel: Path, measurement: str, evidence_dir: Path):
     with tempfile.TemporaryDirectory(prefix="d12-qemu-restart-") as tmp:
         directory = Path(tmp)
         os.chmod(directory, 0o777)
@@ -167,9 +183,10 @@ def qualifying_run(image: str, kernel: Path, measurement: str):
                 "semantic_task_resumption_proven": False,
             }
         finally:
+            capture(directory, evidence_dir / "valid", 3)
             invoke(["docker", "rm", "-f", name], checked=False)
 
-def interrupted_run(image: str, kernel: Path, measurement: str):
+def interrupted_run(image: str, kernel: Path, measurement: str, evidence_dir: Path):
     with tempfile.TemporaryDirectory(prefix="d12-qemu-interrupted-") as tmp:
         directory = Path(tmp)
         os.chmod(directory, 0o777)
@@ -200,6 +217,7 @@ def interrupted_run(image: str, kernel: Path, measurement: str):
                 "requested_policy": policy,
             }
         finally:
+            capture(directory, evidence_dir / "fault", 1)
             invoke(["docker", "rm", "-f", name], checked=False)
 
 def main() -> int:
@@ -209,11 +227,14 @@ def main() -> int:
     p.add_argument("--measurement", required=True)
     p.add_argument("--source-head", required=True)
     p.add_argument("--out", type=Path, required=True)
+    p.add_argument("--evidence-dir", type=Path, required=True)
     a = p.parse_args()
     kernel = a.kernel.resolve(strict=True)
     assert re.fullmatch("[0-9a-f]{64}", a.measurement)
     out = a.out
     out.parent.mkdir(parents=True, exist_ok=True)
+    evidence_dir = a.evidence_dir
+    evidence_dir.mkdir(parents=True, exist_ok=True)
     result = {
         "scope": "bounded Linux OCI Docker restart of actual PCP OS x86_64 QEMU guests",
         "source_head": a.source_head,
@@ -233,8 +254,8 @@ def main() -> int:
         result["image_id"] = invoke([
             "docker", "image", "inspect", a.image, "--format", "{{.Id}}"
         ]).stdout.strip()
-        result["qualification"] = qualifying_run(a.image, kernel, a.measurement)
-        result["interrupted"] = interrupted_run(a.image, kernel, a.measurement)
+        result["qualification"] = qualifying_run(a.image, kernel, a.measurement, evidence_dir)
+        result["interrupted"] = interrupted_run(a.image, kernel, a.measurement, evidence_dir)
         result["status"] = "OBSERVED_IN_TEST_SCOPE"
         return 0
     except Exception as e:
@@ -242,6 +263,15 @@ def main() -> int:
         result["failure"] = f"{type(e).__name__}: {e}"
         raise
     finally:
+        result["captured_evidence"] = [
+            {
+                "path": str(p.relative_to(evidence_dir)),
+                "bytes": p.stat().st_size,
+                "sha256": sha(p.read_bytes()),
+            }
+            for p in sorted(evidence_dir.rglob("*"))
+            if p.is_file()
+        ]
         out.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
 
 if __name__ == "__main__":
