@@ -16,6 +16,13 @@ def sha256(path):
         return hashlib.file_digest(source, "sha256").hexdigest()
 
 
+def checkpoint(directory, result):
+    # Each run owns its results directory. Readers see either complete JSON version.
+    pending = directory / "result.json.tmp"
+    pending.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    pending.replace(directory / "result.json")
+
+
 def wait_serial(process, log, marker, deadline):
     while True:
         data = log.read_bytes() if log.exists() else b""
@@ -176,26 +183,45 @@ def main():
     if original != manifest["output_sha256"]["PCP-OS.img"]:
         parser.error("The installed disk does not match the release manifest")
     args.results.mkdir(parents=True, exist_ok=False)
-    version = subprocess.check_output([args.qemu, "--version"], text=True).splitlines()[0]
     result = {"source_revision": manifest["git_commit"], "disk_sha256_before": original,
-              "manifest_sha256": sha256(args.manifest), "qemu": version,
-              "ovmf_code_sha256": sha256(args.ovmf_code), "ovmf_vars_sha256": sha256(args.ovmf_vars),
               "expected_tokens": args.expected_tokens, "selected_modes": args.modes,
-              "model_memory_mib": args.model_memory_mib, "boots": {}}
-    mode = "setup"
+              "model_memory_mib": args.model_memory_mib, "boots": {},
+              "status": "in_progress", "active_mode": None}
+    checkpoint(args.results, result)
     try:
+        result["manifest_sha256"] = sha256(args.manifest)
+        result["ovmf_code_sha256"] = sha256(args.ovmf_code)
+        result["ovmf_vars_sha256"] = sha256(args.ovmf_vars)
+        result["qemu"] = subprocess.check_output([args.qemu, "--version"], text=True).splitlines()[0]
         with tempfile.TemporaryDirectory(dir=args.ram_directory) as directory:
             for mode in args.modes:
+                result["active_mode"] = mode
+                checkpoint(args.results, result)
                 result["boots"][mode] = boot(args, mode, manifest["component_sha256"],
                                              args.expected_tokens, Path(directory))
-    except Exception as error:
-        result["failure"] = {"mode": mode, "reason": str(error)}
+                result["active_mode"] = None
+                checkpoint(args.results, result)
+    except (Exception, KeyboardInterrupt) as error:
+        result["failure"] = {"mode": result["active_mode"] or "setup",
+                             "reason": str(error) or type(error).__name__}
+        result["active_mode"] = None
+        result["status"] = "failed"
+        checkpoint(args.results, result)
         raise
     finally:
-        result["disk_sha256_after"] = sha256(args.disk)
-        (args.results / "result.json").write_text(json.dumps(result, indent=2) + "\n")
-        if result["disk_sha256_after"] != original:
-            raise RuntimeError("The installed disk changed during the check")
+        result["active_mode"] = None
+        try:
+            result["disk_sha256_after"] = sha256(args.disk)
+            if result["disk_sha256_after"] != original:
+                raise RuntimeError("The installed disk changed during the check")
+        except (Exception, KeyboardInterrupt) as error:
+            result["disk_verification_error"] = str(error) or type(error).__name__
+            result["status"] = "failed"
+            checkpoint(args.results, result)
+            raise
+        if "failure" not in result and list(result["boots"]) == list(args.modes):
+            result["status"] = "complete"
+        checkpoint(args.results, result)
     print(json.dumps(result, indent=2))
 
 
