@@ -135,11 +135,40 @@ fn palette_framebuffer_is_present_but_not_direct_rgb() {
     data.extend_from_slice(&640u32.to_le_bytes());
     data.extend_from_slice(&480u32.to_le_bytes());
     data.extend_from_slice(&[8, 0, 0, 0]);
-    data.extend_from_slice(&2u32.to_le_bytes());
+    // Official MB2 layout: *u16* count, then three bytes per RGB entry.
+    // A nonzero first red component catches a mistaken u32 count read.
+    data.extend_from_slice(&2u16.to_le_bytes());
     data.extend_from_slice(&[255, 0, 0, 0, 255, 0]);
     let data = mbi(&[tag(8, &data)]);
     let result = inspect(&data).unwrap();
     assert_eq!(result.framebuffer.unwrap().kind, PixelKind::Indexed);
+}
+
+#[test]
+fn accept_single_palette_color_with_nonzero_red_and_blue() {
+    let mut data = Vec::new();
+    data.extend_from_slice(&0xB0000u64.to_le_bytes());
+    data.extend_from_slice(&640u32.to_le_bytes());
+    data.extend_from_slice(&640u32.to_le_bytes());
+    data.extend_from_slice(&480u32.to_le_bytes());
+    data.extend_from_slice(&[8, 0, 0, 0]);
+    data.extend_from_slice(&1u16.to_le_bytes());
+    data.extend_from_slice(&[0xa5, 0x3c, 0x5e]);
+    let data = mbi(&[tag(8, &data)]);
+    assert_eq!(inspect(&data).unwrap().framebuffer.unwrap().kind, PixelKind::Indexed);
+}
+
+#[test]
+fn reject_palette_with_extra_undeclared_color_bytes() {
+    let mut data = Vec::new();
+    data.extend_from_slice(&0xB0000u64.to_le_bytes());
+    data.extend_from_slice(&640u32.to_le_bytes());
+    data.extend_from_slice(&640u32.to_le_bytes());
+    data.extend_from_slice(&480u32.to_le_bytes());
+    data.extend_from_slice(&[8, 0, 0, 0]);
+    data.extend_from_slice(&1u16.to_le_bytes());
+    data.extend_from_slice(&[255, 0, 0, 0, 255, 0]);
+    assert_eq!(inspect(&mbi(&[tag(8, &data)])), Err(Error::BadFramebuffer));
 }
 
 #[test]
@@ -311,7 +340,8 @@ fn reject_palette_with_declared_entries_not_present() {
     data.extend_from_slice(&640u32.to_le_bytes());
     data.extend_from_slice(&480u32.to_le_bytes());
     data.extend_from_slice(&[8, 0, 0, 0]);
-    data.extend_from_slice(&256u32.to_le_bytes());
+    // A valid 16-bit count with insufficient color entries must be refused.
+    data.extend_from_slice(&256u16.to_le_bytes());
     assert_eq!(inspect(&mbi(&[tag(8, &data)])), Err(Error::BadFramebuffer));
 }
 
