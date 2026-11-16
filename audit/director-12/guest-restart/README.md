@@ -68,6 +68,37 @@ A hostile process with write access to the volume can forge entries.
 The Docker/runtime policy and the test authority come from outside the
 guest and wrapper. No formal §14.4 participant calibration is performed.
 
+## Extra falsification controls for journal integrity
+
+The test runner now checks a real native PCP OS x86_64 banner, an **exact**
+kernel code/data measurement equality, `ALL SELF-TESTS PASS`, and one
+well-formed 64-digit replayed register head before treating a QEMU exit
+status 33 as sufficient for a synthetic `END`. It caps the retained serial
+at 1 MiB and rejects a fake exit 33 paired only with a synthetic non-native
+serial. A status code **alone** must never create an `END`. Before writing
+it, the test runner synchronizes the observed serial and error streams,
+then creates a new (never overwriting) END marker and syncs its directory
+entry. These are scoped filesystem durability measures, **not** a
+crash-atomic, tamper-resistant or signed ledger.
+
+On a restart, the Rust `journal.rs` module examines the **whole bounded**
+three-attempt namespace. Valid consecutive completed attempts advance, but
+a sparse future START/END, orphan output, missing START/END, malformed
+identity, unexpected reserved member, oversized record or an existing
+attention marker must **hold**. A prior completed attempt must also have a
+retained native serial passing the same exact measurement/self-test/register
+receipt check; a plausible-looking `END` plus a fake or absent serial does
+not permit another guest launch. Rust unit tests cover positive and
+adversarial journal inputs in the CI runner.
+
+The host test repeats selected adversaries **inside real disposable Docker
+containers**: a fake code 33 with no native kernel serial, a future
+attempt 3 without attempts 1/2, and a syntactically valid prior END
+whose recorded serial was never produced by a kernel. Each must leave a
+clear attention receipt, no extra guest and no synthetic END. These are
+deliberate falsifications of the fixture's inference logic, not observations
+of malicious real-world actors.
+
 ## Runtime and release limits
 
 The ephemeral OCI test container requests a read-only root, no network,
