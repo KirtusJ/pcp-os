@@ -56,12 +56,15 @@ def prepare_disk(factory, target, guid):
         require(34 <= first <= last < size // SECTOR - 33, "application partition outside disk")
         require(1 + 2 * SLOT_SECTORS <= last - first + 1 <= 2048, "unsupported store size")
         disk.truncate(size)
+        fixture_hash = hashlib.sha256(struct.pack("<Q", size))
         for offset, length in [(0, 34 * SECTOR), (size - 33 * SECTOR, 33 * SECTOR),
                                (first * SECTOR, (last - first + 1) * SECTOR)]:
             data = read_at(source, offset, length)
+            fixture_hash.update(struct.pack("<QQ", offset, length))
+            fixture_hash.update(data)
             disk.seek(offset)
             disk.write(data)
-    return first * SECTOR
+    return first * SECTOR, fixture_hash.hexdigest()
 
 
 def checkpoint(disk, offset, expected_source=None):
@@ -189,11 +192,13 @@ def exercise(args, output, results):
     manifest = json.loads(args.manifest.read_bytes())
     guid = UUID(manifest["factory_disk_guid"])
     pins = manifest["component_sha256"]
-    require(file_hash(args.disk) == manifest["output_sha256"]["PCP-OS.img"], "factory image digest mismatch")
+    if args.fixture_sha256 is None:
+        require(file_hash(args.disk) == manifest["output_sha256"]["PCP-OS.img"], "factory image digest mismatch")
+    results["whole_image_verified"] = args.fixture_sha256 is None
     results.update(source_commit=manifest["git_commit"], manifest_sha256=file_hash(args.manifest),
                    component_sha256={k: pins[k] for k in ("kernel", "tailorbird", "qwen-worker")},
                    qemu_version=subprocess.check_output([args.qemu, "--version"], text=True).splitlines()[0],
-                   factory_sha256=manifest["output_sha256"]["PCP-OS.img"])
+                   manifest_factory_sha256=manifest["output_sha256"]["PCP-OS.img"])
     for path, name, key in [(args.kernel, "kernel.elf", "kernel"),
                             (args.desktop, "Tailorbird", "tailorbird"), (args.worker, "qwen.elf", "qwen-worker")]:
         dest = output / name
@@ -201,7 +206,10 @@ def exercise(args, output, results):
         require(file_hash(dest) == pins[key], f"{name} differs from component manifest")
     subprocess.run([args.objcopy, "-O", "elf32-i386", "kernel.elf", "kernel32.elf"], cwd=output, check=True)
     disk = output / "store.img"
-    offset = prepare_disk(args.disk, disk, guid)
+    offset, fixture_hash = prepare_disk(args.disk, disk, guid)
+    results["fixture_sha256"] = fixture_hash
+    if args.fixture_sha256 is not None:
+        require(fixture_hash == args.fixture_sha256, "fixture digest mismatch")
     observations = results["checkpoints"]
     observations["factory"] = checkpoint(disk, offset)
     with boot(args, output, "first", pins, guid, results) as guest:
@@ -254,6 +262,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for flag in ("manifest", "disk", "kernel", "desktop", "worker", "output"):
         parser.add_argument("--" + flag, type=Path, required=True)
+    parser.add_argument("--fixture-sha256", help="verify only the copied regions against this independent SHA-256")
     parser.add_argument("--qemu", default="qemu-system-x86_64")
     parser.add_argument("--objcopy", default="objcopy")
     parser.add_argument("--firmware", type=Path)
