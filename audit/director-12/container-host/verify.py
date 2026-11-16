@@ -109,7 +109,11 @@ def run_test(image: str, result: dict) -> None:
             )
             alive_before = state(name)["State"]["Running"]
             assert alive_before
-            assert size(directory / "grandchild.tick") >= 3
+            child_tick_before = size(directory / "grandchild.tick")
+            time.sleep(0.35)
+            assert size(directory / "grandchild.tick") > child_tick_before, (
+                "invalid stop oracle: the child was not making progress immediately before stop"
+            )
             cmd("docker", "kill", "--signal", "KILL", name)
             wait_for(lambda: not state(name)["State"]["Running"], "Docker state stopped", 10)
             time.sleep(0.3)
@@ -143,6 +147,11 @@ def run_test(image: str, result: dict) -> None:
                 and size(directory / "grandchild.tick") >= 3
                 and size(directory / "parent.tick") >= 3,
                 "pre-crash child and parent heartbeats", 18,
+            )
+            child_tick_before = size(directory / "grandchild.tick")
+            time.sleep(0.35)
+            assert size(directory / "grandchild.tick") > child_tick_before, (
+                "invalid abort oracle: child had stopped before fault injection"
             )
             (directory / "parent-crash").write_bytes(b"inject SIGABRT")
             wait_for(
