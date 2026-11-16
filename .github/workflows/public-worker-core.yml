@@ -1,4 +1,4 @@
-name: Public resident worker Core readback
+name: Director 9 resident Core continuation
 
 on:
   pull_request:
@@ -19,7 +19,7 @@ permissions:
 jobs:
   public-worker:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -70,11 +70,105 @@ jobs:
             case_dir="receipts/text-input/$arm"
             python3 examples/method-readback/text-input/compare.py "$arm" "$case_dir/boot.serial" "$case_dir/oracle.stdout"
           done
+      - name: Admit the Director 9 Core-reading cohort
+        env:
+          PCPOS_CORE_MODULE: ${{ github.workspace }}/receipts/core-spec.md
+          PCPOS_REAL_QEMU: /usr/bin/qemu-system-x86_64
+        run: |
+          set -euo pipefail
+          python3 examples/resident-workers/supervise.py \
+            --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            --worker receipts/resident.elf --oracle receipts/control/oracle.json \
+            --qemu "$GITHUB_WORKSPACE/examples/method-readback/qemu-worker" \
+            --run receipts/session --cycles 60 --interval 60 >receipts/session-console.log 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/d9-supervisor.pid"
+      - name: Freeze and replay round 1
+        run: |
+          python3 examples/resident-workers/session-checkpoint.py 1
+      - name: Publish round 1
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: director-9-round-1
+          path: |
+            receipts/checkpoints/1/
+            receipts/inputs.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Freeze and replay round 15
+        run: |
+          python3 examples/resident-workers/session-checkpoint.py 15
+      - name: Publish round 15
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: director-9-round-15
+          path: |
+            receipts/checkpoints/15/
+            receipts/inputs.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Freeze and replay round 30
+        run: |
+          python3 examples/resident-workers/session-checkpoint.py 30
+      - name: Publish round 30
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: director-9-round-30
+          path: |
+            receipts/checkpoints/30/
+            receipts/inputs.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Freeze and replay round 45
+        run: |
+          python3 examples/resident-workers/session-checkpoint.py 45
+      - name: Publish round 45
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: director-9-round-45
+          path: |
+            receipts/checkpoints/45/
+            receipts/inputs.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Freeze and replay round 60
+        run: |
+          python3 examples/resident-workers/session-checkpoint.py 60
+      - name: Publish round 60
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: director-9-round-60
+          path: |
+            receipts/checkpoints/60/
+            receipts/inputs.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Verify every observed round after supervisor shutdown
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, time
+          from pathlib import Path
+          events = Path("receipts/session/events.jsonl")
+          for _ in range(120):
+              rows = events.read_bytes().splitlines(keepends=True)
+              records = [json.loads(row) for row in rows if row.endswith(b"\n")]
+              if records and records[-1]["event"] == "finished":
+                  break
+              if records and records[-1]["event"] in ("failed", "stopped"):
+                  raise SystemExit(records[-1])
+              time.sleep(1)
+          else:
+              raise SystemExit("supervisor did not finish")
+          PY
+          for cycle in {1..60}; do
+            python3 -O examples/resident-workers/verify.py \
+              --run receipts/session --oracle receipts/control/oracle.json --cycle "$cycle"
+          done
       - name: Retain the oracle, serial logs and cohort receipts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: resident-worker-core-readback
+          name: director-9-complete-continuation
           path: |
             receipts/**/*.serial
             receipts/**/*.stderr
@@ -85,5 +179,6 @@ jobs:
             receipts/text-input/*/oracle.stdout
             receipts/text-input/*/*.status
             receipts/text-input/results.json
+            receipts/session-console.log
           if-no-files-found: warn
           retention-days: 14
