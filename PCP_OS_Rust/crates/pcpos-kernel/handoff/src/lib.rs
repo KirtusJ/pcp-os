@@ -127,6 +127,7 @@ pub enum Error {
     InvalidDisplayLength,
     InvalidDisplayFormat,
     InvalidDisplayMasks,
+    UnsupportedPixelLayout,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -226,12 +227,19 @@ impl Framebuffer {
             PIXEL_BITMASK => {
                 let (r, g, b, x) =
                     (self.red_mask, self.green_mask, self.blue_mask, self.reserved_mask);
-                if !byte_mask(r) || !byte_mask(g) || !byte_mask(b)
-                    || (x != 0 && !byte_mask(x))
+                if r == 0 || g == 0 || b == 0
                     || (r & g) != 0 || (r & b) != 0 || (r & x) != 0
                     || (g & b) != 0 || (g & x) != 0 || (b & x) != 0
                 {
                     return Err(Error::InvalidDisplayMasks);
+                }
+                // Other non-overlapping UEFI BitMask formats can be valid
+                // firmware modes, but this proposed v1 rasterizer profile
+                // deliberately supports only three 8-bit color channels.
+                if !byte_mask(r) || !byte_mask(g) || !byte_mask(b)
+                    || (x != 0 && !byte_mask(x))
+                {
+                    return Err(Error::UnsupportedPixelLayout);
                 }
             }
             _ => return Err(Error::InvalidDisplayFormat),
@@ -267,6 +275,9 @@ pub fn validate(
     let kernel_end = span_end_nonzero(
         handoff.kernel_physical, handoff.kernel_length, physical_limit
     ).map_err(|_| Error::KernelRange)?;
+    if handoff.kernel_physical % PAGE != 0 || handoff.kernel_length % PAGE != 0 {
+        return Err(Error::KernelRange);
+    }
 
     if regions.is_empty() || regions.len() > MAX_REGIONS || handoff.map_count as usize != regions.len() {
         return Err(Error::MissingOrTooManyRegions);
@@ -277,6 +288,9 @@ pub fn validate(
     let map_len = u64::from(handoff.map_count)
         .checked_mul(u64::from(handoff.map_stride)).ok_or(Error::SpanOverflow)?;
     let map_end = span_end_nonzero(handoff.map_physical, map_len, physical_limit)?;
+    if handoff.map_physical % 8 != 0 {
+        return Err(Error::MemoryMapMetadata);
+    }
     if intersects(handoff.kernel_physical, kernel_end, handoff.map_physical, map_end) {
         return Err(Error::RangeOverlap);
     }
@@ -308,6 +322,9 @@ pub fn validate(
         let bytes = u64::from(handoff.module_count)
             .checked_mul(u64::from(handoff.module_stride)).ok_or(Error::SpanOverflow)?;
         let end = span_end_nonzero(handoff.module_table_physical, bytes, physical_limit)?;
+        if handoff.module_table_physical % 8 != 0 {
+            return Err(Error::ModuleTableMetadata);
+        }
         if intersects(handoff.kernel_physical, kernel_end, handoff.module_table_physical, end)
             || intersects(handoff.map_physical, map_end, handoff.module_table_physical, end)
         {
