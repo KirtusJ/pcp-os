@@ -7,7 +7,9 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
+import check_inventory as inventory
 from check_inventory import SCHEMA, check
 
 
@@ -199,6 +201,58 @@ class DualQwenInventoryControls(unittest.TestCase):
         self.manifest["models"][1]["revision"] = "0" * 40
         with self.assertRaisesRegex(ValueError, "unversioned"):
             self.run_check()
+
+
+    def test_same_inode_modified_immediately_after_hash_is_refused(self):
+        # One original file is hashed, then changed in place to same-length
+        # bytes while its open handle remains live.
+        target = self.root / "models/8b/model.gguf"
+        previous = inventory.sha256_file
+
+        def mutate_after_hash(handle):
+            observation = previous(handle)
+            if Path(handle.name) == target:
+                target.write_bytes(self.files["models/8b/model.gguf"].replace(
+                    b"-8B-", b"-9B-"))
+            return observation
+
+        with patch.object(inventory, "sha256_file",
+                          side_effect=mutate_after_hash):
+            with self.assertRaisesRegex(ValueError, "changed during read"):
+                self.run_check()
+
+    def test_path_atomically_replaced_after_hash_is_refused(self):
+        # Previously the old correct inode could be hashed successfully
+        # even after its pathname was replaced by another file.
+        target = self.root / "models/8b/model.gguf"
+        swap = self.root / "models/8b/swapped.tmp"
+        swap.write_bytes(b"NONMODEL-REPLACEMENT-FILE")
+        previous = inventory.sha256_file
+
+        def swap_after_hash(handle):
+            observation = previous(handle)
+            if Path(handle.name) == target:
+                os.replace(swap, target)
+            return observation
+
+        with patch.object(inventory, "sha256_file", side_effect=swap_after_hash):
+            with self.assertRaisesRegex(ValueError, "path changed after read"):
+                self.run_check()
+
+    def test_path_removed_after_hash_is_not_success(self):
+        target = self.root / "models/8b/model.gguf"
+        previous = inventory.sha256_file
+
+        def unlink_after_hash(handle):
+            observation = previous(handle)
+            if Path(handle.name) == target:
+                target.unlink()
+            return observation
+
+        with patch.object(inventory, "sha256_file",
+                          side_effect=unlink_after_hash):
+            with self.assertRaises(FileNotFoundError):
+                self.run_check()
 
 
 if __name__ == "__main__":
