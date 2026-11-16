@@ -85,6 +85,20 @@ def change_block(s, lba, offset, data):
     return replace(s, blocks=d)
 
 
+def relocate_protective_record(s, slot):
+    """Move the sole 16-byte 0xEE entry; all four slots are UEFI-permitted."""
+    if type(slot) is not int or not (0 <= slot < 4):
+        raise ValueError("test fixture requires slot 0..3")
+    old = bytearray(s.blocks[0])
+    protective = bytes(old[446:462])
+    old[446:462] = bytes(16)
+    start = 446 + slot * 16
+    old[start:start + 16] = protective
+    blocks = dict(s.blocks)
+    blocks[0] = bytes(old)
+    return replace(s, blocks=blocks)
+
+
 def header_edit(s, lba, offset, fmt, value):
     d = dict(s.blocks)
     x = bytearray(d[lba])
@@ -194,6 +208,42 @@ class GPTMetadataTests(unittest.TestCase):
     def test_explicit_primary_usable_range_overlap(self):
         s = factory()
         self.held(header_edit(s, 1, 40, '<Q', 2), 'primary-backup-header-mismatch')
+
+    def test_protective_record_in_first_slot_accepts(self):
+        self.ok(relocate_protective_record(factory(), 0))
+
+    def test_protective_record_in_second_slot_accepts(self):
+        self.ok(relocate_protective_record(factory(), 1))
+
+    def test_protective_record_in_third_slot_accepts(self):
+        self.ok(relocate_protective_record(factory(), 2))
+
+    def test_protective_record_in_fourth_slot_accepts(self):
+        self.ok(relocate_protective_record(factory(), 3))
+
+    def test_fourth_slot_also_works_with_4096_byte_gpt_lbas(self):
+        self.ok(relocate_protective_record(factory(lba_bytes=4096), 3))
+
+    def test_missing_protective_record_refuses(self):
+        s = factory()
+        self.held(change_block(s, 0, 446, bytes(16)),
+                  "bad-protective-mbr-partition-type")
+
+    def test_duplicate_protective_records_refuse(self):
+        s = factory()
+        protective = bytes(s.blocks[0][446:462])
+        self.held(change_block(s, 0, 462, protective),
+                  "hybrid-or-nonzero-mbr-reserved")
+
+    def test_nonprotective_hybrid_record_refuses_with_shifted_valid_record(self):
+        s = relocate_protective_record(factory(), 1)
+        self.held(change_block(s, 0, 450, b"\x83"),
+                  "hybrid-or-nonzero-mbr-reserved")
+
+    def test_shifted_protective_start_chs_bad_is_refused_by_actual_entry(self):
+        s = relocate_protective_record(factory(), 2)
+        self.held(change_block(s, 0, 446 + 2 * 16 + 1, bytes(3)),
+                  "bad-protective-mbr-start-chs")
 
     def test_protective_mbr_signature_missing(self):
         self.held(change_block(factory(), 0, 510, b'\x00\x00'), 'bad-protective-mbr-signature')
