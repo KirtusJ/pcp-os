@@ -1,5 +1,6 @@
 //! Disposable, fail-closed journaled QEMU launcher for one synthetic test.
 //! It is NOT a production supervisor, service, ACR enforcement layer, or PCP kernel.
+mod journal;
 use std::{
     env,
     fs::{self, File, OpenOptions},
@@ -13,7 +14,13 @@ use std::{
 fn persist_new(path: &Path, text: &str) -> io::Result<()> {
     let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
     file.write_all(text.as_bytes())?;
-    file.sync_all()
+    file.sync_all()?;
+    // On this Linux test filesystem, sync the parent directory metadata as
+    // well. File sync alone does not cover creation of the directory entry.
+    if let Some(parent) = path.parent() {
+        File::open(parent)?.sync_all()?;
+    }
+    Ok(())
 }
 
 fn read(path: &Path) -> io::Result<String> {
@@ -98,37 +105,18 @@ fn test_service() -> io::Result<i32> {
         return Ok(0);
     }
 
-    // Completion is not inferred from a START marker, a container restart,
-    // or the mere presence of raw serial data. Only this test runner's END
-    // marker authorizes the next synthetic run.
-    let mut next = 1usize;
-    for n in 1..=3 {
-        let start = base.join(format!("start-{n}.txt"));
-        let end = base.join(format!("end-{n}.txt"));
-        if end.exists() && !start.exists() {
-            durable_attention(&base, "INVALID_JOURNAL: END exists without START\n")?;
+    // A previously recorded explicit attention marker and any incomplete,
+    // sparse, or future attempt prevent automatic dispatch. Inspect the whole
+    // bounded journal instead of stopping at the first absent marker.
+    let next = match journal::inspect_journal(&base, &request)? {
+        journal::Decision::Ready(n) => n,
+        journal::Decision::CompleteOrHeld => return Ok(0),
+        journal::Decision::Attention(reason) => {
+            durable_attention(&base, &format!("{reason}\n"))?;
             return Ok(0);
         }
-        if start.exists() && !end.exists() {
-            durable_attention(&base, &format!("INDETERMINATE: run {n} START without END; no automatic retry\n"))?;
-            return Ok(0);
-        }
-        if start.exists() && end.exists() {
-            if read(&start)? != format!("REQUEST={request};ATTEMPT={n};START\n")
-                || read(&end)? != format!("REQUEST={request};ATTEMPT={n};QEMU_EXIT=33;END\n")
-            {
-                durable_attention(&base, "INVALID_JOURNAL: original entries incompatible\n")?;
-                return Ok(0);
-            }
-            next = n + 1;
-        } else {
-            break;
-        }
-    }
+    };
 
-    if next > 3 {
-        return Ok(0);
-    }
     let start = base.join(format!("start-{next}.txt"));
     persist_new(&start, &format!("REQUEST={request};ATTEMPT={next};START\n"))?;
 
