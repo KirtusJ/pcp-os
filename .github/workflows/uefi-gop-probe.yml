@@ -204,3 +204,43 @@ jobs:
           print("PASS: disposable standalone EFI fixture SetMode",initial,"to",after,"and restored",restored)
           print("NOT a PCP OS SetMode/EDID/physical monitor test")
           PY
+      - name: Verify read-only no-GOP fallback in disposable headless OVMF fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Remove the experimental SetMode binary from the previous arm.
+          # Headless negative case must use the read-only application.
+          MANIFEST="PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml"
+          cargo build --offline --release --features uefi-app,ci-debugcon --target x86_64-unknown-uefi --manifest-path "$MANIFEST"
+          BIN="PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/target/x86_64-unknown-uefi/release/pcpos-gop-probe.efi"
+          ESP_DIR="$RUNNER_TEMP/gop-uefi-esp"
+          cp "$BIN" "$ESP_DIR/EFI/BOOT/BOOTX64.EFI"
+          cp /usr/share/OVMF/OVMF_VARS_4M.fd "$RUNNER_TEMP/OVMF_VARS_HEADLESS.fd"
+          LOG="$RUNNER_TEMP/gop-no-display.txt"
+          set +e
+          timeout -k 2s 25s qemu-system-x86_64 -machine q35,accel=tcg -cpu max -smp 1 -m 256M \
+            -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
+            -drive if=pflash,format=raw,file="$RUNNER_TEMP/OVMF_VARS_HEADLESS.fd" \
+            -drive if=virtio,format=raw,readonly=on,file="fat:$ESP_DIR" \
+            -display none -vga none -serial none -monitor none -net none -no-reboot \
+            -chardev file,id=debug,path="$LOG" -device isa-debugcon,iobase=0xe9,chardev=debug
+          EXIT="$?"
+          set -e
+          echo "Headless QEMU exit $EXIT, zero/timeout allowed after EFI return"
+          if test -f "$LOG"; then
+            grep -E 'PCPOS_EFI_ENTRY|PCPOS_EFI_RETURN|PCPOS_GOP_PROBE_V1' "$LOG" | head -30 || true
+          fi
+          python3 - "$LOG" "$EXIT" <<'PY'
+          import sys,pathlib,re
+          code=int(sys.argv[2])
+          path=pathlib.Path(sys.argv[1])
+          report=path.read_bytes().decode('ascii',errors='replace') if path.exists() else ''
+          assert code in (0,124),f"QEMU failed before headless probe result: {code}"
+          assert 'PCPOS_EFI_ENTRY_V1' in report, 'No entrypoint observed on headless EFI'
+          assert 'PCPOS_GOP_PROBE_V1 NO_GOP status=' in report, 'Expected no video GOP result'
+          assert 'PCPOS_GOP_PROBE_V1 BEFORE mode=' not in report, 'Unexpected GOP device found'
+          assert 'STANDALONE_FIXTURE_SET_MODE' not in report, 'Wrong EFI fixture used'
+          assert re.search(r'PCPOS_EFI_RETURN_V1 0x[0-9a-f]{16}',report), 'Missing EFI returned status'
+          print('PASS: standalone EFI no-GOP fallback observed in no-VGA OVMF')
+          print('No PCP OS kernel, desktop or physical display was invoked')
+          PY
