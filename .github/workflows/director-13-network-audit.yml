@@ -17,17 +17,26 @@ jobs:
   ethernet-replay:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: [stable, "1.91.1"]
     steps:
       - name: Checkout exact branch under review
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
+      - name: Select source-pinned versus current Rust compiler
+        run: |
+          rustup toolchain install "${{ matrix.rust }}" --profile minimal --component rust-src --target x86_64-unknown-none
+          rustup default "${{ matrix.rust }}"
+          rustc -Vv
+          cargo -V
       - name: Prepare bounded QEMU and Rust guest builder
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends qemu-system-x86 seabios lld
-          rustup component add rust-src
-          rustup target add x86_64-unknown-none
+          qemu-system-x86_64 --version | head -n 1
       - name: Check the current exact-image raw Ethernet admission contract
         run: |
           mkdir -p "$RUNNER_TEMP/network-test"
@@ -81,7 +90,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: director-13-network-link-cycle
+          name: director-13-network-link-cycle-${{ matrix.rust }}
           path: |
             ${{ runner.temp }}/d13-gui-layout.json
             ${{ runner.temp }}/d13-reference/**/serial.log
