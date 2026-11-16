@@ -1,0 +1,67 @@
+name: Director 12 PCP kernel inside isolated OCI QEMU
+
+on:
+  pull_request:
+    paths:
+      - 'audit/director-12/kernel-in-oci/**'
+      - '.github/workflows/director-12-kernel-in-oci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  actual-kernel-guest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Prepare local bare-metal build tools
+        run: |
+          set -euo pipefail
+          rustc -Vv
+          rustup target add x86_64-unknown-none
+          rustup component add rust-src
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends binutils lld
+      - name: Build actual current PCP OS kernel with no released-media change
+        env:
+          PCPOS_KERNEL_STAGE: ${{ runner.temp }}/d12-kernel-source
+          CARGO_PROFILE_RELEASE_LTO: 'off'
+        run: |
+          set -euo pipefail
+          sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          test -s PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
+          sha256sum PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
+          python3 -I -B PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py \
+            PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 > "$RUNNER_TEMP/d12-measurement.txt"
+          cat "$RUNNER_TEMP/d12-measurement.txt"
+      - name: Build disposable QEMU userspace container
+        run: |
+          set -euo pipefail
+          docker build -f audit/director-12/kernel-in-oci/Dockerfile \
+            -t pcp-d12-kernel-qemu:"$GITHUB_SHA" audit/director-12/kernel-in-oci
+          docker image inspect pcp-d12-kernel-qemu:"$GITHUB_SHA" --format '{{.Id}}'
+      - name: Boot PCP OS with correct, wrong and absent measurement in isolated OCI
+        run: |
+          set -euo pipefail
+          python3 -I -B audit/director-12/kernel-in-oci/verify.py \
+            --image pcp-d12-kernel-qemu:"$GITHUB_SHA" \
+            --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            --measurement "$(cat "$RUNNER_TEMP/d12-measurement.txt")" \
+            --source-head "$(git rev-parse HEAD)" \
+            --out "$RUNNER_TEMP/d12-kernel-oci" \
+            --guest-timeout 160
+      - name: Retain serial, failure and exact command witnesses, never kernel bytes
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: d12-pcp-kernel-in-oci-guest
+          path: |
+            ${{ runner.temp }}/d12-kernel-oci/result.json
+            ${{ runner.temp }}/d12-kernel-oci/*.serial
+            ${{ runner.temp }}/d12-kernel-oci/*.stderr
+          if-no-files-found: warn
+          retention-days: 7
