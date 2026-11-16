@@ -1,0 +1,69 @@
+name: Director 12 Docker-managed PCP guest restart and journal
+
+on:
+  pull_request:
+    paths:
+      - 'audit/director-12/guest-restart/**'
+      - '.github/workflows/director-12-guest-restart.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  restart-qualification:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Prepare native Rust and QEMU guest build dependencies
+        run: |
+          set -euo pipefail
+          rustc -Vv
+          rustup target add x86_64-unknown-none x86_64-unknown-linux-musl
+          rustup component add rust-src
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends musl-tools binutils lld
+      - name: Build actual PCP OS x86_64 kernel
+        env:
+          PCPOS_KERNEL_STAGE: ${{ runner.temp }}/d12-journal-kernel-stage
+          CARGO_PROFILE_RELEASE_LTO: 'off'
+        run: |
+          set -euo pipefail
+          sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          sha256sum PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
+          python3 -I -B PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py \
+            PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 > "$RUNNER_TEMP/d12-measurement.txt"
+          cat "$RUNNER_TEMP/d12-measurement.txt"
+      - name: Build static, test-only Rust journal runner
+        run: |
+          set -euo pipefail
+          rustc --edition=2021 --target=x86_64-unknown-linux-musl -C opt-level=2 \
+            audit/director-12/guest-restart/runner.rs \
+            -o audit/director-12/guest-restart/d12-runner
+          sha256sum audit/director-12/guest-restart/d12-runner
+      - name: Build disposable OCI QEMU test image
+        run: |
+          set -euo pipefail
+          docker build --pull=false -f audit/director-12/guest-restart/Dockerfile \
+            -t pcp-d12-guest-restart:"$GITHUB_SHA" audit/director-12/guest-restart
+          docker image inspect pcp-d12-guest-restart:"$GITHUB_SHA" --format '{{.Id}}'
+      - name: Check actual kernel boots, Docker restart, and fail-closed interrupted journal
+        run: |
+          set -euo pipefail
+          python3 -I -B audit/director-12/guest-restart/verify.py \
+            --image pcp-d12-guest-restart:"$GITHUB_SHA" \
+            --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            --measurement "$(cat "$RUNNER_TEMP/d12-measurement.txt")" \
+            --source-head "$(git rev-parse HEAD)" \
+            --out "$RUNNER_TEMP/d12-guest-restart.json"
+      - name: Preserve bounded result also when a test fails
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: director-12-kernel-restart-journal
+          path: ${{ runner.temp }}/d12-guest-restart.json
+          if-no-files-found: warn
+          retention-days: 7
