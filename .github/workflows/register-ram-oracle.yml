@@ -1,0 +1,30 @@
+name: Candidate register RAM oracle (synthetic, no guest)
+
+on:
+  push:
+    branches:
+      - director-11/register-ram-candidate-oracle-20261116
+    paths:
+      - "os-docs/register-forensics/**"
+      - ".github/workflows/register-ram-oracle.yml"
+  pull_request:
+    paths:
+      - "os-docs/register-forensics/**"
+      - ".github/workflows/register-ram-oracle.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic_controls:
+    name: Read-only RAM candidate parser and adverse controls
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Execute host-only unit tests
+        run: python3 -m unittest discover -s os-docs/register-forensics -p 'test_*.py' -v
