@@ -136,7 +136,15 @@ fn test_service() -> io::Result<i32> {
     // bounded journal instead of stopping at the first absent marker.
     let next = match journal::inspect_journal(&base, &request)? {
         journal::Decision::Ready(n) => n,
-        journal::Decision::CompleteOrHeld => return Ok(0),
+        journal::Decision::CompleteOrHeld => {
+            // A preexisting attention fence is terminal for this controller.
+            // A fully completed 3-attempt journal still needs all three raw
+            // receipts checked before it may be called complete on restart.
+            if fs::symlink_metadata(base.join("attention.txt")).is_ok() {
+                return Ok(0);
+            }
+            4
+        },
         journal::Decision::Attention(reason) => {
             durable_attention(&base, &format!("{reason}\n"))?;
             return Ok(0);
@@ -156,6 +164,11 @@ fn test_service() -> io::Result<i32> {
         }
     }
 
+    // Here next=4 represents three syntactically complete attempts whose
+    // native receipts have *all* just passed the same independent check.
+    if next > 3 {
+        return Ok(0);
+    }
     let start = base.join(format!("start-{next}.txt"));
     persist_new(&start, &format!("REQUEST={request};ATTEMPT={next};START\n"))?;
 
