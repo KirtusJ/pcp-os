@@ -38,7 +38,7 @@ def menu_positions(programs, ethernet_grants=0):
     row += 1
     display_row = row
     store_row = row + 1
-    message_row = row + 2  # row +=2 after display; store does not increment
+    message_row = row + 3  # display increments once, then session.rs increments twice
     return {
         "program_rows": program_rows,
         "files_heading": files_heading,
@@ -116,6 +116,8 @@ def inspect(session, ui, font):
         }
     assert evaluated["800x600"]["first_store_overlap_case"]["programs"] == 4
     assert evaluated["1024x768"]["first_store_overlap_case"]["programs"] == 7
+    assert menu_positions(1, ethernet_grants=1)["message_first_row"] == 22
+    assert menu_positions(1, ethernet_grants=1)["store_row"] == 20
     return evaluated
 
 
