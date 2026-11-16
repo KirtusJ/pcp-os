@@ -1,0 +1,78 @@
+name: Director 13 pinned QEMU 11.1 reference
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/director-13-qemu11-reference.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  historical-guest-qemu11:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout independently archived TCP source commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 1cff81e4b935dc72a95a669a5214508ab8712efc
+          path: historic
+          persist-credentials: false
+      - name: Install pinned guest compiler and minimal QEMU build dependencies
+        run: |
+          rustup toolchain install 1.91.1 --profile minimal --component rust-src --target x86_64-unknown-none
+          rustup default 1.91.1
+          rustc -Vv
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential git ninja-build meson libglib2.0-dev \
+            libpixman-1-dev libslirp-dev pkg-config zlib1g-dev \
+            python3-venv python3-pip python3-setuptools
+      - name: Retrieve official QEMU source and validate independent published digest
+        run: |
+          curl --proto '=https' --tlsv1.2 --retry 3 --location --fail \
+            --output qemu-11.1.0.tar.xz \
+            https://download.qemu.org/qemu-11.1.0.tar.xz
+          echo '6ee1d1a61f68212476b27108c26da5f449dc09b626d42f8279ba0dc2e08fa858  qemu-11.1.0.tar.xz' | sha256sum --check
+          test "$(wc -c < qemu-11.1.0.tar.xz)" -eq 141831772
+          tar -xJf qemu-11.1.0.tar.xz
+      - name: Build one official-source QEMU 11.1.0 x86 emulator, no host install
+        run: |
+          mkdir -p "$RUNNER_TEMP/d13-qemu11-build"
+          cd "$RUNNER_TEMP/d13-qemu11-build"
+          "$GITHUB_WORKSPACE/qemu-11.1.0/configure" \
+            --target-list=x86_64-softmmu \
+            --disable-docs --disable-gtk --disable-sdl --disable-vnc \
+            --disable-curses --enable-slirp
+          ninja -j2 qemu-system-x86_64
+          ./qemu-system-x86_64 --version | head -n 1
+      - name: Rebuild identical historically accepted Rust kernel and Surfbird source
+        run: |
+          PCPOS_KERNEL_STAGE="$RUNNER_TEMP/d13-historic-stage" \
+            PCPOS_KERNEL_FEATURES=guest-ethernet \
+            sh historic/PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          cargo build --locked --release --target x86_64-unknown-none \
+            --manifest-path historic/apps/surfbird/guest/Cargo.toml --features tcp-ip
+      - name: Run historically accepted TCP-positive fixture with QEMU 11.1
+        run: |
+          mkdir -p "$RUNNER_TEMP/d13-historical-qemu11"
+          cd historic/apps/surfbird/guest
+          python3 replay.py ../../../PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            target/x86_64-unknown-none/release/surfcable \
+            --qemu "$RUNNER_TEMP/d13-qemu11-build/qemu-system-x86_64" \
+            --qemu-data "$GITHUB_WORKSPACE/qemu-11.1.0/pc-bios" \
+            --tcp --arm allowed --output "$RUNNER_TEMP/d13-historical-qemu11"
+      - name: Preserve positive and adverse emulator reference artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: director-13-historical-qemu11-reference
+          path: |
+            ${{ runner.temp }}/d13-historical-qemu11/**/serial.log
+            ${{ runner.temp }}/d13-historical-qemu11/**/stderr.log
+            ${{ runner.temp }}/d13-historical-qemu11/**/guest.pcap
+            ${{ runner.temp }}/d13-historical-qemu11/**/fixture.json
+          if-no-files-found: warn
+          retention-days: 7
