@@ -10,6 +10,10 @@ use core::fmt::{self, Write};
 mod machine;
 mod model;
 
+#[cfg(written_trial)]
+#[path = "../written/answer.rs"]
+mod answer;
+
 const PARENT: [usize; 25] = [
     0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 7, 8, 8, 9, 10, 11, 12,
 ];
@@ -120,6 +124,11 @@ extern "C" fn worker_main(stack: *const usize) -> ! {
             if syscall(0, fd as usize, key.as_mut_ptr() as usize, key.len()) != 2 {
                 fail();
             }
+            #[cfg(written_trial)]
+            if key == [18, 0] {
+                answer::respond(node, &model);
+                break;
+            }
             if key[1] == 0 && (2..=17).contains(&key[0]) {
                 let prompt = usize::from(key[0] - 2);
                 writeln!(Console, "CHALLENGE {prompt}").unwrap();
@@ -136,6 +145,7 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
 }
 
 // The freestanding ELF supplies the two memory operations LLVM emits for slice copies and fills.
+#[cfg(not(written_trial))]
 global_asm!(
     ".text",
     ".global memcpy",

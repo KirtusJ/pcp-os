@@ -1,4 +1,4 @@
-name: Resident worker qualification
+name: Director 5 written cohort trial
 
 on:
   pull_request:
@@ -35,36 +35,33 @@ jobs:
           cd "$RUNNER_TEMP/inputs"
           curl --fail --location --retry 3 --output stories260K.bin https://huggingface.co/karpathy/tinyllamas/resolve/0bd21da7698eaf29a0d7de3992de8a46ef624add/stories260K/stories260K.bin
           curl --fail --location --retry 3 --output run.c https://raw.githubusercontent.com/karpathy/llama2.c/350e04fe35433e6d2941dce5a1f53308f87058eb/run.c
+          curl --fail --location --retry 3 --output tok512.bin https://huggingface.co/karpathy/tinyllamas/resolve/0bd21da7698eaf29a0d7de3992de8a46ef624add/stories260K/tok512.bin
           cd "$GITHUB_WORKSPACE"
-          python3 examples/resident-workers/fixture/build.py \
+          python3 examples/resident-workers/written/build.py \
             --model "$RUNNER_TEMP/inputs/stories260K.bin" --reference "$RUNNER_TEMP/inputs/run.c" \
-            --out "$RUNNER_TEMP/fixture"
+            --tokenizer "$RUNNER_TEMP/inputs/tok512.bin" --out "$RUNNER_TEMP/fixture"
           sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
-      - name: Boot the 24 guests and challenge the complete tree twice
+      - name: Collect an indexed and a written response from each guest
         run: |
           python3 examples/resident-workers/supervise.py \
             --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
             --worker "$RUNNER_TEMP/fixture/resident.elf" --oracle "$RUNNER_TEMP/fixture/oracle.json" \
-            --run "$RUNNER_TEMP/cohort" --cycles 2 --interval 5
-      - name: Recheck both historical rounds after guest shutdown
+            --run "$RUNNER_TEMP/cohort" --once --response-timeout 120 \
+            --written-trial "$RUNNER_TEMP/fixture/written.json"
+      - name: Verify guest identities, frame bounds and decoded bytes
         run: |
-          for cycle in 1 2; do
-            python3 -O examples/resident-workers/verify.py \
-              --run "$RUNNER_TEMP/cohort" --oracle "$RUNNER_TEMP/fixture/oracle.json" --cycle "$cycle"
-          done
-      - name: Freeze both rounds and verify their packed evidence
-        run: |
-          python3 -O examples/resident-workers/archive.py \
-            --run "$RUNNER_TEMP/cohort" --oracle "$RUNNER_TEMP/fixture/oracle.json" \
-            --cycle 2 --output "$RUNNER_TEMP/through-2.zip"
+          python3 -O examples/resident-workers/written/replay.py --cohort "$RUNNER_TEMP/cohort" --fixture "$RUNNER_TEMP/fixture"
       - name: Retain serials, emulator diagnostics and readbacks
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: default-clock-guest-readbacks
+          name: director-5-written-cohort
           path: |
             ${{ runner.temp }}/cohort/*.json*
             ${{ runner.temp }}/cohort/*.serial
             ${{ runner.temp }}/cohort/*.stderr
             ${{ runner.temp }}/fixture/oracle.json
-          if-no-files-found: warn
+            ${{ runner.temp }}/fixture/written.json
+            ${{ runner.temp }}/fixture/tok512.bin
+          if-no-files-found: error
+          retention-days: 14

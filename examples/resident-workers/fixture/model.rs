@@ -224,6 +224,12 @@ impl Model {
         Some([first, second, third])
     }
 
+    pub fn continue_token<const N: usize>(
+        &self, ctx: &mut Context<N>, token: usize, at: usize,
+    ) -> usize {
+        self.forward(ctx, token, at, None)
+    }
+
     pub fn predict(&self, ctx: &mut Context, prompt: usize) -> [usize; 3] {
         self.complete(ctx, &[1, 300 + prompt], None).expect("valid indexed prompt")
     }

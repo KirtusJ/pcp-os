@@ -344,6 +344,9 @@ def supervise(opt, log):
                     else:
                         cycle += 1
                         record_cycle(run, dict(time=stamp(), cycle=cycle, repairs=repairs, nodes=rows), log)
+                        if opt.written_trial:
+                            from written.collect import collect
+                            collect(machines, run, opt.written_trial, cycle)
                         if cycle == opt.cycles:
                             return
                         time.sleep(opt.interval)
@@ -361,11 +364,14 @@ def main():
     parser.add_argument("--startup-timeout", type=int, default=DEFAULT_STARTUP_TIMEOUT)
     parser.add_argument("--startup-idle-timeout", type=int, help="seconds without new serial bytes while waiting for startup READY")
     parser.add_argument("--response-timeout", type=int, default=DEFAULT_RESPONSE_TIMEOUT)
+    parser.add_argument("--written-trial", type=Path, help="session-only written reference JSON")
     limit = parser.add_mutually_exclusive_group()
     limit.add_argument("--once", dest="cycles", action="store_const", const=1,
                        help="run one complete readback and shut down")
     limit.add_argument("--cycles", type=int, help="shut down after this many complete readbacks")
     opt = parser.parse_args()
+    if opt.written_trial and opt.cycles != 1:
+        parser.error("the session written trial requires --once or --cycles 1")
     if min(opt.interval, opt.startup_timeout, opt.response_timeout) < 1:
         parser.error("interval and timeouts must be positive")
     if opt.startup_idle_timeout is not None and opt.startup_idle_timeout < 1:
