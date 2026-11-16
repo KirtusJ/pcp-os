@@ -80,22 +80,49 @@ def wait_serial(guest, serial, marker, timeout):
     raise TimeoutError(f"serial marker {marker!r} missing after {timeout} seconds")
 
 
-def capture(monitor, out, name):
+TITLE_SHA256 = "a35240f2eea7b8ccc7536d9d8e8402659126f5dc8862590605fbb60544fb0322"
+
+
+def crop(pixels, width, left, top, right, bottom):
+    return b"".join(pixels[3 * (width * y + left):3 * (width * y + right)]
+                    for y in range(top, bottom))
+
+
+def read_frame(path):
+    with path.open("rb") as stream:
+        if stream.readline().strip() != b"P6":
+            raise ValueError("expected a native QEMU P6 image")
+        width, height = map(int, stream.readline().split())
+        if stream.readline().strip() != b"255":
+            raise ValueError("expected RGB24 samples")
+        pixels = stream.read()
+    if min(width, height) <= 0 or len(pixels) != 3 * width * height:
+        raise ValueError("incomplete native frame")
+    return (width, height), pixels
+
+
+def title_record(size, pixels):
+    """Compare the specified 1080p title rectangle against its public RGB digest."""
+    record = {"reference_sha256": TITLE_SHA256, "observed_sha256": None, "matches": False}
+    if size == (1920, 1080):
+        native_title = crop(pixels, size[0], 44, 32, 404, 92)
+        record["observed_sha256"] = hashlib.sha256(native_title).hexdigest()
+        record["matches"] = record["observed_sha256"] == TITLE_SHA256
+    return record
+
+
+def capture(monitor, out, name, check_title=False):
     time.sleep(1)
     path = out / f"{name}.ppm"
     monitor.execute("screendump", filename=str(path))
-    with path.open("rb") as stream:
-        if stream.readline().strip() != b"P6":
-            raise ValueError("expected a QEMU binary PPM")
-        width, height = map(int, stream.readline().split())
-        if stream.readline().strip() != b"255" or width < 1 or height < 1:
-            raise ValueError("invalid QEMU PPM header")
-        raster = stream.read()
-        if len(raster) != width * height * 3:
-            raise ValueError("incomplete QEMU scanout")
+    size, raster = read_frame(path)
+    width, height = size
     if raster == raster[:3] * (width * height):
         raise ValueError(f"{name}: scanout is a single uniform colour")
-    return {"width": width, "height": height, "ppm_sha256": digest(path)}
+    result = {"width": width, "height": height, "ppm_sha256": digest(path)}
+    if check_title:
+        result["title_1080p"] = title_record(size, raster)
+    return result
 
 
 def run(args, report):
@@ -142,7 +169,7 @@ def run(args, report):
             wait_serial(guest, serial, b"TAILORBIRD MCP CONNECTED", args.timeout)
             if args.require_qwen_ready:
                 wait_serial(guest, serial, b"QWEN READY", args.timeout)
-            screen["tailorbird"] = capture(monitor, out, "tailorbird")
+            screen["tailorbird"] = capture(monitor, out, "tailorbird", args.check_title_1080p)
             monitor.key("esc")
             wait_serial(guest, serial, b"Tailorbird ended DONE: exit 0", args.timeout)
             screen["returned"] = capture(monitor, out, "returned")
@@ -179,7 +206,11 @@ def main():
     parser.add_argument("--vram", type=int, default=32, help="VGA RAM in MiB")
     parser.add_argument("--timeout", type=int, default=180, help="seconds per observed milestone")
     parser.add_argument("--require-qwen-ready", action="store_true")
+    parser.add_argument("--check-title-1080p", action="store_true",
+                        help="compare the app title with the precommitted 1920x1080 reference")
     args = parser.parse_args()
+    if args.check_title_1080p and args.mode != (1920, 1080):
+        parser.error("--check-title-1080p requires --mode 1920x1080")
     image_hash = digest(args.image)
     if image_hash != args.image_sha256:
         parser.error("input disk SHA-256 differs from the requested disk")
@@ -190,7 +221,10 @@ def main():
               "ram_mib": args.ram, "vram_mib": args.vram, "scanout": {}}
     try:
         run(args, report)
-        code = 0 if report["three_samples_match_requested_mode"] else 1
+        passed = report["three_samples_match_requested_mode"]
+        if args.check_title_1080p:
+            passed = passed and report["scanout"]["tailorbird"]["title_1080p"]["matches"]
+        code = 0 if passed else 1
     except (OSError, ValueError, RuntimeError, TimeoutError) as error:
         report["incomplete"] = str(error)
         code = 2
