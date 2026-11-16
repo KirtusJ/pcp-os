@@ -35,6 +35,13 @@ jobs:
             PCP_OS_Rust/crates/pcpos-kernel/src/session/ethernet.rs \
             -o "$RUNNER_TEMP/network-test/test-ethernet-grant"
           "$RUNNER_TEMP/network-test/test-ethernet-grant"
+      - name: Qualify fixed 800px and 1024px launcher source layout bounds
+        run: |
+          python3 audit/director-13/network/gui_geometry.py \
+            --session PCP_OS_Rust/crates/pcpos-kernel/src/session.rs \
+            --ui PCP_OS_Rust/crates/pcpos-kernel/src/ui.rs \
+            --font PCP_OS_Rust/crates/pcpos-kernel/src/font.rs \
+            --output "$RUNNER_TEMP/d13-gui-layout.json"
       - name: Check the existing Surfbird guest and parsed-capture controls
         run: |
           cargo test --locked --manifest-path apps/surfbird/guest/Cargo.toml --lib
@@ -76,6 +83,7 @@ jobs:
         with:
           name: director-13-network-link-cycle
           path: |
+            ${{ runner.temp }}/d13-gui-layout.json
             ${{ runner.temp }}/d13-reference/**/serial.log
             ${{ runner.temp }}/d13-reference/**/stderr.log
             ${{ runner.temp }}/d13-reference/**/guest.pcap
