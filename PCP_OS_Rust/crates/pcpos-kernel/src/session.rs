@@ -155,7 +155,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
                 arch::interrupts_on();
                 dev::keys_forget();
             }
-            (0x13, false) => register_view(rec),
+            #[cfg(feature = "register-view-diagnostic")] (0x13, false) => match option(line, "test") { Some(mode @ ("register-snapshot" | "register-corrupt" | "register-chain-break" | "register-tail-change")) => register_view_diagnostic(rec, mode), _ => register_view(rec) }, #[cfg(not(feature = "register-view-diagnostic"))] (0x13, false) => register_view(rec),
             (0x19, false) | (0x01, false) => break,
             _ => {}
         }
@@ -382,4 +382,119 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
         *failed += 1;
     }
     (message, world)
+}
+
+/// Only compiled in deliberately instrumented test images, never in the release kernel.
+/// The raw canonical bytes, not a kernel-reported expected digest, let a separate
+/// verifier reconstruct the same register state that the display next renders.
+/// Do not enable on machines holding private task material: serial records raw events.
+#[cfg(feature = "register-view-diagnostic")]
+fn register_view_diagnostic(rec: &Record, mode: &str) {
+    let raw = rec.ledger().bytes();
+    say!("D10_REGISTER_RAW_BEGIN bytes={}", raw.len());
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    for &b in raw {
+        arch::serial_put(HEX[(b >> 4) as usize]);
+        arch::serial_put(HEX[(b & 15) as usize]);
+    }
+    say!("");
+    say!("D10_REGISTER_RAW_END bytes={}", raw.len());
+    if mode == "register-corrupt" {
+        // Parsing refusal only. The live Record is never modified.
+        let mut damaged = raw.to_vec();
+        if let Some(first) = damaged.first_mut() {
+            let before = *first;
+            *first ^= 1;
+            say!("D10_REGISTER_INJECT offset=0 before={:02x} after={:02x}", before, *first);
+            register_view_with_bytes(&damaged);
+        } else {
+            say!("D10_REGISTER_INJECT_EMPTY: intentionally malformed single-byte input");
+            register_view_with_bytes(b"{");
+        }
+    } else if mode == "register-chain-break" {
+        // Preserve canonical JSON in the first event but invalidate the next
+        // event's existing SHA-256 predecessor. Always change a DETACHED copy.
+        let mut altered = raw.to_vec();
+        let first_end = altered.iter().position(|&b| b == b'\n').unwrap_or(0);
+        const LABEL: &[u8] = b"\"label\":\"kernel\"";
+        let at = altered[..first_end].windows(LABEL.len()).position(|w| w == LABEL)
+            .map(|p| p + b"\"label\":\"k".len());
+        match at {
+            Some(i) if altered[i] == b'e' => {
+                altered[i] = b'E';
+                say!("D10_REGISTER_INJECT_CHAIN offset={} before=65 after=45", i);
+                register_view_with_bytes(&altered);
+            }
+            _ => {
+                say!("D10_REGISTER_INJECT_CHAIN_UNAVAILABLE");
+                register_view_with_bytes(b"{");
+            }
+        }
+    } else if mode == "register-tail-change" {
+        // The terminal line has no successor to bind its hash. Its canonical
+        // modification is a VALID chain with a NEW head, not a refusal.
+        let mut altered = raw.to_vec();
+        let final_line_start = altered[..altered.len().saturating_sub(1)]
+            .iter().rposition(|&b| b == b'\n').map(|p| p + 1).unwrap_or(0);
+        const END: &[u8] = b"\"outcome\":\"LOST\"";
+        let at = altered[final_line_start..].windows(END.len()).position(|w| w == END)
+            .map(|p| p + final_line_start + b"\"outcome\":\"".len());
+        match at {
+            Some(i) if &altered[i..i + 4] == b"LOST" => {
+                altered[i..i + 4].copy_from_slice(b"DONE");
+                say!("D10_REGISTER_INJECT_TAIL offset={} before=LOST after=DONE", i);
+                register_view_with_bytes(&altered);
+            }
+            _ => {
+                say!("D10_REGISTER_INJECT_TAIL_UNAVAILABLE");
+                register_view_with_bytes(b"{");
+            }
+        }
+    } else {
+        say!("D10_REGISTER_UNMODIFIED");
+        register_view_with_bytes(raw);
+    }
+}
+
+#[cfg(feature = "register-view-diagnostic")]
+fn register_view_with_bytes(raw: &[u8]) {
+    use ui::{at, GROUND, SOFT, TEXT};
+    let (cols, rows) = ui::grid();
+    let (events, head) = match ledger::verify(raw) {
+        Ok(verified) => verified,
+        Err(error) => {
+            ui::clear(GROUND);
+            at(2, 1, "THE KERNEL'S REGISTER: verification failed", ui::BAD, GROUND);
+            at(2, 2, &format!("{error:?}"), TEXT, GROUND);
+            at(2, rows - 2, "Esc back", SOFT, GROUND);
+            loop {
+                match wait_key() {
+                    (0x01, _) | (0x1C, _) => return,
+                    _ => {}
+                }
+            }
+        }
+    };
+    let per = (rows - 6) as usize;
+    let mut top = events.len().saturating_sub(per);
+    loop {
+        ui::clear(GROUND);
+        at(2, 1, &format!("THE KERNEL'S REGISTER: {} events, chain intact", events.len()), ui::TEAL, GROUND);
+        at(2, 2, &format!("HEAD {}", head), ui::TEAL, GROUND);
+        at(2, 3, "seq  time                  actor     kind                 what", SOFT, GROUND);
+        for (n, e) in events.iter().skip(top).take(per).enumerate() {
+            let field = |k: &str| e.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+            let body = e.get("body");
+            let what = ["label", "event", "name", "id", "outcome", "note", "to"].iter().filter_map(|k| body.and_then(|b| b.get(k)).and_then(Value::as_str).map(|v| format!("{} {}", k, v))).collect::<Vec<_>>().join("; ");
+            let line = format!("{:<4} {:<21} {:<9} {:<20} {}", e.get("seq").and_then(Value::as_int).unwrap_or(0), field("ts"), field("actor"), field("kind"), what);
+            at(2, 4 + n as u32, &line.chars().take(cols as usize - 4).collect::<String>(), TEXT, GROUND);
+        }
+        at(2, rows - 2, "Up/Down scroll    Esc back", SOFT, GROUND);
+        match wait_key() {
+            (0x48, _) => top = top.saturating_sub(per / 2),
+            (0x50, _) => top = (top + per / 2).min(events.len().saturating_sub(per)),
+            (0x01, _) | (0x1C, _) => return,
+            _ => {}
+        }
+    }
 }
