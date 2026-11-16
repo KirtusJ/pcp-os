@@ -42,6 +42,47 @@ class StopOracles(unittest.TestCase):
                 self.path.write_bytes(b"\r\n".join(altered) + b"\r\n")
                 check.check_trace(self.path, expected)
 
+    def test_startup_records_belong_to_one_manifest_matched_launch(self):
+        launch = b"starting Tailorbird (177232 bytes, SHA-256 " + b"a" * 64 + b")"
+        mode = b"protections: paging true, supervisor write protection true, no-execute true, long mode true"
+        mount = b"Persistent application store mounted: 1 file(s)"
+        admission = (b"Qwen worker admitted in separate address space: UI pid 1, worker pid 2, "
+                     b"model file and message endpoint")
+        ended = b"Qwen worker execution ended: Exited(3)"
+        connected = b"TAILORBIRD MCP CONNECTED"
+        versioned = connected + b" 2025-11-25"
+        events = [mode, mount, launch, admission, ended, versioned]
+
+        def transcript(lines):
+            return b"\r\n".join(lines) + b"\r\n"
+
+        for tail in ([ended, versioned], [versioned, ended], [ended, connected]):
+            with self.subTest(tail=tail):
+                data = transcript(events[:4] + tail)
+                self.assertEqual(check.desktop_startup(data + transcript([check.STAGED]), launch), len(data) - 1)
+                self.assertIsNone(check.desktop_startup(data[:-1], launch))
+        for missing in (ended, versioned):
+            self.assertIsNone(check.desktop_startup(transcript([e for e in events if e != missing]), launch))
+
+        cases = {
+            "mode embedded in unrelated text": [b"protections: diagnostic, long mode true"] + events[1:],
+            "wrong digest": events[:2] + [launch.replace(b"a" * 64, b"b" * 64)] + events[3:],
+            "wrong size": events[:2] + [launch.replace(b"177232", b"177233")] + events[3:],
+            "early worker exit": [ended] + events[:4] + [versioned],
+            "connection before admission": events[:3] + [versioned, admission, ended],
+            "second launch divides handshake": events[:5] + [launch, versioned],
+            "relaunch after success": events + [launch],
+            "reboot after success": events + [mode],
+            "same pid": events[:3] + [admission.replace(b"pid 2", b"pid 1")] + events[4:],
+            "pending connection": events[:5] + [connected + b"_PENDING"],
+            "extra exit suffix": events[:4] + [ended + b" deferred", versioned],
+            "model-ready": events + [b"QWEN READY"],
+            "early desktop exit": events[:4] + [b"Tailorbird ended FAILED: exit 1"] + events[4:],
+        }
+        for name, records in cases.items():
+            with self.subTest(case=name), self.assertRaises(ValueError):
+                check.desktop_startup(transcript(records), launch)
+
     def test_active_generation_requires_exact_path_and_bytes(self):
         region = bytearray(check.SECTOR * (1 + 2 * check.SLOT_SECTORS))
         label = b"PCPOS USER STORE 1\n"
