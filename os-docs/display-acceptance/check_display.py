@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Measure QEMU scanout before, during, and after Tailorbird in a supplied PCP OS image."""
 import argparse
+import ast
 import hashlib
 import json
 import os
@@ -153,6 +154,27 @@ LAUNCHER_FIELDS = {
 }
 
 
+def launcher_identity_field(digest_hex):
+    """Render the pinned identity line with the checkout's 10 x 20 kernel font."""
+    font = Path(__file__).resolve().parents[2] / "PCP_OS_Rust/crates/pcpos-kernel/src/font.rs"
+    table = re.search(r"pub static GLYPHS:[^=]+=\s*(\[.*?\]);", font.read_text(), re.DOTALL)
+    if table is None:
+        raise ValueError(f"missing kernel glyph table in {font}")
+    masks = ast.literal_eval(table[1])
+    if len(masks) != 95 or any(len(mask) != 200 for mask in masks):
+        raise ValueError(f"unexpected kernel font dimensions in {font}")
+    foreground, background = bytes.fromhex("9fb4c8"), bytes.fromhex("18364f")
+    palette = [bytes((bg * (255 - alpha) + fg * alpha + 127) // 255
+                     for fg, bg in zip(foreground, background)) for alpha in range(256)]
+    text = "Selected SHA-256: " + digest_hex
+    pixels = hashlib.sha256()
+    for row in range(20):
+        for char in text:
+            mask = masks[ord(char) - 32]
+            pixels.update(b"".join(palette[alpha] for alpha in mask[row * 10:(row + 1) * 10]))
+    return (460, 980, 460 + len(text) * 10, 1000), pixels.hexdigest()
+
+
 def crop(pixels, width, left, top, right, bottom):
     return b"".join(pixels[3 * (width * y + left):3 * (width * y + right)]
                     for y in range(top, bottom))
@@ -181,9 +203,10 @@ def title_record(size, pixels):
     return record
 
 
-def capture(monitor, out, name, check_title=False, check_launcher=False):
+def capture(monitor, out, name, check_title=False, check_launcher=False, identity_field=None):
     time.sleep(1)
     path = out / f"{name}.ppm"
+    fields = LAUNCHER_FIELDS if identity_field is None else {**LAUNCHER_FIELDS, "selected_sha256": identity_field}
     deadline = time.monotonic() + monitor.timeout
     while True:
         monitor.execute("screendump", filename=str(path))
@@ -192,9 +215,9 @@ def capture(monitor, out, name, check_title=False, check_launcher=False):
             break
         hashes = {}
         if size == (1920, 1080):
-            for field, (rect, _) in LAUNCHER_FIELDS.items():
+            for field, (rect, _) in fields.items():
                 hashes[field] = hashlib.sha256(crop(raster, size[0], *rect)).hexdigest()
-        missing = [field for field, (_, expected) in LAUNCHER_FIELDS.items() if hashes.get(field) != expected]
+        missing = [field for field, (_, expected) in fields.items() if hashes.get(field) != expected]
         if not missing:
             break
         if time.monotonic() >= deadline:
@@ -215,6 +238,8 @@ def run(args, report):
     out = args.output.resolve()
     serial = out / "serial.log"
     variables = out / "variables.fd"
+    identity = launcher_identity_field(args.app_sha256) if args.check_launcher_identity_1080p else None
+    check_launcher = args.check_launcher_1080p or identity is not None
     shutil.copyfile(args.vars, variables)
     width, height = args.mode
     endpoint = {"edid": True, "xres": width, "yres": height, "vgamem_mb": args.vram}
@@ -250,7 +275,7 @@ def run(args, report):
             monitor.key("ret")
             wait_serial(guest, serial, b"PCP OS launcher ready", args.timeout)
             screen = report["scanout"]
-            screen["launcher"] = capture(monitor, out, "launcher", check_launcher=args.check_launcher_1080p)
+            screen["launcher"] = capture(monitor, out, "launcher", check_launcher=check_launcher, identity_field=identity)
             launch = TailorbirdLaunch(serial, args.app_sha256)
             monitor.key("ret")
             launch.wait(guest, args.timeout, require_ready=args.require_qwen_ready)
@@ -259,7 +284,7 @@ def run(args, report):
             launch.exit_from = serial.stat().st_size
             monitor.key("esc")
             launch.wait(guest, args.timeout, until_exit=True)
-            screen["returned"] = capture(monitor, out, "returned", check_launcher=args.check_launcher_1080p)
+            screen["returned"] = capture(monitor, out, "returned", check_launcher=check_launcher, identity_field=identity)
             launch.read()
             app = screen["tailorbird"]["ppm_sha256"]
             if app in {screen["launcher"]["ppm_sha256"], screen["returned"]["ppm_sha256"]}:
@@ -299,13 +324,17 @@ def main():
                         help="compare the app title with the precommitted 1920x1080 reference")
     parser.add_argument("--check-launcher-1080p", action="store_true",
                         help="wait for the installed two-app desktop header, selection and footer at launch and return")
+    parser.add_argument("--check-launcher-identity-1080p", action="store_true",
+                        help="also verify the visible Selected SHA-256 line with --app-sha256 at launch and return")
     args = parser.parse_args()
+    if args.check_launcher_identity_1080p and args.app_sha256 is None:
+        parser.error("--check-launcher-identity-1080p requires --app-sha256")
     if args.app_sha256 is not None and not re.fullmatch(r"[0-9a-f]{64}", args.app_sha256):
         parser.error("--app-sha256 requires 64 lowercase hexadecimal digits")
     if args.check_title_1080p and args.mode != (1920, 1080):
         parser.error("--check-title-1080p requires --mode 1920x1080")
-    if args.check_launcher_1080p and args.mode != (1920, 1080):
-        parser.error("--check-launcher-1080p requires --mode 1920x1080")
+    if (args.check_launcher_1080p or args.check_launcher_identity_1080p) and args.mode != (1920, 1080):
+        parser.error("launcher checks require --mode 1920x1080")
     image_hash = digest(args.image)
     if image_hash != args.image_sha256:
         parser.error("input disk SHA-256 differs from the requested disk")
