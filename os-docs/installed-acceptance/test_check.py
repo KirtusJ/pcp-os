@@ -1,5 +1,6 @@
 """Exercise transcript acceptance and result recording with synthetic inputs."""
 import contextlib
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -196,6 +197,43 @@ class ResultRecording(unittest.TestCase):
         self.assertEqual(result["failure"], {"mode": "recovery", "reason": "fixture boot failed"})
         self.assertIn("disk changed", result["disk_verification_error"])
         self.assertNotEqual(result["disk_sha256_after"], result["disk_sha256_before"])
+
+    def run_fixture_process(self, body, timeout):
+        emulator = self.root / "fixture-qemu"
+        emulator.write_text(f"#!{sys.executable}\nimport sys\n"
+                            "if sys.argv[1:] == ['--version']:\n"
+                            "    print('test emulator')\n    sys.exit(0)\n" + body)
+        emulator.chmod(0o700)
+        args = [*self.args, "--timeout", str(timeout)]
+        args[args.index("--qemu") + 1] = str(emulator)
+        with mock.patch.object(sys, "argv", ["check.py", *args]):
+            with self.assertRaises(RuntimeError):
+                check.main()
+        result = self.result()
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["boots"], {})
+        self.assertEqual(result["disk_sha256_before"], result["disk_sha256_after"])
+        return result["failure"]
+
+    def test_emulator_exit_preserves_raw_streams(self):
+        failure = self.run_fixture_process(
+            "from pathlib import Path\n"
+            "log = sys.argv[sys.argv.index('-serial') + 1].removeprefix('file:')\n"
+            "Path(log).write_bytes(b'partial\\r\\n')\n"
+            "sys.stderr.buffer.write(b'error\\xff')\n"
+            "sys.exit(7)\n", timeout=60)
+        self.assertEqual(failure["qemu_exit_before_cleanup"], 7)
+        for name, data in (("serial", b"partial\r\n"), ("stderr", b"error\xff")):
+            self.assertEqual(failure["streams"][name], {
+                "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+
+    def test_live_emulator_at_timeout_has_no_observed_exit(self):
+        failure = self.run_fixture_process("import time\ntime.sleep(90)\n", timeout=1)
+        self.assertIsNone(failure["qemu_exit_before_cleanup"])
+        self.assertIn("guest status None", failure["reason"])
+        self.assertNotIn("serial", failure["streams"])
+        self.assertEqual(failure["streams"]["stderr"], {
+            "bytes": 0, "sha256": hashlib.sha256(b"").hexdigest()})
 
     def test_disk_rehash_failure_after_all_boots(self):
         def boot_then_remove(args, mode, components, tokens, temp):
