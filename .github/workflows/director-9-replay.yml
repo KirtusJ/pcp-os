@@ -1,5 +1,7 @@
 name: Replay Director 9 first-round evidence
 on:
+  pull_request:
+    paths: ['.github/workflows/director-9-replay.yml']
   push:
     branches: ['director-9/replay-core-nov16']
     paths: ['.github/workflows/director-9-replay.yml']
@@ -18,6 +20,7 @@ jobs:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           artifact-ids: 14243963597
+          merge-multiple: true
           run-id: 43904465118
           github-token: ${{ github.token }}
           path: frozen
