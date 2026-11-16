@@ -1,0 +1,70 @@
+name: Native PCP OS register-head optical witness
+on:
+  pull_request:
+    paths:
+      - 'os-docs/display-acceptance/register/native_qemu_witness.py'
+      - '.github/workflows/register-native-head-witness.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-register:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout independent witness, not the implementation branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: probe
+      - name: Checkout exact Director 10 kernel implementation
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: 74c4d4a9934ad68e1b5be380971bf3377a464c6d
+          path: kernel
+      - name: Checkout exact Director 2 independent glyph checker
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: c870920cedca7611115a14f00954e891f0f3fe1b
+          path: checker
+      - name: Install QEMU and build pinned native ELF
+        env:
+          CARGO_PROFILE_RELEASE_LTO: 'off'
+          PCPOS_KERNEL_STAGE: ${{ runner.temp }}/register-kernel-stage
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 binutils lld
+          rustup target add x86_64-unknown-none
+          rustup component add rust-src
+          cmp kernel/PCP_OS_Rust/crates/pcpos-kernel/src/font.rs checker/PCP_OS_Rust/crates/pcpos-kernel/src/font.rs
+          sh kernel/PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          qemu-system-x86_64 --version
+          rustc -Vv
+      - name: Independently capture native 800x600 and 1024x768 register views
+        run: |
+          set -euo pipefail
+          image=kernel/PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
+          font=kernel/PCP_OS_Rust/crates/pcpos-kernel/src/font.rs
+          measurement=$(python3 kernel/PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py "$image")
+          status=0
+          for record in '800 600' '1024 768'; do
+            read -r width height <<< "$record"
+            python3 probe/os-docs/display-acceptance/register/native_qemu_witness.py \
+              --kernel "$image" --font "$font" --measurement "$measurement" \
+              --width "$width" --height "$height" --output "captures/${width}x${height}" || status=1
+          done
+          exit "$status"
+      - name: Preserve all genuine frames, serials and failure traces
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-register-optical-witness
+          path: captures/
+          if-no-files-found: warn
+          retention-days: 14
