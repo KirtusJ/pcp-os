@@ -163,11 +163,23 @@ jobs:
           sha256sum PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
           sha256sum apps/tailorbird/guest/target/x86_64-unknown-none/release/tailorbird
           git rev-parse HEAD
-      - name: QEMU keyboard, actual scanout, offline refusal and guest-exit smoke
+      - name: Compare native keyboard batch against PC and Q35 scanout
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          KERNEL=PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
+          GUEST=apps/tailorbird/guest/target/x86_64-unknown-none/release/tailorbird
+          # Run BOTH arms even if one fails. The prior public-PC failure
+          # must remain visible, not disappear by switching to Q35 only.
+          set +e
           python3 apps/tailorbird/guest/tests/qemu_smoke.py \
-            PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
-            apps/tailorbird/guest/target/x86_64-unknown-none/release/tailorbird \
-            --timeout 100
+            "$KERNEL" "$GUEST" --machine pc --timeout 100
+          pc_result=$?
+          python3 apps/tailorbird/guest/tests/qemu_smoke.py \
+            "$KERNEL" "$GUEST" --machine q35 --timeout 100
+          q35_result=$?
+          set -e
+          echo "QEMU_PC_RESULT=$pc_result"
+          echo "QEMU_Q35_RESULT=$q35_result"
+          test "$pc_result" -eq 0
+          test "$q35_result" -eq 0
