@@ -8,6 +8,8 @@ Run:
 
     python3 os-docs/gpt-recognition-oracle/probe.py
 
+The branch's read-only workflow runs on its own pushes, pull requests, manually, and on path-scoped **master** pushes if a separate coordinated integration is approved. This allows the actual merged-head probe to be re-executed; it does not itself authorize merging.
+
 The script creates **only** 8 synthetic 2 MiB **regular files** inside a
 temporary directory (automatically destroyed), writes a specified GPT header,
 entry array and protective MBR into each, and invokes the installed
@@ -23,6 +25,8 @@ geometry, 512-byte logical blocks and a 16 KiB primary/backup entry array.
 It is not an independently certified GPT creator. This means the comparison
 provides cross-tool evidence about recognition decisions on *these exact
 bytes*, not certification of full UEFI compliance or of the private product.
+
+The script now also requires that the external recognizer actually detect the two known-valid synthetic GPT **positive controls**; otherwise the run fails instead of giving a misleading green result. For altered or broken GPT cases, the returned label remains descriptive and **not asserted** as standards policy.
 
 The script asserts the intended positive and negative **fixture mutations**
 (both headers' CRC status, disk GUID agreement, entry-array agreement, and
