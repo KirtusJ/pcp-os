@@ -62,8 +62,10 @@ Other fault windows, including actual guest execution in progress,
 external durable effects, host power loss, store corruption, cross-machine
 identity and liveness during network partition, remain open.
 
-The journal is *not* a cryptographically authenticated, fsync-directory
+The journal is *not* a cryptographically authenticated or crash-atomic
 transactional register and supplies no publisher or permission binding.
+Synchronizing file and parent-directory metadata is only a bounded durability
+measure, not a complete atomic-commit or anti-tampering mechanism.
 A hostile process with write access to the volume can forge entries.
 The Docker/runtime policy and the test authority come from outside the
 guest and wrapper. No formal §14.4 participant calibration is performed.
@@ -80,6 +82,36 @@ it, the test runner synchronizes the observed serial and error streams,
 then creates a new (never overwriting) END marker and syncs its directory
 entry. These are scoped filesystem durability measures, **not** a
 crash-atomic, tamper-resistant or signed ledger.
+
+### Request/attempt replay and completed-journal receipts
+
+The launch command now gives each real PCP OS QEMU guest an **externally
+chosen synthetic** `d12_ticket=<24 lowercase hexadecimal characters>` and
+`d12_attempt=<1, 2 or 3>` alongside the code/data image pin. The native
+kernel prints that complete loader command line in its own serial output.
+The controller compares exactly one printed line with the **host-requested**
+ticket, attempt and measured image before creating its END marker. A
+separate Linux host oracle checks the same original raw serial after CI.
+This catches an otherwise-valid earlier transcript accidentally reused for a
+different request or attempt. The exact older native transcript was used
+byte-for-byte in a new journal as an adverse test and correctly refused.
+
+This is a **correlation and replay-detection control**, not a signature:
+the ticket is visible in the command line and mutable fixture files. A party
+who controls both the serial output and retained journal can still forge
+a plausible-looking receipt. No host-enforced PCP/ACR operation authority,
+trusted signer, nonrepudiation or durable register protection is established.
+
+The end-of-budget path has the same obligation. Even if **all three** START
+and END markers are present, a subsequent controller invocation must inspect
+all three original native serial receipts again before returning a successful
+closed result. The retained red negative omitted real attempt 2's serial
+while keeping all its START/END markers; the earlier controller silently
+returned success. The corrected controller creates an explicit
+`INVALID_JOURNAL` attention record and does not launch another QEMU.
+A complementary test substitutes the actual successful *attempt 1* serial
+for the same request's *attempt 2*, retaining all three END markers. The
+expected result is another fail-closed hold due to the wrong attempt ticket.
 
 On a restart, the Rust `journal.rs` module examines the **whole bounded**
 three-attempt namespace. Valid consecutive completed attempts advance, but
