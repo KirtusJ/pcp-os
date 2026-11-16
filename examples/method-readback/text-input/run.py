@@ -2,11 +2,9 @@
 import argparse
 import hashlib
 import json
-import math
 import os
 from pathlib import Path
 import re
-import struct
 import subprocess
 import sys
 
@@ -17,20 +15,14 @@ KERNEL = ROOT / "PCP_OS_Rust/crates/pcpos-kernel"
 MANIFEST = "7ff72eed9162e2c11fc62f6681c4afbc29524bfa96b87d45a455423d027d4707"
 CORE = "MODULES/01_Core/SOURCE/Specification.md"
 TOKENIZER = "037cb335abb25d1fa9e8ecae30ed2a3a8ace9302862ebcdc05d51a6bbb10c312"
-SENTENCES = (b"Any participant MAY halt its own participation.",
-             b"A Review Session is a bounded assessment cycle.")
 
 sys.path.insert(0, str(FIXTURE))
 from build import CHECKPOINT, REFERENCE, verified
+from compare import SENTENCES, maximum_error, require, scores
 
 
 def sha(data):
     return hashlib.sha256(data).hexdigest()
-
-
-def require(ok, message):
-    if not ok:
-        raise ValueError(message)
 
 
 def build(out, model, tokenizer, reference):
@@ -50,21 +42,22 @@ def build(out, model, tokenizer, reference):
                    check=True, env=env)
 
 
-def scores(lines):
-    require(len(lines) == 32 and all(re.fullmatch(r"LOGITS(?: [0-9a-f]{8}){16}", line) for line in lines),
-            "expected all 512 hexadecimal float32 scores")
-    bits = "".join("".join(line.split()[1:]) for line in lines)
-    values = struct.unpack(">512f", bytes.fromhex(bits))
-    require(all(math.isfinite(value) for value in values), "nonfinite next-token score")
-    return values, bits
-
-
-def maximum_error(a, b):
-    return max(abs(x - y) for x, y in zip(a, b, strict=True))
+def capture(command, directory, stdout, stderr, status_file, timeout=None):
+    """Preserve the original output and the host process outcome before checking it."""
+    with (directory / stdout).open("wb") as output, (directory / stderr).open("wb") as errors:
+        try:
+            result = subprocess.run(command, cwd=directory, stdout=output, stderr=errors, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            (directory / status_file).write_text(f"timeout after {timeout} s\n")
+            raise
+        except OSError as exc:
+            (directory / status_file).write_text(f"could not start process: {exc}\n")
+            raise
+    (directory / status_file).write_text(f"returncode {result.returncode}\n")
+    return result
 
 
 def boot(case, executable, kernel, measure, payload, offset, length, expected, status, qemu, firmware):
-    case.mkdir()
     (case / "text.elf").hardlink_to(executable)
     modules = f"text.elf {offset} {length}"
     if payload is not None:
@@ -79,8 +72,7 @@ def boot(case, executable, kernel, measure, payload, offset, length, expected, s
                 "-serial", "stdio", "-no-reboot", "-kernel", kernel, "-initrd", modules,
                 "-append", f"auto=text.elf then=off image={measure}",
                 "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"])
-    with (case / "boot.serial").open("wb") as serial, (case / "qemu.stderr").open("wb") as errors:
-        result = subprocess.run(cmd, cwd=case, stdout=serial, stderr=errors, timeout=180)
+    result = capture(cmd, case, "boot.serial", "qemu.stderr", "qemu.status", timeout=180)
     data = (case / "boot.serial").read_bytes()
     lines = data.decode("ascii").splitlines()
     entry = f"starting text.elf ({executable.stat().st_size} bytes, SHA-256 {sha(executable.read_bytes())}) with: {offset} {length}"
@@ -132,10 +124,15 @@ def run(args):
         ("missing", None, offsets[0], None, 2),
         ("truncated", source[:offsets[0] + length - 1], offsets[0], None, 4),
     ]:
+        case = out / name
+        case.mkdir()
         expected = []
         record = {"offset": offset, "length": length}
         if excerpt is not None:
-            ref = subprocess.check_output([out / "oracle", model, tokenizer, excerpt.decode("ascii")], text=True)
+            host = capture([out / "oracle", model, tokenizer, excerpt.decode("ascii")],
+                           case, "oracle.stdout", "oracle.stderr", "oracle.status")
+            host.check_returncode()
+            ref = (case / "oracle.stdout").read_text(encoding="ascii")
             inputs, predicted, *reference_logits = ref.splitlines()
             require(re.fullmatch(r"INPUT 1(?: \d+)+", inputs) and re.fullmatch(r"OUTPUT(?: \d+){3}", predicted),
                     "unexpected oracle output")
@@ -143,7 +140,7 @@ def run(args):
             expected = ["EXCERPT " + excerpt.decode("ascii"), inputs, predicted]
             record.update(text=excerpt.decode("ascii"), excerpt_sha256=sha(excerpt),
                           tokens=list(map(int, inputs.split()[1:])), prediction=list(map(int, predicted.split()[1:])))
-        record.update(boot(out / name, out / "text.elf", kernel, measure, payload, offset, length,
+        record.update(boot(case, out / "text.elf", kernel, measure, payload, offset, length,
                            expected, code, args.qemu, args.firmware))
         if code == 0:
             error = maximum_error(record["guest_logits"], record["upstream_logits"])
