@@ -29,15 +29,15 @@ jobs:
           /usr/bin/python3 -m unittest discover -p 'test_*.py'
       - name: Build the kernel and the guest
         run: |
-          PCPOS_KERNEL_STAGE="$RUNNER_TEMP/kernel-stage" PCPOS_KERNEL_FEATURES=game-link sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          PCPOS_KERNEL_STAGE="$RUNNER_TEMP/kernel-stage" PCPOS_KERNEL_FEATURES=guest-ethernet sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
           cd apps/surfbird/guest
-          cargo build --locked --release --target x86_64-unknown-none
+          cargo build --locked --release --target x86_64-unknown-none --features tcp-ip
       - name: Replay native keyboard navigation and check the displayed pixels
         working-directory: apps/surfbird/guest
         run: |
           mkdir -p "$RUNNER_TEMP/navigation"
           for arm in fragment allowed; do
-            python3 replay.py ../../../PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 target/x86_64-unknown-none/release/surfcable --arm "$arm" --output "$RUNNER_TEMP/navigation"
+            python3 replay.py ../../../PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 target/x86_64-unknown-none/release/surfcable --tcp --arm "$arm" --output "$RUNNER_TEMP/navigation"
           done
       - name: Preserve the serial records and framebuffer captures
         if: always()
