@@ -94,6 +94,31 @@ The [Surfbird TCP/IP experiment](../../../apps/surfbird/guest/TCP.md) gives one 
 
 Raw Ethernet admission requires one matching `net_image=` token on a printable, losslessly copied Multiboot command line. The loader must observe the terminating NUL at or before byte offset 255. An incomplete line, a replaced character, a duplicate pin or any `grant=none` token denies the raw device.
 
+### Restrict a guest to one UDP endpoint
+
+On a `guest-ethernet` build, add the following boot option alongside the program's matching `net_image=<sha256>` grant.
+
+```text
+net_udp=192.0.2.2:50001,198.51.100.99:53,020000000002
+```
+
+The fields give the local IPv4 address and port, the remote IPv4 address and port, and the Ethernet destination MAC (the next hop). The driver checks the guest NIC MAC against `02:00:00:00:00:01`. The guest must know its next-hop MAC because the rule drops ARP. Each admitted session starts with zero inbound allowance. An outbound packet must match both endpoints and both MACs. One completed send opens a five-second window for one reverse-tuple datagram. A later send refreshes that single allowance. The first matching read consumes it. Other inbound frames are discarded and the nonblocking read returns `EAGAIN`. A refused outbound frame returns `EACCES`. The console prints the selected rule at launch and four packet counters at exit.
+
+At TX completion the kernel discards any RX descriptor the device has already marked complete, including a very fast response. The queues provide no arrival timestamp. A packet held by the backend or delayed in transit can still match later, as can a forged packet with the expected headers. An application requiring authenticated responses or stronger freshness needs its own protocol.
+
+The parser requires Ethernet II, a fixed 20-byte IPv4 header, a whole UDP datagram, and consistent lengths and checksums. IPv4 UDP permits an omitted (zero) UDP checksum. Ethernet padding may contain only zeros up to minimum frame length. The configured rule drops options, fragments, other protocols and encapsulations. The packet format follows [RFC 791](https://www.rfc-editor.org/rfc/rfc791) and [RFC 768](https://www.rfc-editor.org/rfc/rfc768).
+
+Changing the boot option requires restarting the guest. A malformed or duplicated `net_udp` denies the Ethernet grant. Omitting `net_udp` restores the existing digest-granted raw interface. Remove the image pin or set `grant=none` to revoke access. This rule covers the guest program's `/dev/ethernet`. Kernel management/test frames, the COM2 game cable and hosted application sockets have separate paths. The rule takes the directional default-deny model and tuple/time-based UDP state as precedents. [Ubuntu UFW](https://manpages.ubuntu.com/manpages/noble/man8/ufw.8.html) · [OpenBSD PF](https://www.openbsd.org/faq/pf/filter.html)
+
+Run the wire-level replay from this directory. It starts private QEMU guests and a loopback Ethernet peer. The output directory must be new and receives the exact ELF, serial logs and Ethernet captures.
+
+```sh
+PCPOS_KERNEL_FEATURES=guest-ethernet sh run.sh build
+python3 tools/udp_policy_probe.py --kernel target/pcpos-kernel.elf32 --out udp-results
+```
+
+### Transmit-only kernel test
+
 A kernel built with the **virtio-tx-probe** feature can send one 60-byte test frame when the loader supplies `test=virtio-tx` and the preceding self-tests pass. Build the two images and run the local replay from this directory:
 
 ```sh

@@ -5,6 +5,8 @@ use core::sync::atomic::{fence, Ordering};
 pub(crate) mod completion;
 #[cfg(feature = "guest-ethernet")]
 pub(crate) mod guest;
+#[cfg(feature = "guest-ethernet")]
+pub(crate) mod udp_policy;
 #[cfg(feature = "virtio-worker-probe")]
 pub(crate) mod worker_link;
 

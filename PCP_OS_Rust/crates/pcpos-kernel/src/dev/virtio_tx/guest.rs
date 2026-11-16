@@ -1,6 +1,7 @@
 //! Session-scoped packet I/O. Each ring has one outstanding chain (head zero).
 //! The existing PCI setup owns every DMA page until the program exits and reset completes.
 use super::{completion, descriptor, with_queues, Queue, HEADER, RX_CAPACITY};
+use super::udp_policy::{Counts, Rule, Session};
 use crate::{arch, dev};
 use core::sync::atomic::{fence, Ordering};
 
@@ -55,13 +56,15 @@ struct Device {
     tx: Ring,
     rx: Ring,
     stopped: bool,
+    policy: Option<Session>,
 }
 static DEVICE: arch::Single<Option<Device>> = arch::Single::new(None);
 
 // Caller has interrupts off. Never retain the Single borrow across execution in user mode.
-pub(crate) fn during<T>(run: impl FnOnce() -> T) -> (T, Result<(), Error>) {
+pub(crate) fn during<T>(rule: Option<Rule>, run: impl FnOnce() -> T) -> (T, Result<(), Error>, Option<Counts>) {
     let mut task = Some(run);
     let mut result = None;
+    let mut counts = None;
     let status = with_queues(&dev::bus_scan(), 1, true, 0, |io, first, tx, rx| {
         let rx = rx.ok_or("missing RX")?;
         let rx_base = first + tx.pages * 4096;
@@ -80,6 +83,7 @@ pub(crate) fn during<T>(run: impl FnOnce() -> T) -> (T, Result<(), Error>) {
                 done: 0,
             },
             stopped: false,
+            policy: rule.map(Session::new),
         };
         super::out8(io + 18, 7);
         if super::in8(io + 18) != 7 {
@@ -89,7 +93,9 @@ pub(crate) fn during<T>(run: impl FnOnce() -> T) -> (T, Result<(), Error>) {
         DEVICE.with(|d| *d = Some(device));
         result = Some(task.take().unwrap()());
         DEVICE.with(|d| {
-            if d.take().unwrap().stopped {
+            let device = d.take().unwrap();
+            counts = device.policy.map(|p| p.counts);
+            if device.stopped {
                 Err("packet queue stopped")
             } else {
                 Ok(())
@@ -98,7 +104,7 @@ pub(crate) fn during<T>(run: impl FnOnce() -> T) -> (T, Result<(), Error>) {
     });
     // If setup failed before admission the process can still report an I/O failure.
     // Reset errors after execution must never cause a second launch.
-    (result.unwrap_or_else(|| task.take().unwrap()()), status)
+    (result.unwrap_or_else(|| task.take().unwrap()()), status, counts)
 }
 
 fn access<T>(f: impl FnOnce(&mut Device) -> Result<T, Error>) -> Result<T, Error> {
@@ -115,8 +121,15 @@ fn access<T>(f: impl FnOnce(&mut Device) -> Result<T, Error>) -> Result<T, Error
     })
 }
 
-pub(crate) fn send(bytes: &[u8]) -> Result<(), Error> {
+/// False is a policy refusal. The ring remains healthy for the next request.
+pub(crate) fn send(bytes: &[u8]) -> Result<bool, Error> {
     access(|d| {
+        if let Some(p) = &mut d.policy {
+            if !p.rule.permits(bytes, false) {
+                p.counts.tx_deny = p.counts.tx_deny.saturating_add(1);
+                return Ok(false);
+            }
+        }
         let tx = &mut d.tx;
         let data = tx.queue.data(tx.base);
         if !(14..=MTU).contains(&bytes.len())
@@ -132,7 +145,20 @@ pub(crate) fn send(bytes: &[u8]) -> Result<(), Error> {
         tx.post(d.io)?;
         for _ in 0..super::POLLS {
             if tx.completion()?.is_some() {
-                return Ok(());
+                if let Some(p) = &mut d.policy {
+                    // Discard a previously completed RX descriptor before issuing
+                    // a new reply credit. The independent queues supply no packet
+                    // timestamps, so an already-completed fast reply is also lost.
+                    if let Some(length) = d.rx.completion()? {
+                        if !(HEADER..=HEADER + RX_CAPACITY).contains(&length) {
+                            return Err("RX completion length");
+                        }
+                        d.rx.post(d.io)?;
+                        p.counts.rx_drop = p.counts.rx_drop.saturating_add(1);
+                    }
+                    p.completed_send(arch::ticks(), 5 * arch::TICKS_PER_SECOND);
+                }
+                return Ok(true);
             }
             core::hint::spin_loop();
         }
@@ -147,7 +173,8 @@ pub(crate) fn receive(bytes: &mut [u8; MTU]) -> Result<Option<usize>, Error> {
             return Ok(None);
         };
         let data = rx.queue.data(rx.base);
-        if !(HEADER + 14..=HEADER + RX_CAPACITY).contains(&length) {
+        let minimum = if d.policy.is_some() { HEADER } else { HEADER + 14 };
+        if !(minimum..=HEADER + RX_CAPACITY).contains(&length) {
             return Err("RX completion length");
         }
         let header =
@@ -161,6 +188,10 @@ pub(crate) fn receive(bytes: &mut [u8; MTU]) -> Result<Option<usize>, Error> {
             }
         }
         rx.post(d.io)?;
-        Ok((size <= MTU).then_some(size))
+        let packet = bytes.get(..size);
+        if let Some(p) = &mut d.policy {
+            if !p.receive(packet.unwrap_or(&[]), arch::ticks()) { return Ok(None); }
+        }
+        Ok(packet.map(<[u8]>::len))
     })
 }
