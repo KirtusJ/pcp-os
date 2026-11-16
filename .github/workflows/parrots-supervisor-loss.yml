@@ -28,11 +28,11 @@ jobs:
       - name: Build the compatible native Rust register host
         run: |
           cargo build --locked --release --manifest-path PCP_OS_Rust/Cargo.toml --bin pcpos
-      - name: Exercise the previously ignored register dispatch control
+      - name: Exercise both ignored actual-register dispatch controls
         env:
           PCPOS_BIN: ${{ github.workspace }}/PCP_OS_Rust/target/release/pcpos
         run: |
-          cargo test --locked --manifest-path store/apps/parrots-all-the-way-down/host/Cargo.toml --test dispatch register_admission_precedes_launch_and_releases_the_exact_task -- --exact --include-ignored --nocapture
+          cargo test --locked --manifest-path store/apps/parrots-all-the-way-down/host/Cargo.toml --test dispatch register_ -- --include-ignored --nocapture
       - name: Interpret this workflow only as bounded evidence
         run: |
           echo 'Pass means the killed-adapter failure window was reproduced.'
