@@ -3,8 +3,9 @@ import hashlib
 
 
 WIDTH, HEIGHT = 960, 540
-OUTPUT_TAG = "1828a61068bc49ce42fa9610594506157286563dca1668e25f72b363d8dd5281"
-TOOL_TAG = "37cdb10994ad349b6bfcff0872fec1f97c9432a6e27fe0e0dc021ca7c4ae45a7"
+# Hash the full event label from x=336 up to the message at x=422.
+OUTPUT_TAG = "962b9508d0b68a00e9e68d203ef4db74e3b619bc3a2400cf3b6cc455c22cd090"
+TOOL_TAG = "c3e4f85964b80006baf6e937d438b5b523c160fabf1d382e060a0b02df38e7f4"
 DENIED_FIELD = "f6d265e07f535d5da7621bc4ce48742647d54169d8a58ec34c199f7c7066899f"
 OUTPUT_FIELDS = {
     "original": "f6a9bfc01e3f12cd61970050998353bdbe8e2c835942e7773a98b53c085ce1bf",
@@ -47,7 +48,7 @@ def matching_row(pixels, expected, *, tag=OUTPUT_TAG):
     matches = []
     for index in range(8):
         y = 190 + 28 * index
-        if crop_digest(pixels, 336, y, 36) == tag:
+        if crop_digest(pixels, 336, y, 422 - 336) == tag:
             field = crop_digest(pixels, 422, y, 504)
             for word, digest in fields.items():
                 if field == digest:
