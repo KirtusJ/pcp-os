@@ -115,7 +115,8 @@ def check(root: Path, manifest_bytes: bytes,
            "manifest")
     require(obj["schema"] == SCHEMA, "unexpected manifest schema")
     require(type(obj["source_revision"]) is str and
-            HEX40.fullmatch(obj["source_revision"]),
+            HEX40.fullmatch(obj["source_revision"]) and
+            obj["source_revision"] != "0" * 40,
             "missing exact source commit")
     require(type(obj["models"]) is list and len(obj["models"]) == 2,
             "both model slots required")
@@ -142,7 +143,8 @@ def check(root: Path, manifest_bytes: bytes,
                 ident not in model_ids, "missing or duplicate upstream ID")
         model_ids.add(ident)
         require(type(spec["revision"]) is str and
-                HEX40.fullmatch(spec["revision"]), "unversioned model weights")
+                HEX40.fullmatch(spec["revision"]) and
+                spec["revision"] != "0" * 40, "unversioned model weights")
         require(type(spec["quantization"]) is str and
                 TOKEN.fullmatch(spec["quantization"]), "invalid quantization")
         weights = verify_asset(root, spec["weights"], paths, inodes)
