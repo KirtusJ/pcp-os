@@ -27,12 +27,24 @@ Externally retrieved:
 
 Run the tests with `python3 -m unittest -v test_target_preflight.py` in this directory.
 
+## Additional sparse GPT metadata checks and write-attempt oracle
+
+`gpt_metadata.py` performs bounded, read-only inspection of **caller-supplied in-memory LBA-to-bytes mappings**. It does not open files, devices, images or any privileged API. This is a deliberately conservative **first-tier profile** supporting 512-byte and 4096-byte GPT logical blocks, revision 1.0, a minimum 16 KiB entry array and a fixture-sized maximum 1 MiB entry array. Unsupported formats are **HELD**, not diagnosed as defective product media.
+
+The separate `test_gpt_metadata.py` builds synthetic sparse metadata (not a disk image) and checks a protective MBR; primary and backup GPT header signatures, sizes, CRC32 and reciprocal locations; partition-entry arrays with independent CRCs and matching content; bounded usable LBAs; and disjoint, uniquely identified partition entries. It exercises valid 512/4096-byte cases, corrupted headers/arrays, stale backup after a capacity change, internally self-consistent but mutually contradictory metadata, duplicate GUIDs and overlap, missing sectors and arithmetic extremes. A full clone of the same metadata **still passes**, as it must: an on-media CRC is not device authentication or operator permission.
+
+Two additional tests demonstrate a separate **oracle limitation**: writing the same bytes, or writing and then restoring the previous contents, can leave final SHA-256 hashes unchanged even though write attempts occurred. Their recorder is entirely simulated in memory. A true product refusal test must independently observe actual driver/backend **write attempts and authorized dispatch bindings**, as well as before/after bytes; neither this model nor the historical public IDE CI is that oracle.
+
+The relevant public standard text is [UEFI 2.11 GPT §5](https://uefi.org/specs/UEFI/2.11/05_GUID_Partition_Table_Format.html), inspected through source-index excerpts because the direct HTML endpoint returned HTTP 403 in this session. The excerpt includes the required 92-byte minimum header, CRC32 field layout, end-of-media alternate GPT, minimum 16,384-byte entry array and nonoverlapping usable partition bounds. [OASIS Virtio 1.3 §5.2](https://docs.oasis-open.org/virtio/virtio/v1.3/virtio-v1.3.html) was directly opened and distinguishes 512-byte request sectors, configuration capacity, read-only capability and flush semantics. These sources **inform** tests; neither certifies the private product. Director PT's later [source `ba48b751...` report](https://github.com/KirtusJ/pcp-os/issues/132#issuecomment-6910139562) remains producer-attributed, not fetched here.
+
+Run all source-only tests with `python3 -m unittest discover -s os-docs/boot-storage-acceptance -p 'test_*.py' -v` from the repository root. The isolated GitHub Actions job runs this exact suite and reports source SHA-256 values.
+
 ## Concrete PT-side falsification requests (not performed here)
 
 | Arm | Exact product evidence needed |
 |---|---|
 | Correct fresh target | Optical source identity, trusted device enumeration and typed consent; independent whole-media before/after digest and separate installed-media readback |
-| Wrong/cloned disk | Two devices, swapped controllers, copied GPT GUID and ID, one surviving clone on original path; report which ambiguity is detectable and show *no writes* for all denied cases |
+| Wrong/cloned disk | Two devices, swapped controllers, copied GPT GUID and ID, one surviving clone on original path; report which ambiguity is detectable and show zero **unapproved write attempts** through a separately instrumented backend, plus unchanged denied-media bytes |
 | Geometry | 512-byte virtio protocol vs 2048-byte optical media vs 512/4096 GPT LBAs, undersize/oversize, high-LBA arithmetic and last-LBA backup GPT |
 | GPT failures | Corrupt primary, corrupt backup, conflicting arrays, both invalid, stale alternate after expansion; show repair/refusal without silent formatting |
 | Interruptions | Cut before any write, after payload, before/between/after each GPT metadata copy, in-flight device removal; confirm actual outstanding I/O fate and independently usable recovery |
