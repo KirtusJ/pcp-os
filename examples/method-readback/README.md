@@ -24,6 +24,8 @@ The host verifies the manifest and Core bytes, then embeds a reference copy in a
 
 All cases reuse the same executable. They measure whether this process read the identified bytes in these boots. A language model receiving the source as input, retrieving a clause or applying it to a task requires separate observation in that model’s configuration.
 
+For an operator-run check of which exact clauses and terms an assistant can retrieve, use the [Build 22 retrieval procedure](retrieval.md).
+
 ## Run the public resident worker with Core
 
 The public worker check repeats a complete 24-guest challenge using the original fixture, then links the byte reader into a second copy of the same Rust worker. Both builds use the pinned upstream checkpoint. The original fixture compares its 48 predicted token IDs with an independently compiled C reference. The second executable starts at `core_entry`, reads the separate boot module through EOF and passes the original process stack to the unchanged Rust entry point on a match. A same-length substitution and an absent file must produce different failed process exits before any model output. The same executable then completes a full challenge with the exact Core module attached. The supervisor and its wire protocol are unchanged.
