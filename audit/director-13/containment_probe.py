@@ -150,6 +150,36 @@ def silent_liveness_oracle(root):
         sleeper.wait(timeout=5.0)
 
 
+def cleanup_registered_actor(adapter, root, mode):
+    """Terminate only test-created adapter/actor identities after any outcome."""
+    if adapter.poll() is None:
+        if os.getpgid(adapter.pid) != adapter.pid:
+            raise AssertionError("test adapter did not retain its isolated group")
+        os.killpg(adapter.pid, signal.SIGTERM)
+    try:
+        adapter.communicate(timeout=3)
+    except subprocess.TimeoutExpired:
+        adapter.kill()
+        adapter.communicate(timeout=3)
+    identity_path = root / f"{mode}.identity.json"
+    if not identity_path.exists():
+        return {"actor_identity_observed": False}
+    identity = read_actor_identity(root, mode)
+    pid, tick = identity["pid"], identity["start_tick"]
+    if not has_exited(pid, tick):
+        # The source test actor PID and start tick must both match /proc.
+        os.kill(pid, signal.SIGTERM)
+        try:
+            wait_for(lambda: has_exited(pid, tick), "test actor to terminate", 2.0)
+        except AssertionError:
+            if not has_exited(pid, tick):
+                os.kill(pid, signal.SIGKILL)
+                wait_for(lambda: has_exited(pid, tick),
+                         "forced test actor termination", 2.0)
+    return {"actor_identity_observed": True,
+            "actor_exited_or_reaped": has_exited(pid, tick)}
+
+
 def probe(cli, delegate, output):
     report = {
         "scope": "Linux transient process tree and a disposable Parrots redb desk only",
@@ -199,17 +229,9 @@ def probe(cli, delegate, output):
                     "recorded_state": recorded["nodes"][0]["state"],
                 }
             finally:
-                if direct.poll() is None:
-                    # This adapter was created as its own test-only session.
-                    try:
-                        os.killpg(direct.pid, signal.SIGTERM)
-                    except ProcessLookupError:
-                        pass
-                    try:
-                        direct.communicate(timeout=3.0)
-                    except subprocess.TimeoutExpired:
-                        direct.kill()
-                        direct.communicate(timeout=3.0)
+                report["controls"]["direct_cleanup"] = cleanup_registered_actor(
+                    direct, direct_dir, "direct-parent"
+                )
 
             # Negative: a descendant escapes the registered parent's process
             # tree and continues writing after the desk has closed its parent.
@@ -258,16 +280,9 @@ def probe(cli, delegate, output):
                     "check whether the supervisor was hardened, or the probe is stale"
                 )
             finally:
-                if rogue.poll() is None:
-                    try:
-                        os.killpg(rogue.pid, signal.SIGTERM)
-                    except ProcessLookupError:
-                        pass
-                    try:
-                        rogue.communicate(timeout=3.0)
-                    except subprocess.TimeoutExpired:
-                        rogue.kill()
-                        rogue.communicate(timeout=3.0)
+                report["controls"]["rogue_parent_cleanup"] = cleanup_registered_actor(
+                    rogue, rogue_dir, "rogue-parent"
+                )
                 report["cleanup"] = cleanup_escaped_child(rogue_dir)
             report["scope_result"] = (
                 "PASS: direct cancellation observed; detached unregistered "
