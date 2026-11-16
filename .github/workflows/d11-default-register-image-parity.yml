@@ -32,13 +32,13 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-          ref: 9fa9819103a67b0f2b124991a2d0d88b4c64b755
+          ref: f1b7430a9c1aaabc5587f19b16e0c1e76646ef81
           path: candidate
       - name: Install needed kernel build and guest tools
         run: |
           set -euo pipefail
           test "$(git -C baseline rev-parse HEAD)" = 74c4d4a9934ad68e1b5be380971bf3377a464c6d
-          test "$(git -C candidate rev-parse HEAD)" = 9fa9819103a67b0f2b124991a2d0d88b4c64b755
+          test "$(git -C candidate rev-parse HEAD)" = f1b7430a9c1aaabc5587f19b16e0c1e76646ef81
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends qemu-system-x86 binutils lld
           rustup target add x86_64-unknown-none
