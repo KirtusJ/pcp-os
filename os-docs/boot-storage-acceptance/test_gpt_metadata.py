@@ -202,6 +202,16 @@ class GPTMetadataTests(unittest.TestCase):
         s = factory(entries=[(64, 91, 0)])
         self.held(s, 'missing-or-duplicate-partition-guid')
 
+    def test_float_lba_count_cannot_masquerade_as_integer(self):
+        s = factory()
+        self.held(replace(s, total_lba=float(s.total_lba)),
+                  'invalid-or-overflowed-capacity')
+
+    def test_float_logical_block_size_cannot_masquerade_as_integer(self):
+        s = factory()
+        self.held(replace(s, logical_block_bytes=float(s.logical_block_bytes)),
+                  'unsupported-gpt-lba-byte-size')
+
     def test_unsupported_2048_gpt_block_size_not_misclassified_as_optical(self):
         s = factory()
         self.held(replace(s, logical_block_bytes=2048), 'unsupported-gpt-lba-byte-size')
