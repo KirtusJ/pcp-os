@@ -94,8 +94,9 @@ def wait_any_serial(path, markers, seconds=40.0, child=None):
     stop = time.monotonic() + seconds
     while time.monotonic() < stop:
         transcript = path.read_text(errors="replace") if path.exists() else ""
-        for marker in markers:
-            if marker in transcript:
+        for entry in markers:
+            marker, count = entry if isinstance(entry, tuple) else (entry, 1)
+            if transcript.count(marker) >= count:
                 return marker
         if child is not None and child.poll() is not None:
             raise RuntimeError("QEMU ended before observed guest outcome")
@@ -228,9 +229,19 @@ def run(args, directory):
                 qmp.hmp("sendkey ret 70")
                 # Wait for second program start and for a completed page/error.
                 wait_serial(serial, "starting surf.elf", count=2, child=qemu)
-                second = wait_any_serial(serial, ("SURFBIRD ready",),
-                                         seconds=55, child=qemu)
+                second = wait_any_serial(
+                    serial, ("SURFBIRD ready", ("surf.elf ended FAILED", 2)),
+                    seconds=55, child=qemu
+                )
                 report["second_guest_observation"] = second
+                if second != "SURFBIRD ready":
+                    report["second_guest_failure"] = next(
+                        (line.strip() for line in
+                         serial.read_text(errors="replace").splitlines()[::-1]
+                         if "surf.elf ended FAILED" in line),
+                        "MISSING_REPORTED_FAILURE"
+                    )
+                    raise AssertionError("fresh Surfbird failed after carrier restored")
                 if urls != ["/harbour"]:
                     raise AssertionError(f"wrong HTTP after virtual carrier restored: {urls}")
                 report["fresh_guest_after_link_up"] = True
