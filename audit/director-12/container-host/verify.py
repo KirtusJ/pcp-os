@@ -234,6 +234,94 @@ def run_test(image: str, result: dict) -> None:
             cmd("docker", "rm", "--force", name, check=False)
 
 
+
+    # Product integration boundary: actual Rust Parrots admission and dispatch
+    # inside the OCI runtime. A stopped container eliminates its processes, but
+    # the redb desk must not silently convert a stale admission into completion.
+    with tempfile.TemporaryDirectory(prefix="pcp-d12-parrots-restart-") as d:
+        directory = Path(d)
+        os.chmod(directory, 0o777)
+        desk = "/state/desk.redb"
+        init_name, initialized = parrots_container(
+            image, directory, "/parrots-all-the-way-down",
+            ["init", desk, "0", "1", "3"],
+        )
+        assert json.loads(initialized.stdout)["initialized"] is True
+        name = None
+        try:
+            name, launched = parrots_container(
+                image, directory, "/pcp-delegate",
+                [desk, "logical-01", "rust-worker", "--", "/worker", "parent"],
+                detach=True,
+            )
+            assert launched.stdout.strip(), "Docker did not report the container ID"
+            started_policy(state(name))
+            wait_for(
+                lambda: (directory / "grandchild-setsid").exists()
+                and size(directory / "grandchild.tick") >= 3
+                and size(directory / "parent.tick") >= 3,
+                "actual hosted Parrots child and detached worker", 18,
+            )
+            earlier = size(directory / "grandchild.tick")
+            time.sleep(0.35)
+            assert size(directory / "grandchild.tick") > earlier
+            cmd("docker", "kill", "--signal", "KILL", name)
+            wait_for(lambda: not state(name)["State"]["Running"], "hosted adapter container stopped", 10)
+            time.sleep(0.3)
+            stopped = size(directory / "grandchild.tick")
+            time.sleep(0.6)
+            assert size(directory / "grandchild.tick") == stopped, (
+                "Docker containment did not stop the detached Parrots grandchild"
+            )
+
+            _, snapshot = parrots_container(
+                image, directory, "/parrots-all-the-way-down", ["status", desk]
+            )
+            before = json.loads(snapshot.stdout)
+            assert len(before["nodes"]) == 1
+            assert before["nodes"][0]["state"] == "Active"
+
+            _, duplicate = parrots_container(
+                image, directory, "/pcp-delegate",
+                [desk, "logical-01", "rust-worker", "--", "/worker", "parent"],
+                check=False,
+            )
+            assert duplicate.returncode != 0
+            assert "request already admitted" in duplicate.stderr
+
+            _, fresh = parrots_container(
+                image, directory, "/pcp-delegate",
+                [desk, "logical-02", "rust-worker", "--", "/worker", "parent"],
+                check=False,
+            )
+            assert fresh.returncode != 0
+            assert "live node limit reached" in fresh.stderr
+
+            _, after_reply = parrots_container(
+                image, directory, "/parrots-all-the-way-down", ["status", desk]
+            )
+            after = json.loads(after_reply.stdout)
+            assert len(after["nodes"]) == 1
+            assert after["nodes"][0]["state"] == "Active"
+            assert after["revision"] == before["revision"]
+            assert size(directory / "grandchild.tick") == stopped, (
+                "retry caused unexpected new worker activity"
+            )
+            result["actual_parrots_container"] = {
+                "observed": True,
+                "product_binary": "statically built real Parrots redb host and pcp-delegate",
+                "native_desk_revision_after_stop": after["revision"],
+                "original_node_still_active": True,
+                "same_logical_request_refused": True,
+                "fresh_request_refused_due_to_stale_live_slot": True,
+                "new_worker_launch_after_restart": False,
+                "detached_worker_heartbeat_stopped": True,
+                "note": "correctly refuses duplication but does not reconcile the lost supervisor",
+            }
+        finally:
+            if name:
+                cmd("docker", "rm", "--force", name, check=False)
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--image", required=True)
