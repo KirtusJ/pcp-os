@@ -108,7 +108,7 @@ def run(args, report):
     # QEMU's drive syntax requires a doubled comma inside a filename.
     def drive_path(path):
         return str(path.resolve()).replace(",", ",,")
-    command = [args.qemu, "-uuid", report["uuid"], "-machine", "q35,accel=tcg",
+    command = [args.qemu, "-uuid", report["uuid"], "-machine", "q35", "-accel", "tcg,tb-size=8",
                "-cpu", "max", "-m", str(args.ram), "-nic", "none", "-no-reboot",
                "-display", "none", "-monitor", "none", "-qmp", "stdio",
                "-serial", f"file:{serial}", "-vga", "none", "-device",
@@ -153,7 +153,7 @@ def run(args, report):
             report["qwen_reported_ready"] = b"QWEN READY" in raw
             report["guest_firmware_readback"] = [m.decode() for m in
                 re.findall(rb"EFI GOP readback [^\r\n]+", raw)]
-            report["retains_requested_mode"] = all(
+            report["three_samples_match_requested_mode"] = all(
                 (s["width"], s["height"]) == args.mode for s in screen.values())
         finally:
             monitor.selector.close()
@@ -190,7 +190,7 @@ def main():
               "ram_mib": args.ram, "vram_mib": args.vram, "scanout": {}}
     try:
         run(args, report)
-        code = 0 if report["retains_requested_mode"] else 1
+        code = 0 if report["three_samples_match_requested_mode"] else 1
     except (OSError, ValueError, RuntimeError, TimeoutError) as error:
         report["incomplete"] = str(error)
         code = 2
