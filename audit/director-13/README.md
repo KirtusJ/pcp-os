@@ -14,6 +14,15 @@ The Python [probe](containment_probe.py) operates only on a new temporary redb d
 
 The adverse test **currently expects an observed escaped child**. A green result therefore means **the containment gap was reproduced**, *not* that PCP OS is contained. If the adapter is later hardened, this expectation must be revised to require the descendant to terminate under the intended policy and to include negative cases for process-group escape, crash recovery and model service boundaries.
 
+## Additional Linux process-group discriminator
+
+The independent [group-boundary probe](group_boundary.py) starts **each** test adapter in a fresh Linux session so that its group contains only disposable test processes. It compares two unregistered descendants after the desk marks their parents cancelled and the adapters have exited:
+
+- A descendant **still in the adapter's process group** must keep writing after desk cancellation, but **stop** when the separate test supervisor signals that specific group. This is a scoped *positive control* for a signal reaching a member of an already isolated process group.
+- A descendant that creates a **new session** must keep writing even after that parent group is signaled. This is the deliberate *adverse control*: a process-group kill by itself does not enforce containment against a process able to call `setsid`.
+
+Both groups are test-created, their PIDs are checked against `/proc` start ticks before use, and the detached child is independently cleaned up. Neither case uses a real PCP OS guest, device, model, installed host or service. A passing test **demonstrates the residual escape**, not an enforceable container. A selected cgroup/VM containment mechanism must later be tested separately with direct and detached descendants, crash and restart controls, and externally verified enforcement.
+
 ## Run on a disposable Linux host
 
 From the repository root, with a suitable current Rust toolchain:
@@ -25,6 +34,10 @@ python3 audit/director-13/containment_probe.py \
   --cli store/apps/parrots-all-the-way-down/host/target/release/parrots-all-the-way-down \
   --delegate store/apps/parrots-all-the-way-down/host/target/release/pcp-delegate \
   --output d13-evidence/process_boundary.json
+python3 audit/director-13/group_boundary.py \
+  --cli store/apps/parrots-all-the-way-down/host/target/release/parrots-all-the-way-down \
+  --delegate store/apps/parrots-all-the-way-down/host/target/release/pcp-delegate \
+  --output d13-evidence/process_group_boundary.json
 ~~~
 
 The workflow at .github/workflows/director-13-containment.yml preserves the JSON observation as an ephemeral Actions artifact. A local dry-run against a **synthetic Python adapter** checks the harness's structure only. It is not a run of the Rust implementation; only the exact GitHub Actions source/runner and archived evidence can support a Rust-host finding.
