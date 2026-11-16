@@ -45,23 +45,38 @@ jobs:
             sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
           cargo build --locked --release --target x86_64-unknown-none \
             --manifest-path apps/surfbird/guest/Cargo.toml --features tcp-ip
-      - name: Exercise live QEMU virtual NIC link down then up with fresh guest launch
+      - name: Positive normal-carrier native QEMU Surfbird baseline
         run: |
           python3 audit/director-13/network/ethernet_cycle.py \
             --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
             --guest apps/surfbird/guest/target/x86_64-unknown-none/release/surfcable \
             --measure PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py \
-            --output "$RUNNER_TEMP/d13-link-cycle"
+            --arm up-baseline \
+            --output "$RUNNER_TEMP/d13-link-baseline"
+      - name: Adverse link-down then virtual restore with fresh guest process
+        if: always()
+        run: |
+          python3 audit/director-13/network/ethernet_cycle.py \
+            --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            --guest apps/surfbird/guest/target/x86_64-unknown-none/release/surfcable \
+            --measure PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py \
+            --arm down-up \
+            --output "$RUNNER_TEMP/d13-link-down-up"
       - name: Retain isolated synthetic guest evidence, including on failure
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: director-13-network-link-cycle
           path: |
-            ${{ runner.temp }}/d13-link-cycle/result.json
-            ${{ runner.temp }}/d13-link-cycle/qmp-journal.json
-            ${{ runner.temp }}/d13-link-cycle/serial.log
-            ${{ runner.temp }}/d13-link-cycle/qemu.stderr
-            ${{ runner.temp }}/d13-link-cycle/frames.pcap
+            ${{ runner.temp }}/d13-link-baseline/result.json
+            ${{ runner.temp }}/d13-link-baseline/qmp-journal.json
+            ${{ runner.temp }}/d13-link-baseline/serial.log
+            ${{ runner.temp }}/d13-link-baseline/qemu.stderr
+            ${{ runner.temp }}/d13-link-baseline/frames.pcap
+            ${{ runner.temp }}/d13-link-down-up/result.json
+            ${{ runner.temp }}/d13-link-down-up/qmp-journal.json
+            ${{ runner.temp }}/d13-link-down-up/serial.log
+            ${{ runner.temp }}/d13-link-down-up/qemu.stderr
+            ${{ runner.temp }}/d13-link-down-up/frames.pcap
           if-no-files-found: warn
           retention-days: 7
