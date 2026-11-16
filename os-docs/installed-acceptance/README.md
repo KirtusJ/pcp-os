@@ -8,7 +8,7 @@ This check boots the same raw, already-installed PCP OS disk three times under x
 | Desktop | Select the desktop, open Tailorbird, then leave it | Persistent store mounted, manifest-matched Tailorbird executable, separate Qwen worker admitted, local MCP connected, model ready, clean application and guest exit |
 | Qwen diagnostic | Select the offline diagnostic | Manifest-matched worker runs the five input token IDs, returns the expected three output IDs in order, finishes, and exits successfully |
 
-Use Python 3.11 or newer, QEMU with x86 TCG, matching OVMF code and variable templates, and the release manifest for the disk. Supply a fresh results directory. The operator supplies the three expected token IDs from a separate reference run on the same model. The diagnostic prompt uses token IDs 17, 488, 220, 17, 284. The recorded Qwen2.5-Coder-0.5B fixture produced 220, 19, 198 for this prompt.
+Use Python 3.11 or newer, QEMU with x86 TCG, matching OVMF code and variable templates, and the release manifest for the disk. Supply a fresh results directory. For any run that includes the diagnostic, supply the three expected token IDs from a separate reference run on the same model. Recovery and desktop checks can run without `--expected-tokens`. The diagnostic prompt uses token IDs 17, 488, 220, 17, 284. The recorded Qwen2.5-Coder-0.5B fixture produced 220, 19, 198 for this prompt.
 
 ```sh
 python3 os-docs/installed-acceptance/check.py \
