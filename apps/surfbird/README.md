@@ -1,6 +1,6 @@
 # Surfbird on PCP-OS
 
-The [native guest](guest/) draws a page on the PCP-OS display. Use **1** or **2** to follow a numbered link, **B** to go back and **Esc** to return to the menu. PCP-OS owns the guest renderer, parser, kernel device interfaces and QEMU replays. The Ethernet guest can [resolve a fixture hostname over DNS](guest/DNS.md) or [connect to a fixed address over TCP](guest/TCP.md). The [serial build](guest/README.md#serial-cable) uses a preconnected HTTP fixture. These experiments exercise local HTTP.
+The [native guest](guest/) draws a page on the PCP-OS display. Use **1** through **9** to follow a numbered link, **B** to go back, **F** to go forward and **Esc** to return to the menu. PCP-OS owns the guest renderer, parser, kernel device interfaces and QEMU replays. The Ethernet guest can [resolve a fixture hostname over DNS](guest/DNS.md) or [connect to a fixed address over TCP](guest/TCP.md). The [serial build](guest/README.md#serial-cable) uses a preconnected HTTP fixture. These experiments exercise local HTTP.
 
 The [standalone Surfbird repository](https://github.com/KirtusJ/surfbird) owns the hosted Rust reader, its terminal controls and machine API. Submit hosted changes there. This directory includes a [pinned hosted copy and its matching manual](https://github.com/KirtusJ/surfbird/tree/28b863bbc1822f424a173a51e618b0c7d898c3ab) for comparisons with the guest.
 

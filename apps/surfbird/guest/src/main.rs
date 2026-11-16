@@ -173,7 +173,8 @@ fn present(display: &mut Display, path: &str, page: &Page<'_>, view: View) {
                     outline_bottom = y as i32 + 21;
                 }
                 if line.first {
-                    text(&mut frame, 26, y, if index == 0 { "1" } else { "2" }, 0x65dedf);
+                    let digit = &"123456789"[index..index + 1];
+                    text(&mut frame, 26, y, digit, 0x65dedf);
                 }
                 (56, 0xe4edef)
             }
@@ -190,14 +191,16 @@ fn present(display: &mut Display, path: &str, page: &Page<'_>, view: View) {
     record("path", path);
     record("title", page.title);
     for (index, link) in page.links[..page.count].iter().enumerate() {
-        record(if index == 0 { "link1" } else { "link2" }, link.path());
+        let mut key = *b"link1";
+        key[4] += index as u8;
+        record(core::str::from_utf8(&key).unwrap(), link.path());
     }
     frame.rect(26, 310, 586, 1, 0x447078);
     text(
         &mut frame,
         26,
         314,
-        "Tab / Shift+Tab  Select link    Enter / 1 / 2  Follow",
+        "Tab / Shift+Tab  Select link    Enter / 1-9  Follow",
         0x96cace,
     );
     text(&mut frame, 26, 337, "Up/Down  Scroll    B  Back    F  Forward    Esc  Exit", 0x96cace);
@@ -247,8 +250,7 @@ fn browse_pages(stream: &mut impl Stream) -> Result<(), &'static str> {
                 1 => return Ok(()),
                 48 if can_back => break Navigation::Back,
                 33 if can_forward => break Navigation::Forward,
-                2 if page.count > 0 => break Navigation::Follow(0),
-                3 if page.count > 1 => break Navigation::Follow(1),
+                2..=10 if key - 2 < page.count => break Navigation::Follow(key - 2),
                 15 => current.view.tab(&page, display.held[42] || display.held[54]),
                 28 => {
                     if let Some(index) = old_view.focus {

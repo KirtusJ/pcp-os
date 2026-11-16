@@ -12,6 +12,8 @@ pub mod layout;
 pub mod location;
 #[cfg(any(test, feature = "https-probe"))]
 pub mod watch_document;
+const MAX_PARAGRAPHS: usize = 12;
+pub const MAX_LINKS: usize = 9;
 pub const CAPACITY: usize = 2048;
 pub const START: &str = "/harbour";
 
@@ -76,10 +78,11 @@ impl Link<'_> {
 #[derive(Debug)]
 pub struct Page<'a> {
     pub title: &'a str,
-    pub paragraphs: [Paragraph<'a>; 12],
+    pub paragraphs: [Paragraph<'a>; MAX_PARAGRAPHS],
     pub paragraph_count: usize,
-    pub links: [Link<'a>; 2],
+    pub links: [Link<'a>; MAX_LINKS],
     pub count: usize,
+    order: [layout::Source; MAX_PARAGRAPHS + MAX_LINKS],
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -95,10 +98,18 @@ enum FragmentTarget {
 }
 
 impl Page<'_> {
+    fn blocks(&self) -> &[layout::Source] {
+        &self.order[..self.paragraph_count + self.count]
+    }
+
     pub fn target_row(&self, fragment: Option<&str>, fallback: usize) -> usize {
         match self.fragment_target(fragment) {
             FragmentTarget::Top => 0,
-            FragmentTarget::Paragraph(index) => index,
+            FragmentTarget::Paragraph(index) => self
+                .blocks()
+                .iter()
+                .position(|block| *block == layout::Source::Paragraph(index))
+                .unwrap_or(fallback),
             FragmentTarget::Missing => fallback,
         }
     }
@@ -142,42 +153,46 @@ pub fn parse(body: &[u8]) -> Result<Page<'_>, &'static str> {
     let title = text(take(&mut rest, "</title>")?)?;
     let mut page = Page {
         title,
-        paragraphs: [Paragraph::default(); 12],
+        paragraphs: [Paragraph::default(); MAX_PARAGRAPHS],
         paragraph_count: 0,
-        links: [Link::default(); 2],
+        links: [Link::default(); MAX_LINKS],
         count: 0,
+        order: [layout::Source::Title; MAX_PARAGRAPHS + MAX_LINKS],
     };
     loop {
         rest = rest.trim_start();
-        let id = if let Some(after) = rest.strip_prefix("<p>") {
-            rest = after;
-            None
-        } else if let Some(after) = rest.strip_prefix("<p id=\"") {
-            rest = after;
-            let id = text(take(&mut rest, "\">")?)?;
-            Some(id)
-        } else {
+        if rest.is_empty() {
             break;
-        };
-        let value = text(take(&mut rest, "</p>")?)?;
-        *page
-            .paragraphs
-            .get_mut(page.paragraph_count)
-            .ok_or("too many paragraphs")? = Paragraph { id, text: value };
-        page.paragraph_count += 1;
+        }
+        let position = page.paragraph_count + page.count;
+        if let Some(after) = rest.strip_prefix("<a href=\"") {
+            rest = after;
+            let target = href::Href::parse(take(&mut rest, "\">")?)?;
+            let label = text(take(&mut rest, "</a>")?)?;
+            let index = page.count;
+            *page.links.get_mut(index).ok_or("too many links")? = Link { label, target };
+            page.order[position] = layout::Source::Link(index);
+            page.count += 1;
+        } else {
+            let id = if let Some(after) = rest.strip_prefix("<p>") {
+                rest = after;
+                None
+            } else if let Some(after) = rest.strip_prefix("<p id=\"") {
+                rest = after;
+                Some(text(take(&mut rest, "\">")?)?)
+            } else {
+                return Err("unsupported markup");
+            };
+            let value = text(take(&mut rest, "</p>")?)?;
+            let index = page.paragraph_count;
+            *page.paragraphs.get_mut(index).ok_or("too many paragraphs")? =
+                Paragraph { id, text: value };
+            page.order[position] = layout::Source::Paragraph(index);
+            page.paragraph_count += 1;
+        }
     }
-    if page.paragraph_count == 0 {
-        return Err("expected paragraph");
-    }
-    while !rest.trim_start().is_empty() {
-        rest = rest
-            .trim_start()
-            .strip_prefix("<a href=\"")
-            .ok_or("unsupported markup")?;
-        let target = href::Href::parse(take(&mut rest, "\">")?)?;
-        let label = text(take(&mut rest, "</a>")?)?;
-        *page.links.get_mut(page.count).ok_or("too many links")? = Link { label, target };
-        page.count += 1;
+    if page.blocks().is_empty() {
+        return Err("expected document content");
     }
     Ok(page)
 }
@@ -237,6 +252,24 @@ mod tests {
         assert_eq!(page.target_row(Some("missing"), 1), 1);
         assert_eq!(page.target_row(Some("top"), 2), 0);
         assert_eq!(page.target_row(Some(""), 2), 0);
+    }
+
+    #[test]
+    fn permits_link_directories_and_enforces_both_block_limits() {
+        let links = r#"<a href="/x">Pier</a>"#.repeat(MAX_LINKS);
+        let paragraphs = "<p>Port</p>".repeat(MAX_PARAGRAPHS);
+        let title = "<title>T</title>";
+        let link_document = [title, &links].concat();
+        let directory = parse(link_document.as_bytes()).unwrap();
+        assert_eq!(directory.count, MAX_LINKS);
+        let full = [title, &links, &paragraphs].concat();
+        let page = parse(full.as_bytes()).unwrap();
+        assert_eq!(page.blocks().len(), MAX_LINKS + MAX_PARAGRAPHS);
+        let extra_link = full.clone() + r#"<a href="/y">Y</a>"#;
+        assert_eq!(parse(extra_link.as_bytes()).unwrap_err(), "too many links");
+        let extra_paragraph = full + "<p>P</p>";
+        assert_eq!(parse(extra_paragraph.as_bytes()).unwrap_err(), "too many paragraphs");
+        assert!(parse(title.as_bytes()).is_err());
     }
 
     #[test]
