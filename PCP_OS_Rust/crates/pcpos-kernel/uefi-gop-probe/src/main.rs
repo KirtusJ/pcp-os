@@ -59,10 +59,33 @@ impl Line {
             self.text(c.encode_utf8(&mut tmp));
         }
     }
+    /// QEMU ISA debugcon tracing is deliberately excluded from the normal
+    /// EFI binary. It is an emulator-only side effect, *not* proof the OS
+    /// kernel or PT's private loader selected any graphics mode.
+    #[cfg(feature = "ci-debugcon")]
+    fn mirror_qemu_debugcon(&self) {
+        for &unit in &self.units[..self.len] {
+            if unit < 128 {
+                let byte = unit as u8;
+                // SAFETY: only the explicit disposable QEMU fixture supplies
+                // isa-debugcon at 0xE9. Never enable on real hardware.
+                unsafe {
+                    core::arch::asm!(
+                        "out dx, al",
+                        in("dx") 0x00e9u16,
+                        in("al") byte,
+                        options(nomem, nostack, preserves_flags)
+                    );
+                }
+            }
+        }
+    }
     /// Caller guarantees console is the valid UEFI boot-services ConOut.
     unsafe fn send(&mut self, con: *mut SimpleTextOutput) {
         self.text("\r\n");
         self.units[self.len] = 0;
+        #[cfg(feature = "ci-debugcon")]
+        self.mirror_qemu_debugcon();
         if !con.is_null() {
             let _ = unsafe { ((*con).output_string)(con, self.units.as_ptr()) };
         }
