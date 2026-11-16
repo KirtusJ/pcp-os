@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/ide-volume-pin.yml'
+      - 'PCP_OS_Rust/crates/pcpos-kernel/STORE_PIN_EXPERIMENT.md'
       - 'PCP_OS_Rust/crates/pcpos-kernel/src/store_identity.rs'
       - 'PCP_OS_Rust/crates/pcpos-kernel/src/store.rs'
       - 'PCP_OS_Rust/crates/pcpos-kernel/src/session.rs'
