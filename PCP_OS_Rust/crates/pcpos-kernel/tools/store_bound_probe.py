@@ -108,6 +108,22 @@ def replay(args: argparse.Namespace, directory: Path) -> None:
         assert verified_disk_read(gpt) == initial_gpt, label + " modified sentinel"
     print("SAFE REFUSAL: six malformed/ambiguous selectors, no writes", flush=True)
 
+    # The selected ID without a valid store=ide0 must not result in an
+    # unadvertised, volatile-RAM session. This checks *status and text*,
+    # not merely absence of disk mutations.
+    for label, bad_line in (
+        ("v2-id-only-no-store", f"auto=action1.elf then=off store_id={ID_A}"),
+        ("v2-unsupported-store", f"auto=action1.elf then=off store=another store_id={ID_A}"),
+    ):
+        qemu_case(
+            args, directory, label, [(0, intended), (1, gpt)], 1, 35,
+            boot_line_override=bad_line,
+            expected_text_override="bound user store requested without supported store=ide0",
+        )
+        assert verified_disk_read(intended) == committed, label + " wrote the intended disk"
+        assert verified_disk_read(gpt) == initial_gpt, label + " wrote the sentinel"
+    print("SAFE REFUSAL: missing/unsupported store=ide0 cannot silently become RAM", flush=True)
+
     # New profile refuses the *legacy* v1 marker even when the boot argument
     # supplies a matching-looking ID. This is a deliberate no-downgrade gate.
     qemu_case(args, directory, "v2-refuse-old-marker",
