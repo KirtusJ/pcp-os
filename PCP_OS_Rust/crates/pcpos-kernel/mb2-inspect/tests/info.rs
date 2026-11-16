@@ -159,6 +159,22 @@ fn accept_single_palette_color_with_nonzero_red_and_blue() {
 }
 
 #[test]
+fn accept_indexed_palette_more_than_256_entries_as_data_not_renderer() {
+    // u16 wire count permits more than the old ad hoc 256-color limit;
+    // this remains PixelKind::Indexed, never direct BGRX rendering.
+    let mut data = Vec::new();
+    data.extend_from_slice(&0xB0000u64.to_le_bytes());
+    data.extend_from_slice(&2048u32.to_le_bytes());
+    data.extend_from_slice(&640u32.to_le_bytes());
+    data.extend_from_slice(&480u32.to_le_bytes());
+    data.extend_from_slice(&[16, 0, 0, 0]);
+    data.extend_from_slice(&257u16.to_le_bytes());
+    data.extend_from_slice(&vec![0x77u8; 257 * 3]);
+    let data = mbi(&[tag(8, &data)]);
+    assert_eq!(inspect(&data).unwrap().framebuffer.unwrap().kind, PixelKind::Indexed);
+}
+
+#[test]
 fn reject_palette_with_extra_undeclared_color_bytes() {
     let mut data = Vec::new();
     data.extend_from_slice(&0xB0000u64.to_le_bytes());
@@ -358,8 +374,20 @@ fn reject_memory_map_range_overflow() {
 }
 
 #[test]
-fn reject_efi_memory_map_misaligned_descriptor_stride() {
-    assert_eq!(inspect(&mbi(&[efi_mmap(41, 1, &[0u8; 41])])),
+fn accept_efi_memory_map_variable_descriptor_stride_as_raw_bytes() {
+    // The UEFI DescriptorSize is returned by firmware. The reader must
+    // advance using it, not import the unrelated basic-MB2 map rule.
+    let data = mbi(&[efi_mmap(44, 1, &[0u8; 88])]);
+    let inspected = inspect(&data).unwrap();
+    let map = inspected.efi_memory_map.unwrap();
+    assert_eq!(map.entry_bytes, 44);
+    assert_eq!(map.entry_count, 2);
+    assert_eq!(map.entries.len(), 88);
+}
+
+#[test]
+fn reject_efi_map_descriptor_smaller_than_known_prefix() {
+    assert_eq!(inspect(&mbi(&[efi_mmap(39, 1, &[0u8; 39])])),
                Err(Error::BadEfiMemoryMap));
 }
 
