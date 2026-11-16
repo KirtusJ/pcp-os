@@ -33,7 +33,8 @@ class InstalledSerialTests(unittest.TestCase):
             args = SimpleNamespace(output=out, code=firmware, vars=firmware, image=firmware,
                                    qemu="unused", firmware_dir=None, mode=(1920, 1080),
                                    ram=1536, vram=32, timeout=0.04, require_qwen_ready=required,
-                                   app_sha256=pin, check_title_1080p=False, check_launcher_1080p=False)
+                                   app_sha256=pin, check_title_1080p=False, check_launcher_1080p=False,
+                                   check_launcher_identity_1080p=False)
             guest, monitor = MagicMock(), MagicMock()
             guest.poll.return_value = None
             monitor.receive.return_value = {"QMP": {}}
@@ -124,6 +125,13 @@ class InstalledSerialTests(unittest.TestCase):
 
 
 class LauncherCaptureTests(unittest.TestCase):
+    def test_visible_identity_matches_installed_frame_and_changes_with_last_nibble(self):
+        app = "bb2eea2eb758a7351d2949d01535f0da869d00dd182404b03521643166a95e7d"
+        rect, digest = display.launcher_identity_field(app)
+        self.assertEqual(rect, (460, 980, 1280, 1000))
+        self.assertEqual(digest, "b9ecc6d0739f45d2fe568aa5c0a7b845c2e480e9e27be8c090b95869d668eeb6")
+        self.assertNotEqual(display.launcher_identity_field(app[:-1] + "c")[1], digest)
+
     def test_fields_must_coincide_in_one_native_frame(self):
         colors = [bytes([80+i, 120, 164]) for i in range(3)]
         references = {str(i): ((i, 0, i+1, 1), hashlib.sha256(c).hexdigest())
@@ -151,6 +159,12 @@ class LauncherCaptureTests(unittest.TestCase):
             with self.assertRaisesRegex(TimeoutError, "fields missing: 1"):
                 display.capture(monitor, Path(directory), "returned", check_launcher=True)
             self.assertTrue((Path(directory)/"returned.ppm").exists())
+
+            # All three original fields pass. A stale displayed executable still fails.
+            captured.append(7)
+            with self.assertRaisesRegex(TimeoutError, "fields missing: selected_sha256"):
+                display.capture(monitor, Path(directory), "returned", check_launcher=True,
+                                identity_field=((3, 0, 4, 1), hashlib.sha256(b"abc").hexdigest()))
 
 
 if __name__ == "__main__":
