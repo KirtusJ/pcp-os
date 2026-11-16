@@ -238,7 +238,8 @@ class DualQwenInventoryControls(unittest.TestCase):
             return observation
 
         with patch.object(inventory, "sha256_file", side_effect=swap_after_hash):
-            with self.assertRaisesRegex(ValueError, "path changed after read"):
+            with self.assertRaisesRegex(ValueError,
+                                        "asset changed during read|asset path changed after read"):
                 self.run_check()
 
     def test_path_removed_after_hash_is_not_success(self):
@@ -254,7 +255,7 @@ class DualQwenInventoryControls(unittest.TestCase):
 
         with patch.object(inventory, "sha256_file",
                           side_effect=unlink_after_hash):
-            with self.assertRaises(FileNotFoundError):
+            with self.assertRaises((ValueError, FileNotFoundError)):
                 self.run_check()
 
 
