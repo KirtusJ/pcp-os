@@ -134,7 +134,7 @@ class Guest:
             time.sleep(.1)
         raise TimeoutError(f"{self.serial.name}: deadline before {marker!r}")
 
-    def verify_output(self, stage, expected):
+    def verify_output(self, stage, expected, *, tag=screen.OUTPUT_TAG):
         """Wait for presentation, keeping the last complete frame on failure."""
         deadline = time.monotonic() + self.timeout
         pending = self.serial.parent / f"{stage}-pending.ppm"
@@ -149,14 +149,14 @@ class Guest:
                     pixels = screen.read_frame(pending)
                     if pixels is not None:
                         pending.replace(target)
-                        row = screen.matching_row(pixels, expected)
+                        row = screen.matching_row(pixels, expected, tag=tag)
                         if row is not None:
                             return {"file": target.name, "sha256": file_hash(target),
                                     "output": expected, "row_y": row}
                         break
                 time.sleep(.1)
             time.sleep(.25)
-        raise TimeoutError(f"{stage}: no complete Output row displaying {expected!r}")
+        raise TimeoutError(f"{stage}: no matching task row displaying {expected!r}")
 
     def enter_desktop(self):
         self.wait(b"long mode true")
@@ -237,6 +237,7 @@ def exercise(args, output, results):
     if args.fixture_sha256 is not None:
         require(fixture_hash == args.fixture_sha256, "fixture digest mismatch")
     frames = results["frames"] = {} if args.check_screen else None
+    results["decision"] = args.decision
     observations = results["checkpoints"]
     observations["factory"] = checkpoint(disk, offset)
     with boot(args, output, "first", pins, guid, results) as guest:
@@ -249,16 +250,21 @@ def exercise(args, output, results):
         observations["approved"] = original
         guest.submit("edit lark print changed then run lark")
         guest.wait(STAGED)
-        guest.key("alt-s")
-        guest.wait(ACCEPTED)
+        first_events = [STAGED, SAVED, STAGED]
+        if args.decision == "stop":
+            guest.key("alt-s")
+            guest.wait(ACCEPTED)
+            guest.key("alt-a")
+            guest.wait(STOPPED)
+            first_events.extend((ACCEPTED, STOPPED))
+        else:
+            guest.key("alt-d")
+            results["denial_receipt"] = guest.verify_output("denied", "Request denied", tag=screen.TOOL_TAG)
         guest.key("alt-a")
-        guest.wait(STOPPED)
-        guest.key("alt-a")
-        # A new staged proposal proves the guest processed input after the stale decision.
-        # Inspect the trace before sending any command that legitimately reads the app.
+        # The new proposal acknowledges later input before any intentional application read.
         guest.submit("edit lark print barrier")
         guest.wait(STAGED)
-        first_events = [STAGED, SAVED, STAGED, ACCEPTED, STOPPED, STAGED]
+        first_events.append(STAGED)
         check_trace(guest.serial, first_events)
         guest.key("alt-s")
         guest.wait(ACCEPTED)
@@ -267,10 +273,11 @@ def exercise(args, output, results):
         guest.submit("run lark")
         guest.wait(RAN)
         if frames is not None:
-            frames["after_stop"] = guest.verify_output("after-stop", "original")
+            frames["after_" + args.decision] = guest.verify_output("after-" + args.decision, "original")
     check_trace(output / "first.serial", first_events + [ACCEPTED, STOPPED, RAN])
-    observations["after_stop"] = checkpoint(disk, offset, b"print original")
-    require(observations["after_stop"] == original, "Stop changed application store")
+    after_decision = checkpoint(disk, offset, b"print original")
+    observations["after_" + args.decision] = after_decision
+    require(after_decision == original, f"{args.decision} changed application store")
     with boot(args, output, "cold", pins, guid, results) as guest:
         guest.key("alt-a")
         guest.submit("run lark")
@@ -296,6 +303,8 @@ def main():
     for flag in ("manifest", "disk", "kernel", "desktop", "worker", "output"):
         parser.add_argument("--" + flag, type=Path, required=True)
     parser.add_argument("--fixture-sha256", help="verify only the copied regions against this independent SHA-256")
+    parser.add_argument("--decision", choices=("stop", "deny"), default="stop",
+                        help="cancel with Alt+S or refuse with Alt+D and verify the visible denial receipt")
     parser.add_argument("--check-screen", action="store_true", help="verify visible output on the fixed 960x540 preview")
     parser.add_argument("--qemu", default="qemu-system-x86_64")
     parser.add_argument("--objcopy", default="objcopy")
