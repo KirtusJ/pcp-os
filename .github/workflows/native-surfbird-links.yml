@@ -38,7 +38,7 @@ jobs:
         working-directory: apps/surfbird/guest
         run: |
           mkdir -p "$RUNNER_TEMP/navigation"
-          for arm in focus fragment allowed; do
+          for arm in history focus fragment allowed; do
             python3 replay.py ../../../PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 target/x86_64-unknown-none/release/surfcable --tcp --arm "$arm" --output "$RUNNER_TEMP/navigation"
           done
       - name: Retain packet, display and serial evidence
