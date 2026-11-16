@@ -52,13 +52,15 @@ def actor(mode, directory):
             json.dumps({"pid": os.getpid(), "start_tick": identity["start_tick"]}), encoding="ascii"
         )
     heartbeat = root / ("leaf.tick" if mode == "leaf" else "parent.tick")
-    if mode == "rogue-parent":
-        # An ordinary delegated executable can start a descendant without using
-        # pcp-delegate. Its new session deliberately avoids the parent's group.
+    if mode in {"rogue-parent", "same-group-parent"}:
+        # Both descendants bypass pcp-delegate. The original 'rogue-parent'
+        # escapes to a new session; 'same-group-parent' stays in the test's
+        # own session, to distinguish a process-group fence from a cgroup.
         child = subprocess.Popen(
             [sys.executable, __file__, "leaf", str(root)],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True,
+            stderr=subprocess.DEVNULL,
+            start_new_session=(mode == "rogue-parent"), close_fds=True,
         )
         (root / "leaf.pid").write_text(str(child.pid), encoding="ascii")
     deadline = time.monotonic() + 25.0
@@ -198,7 +200,7 @@ def probe(cli, delegate, output):
 
 
 def main():
-    if len(sys.argv) >= 3 and sys.argv[1] in {"direct-parent", "rogue-parent", "leaf"}:
+    if len(sys.argv) >= 3 and sys.argv[1] in {"direct-parent", "rogue-parent", "same-group-parent", "leaf"}:
         actor(sys.argv[1], sys.argv[2])
         return
     parser = argparse.ArgumentParser(description=__doc__)
