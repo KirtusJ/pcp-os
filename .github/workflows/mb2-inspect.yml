@@ -1,0 +1,49 @@
+name: PCP OS Multiboot2 information parser checks
+
+on:
+  pull_request:
+    paths:
+      - 'PCP_OS_Rust/crates/pcpos-kernel/mb2-inspect/**'
+      - '.github/workflows/mb2-inspect.yml'
+  push:
+    branches:
+      - 'session-b/mb2-efi-info-inspector-*'
+    paths:
+      - 'PCP_OS_Rust/crates/pcpos-kernel/mb2-inspect/**'
+      - '.github/workflows/mb2-inspect.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust-source-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact triggering source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Show executor provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          rustc --version --verbose
+          cargo --version
+      - name: Unit and integration controls (offline, debug)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --offline --all-targets --manifest-path PCP_OS_Rust/crates/pcpos-kernel/mb2-inspect/Cargo.toml -- --nocapture
+      - name: Unit and integration controls (offline, release)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --offline --release --all-targets --manifest-path PCP_OS_Rust/crates/pcpos-kernel/mb2-inspect/Cargo.toml -- --nocapture
+      - name: Check no_std library (native compiler target only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --offline --lib --manifest-path PCP_OS_Rust/crates/pcpos-kernel/mb2-inspect/Cargo.toml
