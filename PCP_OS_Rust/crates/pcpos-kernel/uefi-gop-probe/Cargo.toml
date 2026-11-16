@@ -16,12 +16,16 @@ name = "pcpos-gop-probe"
 path = "src/main.rs"
 test = false
 bench = false
+required-features = ["uefi-app"]
 
 [features]
 default = []
+# Explicit opt-in prevents host integration tests from linking the EFI entry
+# as if it were a Linux executable with a normal main() function.
+uefi-app = []
 # DANGEROUS BY DESIGN ON REAL HARDWARE: this opts in to SetMode and restore,
 # only for a disposable emulated GOP fixture. It is never enabled in default CI.
-exercise-mode-switch = []
+exercise-mode-switch = ["uefi-app"]
 
 [profile.dev]
 panic = "abort"
