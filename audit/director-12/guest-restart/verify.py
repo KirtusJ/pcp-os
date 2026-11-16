@@ -456,6 +456,68 @@ def invalid_prior_receipt(image: str, kernel: Path, measurement: str, evidence_d
             capture(directory, evidence_dir / "forged_end", 2)
             invoke(["docker", "rm", "-f", name], checked=False)
 
+
+def replayed_native_guest_receipt(image: str, kernel: Path, measurement: str, evidence_dir: Path):
+    # Actual byte-for-byte successful QEMU serial from *another* synthetic
+    # request, paired here with syntactically valid journal markers for a new
+    # request. A good kernel run is not a receipt for this operation.
+    original = evidence_dir / "valid" / "qemu-1.serial"
+    raw = original.read_bytes()
+    txt = raw.decode("utf-8")
+    pattern = (
+        rf"^command line: /kernel\\.elf32 then=off image={re.escape(measurement)} "
+        rf"d12_ticket=([0-9a-f]{{24}}) d12_attempt=1$"
+    )
+    matches = re.findall(pattern, txt, flags=re.MULTILINE)
+    assert len(matches) == 1, "source must be the exact prior native guest attempt 1"
+    old_ticket = matches[0]
+    assert "ALL SELF-TESTS PASS." in txt and "PCP OS kernel " in txt
+    with tempfile.TemporaryDirectory(prefix="d12-native-replay-") as tmp:
+        directory = Path(tmp)
+        os.chmod(directory, 0o777)
+        request = secrets.token_hex(12)
+        while request == old_ticket:
+            request = secrets.token_hex(12)
+        name = "d12-native-replay-" + secrets.token_hex(5)
+        (directory / "request.txt").write_text(request, encoding="ascii")
+        (directory / "start-1.txt").write_text(
+            f"REQUEST={request};ATTEMPT=1;START\\n", encoding="ascii"
+        )
+        (directory / "end-1.txt").write_text(
+            f"REQUEST={request};ATTEMPT=1;QEMU_EXIT=33;END\\n", encoding="ascii"
+        )
+        (directory / "qemu-1.serial").write_bytes(raw)
+        (directory / "qemu-1.stderr").write_bytes(b"")
+        try:
+            policy = start(image, name, directory, kernel, measurement, request, fault=False)
+            await_true(
+                lambda: not inspect(name)["State"]["Running"]
+                and (directory / "attention.txt").exists(),
+                "authentic previous guest serial refused for unrelated request", 12,
+            )
+            info = inspect(name)
+            assert info["RestartCount"] == 0 and info["State"]["ExitCode"] == 0
+            reason = (directory / "attention.txt").read_text()
+            assert "INVALID_JOURNAL: prior attempt 1 END without valid native receipt" in reason
+            assert "native kernel command line does not match the exact request and attempt" in reason
+            assert not list(directory.glob("start-2.txt"))
+            assert not list(directory.glob("qemu-2.serial"))
+            assert (directory / "qemu-1.serial").read_bytes() == raw
+            return {
+                "source_is_real_completed_kernel_guest_serial": True,
+                "source_ticket": old_ticket,
+                "new_synthetic_request": request,
+                "source_native_serial_sha256": sha(raw),
+                "exact_prior_serial_replay_refused": True,
+                "no_new_QEMU_guest_launched": True,
+                "host_restart_count": 0,
+                "attention": reason.strip(),
+                "requested_policy": policy,
+            }
+        finally:
+            capture(directory, evidence_dir / "native_replay", 2)
+            invoke(["docker", "rm", "-f", name], checked=False)
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--image", required=True)
@@ -496,6 +558,9 @@ def main() -> int:
         result["falsified_exit_33"] = fabricated_exit_33(a.image, kernel, a.measurement, evidence_dir)
         result["noncontiguous_journal"] = sparse_future_attempt(a.image, kernel, a.measurement, evidence_dir)
         result["false_prior_END"] = invalid_prior_receipt(a.image, kernel, a.measurement, evidence_dir)
+        result["replayed_native_guest_receipt"] = replayed_native_guest_receipt(
+            a.image, kernel, a.measurement, evidence_dir
+        )
         result["status"] = "OBSERVED_IN_TEST_SCOPE"
         return 0
     except Exception as e:
