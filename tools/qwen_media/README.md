@@ -15,7 +15,7 @@ The directory and model bytes are generated locally; neither enters Git. Exact m
 From a clean model directory, after placing real GGUF bytes obtained by the operator and independently establishing their upstream revision and SHA-256:
 
 ```
-python3 tools/model_package.py build <model-dir> \
+python3 tools/qwen_media/model_package.py build <model-dir> \
   --file Qwen3-0.6B-Q4_K_M.gguf --model-id Qwen3-0.6B \
   --revision <40-hex-commit> --source Qwen/Qwen3-0.6B-GGUF \
   --expected-sha256 <trusted-model-file-sha256>
@@ -24,14 +24,14 @@ python3 tools/model_package.py build <model-dir> \
 The command writes a canonical `MODEL_MANIFEST.json` **without replacing an existing manifest**, and prints its SHA-256. This is a locally generated consistency statement, not publisher authentication. Sign/pin the manifest digest in an independently trusted **OS release record** before any model-activation decision. To verify offline:
 
 ```
-python3 tools/model_package.py verify <model-dir> \
+python3 tools/qwen_media/model_package.py verify <model-dir> \
   --expected-manifest-sha256 <digest-pinned-by-trusted-OS-release>
 ```
 
 The verifier refuses missing or malformed pins, duplicate or extra JSON fields, noncanonical encodings, symlinked directory components/files, hard-linked files, device/FIFO inputs, truncated/unsupported GGUF headers, oversized data, and model/manifest mismatch. It streams model reads within bounded memory. Tests use tiny *synthetic* GGUF-header fixtures and do not instantiate a model or run inference:
 
 ```
-cd tools
+cd tools/qwen_media
 python3 -m unittest -v test_model_package.py
 python3 -O -m unittest -v test_model_package.py
 ```
