@@ -91,3 +91,58 @@ jobs:
           print('difference_count',len(differences),'first_differing_offsets',differences[:16])
           assert a==b, 'NONDETERMINISTIC EFI PROBE BUILD: preserve both hashes and inspect PE metadata'
           PY
+      - name: Emulate the *standalone read-only* EFI probe under Q35/OVMF
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Only test media created in the ephemeral runner. No host disks,
+          # external networking, kernel image or mode-switch feature.
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf dosfstools mtools
+          QEMU="$(command -v qemu-system-x86_64)"
+          CODE="/usr/share/OVMF/OVMF_CODE_4M.fd"
+          VARS="/usr/share/OVMF/OVMF_VARS_4M.fd"
+          test -f "$CODE" && test -f "$VARS"
+          "$QEMU" --version | head -1
+          sha256sum "$CODE" "$VARS"
+          PROBE_MANIFEST="PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml"
+          cargo build --offline --release --features uefi-app,ci-debugcon --target x86_64-unknown-uefi --manifest-path "$PROBE_MANIFEST"
+          PROBE="PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/target/x86_64-unknown-uefi/release/pcpos-gop-probe.efi"
+          test -s "$PROBE"
+          sha256sum "$PROBE"
+          ESP="$RUNNER_TEMP/gop-probe-esp.img"
+          mkfs.vfat -F 32 -C "$ESP" 32768
+          mmd -i "$ESP" ::/EFI
+          mmd -i "$ESP" ::/EFI/BOOT
+          mcopy -i "$ESP" "$PROBE" ::/EFI/BOOT/BOOTX64.EFI
+          cp "$VARS" "$RUNNER_TEMP/OVMF_VARS_WORK.fd"
+          LOG="$RUNNER_TEMP/gop-observation.txt"
+          set +e
+          timeout -k 2s 25s "$QEMU" -machine q35,accel=tcg -cpu max -smp 1 -m 256M \
+            -drive if=pflash,format=raw,readonly=on,file="$CODE" \
+            -drive if=pflash,format=raw,file="$RUNNER_TEMP/OVMF_VARS_WORK.fd" \
+            -drive if=virtio,format=raw,file="$ESP" \
+            -display none -vga std -serial none -monitor none -net none -no-reboot \
+            -chardev file,id=debug,path="$LOG" -device isa-debugcon,iobase=0xe9,chardev=debug
+          EXIT="$?"
+          set -e
+          echo "QEMU exit code: $EXIT (124 means bounded timeout after probe)"
+          if test -e "$LOG"; then
+            sed -n '1,100p' "$LOG"
+          fi
+          python3 - "$LOG" "$EXIT" <<'PY'
+          import pathlib,sys,re
+          path=pathlib.Path(sys.argv[1])
+          exit_code=int(sys.argv[2])
+          raw=path.read_bytes() if path.exists() else b""
+          report=raw.decode("ascii",errors="replace")
+          print("log_bytes",len(raw),"probe_line_count",report.count("PCPOS_GOP_PROBE_V1"))
+          assert exit_code in (0,124), f"QEMU failed before bounded observation: {exit_code}"
+          assert "PCPOS_GOP_PROBE_V1 STANDALONE" in report, "No standalone EFI entry marker"
+          assert re.search(r"PCPOS_GOP_PROBE_V1 BEFORE mode=\\d+",report), "No GOP before-mode readback"
+          assert re.search(r"PCPOS_GOP_PROBE_V1 QUERY index=0 status=0x0{16}",report), "No successful GOP mode zero query"
+          assert "PCPOS_GOP_PROBE_V1 END READ_ONLY" in report, "Probe never completed its read-only path"
+          assert "STANDALONE_FIXTURE_SET_MODE" not in report, "Unexpected opt-in SetMode fixture"
+          assert "SET_MODE_STATUS" not in report, "Unexpected SetMode call"
+          print("PASS: standalone UEFI probe executed in OVMF, read-only GOP mode capture only")
+          PY
