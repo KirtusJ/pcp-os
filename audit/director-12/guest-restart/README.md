@@ -64,10 +64,14 @@ pinned release source. The test reports the actual OCI image ID and
 runtime version.
 
 Every state file and QEMU serial is synthetic, created under a disposable
-runner directory and cleaned up. The artifact retains a JSON summary with
-SHA-256 digests and observed head values, rather than uploading raw kernel
-binaries or register data. This is sufficient for the narrow host-based
-control but does **not** establish an autonomous PCP OS deployment, an
+runner directory and cleaned up. The artifact retains the **original raw
+serials** for all observed guest boots, plus an explicit allowlist of
+test-only START/END/attention journal bytes, and a JSON summary recording
+the SHA-256 digest and length of each retained member. The host-side
+verification is not the sole oracle: the archived guest serials can be
+reparsed without relying on the test harness's findings. No kernel ELF,
+private task payload or persistent register is uploaded. The test still
+does **not** establish an autonomous PCP OS deployment, an
 independently resident director after the CI run, an installed model, trusted
 operator capabilities, durable audit/event reconciliation, or an ISO build.
 
