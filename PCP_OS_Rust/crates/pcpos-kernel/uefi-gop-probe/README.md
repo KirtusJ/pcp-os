@@ -44,6 +44,59 @@ The associated read-only GitHub Actions workflow records the triggering exact so
 - Explicit opt-in mode-switch fixture (not run): SHA-256 `8892c9417a3ce53632fdf1a523e8c8224086ccde703da9bc760428a39d32e3f0`.
 - The binary identities are tied to the exact build and compiler reported above, not to PT's separate private preview or any installed disk.
 
+## PE/COFF reproducibility audit (source-bound, not an executed EFI program)
+
+The source compiled, but **reproducibility was not automatic**: hashes of EFI
+binaries differed across earlier runs even when the Rust application source
+did not change. Those differing hashes must not be substituted for one
+another. An actual *full clean* same-commit test gave adverse evidence:
+
+- [Run 43805379370](https://github.com/KirtusJ/pcp-os/actions/runs/43805379370)
+  initially reported an identical rebuild after a partial `cargo clean
+  --release --target`; examination showed it removed only three files and
+  the rebuild completed in zero seconds. This is **insufficient evidence** of
+  reproducibility. The comparison was corrected to `cargo clean
+  --manifest-path ...` and verified the prior EFI binary was absent before
+  rebuilding.
+- [Run 43805503682](https://github.com/KirtusJ/pcp-os/actions/runs/43805503682)
+  then confirmed **10 changed bytes** in two actual clean same-source PE
+  builds. Their COFF TimeDateStamp values differed. The job was expected
+  to fail and did.
+- [Run 43805648957](https://github.com/KirtusJ/pcp-os/actions/runs/43805648957)
+  using `/Brepro` still showed differences in generated PE metadata. This
+  does **not** prove that all linker `/Brepro` usages are ineffective.
+- [Run 43805807021](https://github.com/KirtusJ/pcp-os/actions/runs/43805807021)
+  set `/timestamp:0`. It fixed both COFF timestamps to zero but **eight
+  remaining bytes** changed in the PE debug-related region. An exact
+  explanation of those bytes is not established by the diff alone.
+- [Run 43805950794](https://github.com/KirtusJ/pcp-os/actions/runs/43805950794)
+  combined `/timestamp:0` with `/DEBUG:NONE` for the EFI target. Two
+  **full clean** builds on the same Ubuntu 24.04 runner, from the same
+  source and Rust/Cargo 1.99.1, produced **bit-identical 8,704-byte** PE32+
+  EFI_APPLICATION files. The SHA-256 of each was
+  `55b32462189ad6ac1ed9e296def3f0f5e300c6e0832f5c7c724a22eabde3d0d2`;
+  COFF TimeDateStamp was **0** and difference count was **0**.
+  The 12 host tests and both EFI variant compilations also passed.
+
+For a **locally equivalent** release-mode build using the same Rust target,
+apply the same *target-scoped* linker options:
+
+```sh
+rustup target add x86_64-unknown-uefi
+export CARGO_TARGET_X86_64_UNKNOWN_UEFI_RUSTFLAGS='-C link-arg=/timestamp:0 -C link-arg=/DEBUG:NONE'
+cargo build --offline --release --features uefi-app --target x86_64-unknown-uefi --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+```
+
+The two-build CI receipt demonstrates **only same-runner, same-compiler,
+same-source bit identity** under these flags. It does not certify
+cross-machine reproducibility, supply-chain authenticity, publisher
+signatures, firmware compatibility, or reproducibility of PT's private
+PCP-OS binary. `/DEBUG:NONE` deliberately omits PE debug/CodeView
+information; it is appropriate here only for the isolated release probe,
+not a blanket debugging or security recommendation. The next meaningful
+verification is an independently built, source-bound comparison across
+runners or toolchains, still separate from a UEFI runtime test.
+
 ## Source and safety boundaries
 
 The minimal unsafe region is confined to firmware-entry code: table pointer reads, function-pointer conversion, and calls to firmware interfaces. The source is intentionally **not linked** to the kernel or the existing Multiboot1/Multiboot2 path. UEFI returns references and dynamically allocated buffers that must remain valid until `FreePool`; the program operates only while Boot Services are active.
