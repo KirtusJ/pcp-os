@@ -89,7 +89,7 @@ class RegisterPixelChecks(unittest.TestCase):
         self.assertEqual(20 + 10 * (len("HEAD ") + 64), 710)
         self.assertLessEqual(710, 800)  # last digest cell x=700..709
         raster = {
-            ch: b"".join(c.expected_text("", ch, font, fg, bg))
+            ch: b"".join(line[-30:] for line in c.expected_text("", "0" * 63 + ch, font, fg, bg))
             for ch in alphabet
         }
         count = 0
