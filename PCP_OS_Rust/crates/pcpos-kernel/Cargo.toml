@@ -10,6 +10,7 @@ publish = false
 
 [dependencies]
 pcpos-core = { path = "../pcpos-core" }
+pcpos-desktop = { path = "../../../apps/desktop/renderer" }
 
 [features]
 guest-ethernet = ["virtio-tx-probe"] # raw frames for one explicitly hash-granted ELF
