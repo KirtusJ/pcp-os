@@ -5,6 +5,9 @@
 //! loader, an authenticated measurement, or permission to use firmware after
 //! ExitBootServices. Unsafe dereferences belong in src/main.rs only.
 
+/// Parser for copied EDID bytes only; no source/handle association or SetMode.
+pub mod edid;
+
 use core::ffi::c_void;
 
 pub const SYSTEM_TABLE_SIGNATURE: u64 = 0x5453_5953_2049_4249;
@@ -12,6 +15,18 @@ pub const BOOT_SERVICES_SIGNATURE: u64 = 0x5652_4553_544f_4f42;
 pub const GOP_GUID: Guid = Guid {
     data1: 0x9042a9de, data2: 0x23dc, data3: 0x4a38,
     data4: [0x96, 0xfb, 0x7a, 0xde, 0xd0, 0x80, 0x51, 0x6a],
+};
+ 
+/// UEFI EDID discovered for one possible physical video output child handle.
+pub const EDID_DISCOVERED_GUID: Guid = Guid {
+    data1: 0x1c0c34f6, data2: 0xd380, data3: 0x41fa,
+    data4: [0xa0, 0x49, 0x8a, 0xd0, 0x6c, 0x1a, 0x66, 0xaa],
+};
+/// EDID of an *active* output, potentially supplied by an override.
+/// This cannot be associated with a GOP merely via global LocateProtocol.
+pub const EDID_ACTIVE_GUID: Guid = Guid {
+    data1: 0xbd8c1056, data2: 0x9f36, data3: 0x44ec,
+    data4: [0x92, 0xa8, 0xa6, 0x33, 0x7f, 0x81, 0x79, 0x86],
 };
 
 #[repr(C)]
@@ -21,6 +36,15 @@ pub struct Guid {
     pub data2: u16,
     pub data3: u16,
     pub data4: [u8; 8],
+}
+
+/// UEFI EFI_EDID_DISCOVERED_PROTOCOL / EFI_EDID_ACTIVE_PROTOCOL
+/// layout on x86-64. The pointer has no proven lifetime or ownership here;
+/// none of the pure EDID functions dereferences it.
+#[repr(C)]
+pub struct EdidProtocol {
+    pub size_of_edid: u32,
+    pub edid: *const u8,
 }
 
 #[repr(C)]
