@@ -1,0 +1,49 @@
+name: D11 synthetic GPT mirror versus UEFI PMBR boundary
+
+on:
+  push:
+    branches:
+      - director-11/gpt-pmbr-boot-acceptance-20261116
+    paths:
+      - "audit/director-11/offline-gpt/**"
+      - ".github/workflows/d11-gpt-pmbr-boundary.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source_pinned_gap_controls:
+    name: PMBR/revision gaps + two corrupt GPT negative controls
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out isolated D11 test only
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Pin unmodified PCP OS installed GPT mirror checker
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: 59f26ebe6397e00e8a9b8cce08487ad8a5319c0c
+          path: pinned-master
+      - name: Assert source/ref and execute disposable synthetic 16MiB disk controls
+        run: |
+          set -euo pipefail
+          test "$(git -C pinned-master rev-parse HEAD)" = \
+            59f26ebe6397e00e8a9b8cce08487ad8a5319c0c
+          test "$(git -C pinned-master hash-object os-docs/installed-acceptance/gpt_integrity.py)" = \
+            620c82a7d686230d1b2ed82421b349da7a72f6be
+          python3 --version
+          python3 audit/director-11/offline-gpt/audit.py \
+            --source pinned-master/os-docs/installed-acceptance/gpt_integrity.py \
+            --output witness/pmbr-source-boundary.json
+      - name: Archive only bounded JSON receipt, no disk image or boot firmware
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: d11-source-pinned-pmbr-gpt-narrow-gate
+          path: witness/pmbr-source-boundary.json
+          if-no-files-found: warn
+          retention-days: 14
