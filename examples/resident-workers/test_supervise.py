@@ -15,9 +15,10 @@ class WorkerReadback(unittest.TestCase):
         self.guest = Mock(node=1)
         self.oracle = [[10, 11, 12] for _ in range(16)]
         self.elf = "a" * 64
+        self.kernel = "b" * 64
         self.trace = (
-            "long mode true\n"
-            "kernel (measured; equal to the value the loader named)\n"
+            "protections: paging true, supervisor write protection true, no-execute true, long mode true\n"
+            f"running image (code and read-only data), SHA-256: {self.kernel} (measured; equal to the value the loader named)\n"
             f"starting resident.elf (100 bytes, SHA-256 {self.elf}) with: 1 1 0\n"
             "NODE 1 PARENT 0 INPUT 1 TICKET 45\nLM tokens 10 11 12\nGATE 1\n"
             "SPAWN 2 PARENT 1 TICKET 45\nSPAWN 3 PARENT 1 TICKET 45\n"
@@ -25,7 +26,7 @@ class WorkerReadback(unittest.TestCase):
         )
 
     def verify(self, trace):
-        return sup.verify_start(self.guest, trace, 0, 1, 0, "kernel", self.elf, self.oracle)
+        return sup.verify_start(self.guest, trace, 0, 1, 0, self.kernel, self.elf, self.oracle)
 
     def test_only_the_requested_edges_are_admitted(self):
         self.assertEqual(self.verify(self.trace), (45, [2, 3, 4]))
@@ -33,6 +34,21 @@ class WorkerReadback(unittest.TestCase):
                                       ("GATE 1", "GATE 0"), ("10 11 12", "10 11 13"), (self.elf, "d" * 64)):
             with self.subTest(original=original), self.assertRaises(RuntimeError):
                 self.verify(self.trace.replace(original, replacement))
+
+    def test_kernel_reports_must_be_complete_and_unambiguous(self):
+        protections, measurement, worker = self.trace.split("\n", 2)
+        for reports in (
+                [protections.replace("paging true", "paging false"), measurement],
+                [protections + "-pending", measurement],
+                [protections, "command line: " + measurement],
+                [protections, measurement.replace(self.kernel, self.elf)],
+                [protections, measurement + " (unconfirmed)"],
+                [protections, measurement.replace("equal to", "NOT"), measurement],
+                [protections, protections, measurement],
+                [measurement, protections],
+                [protections, measurement, "1 SELF-TEST(S) FAILED"]):
+            with self.subTest(reports=reports), self.assertRaisesRegex(RuntimeError, "kernel"):
+                self.verify("\n".join([*reports, worker]))
 
     def test_old_answer_cannot_satisfy_a_new_challenge(self):
         with tempfile.TemporaryDirectory() as d:
