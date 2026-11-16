@@ -56,6 +56,8 @@ def qemu_case(
     action: int,
     expected_exit: int,
     boot_suffix: str = "",
+    boot_line_override: str | None = None,
+    expected_text_override: str | None = None,
 ) -> tuple[str, list[str]]:
     guest = directory / f"action{action}.elf"
     serial = directory / (label + ".serial")
@@ -66,7 +68,8 @@ def qemu_case(
         "-icount", "shift=4,align=off,sleep=off",
         "-kernel", str(args.kernel.resolve()),
         "-initrd", str(guest),
-        "-append", f"auto=action{action}.elf then=off store=ide0{boot_suffix}",
+        "-append", (boot_line_override if boot_line_override is not None
+                     else f"auto=action{action}.elf then=off store=ide0{boot_suffix}"),
         "-serial", "file:" + str(serial),
         "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
     ]
@@ -82,7 +85,8 @@ def qemu_case(
     )
     text = serial.read_text(errors="replace") if serial.exists() else ""
     lines = text.splitlines()
-    expected_text = "STORE PROBE OK" if expected_exit == 33 else "could not be recovered"
+    expected_text = (expected_text_override if expected_text_override is not None
+                     else ("STORE PROBE OK" if expected_exit == 33 else "could not be recovered"))
     if result.returncode != expected_exit or not any(expected_text in x for x in lines):
         raise AssertionError(
             f"{label}: QEMU exit {result.returncode} (expected {expected_exit}), "
