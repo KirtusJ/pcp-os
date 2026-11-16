@@ -25,7 +25,7 @@ jobs:
           rustup target add x86_64-unknown-none
           rustup component add rust-src
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends binutils lld
+          sudo apt-get install -y --no-install-recommends binutils lld musl-tools file
       - name: Build actual current PCP OS kernel with no released-media change
         env:
           PCPOS_KERNEL_STAGE: ${{ runner.temp }}/d12-kernel-source
@@ -38,6 +38,12 @@ jobs:
           python3 -I -B PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py \
             PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 > "$RUNNER_TEMP/d12-measurement.txt"
           cat "$RUNNER_TEMP/d12-measurement.txt"
+      - name: Build statically linked native PCP OS external-ELF probe
+        run: |
+          set -euo pipefail
+          sh PCP_OS_Rust/crates/pcpos-kernel/programs/probe/build.sh "$RUNNER_TEMP/d12-probe.elf"
+          file "$RUNNER_TEMP/d12-probe.elf"
+          sha256sum "$RUNNER_TEMP/d12-probe.elf"
       - name: Build disposable QEMU userspace container
         run: |
           set -euo pipefail
@@ -51,6 +57,7 @@ jobs:
             --image pcp-d12-kernel-qemu:"$GITHUB_SHA" \
             --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
             --measurement "$(cat "$RUNNER_TEMP/d12-measurement.txt")" \
+            --probe "$RUNNER_TEMP/d12-probe.elf" \
             --source-head "$(git rev-parse HEAD)" \
             --out "$RUNNER_TEMP/d12-kernel-oci" \
             --guest-timeout 160
