@@ -65,8 +65,8 @@ jobs:
           PCPOS_KERNEL_STAGE="$RUNNER_TEMP/d13-network-kernel-stage" \
             PCPOS_KERNEL_FEATURES=guest-ethernet \
             sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
-          cargo build --locked --release --target x86_64-unknown-none \
-            --manifest-path apps/surfbird/guest/Cargo.toml --features tcp-ip
+          (cd apps/surfbird/guest && \
+            cargo build --locked --release --target x86_64-unknown-none --features tcp-ip)
       - name: Independent repository Surfbird allowed-Ethernet reference harness
         run: |
           mkdir -p "$RUNNER_TEMP/d13-reference"
@@ -106,8 +106,8 @@ jobs:
           PCPOS_KERNEL_STAGE="$RUNNER_TEMP/d13-serial-kernel-stage" \
             PCPOS_KERNEL_FEATURES=game-link \
             sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
-          cargo build --locked --release --target x86_64-unknown-none \
-            --manifest-path apps/surfbird/guest/Cargo.toml
+          (cd apps/surfbird/guest && \
+            cargo build --locked --release --target x86_64-unknown-none)
           mkdir -p "$RUNNER_TEMP/d13-serial-reference"
           cd apps/surfbird/guest
           python3 replay.py ../../../PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
@@ -166,8 +166,8 @@ jobs:
           PCPOS_KERNEL_STAGE="$RUNNER_TEMP/d13-historic-stage" \
             PCPOS_KERNEL_FEATURES=guest-ethernet \
             sh historic/PCP_OS_Rust/crates/pcpos-kernel/run.sh build
-          cargo build --locked --release --target x86_64-unknown-none \
-            --manifest-path historic/apps/surfbird/guest/Cargo.toml --features tcp-ip
+          (cd historic/apps/surfbird/guest && \
+            cargo build --locked --release --target x86_64-unknown-none --features tcp-ip)
       - name: Replay unchanged archived Surfbird allowed-network test on current emulator
         run: |
           mkdir -p "$RUNNER_TEMP/d13-historic"
