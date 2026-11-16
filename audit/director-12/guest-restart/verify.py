@@ -137,6 +137,14 @@ def evidence(directory: Path, request: str, measurement: str, attempts: int) -> 
         serial = serial_path.read_bytes()
         stderr = stderr_path.read_bytes()
         txt = serial.decode("utf-8")
+        expected_line = (
+            f"command line: /kernel.elf32 then=off image={measurement} "
+            f"d12_ticket={request} d12_attempt={n}"
+        )
+        command_lines = [line for line in txt.splitlines() if line.startswith("command line: ")]
+        assert command_lines == [expected_line], (
+            f"attempt {n}: original guest serial is not bound to this synthetic request/attempt"
+        )
         assert "PCP OS kernel" in txt, f"attempt {n} lacks guest kernel banner"
         assert "ALL SELF-TESTS PASS." in txt, f"attempt {n} lacks successful kernel self-tests"
         assert "measured; equal to the value the loader named" in txt
@@ -146,6 +154,7 @@ def evidence(directory: Path, request: str, measurement: str, attempts: int) -> 
         assert len(heads) == 1 and int(heads[0][0]) > 6
         entries.append({
             "attempt": n, "native_kernel_boot": True,
+            "native_command_line_bound_to_request": True,
             "qemu_reported_exit_code": 33,
             "serial_bytes": len(serial), "serial_sha256": sha(serial),
             "stderr_sha256": sha(stderr),
