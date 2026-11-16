@@ -111,8 +111,8 @@ def visit(kernel, measured, root, width, height, vram, font, timeout):
         def screenshot(name):
             path = root / (name + ".ppm")
             monitor.execute("screendump", filename=str(path))
-            size, pixels = reg.read_ppm(path)
-            return path, (size, pixels)
+            width, height, pixels = reg.read_ppm(path)
+            return path, ((width, height), pixels)
         try:
             greeting = monitor.receive(time.monotonic() + timeout)
             if "QMP" not in greeting:
