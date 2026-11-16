@@ -624,6 +624,66 @@ def completed_journal_wrong_attempt_serial(image: str, kernel: Path, measurement
             invoke(["docker", "rm", "-f", name], checked=False)
 
 
+def concurrent_duplicate_admission(image: str, kernel: Path, measurement: str, evidence_dir: Path):
+    # A second container with the same logical ticket must not mistake
+    # the *other still-running* QEMU owner for a crashed incomplete attempt.
+    # This is same-host Linux cooperation, not protection from hostile peers.
+    with tempfile.TemporaryDirectory(prefix="d12-concurrent-request-") as tmp:
+        directory = Path(tmp)
+        os.chmod(directory, 0o777)
+        request = secrets.token_hex(12)
+        name_a = "d12-active-owner-" + secrets.token_hex(5)
+        name_b = "d12-second-owner-" + secrets.token_hex(5)
+        first_started = False
+        second_started = False
+        try:
+            start(image, name_a, directory, kernel, measurement, request, fault=False, hold=True)
+            first_started = True
+            original = None
+            def first_qemu_is_live():
+                nonlocal original
+                original = qemu_child(name_a)
+                return original is not None and (directory / "start-1.txt").exists()
+            await_true(first_qemu_is_live, "first real QEMU OS process with START marker", 15)
+            assert not original_process_no_longer_running(original)
+            assert inspect(name_a)["State"]["Running"]
+            assert not (directory / "attention.txt").exists()
+
+            policy_b = start(image, name_b, directory, kernel, measurement, request, fault=False)
+            second_started = True
+            await_true(lambda: not inspect(name_b)["State"]["Running"], "second controller stopped", 12)
+            info_b = inspect(name_b)
+            assert info_b["State"]["ExitCode"] == 0 and info_b["RestartCount"] == 0
+            assert inspect(name_a)["State"]["Running"]
+            assert not original_process_no_longer_running(original), (
+                "the still-healthy first QEMU process should not be stopped by a contender"
+            )
+            assert not (directory / "attention.txt").exists(), (
+                "a second controller falsely quarantined the first genuinely live "
+                "QEMU assignment as INDETERMINATE"
+            )
+            assert len(list(directory.glob("start-*.txt"))) == 1
+            assert not (directory / "start-2.txt").exists()
+            assert len(list(directory.glob("qemu-*.serial"))) == 1
+            return {
+                "duplicate_same_ticket_controller": True,
+                "concurrent_original_qemu_os_identity": original,
+                "first_qemu_still_running": True,
+                "contender_exited_without_automatic_restart": True,
+                "contender_could_not_poison_live_owner": True,
+                "no_duplicate_guest_launch": True,
+                "contender_policy": policy_b,
+            }
+        finally:
+            if first_started:
+                invoke(["docker", "kill", "--signal", "KILL", name_a], checked=False)
+            if second_started:
+                invoke(["docker", "rm", "-f", name_b], checked=False)
+            if first_started:
+                invoke(["docker", "rm", "-f", name_a], checked=False)
+            capture(directory, evidence_dir / "concurrent", 1)
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--image", required=True)
@@ -671,6 +731,9 @@ def main() -> int:
             a.image, kernel, a.measurement, evidence_dir
         )
         result["terminal_complete_wrong_attempt"] = completed_journal_wrong_attempt_serial(
+            a.image, kernel, a.measurement, evidence_dir
+        )
+        result["simultaneous_same_request"] = concurrent_duplicate_admission(
             a.image, kernel, a.measurement, evidence_dir
         )
         result["status"] = "OBSERVED_IN_TEST_SCOPE"
