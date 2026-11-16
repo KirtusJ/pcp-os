@@ -1,5 +1,5 @@
 //! Host-side ABI and pure-value tests. Nothing here invokes firmware.
-use core::{ffi::c_void, mem::{offset_of, size_of}, ptr};
+use core::mem::{offset_of, size_of};
 use pcpos_gop_probe::{
     BootServices, GraphicsOutput, GraphicsOutputMode, Guid, ModeInformation,
     PixelBitmask, SimpleTextOutput, Snapshot, SystemTable, BS_FREE_POOL,
