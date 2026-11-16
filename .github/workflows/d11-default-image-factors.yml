@@ -1,0 +1,99 @@
+name: D11 factor no-feature register image differences
+
+on:
+  push:
+    branches:
+      - director-11/register-default-build-parity-20261116
+    paths:
+      - "os-docs/register-forensics/prepare_identity_variants.py"
+      - "os-docs/register-forensics/compare_source_variants.py"
+      - ".github/workflows/d11-default-image-factors.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nofeature_source_matrix:
+    name: Fixed-path no-feature source interventions and section digests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out independent D11 case generators
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Check out exact D10 production #233 source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: 74c4d4a9934ad68e1b5be380971bf3377a464c6d
+          path: baseline
+      - name: Check out exact D10 opt-in corrected #240 source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: 9fa9819103a67b0f2b124991a2d0d88b4c64b755
+          path: diagnostic
+      - name: Pin sources, toolchain and dependencies
+        run: |
+          set -euo pipefail
+          test "$(git -C baseline rev-parse HEAD)" = 74c4d4a9934ad68e1b5be380971bf3377a464c6d
+          test "$(git -C diagnostic rev-parse HEAD)" = 9fa9819103a67b0f2b124991a2d0d88b4c64b755
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends binutils lld
+          rustup target add x86_64-unknown-none
+          rustup component add rust-src
+      - name: Seven clean no-feature source intervention builds, same source and compiler paths
+        env:
+          REPRO_STAGE: ${{ runner.temp }}/d11-source-attribution-stage
+        run: |
+          set -euo pipefail
+          mkdir -p witness
+          rustc -V > witness/rustc.txt
+          cargo -V > witness/cargo.txt
+          echo "Fixed staging: $REPRO_STAGE"
+          for variant in base_1 base_2 cargo_only cfg_original_arm cfg_double_arm cfg_double_arm_inert_fn d10_default; do
+            echo "BEGIN_VARIANT=$variant"
+            python3 os-docs/register-forensics/prepare_identity_variants.py \
+              --baseline baseline --diagnostic diagnostic --target case --case "$variant" \
+              > "witness/$variant.source.json"
+            rm -rf "$REPRO_STAGE"
+            export PCPOS_KERNEL_STAGE="$REPRO_STAGE"
+            unset PCPOS_KERNEL_FEATURES || :
+            sh case/PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+            elf=case/PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
+            sha256sum "$elf" | awk '{print $1}' > "witness/$variant.elf_sha256"
+            python3 case/PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py "$elf" \
+              > "witness/$variant.measurement"
+            objcopy --only-section=.text -O binary "$elf" "witness/$variant.text.bin"
+            objcopy --only-section=.rodata -O binary "$elf" "witness/$variant.rodata.bin"
+            sha256sum "witness/$variant.text.bin" | awk '{print $1}' > "witness/$variant.text_sha256"
+            sha256sum "witness/$variant.rodata.bin" | awk '{print $1}' > "witness/$variant.rodata_sha256"
+            wc -c < "witness/$variant.text.bin" | tr -d ' ' > "witness/$variant.text_size"
+            wc -c < "witness/$variant.rodata.bin" | tr -d ' ' > "witness/$variant.rodata_size"
+            rm "witness/$variant.text.bin" "witness/$variant.rodata.bin"
+            printf 'VARIANT=%s ELF=%s CODE=%s TEXT=%s RODATA=%s\n' \
+              "$variant" "$(cat witness/$variant.elf_sha256)" \
+              "$(cat witness/$variant.measurement)" \
+              "$(cat witness/$variant.text_sha256)" "$(cat witness/$variant.rodata_sha256)"
+          done
+          python3 os-docs/register-forensics/compare_source_variants.py witness
+      - name: Preserve evidence and adverse comparisons, no binaries or task data
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: d11-default-image-source-factor-matrix
+          path: |
+            witness/*.source.json
+            witness/*.elf_sha256
+            witness/*.measurement
+            witness/*.text_sha256
+            witness/*.rodata_sha256
+            witness/*.text_size
+            witness/*.rodata_size
+            witness/source-factors-result.json
+            witness/rustc.txt
+            witness/cargo.txt
+          if-no-files-found: warn
+          retention-days: 14
