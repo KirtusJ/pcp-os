@@ -30,7 +30,7 @@ builds `PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32` using
 code and read-only-data measurement comes from the kernel's released
 `tools/measure.py`, applied to that file rather than a model's assertion.
 
-The host-side [verify.py](verify.py) invokes the **same QEMU binary** in three
+The host-side [verify.py](verify.py) invokes the **same QEMU binary** in four
 separate, short-lived containers with exact configuration. These controls
 preserve original serial output and exit codes, not just generated findings.
 
@@ -43,11 +43,20 @@ preserve original serial output and exit codes, not just generated findings.
 - **Omitted image value:** demand that the native kernel explain the missing
   comparison. Self-tests may pass, but that provides no external image pin,
   illustrating why successful boot alone cannot satisfy the image criterion.
+- **Externally loaded no-grant program:** compile the *existing* kernel test
+  `programs/probe/probe.c` to a static PIE ELF64 on the Linux CI builder.
+  QEMU hands the file to the PCP OS loader as `probe.elf`; the program is
+  selected using `auto=probe.elf grant=none` (exact module name). Demand a
+  native run of the program, `probe: 0 failure(s)`, verified image pin,
+  `ALL SELF-TESTS PASS`, and a full native kernel register head. This
+  tests one real external application under its restricted capabilities,
+  *not* a Qwen service or a generally complete Linux ABI.
 
 The OCI runtime uses no network, a read-only root filesystem, unprivileged
 UID/GID 65534, no new privileges, zero Linux capabilities, an isolated
 temporary filesystem, PID and memory limits and TCG (not host KVM). It mounts
-only the single test kernel image read-only. A pass is limited to this host
+only the test kernel image and a compiled optional probe ELF as read-only
+inputs. A pass is limited to this host
 kernel, Docker image, QEMU version, builder, selected flags and time window.
 A resource-limit configuration string is not by itself proof of exhaustive
 enforcement against arbitrary adversarial code.
@@ -72,3 +81,24 @@ control, valid and invalid model interactions, and an independent
 periodic ChatGPT automations do not provide those facts for a new runtime.
 The proposed next step must preserve actual adverse observations and never
 treat a local self-test or successful QEMU exit as release authority.
+
+## Evidence history (16 November 2026, B.C. PCT)
+
+The initial three-arm [Actions 43965271297](https://github.com/KirtusJ/pcp-os/actions/runs/43965271297)
+passed with observed native kernel boot/refusal behavior and a seven-file
+raw-serial artifact. A later **red** [Actions 43966709674](https://github.com/KirtusJ/pcp-os/actions/runs/43966709674)
+added an external probe but mistakenly requested `auto=probe` although the
+actual native serial reported `file from the loader: probe.elf`. The kernel
+properly refused to run a nonexistent name and stopped with a nonzero status;
+this was a **harness selection defect**, not an observed fault in the native
+loader. The failed run and its nine-file serial artifact are retained.
+
+After switching to the exact observed `auto=probe.elf` selection, the
+[four-arm Actions 43967270609](https://github.com/KirtusJ/pcp-os/actions/runs/43967270609)
+passed on draft head `bd4fb9e5ba473d47dfd196fbf3056ec311c9d6dc`.
+Its external no-grant guest printed `probe: 0 failure(s)`, the kernel verified
+its own image, reported 47 register events and exited through the diagnostic
+device with code 33. The original valid, bad and missing-pin controls also
+ran and retained their own native serials. This exact evidence belongs to its
+recorded CI checkout and measured image, not to an arbitrary rebuild or
+production deployment.
