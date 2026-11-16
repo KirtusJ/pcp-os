@@ -1,4 +1,6 @@
 """Check that incomplete, stale and unauthenticated test observations cannot pass."""
+import hashlib
+import json
 from pathlib import Path
 import tempfile
 import time
@@ -72,6 +74,7 @@ class WorkerReadback(unittest.TestCase):
                 m.node, m.position, m.child = 1, 0, Mock()
                 m.child.poll.return_value = None
                 m.serial = Path(d) / "serial"
+                m.serial_digest = hashlib.sha256()
                 clock = 0
 
                 def advance(_):
@@ -88,6 +91,43 @@ class WorkerReadback(unittest.TestCase):
                     else:
                         self.assertEqual(m.through_ready(limit, idle), b"".join(updates).decode())
                         self.assertEqual(m.position, m.serial.stat().st_size)
+
+    def test_two_rounds_can_be_rechecked_after_more_serial_arrives(self):
+        with tempfile.TemporaryDirectory() as d:
+            run = Path(d)
+            m = object.__new__(sup.Machine)
+            m.node, m.position, m.response_timeout = 1, 0, 2
+            m.serial_digest = hashlib.sha256()
+            m.child = Mock()
+            m.child.poll.return_value = None
+            m.live = Mock()
+            m.serial = run / "1-1.serial"
+            m.serial.write_bytes(b"READY 1\r\n")
+            m.through_ready(time.monotonic() + 2)
+            events = []
+
+            def log(event, **fields):
+                events.append({"event": event, **fields})
+
+            for cycle, prompt in enumerate((2, 5), 1):
+                reply = f"CHALLENGE {prompt}\r\nLM tokens 10 11 12\r\nREADY 1\r\n".encode()
+                def send(*args, **kwargs):
+                    with m.serial.open("ab") as stream:
+                        stream.write(reply)
+                m.command = send
+                row = m.challenge(prompt, self.oracle)
+                sup.record_cycle(run, {"cycle": cycle, "nodes": [row]}, log)
+
+            with m.serial.open("ab") as stream:
+                stream.write(b"more bytes")
+            for event in events:
+                payload = (json.dumps(event["record"], indent=2) + "\n").encode()
+                self.assertEqual(sup.sha(payload), event["sha256"])
+                row = event["record"]["nodes"][0]
+                with (run / row["serial_file"]).open("rb") as stream:
+                    self.assertEqual(sup.sha(stream.read(row["serial_bytes"])), row["serial_sha256"])
+            self.assertNotEqual(events[0]["sha256"], events[1]["sha256"])
+            self.assertEqual((run / "readback.json").read_bytes(), payload)
 
     def test_reject_different_machine_or_stopped_emulator(self):
         m = object.__new__(sup.Machine)

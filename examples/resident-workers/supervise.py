@@ -41,10 +41,13 @@ def sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def snapshot(path, contents):
-    temp = path.with_suffix(".tmp")
-    temp.write_text(json.dumps(contents, indent=2) + "\n")
-    temp.replace(path)
+def record_cycle(run, record, log):
+    # The event retains the round after later rounds replace the latest snapshot.
+    payload = (json.dumps(record, indent=2) + "\n").encode("utf-8")
+    temp = run / "readback.tmp"
+    temp.write_bytes(payload)
+    log("readback", cycle=record["cycle"], sha256=sha(payload), record=record)
+    temp.replace(run / "readback.json")
 
 
 class Machine:
@@ -56,6 +59,7 @@ class Machine:
         self.uuid = str(uuid.uuid4())
         self.serial = run / f"{node}-{attempt}.serial"
         self.position = 0
+        self.serial_digest = hashlib.sha256()
         self.qmp_data = b""
         self.sequence = 0
         self.last_command = "greeting"
@@ -155,6 +159,7 @@ class Machine:
                         require(b" ended FAILED" not in data and b" ended DONE" not in data,
                                 f"guest {self.node}: worker exited")
                         if data.endswith(end_marker):
+                            self.serial_digest.update(raw)
                             self.position = size
                             return data.decode("ascii")
             if idle_timeout is not None and time.monotonic() - last_change >= idle_timeout:
@@ -171,7 +176,8 @@ class Machine:
         tokens = " ".join(str(t) for t in oracle[prompt])
         require(reply == f"CHALLENGE {prompt}\nLM tokens {tokens}\nREADY {self.node}\n",
                 f"guest {self.node}: response mismatch for prompt {prompt}")
-        return {"prompt": prompt, "tokens": oracle[prompt], "serial_sha256": sha(self.serial.read_bytes())}
+        return {"prompt": prompt, "tokens": oracle[prompt], "serial_file": self.serial.name,
+                "serial_bytes": self.position, "serial_sha256": self.serial_digest.hexdigest()}
 
 
 def verify_start(machine, serial, parent, incoming, salt, kernel_hash, elf_hash, oracle, deadline=None):
@@ -322,8 +328,7 @@ def supervise(opt, log):
                             break
                     else:
                         cycle += 1
-                        snapshot(run / "readback.json", dict(time=stamp(), cycle=cycle, repairs=repairs, nodes=rows))
-                        log("readback", cycle=cycle, sha256=sha((run / "readback.json").read_bytes()))
+                        record_cycle(run, dict(time=stamp(), cycle=cycle, repairs=repairs, nodes=rows), log)
                         if opt.once:
                             return
                         time.sleep(opt.interval)
