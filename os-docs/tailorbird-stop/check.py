@@ -5,6 +5,7 @@ from contextlib import contextmanager
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 import struct
 import subprocess
@@ -101,6 +102,49 @@ def checkpoint(disk, offset, expected_source=None):
             "store_sha256": hashlib.sha256(region).hexdigest()}
 
 
+def desktop_startup(data, launch):
+    """Return the cursor at the completed handshake, or None while records are pending."""
+    seen = set()
+    ready = None
+    for record in re.finditer(rb"^([^\r\n]*)\r?\n", data, re.MULTILINE):
+        line = record[1]
+        if line.startswith(b"protections:"):
+            require(re.fullmatch(rb"protections: paging (?:true|false), supervisor write protection "
+                                 rb"(?:true|false), no-execute (?:true|false), long mode true", line),
+                    "invalid x86-64 protections record")
+            name, needs = "protections", set()
+        elif line.startswith(b"Persistent application store mounted:"):
+            require(re.fullmatch(rb"Persistent application store mounted: [0-9]+ file\(s\)", line),
+                    "invalid store mount record")
+            name, needs = "mount", {"protections"}
+        elif line.startswith(b"starting "):
+            require(line == launch, "unexpected payload name, size or digest")
+            name, needs = "launch", {"mount"}
+        elif line.startswith(b"Qwen worker admitted"):
+            match = re.fullmatch(rb"Qwen worker admitted in separate address space: UI pid ([0-9]+), "
+                                 rb"worker pid ([0-9]+), model file and message endpoint", line)
+            require(match and int(match[1]) != int(match[2]), "invalid Qwen worker admission")
+            name, needs = "admission", {"launch"}
+        elif line.startswith(b"Qwen worker execution ended:"):
+            require(line == b"Qwen worker execution ended: Exited(3)", "unexpected Qwen worker exit")
+            name, needs = "exit", {"admission"}
+        elif line.startswith(b"TAILORBIRD MCP CONNECTED"):
+            require(re.fullmatch(rb"TAILORBIRD MCP CONNECTED(?: [0-9]{4}-[0-9]{2}-[0-9]{2})?", line),
+                    "invalid MCP connection record")
+            name, needs = "connection", {"admission"}
+        elif line == b"QWEN READY":
+            raise ValueError("model-ready stream in model-unavailable test")
+        elif line.startswith(b"Tailorbird ended ") and ready is None:
+            raise ValueError("Tailorbird ended before desktop startup completed")
+        else:
+            continue
+        require(name not in seen and needs <= seen, f"duplicate or out-of-order desktop record: {name}")
+        seen.add(name)
+        if ready is None and {"exit", "connection"} <= seen:
+            ready = record.end() - 1
+    return ready
+
+
 class Guest:
     def __init__(self, process, serial, timeout):
         self.process = process
@@ -158,15 +202,19 @@ class Guest:
             time.sleep(.25)
         raise TimeoutError(f"{stage}: no matching task row displaying {expected!r}")
 
-    def enter_desktop(self):
-        self.wait(b"long mode true")
-        self.wait(b"Persistent application store mounted:")
-        self.wait(b"TAILORBIRD MCP CONNECTED")
-        # Worker exit and MCP initialization are independent startup events.
-        cursor = self.cursor
-        self.cursor = 0
-        self.wait(b"Qwen worker execution ended: Exited(3)")
-        self.cursor = max(self.cursor, cursor)
+    def enter_desktop(self, launch):
+        deadline = time.monotonic() + self.timeout
+        while time.monotonic() < deadline:
+            if self.serial.exists():
+                ready = desktop_startup(self.serial.read_bytes(), launch)
+                if ready is not None:
+                    self.cursor = ready
+                    return
+            code = self.process.poll()
+            if code is not None:
+                raise RuntimeError(f"{self.serial.name}: QEMU exited {code} during desktop startup")
+            time.sleep(.1)
+        raise TimeoutError(f"{self.serial.name}: incomplete model-unavailable desktop startup")
 
 
 @contextmanager
@@ -184,6 +232,8 @@ def boot(args, output, name, pins, guid, results):
                 "-device", "virtio-blk-pci,drive=os,disable-modern=on", "-kernel", "kernel32.elf",
                 "-initrd", "Tailorbird,qwen.elf", "-serial", f"file:{serial.name}", "-append",
                 f"auto=Tailorbird tailor_ui={pins['tailorbird']} userdisk={guid.bytes_le.hex()} q={pins['qwen-worker']}"]
+    launch = (f"starting Tailorbird ({(output / 'Tailorbird').stat().st_size} bytes, "
+              f"SHA-256 {pins['tailorbird']})").encode("ascii")
     record = {"name": name, "uuid": identity}
     results["boots"].append(record)
     with stderr.open("xb") as errors:
@@ -191,7 +241,7 @@ def boot(args, output, name, pins, guid, results):
                                    stdout=subprocess.DEVNULL, stderr=errors)
     try:
         guest = Guest(process, serial, args.timeout)
-        guest.enter_desktop()
+        guest.enter_desktop(launch)
         yield guest
     finally:
         record["stopped_by_harness"] = process.poll() is None
@@ -206,6 +256,8 @@ def boot(args, output, name, pins, guid, results):
         record["exit_code"] = process.returncode
         if serial.exists():
             record["serial_sha256"] = file_hash(serial)
+
+    require(desktop_startup(serial.read_bytes(), launch) is not None, "incomplete final desktop transcript")
 
 
 def check_trace(serial, expected):

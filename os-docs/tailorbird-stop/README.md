@@ -29,6 +29,8 @@ The runner opens the factory image read-only. It copies the GPT and application 
 3. A second QEMU process opens the same disk, receives a stale approval, and reads the original application after an explicit run. The generation, decoded source, and hash of the store marker and both complete slots must match the approved checkpoint across Stop and the cold boot.
 4. A new replacement with a queued run receives fresh approval. The runner requires an edit confirmation, a second application read on this boot, and a higher committed generation containing exactly `print replacement`.
 
+Each boot must mount the store, launch the exact Tailorbird binary named by the manifest, and admit the model worker. The worker’s `Exited(3)` and the MCP connection can arrive in either order after admission. The runner checks the complete serial again after QEMU exits so a later relaunch cannot supply another process’s evidence.
+
 A normal invocation writes `result.json`, serial transcripts, and QEMU diagnostics. The runner removes the temporary binaries and sparse disk on exit. A failed receipt, digest check, or deadline produces a nonzero exit. Inspect the first failing event and the matching transcript before rerunning. A harness-directed QEMU termination at a completed checkpoint appears separately in the result from the guest's worker exit.
 
 The keyboard test uses the QEMU monitor's `sendkey` command. See the [QEMU monitor reference](https://www.qemu.org/docs/master/system/monitor.html).
