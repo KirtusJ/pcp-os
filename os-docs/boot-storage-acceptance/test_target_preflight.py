@@ -136,6 +136,52 @@ class PreflightTests(unittest.TestCase):
             replace(p, uefi_media_id=0, volume_marker="")).state,
             PreflightState.ELIGIBLE_FOR_HOST_RECHECK)
 
+    def test_boolean_epoch_cannot_pass_for_integer_one(self):
+        inv, p = example()
+        self.assert_hold(replace(inv, epoch=True), p)
+
+    def test_float_image_length_cannot_equal_int_bytes(self):
+        inv, p = example()
+        self.assert_hold(inv, replace(p, image_bytes=float(p.image_bytes)))
+
+    def test_missing_digest_type_returns_hold_not_exception(self):
+        inv, p = example()
+        self.assert_hold(inv, replace(p, image_sha256=None))
+
+    def test_boolean_generation_cannot_pass_integer_one(self):
+        inv, p = example()
+        d = replace(inv.devices[0], generation=True)
+        self.assert_hold(replace(inv, devices=(d,)), replace(p, generation=1))
+
+    def test_float_capacity_cannot_equal_integer_sector_count(self):
+        inv, p = example()
+        d = replace(inv.devices[0], capacity_512=float(CAP))
+        self.assert_hold(replace(inv, devices=(d,)), p)
+
+    def test_string_false_flush_flag_is_not_true(self):
+        inv, p = example()
+        d = replace(inv.devices[0], flush_supported="false")
+        self.assert_hold(replace(inv, devices=(d,)), p)
+
+    def test_string_true_present_flag_cannot_activate_device(self):
+        inv, p = example()
+        d = replace(inv.devices[0], present="true")
+        self.assert_hold(replace(inv, devices=(d,)), p)
+
+    def test_nonstring_volume_marker_holds(self):
+        inv, p = example()
+        d = replace(inv.devices[0], volume_marker=None)
+        self.assert_hold(replace(inv, devices=(d,)), p)
+
+    def test_boolean_plan_capacity_cannot_pass_integer_one(self):
+        inv, p = example()
+        self.assert_hold(inv, replace(p, capacity_512=True))
+
+    def test_raw_string_condition_cannot_masquerade_as_enum(self):
+        inv, p = example()
+        d = replace(inv.devices[0], condition="full-zero-scan-reported")
+        self.assert_hold(replace(inv, devices=(d,)), p)
+
     def test_capacity_changed(self):
         inv, p = example()
         self.assert_hold(replace(inv,devices=(replace(inv.devices[0],capacity_512=CAP+1),)),p)
