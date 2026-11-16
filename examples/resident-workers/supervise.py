@@ -146,6 +146,12 @@ class Machine:
                         length = size
                         last_change = time.monotonic()
                         data = raw.replace(b"\r\n", b"\n")
+                        # A failed boot never launches the worker. Preserve the kernel's
+                        # own verdict before an idle timeout can reclassify it as transport loss.
+                        failure = re.search(rb"^(?:  FAIL [^\n]+|[1-9]\d* SELF-TEST\(S\) FAILED)\n", data, re.M)
+                        if failure:
+                            detail = failure.group().strip().decode("ascii", errors="replace")
+                            raise RuntimeError(f"guest {self.node}: kernel self-test: {detail}")
                         require(b" ended FAILED" not in data and b" ended DONE" not in data,
                                 f"guest {self.node}: worker exited")
                         if data.endswith(end_marker):

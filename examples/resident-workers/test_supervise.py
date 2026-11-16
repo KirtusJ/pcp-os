@@ -105,6 +105,19 @@ class WorkerReadback(unittest.TestCase):
         with self.assertRaisesRegex(ConnectionError, "guest 12: query-uuid: broken pipe; emulator exit status -9"):
             m.command("query-uuid")
 
+    def test_failed_kernel_boot_is_evidence_even_without_ready(self):
+        with tempfile.TemporaryDirectory() as d:
+            m = object.__new__(sup.Machine)
+            m.node, m.position, m.child = 2, 0, Mock()
+            m.child.poll.return_value = None
+            m.serial = Path(d) / "serial"
+            for record in (b"  FAIL keyboard idle bound", b"1 SELF-TEST(S) FAILED"):
+                with self.subTest(record=record):
+                    m.serial.write_bytes(b"long mode true\r\n" + record + b"\r\n")
+                    with self.assertRaisesRegex(RuntimeError, "guest 2: kernel self-test") as caught:
+                        m.through_ready(time.monotonic() + 2)
+                    self.assertIn(record.decode().strip(), str(caught.exception))
+
     def test_guest_loss_during_collection_is_visible(self):
         m = object.__new__(sup.Machine)
         m.node, m.position, m.child = 7, 0, Mock()
