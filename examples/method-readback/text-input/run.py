@@ -9,6 +9,7 @@ import re
 import struct
 import subprocess
 import sys
+import uuid
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
@@ -53,10 +54,10 @@ def build(out, model, tokenizer, reference):
 def scores(lines):
     require(len(lines) == 32 and all(re.fullmatch(r"LOGITS(?: [0-9a-f]{8}){16}", line) for line in lines),
             "expected all 512 hexadecimal float32 scores")
-    bits = "".join("".join(line.split()[1:]) for line in lines)
-    values = struct.unpack(">512f", bytes.fromhex(bits))
+    raw = bytes.fromhex(" ".join(line[7:] for line in lines))
+    values = struct.unpack(">512f", raw)
     require(all(math.isfinite(value) for value in values), "nonfinite next-token score")
-    return values, bits
+    return values
 
 
 def maximum_error(a, b):
@@ -70,7 +71,8 @@ def boot(case, executable, kernel, measure, payload, offset, length, expected, s
     if payload is not None:
         (case / "core-spec.md").write_bytes(payload)
         modules += ",core-spec.md"
-    cmd = [qemu]
+    identity = str(uuid.uuid4())
+    cmd = [qemu, "-uuid", identity]
     if firmware is not None:
         cmd.extend(["-L", firmware.resolve()])
     cmd.extend(["-machine", "microvm,isa-serial=on,pic=on,pit=on,rtc=on", "-device", "i8042",
@@ -98,13 +100,10 @@ def boot(case, executable, kernel, measure, payload, offset, length, expected, s
     finish = ends[0]
     kind = "DONE" if status == 0 else "FAILED"
     require(re.match(rf"^text\.elf ended {kind}: exit {status}\b", after[finish]), f"{case.name}: guest exit")
-    record = {"exit": status, "serial_sha256": sha(data), "module_sha256": sha(payload) if payload is not None else None}
+    record = {"guest_uuid": identity, "exit": status, "serial_sha256": sha(data), "module_sha256": sha(payload) if payload is not None else None}
     output = after[:finish]
     require(output[:len(expected)] == expected, f"{case.name}: guest excerpt or token mismatch")
-    if status == 0:
-        record["guest_logits"], record["guest_score_bits"] = scores(output[len(expected):])
-    else:
-        require(not output, f"{case.name}: unexpected model output before failure")
+    require(output == expected, f"{case.name}: unexpected guest output")
     return record
 
 
@@ -120,52 +119,23 @@ def run(args):
     out = args.out.resolve()
     out.mkdir()
     build(out, model, tokenizer, reference)
-    first, second = SENTENCES
-    require(len(first) == len(second) and all(source.count(s) == 1 for s in SENTENCES), "unexpected source excerpts")
-    offsets = [source.index(s) for s in SENTENCES]
-    length = len(first)
-    records = {}
-    for name, payload, offset, excerpt, code in [
-        ("original", source, offsets[0], first, 0),
-        ("alternate", source, offsets[1], second, 0),
-        ("same-offset-control", source.replace(first, second), offsets[0], second, 0),
-        ("missing", None, offsets[0], None, 2),
-        ("truncated", source[:offsets[0] + length - 1], offsets[0], None, 4),
-    ]:
-        expected = []
-        record = {"offset": offset, "length": length}
-        if excerpt is not None:
-            ref = subprocess.check_output([out / "oracle", model, tokenizer, excerpt.decode("ascii")], text=True)
-            inputs, predicted, *reference_logits = ref.splitlines()
-            require(re.fullmatch(r"INPUT 1(?: \d+)+", inputs) and re.fullmatch(r"OUTPUT(?: \d+){3}", predicted),
-                    "unexpected oracle output")
-            record["upstream_logits"], _ = scores(reference_logits)
-            expected = ["EXCERPT " + excerpt.decode("ascii"), inputs, predicted]
-            record.update(text=excerpt.decode("ascii"), excerpt_sha256=sha(excerpt),
-                          tokens=list(map(int, inputs.split()[1:])), prediction=list(map(int, predicted.split()[1:])))
-        record.update(boot(out / name, out / "text.elf", kernel, measure, payload, offset, length,
-                           expected, code, args.qemu, args.firmware))
-        if code == 0:
-            error = maximum_error(record["guest_logits"], record["upstream_logits"])
-            record["max_abs_oracle_error"] = error
-            require(error <= 0.001, f"{name}: oracle discrepancy {error}")
-        records[name] = record
-        print(name, json.dumps({k: v for k, v in record.items() if not k.endswith(("_logits", "_bits"))}), flush=True)
-    evidence = dict(manifest=MANIFEST, core=row["sha256"], model=CHECKPOINT, tokenizer=TOKENIZER,
-                    upstream=REFERENCE, kernel_sha256=sha(kernel.read_bytes()), measured_kernel=measure,
-                    executable_sha256=sha((out / "text.elf").read_bytes()), cases=records)
-    original, alternate, control = (records[k] for k in ("original", "alternate", "same-offset-control"))
-    for field in ("tokens", "prediction", "guest_score_bits", "upstream_logits"):
-        require(alternate[field] == control[field], f"same text at different offset changed {field}")
-    delta = [abs(x - y) for x, y in zip(original["guest_logits"], alternate["guest_logits"], strict=True)]
-    index = max(range(len(delta)), key=delta.__getitem__)
-    upstream_delta = abs(original["upstream_logits"][index] - alternate["upstream_logits"][index])
-    comparison = dict(greedy_changed=original["prediction"] != alternate["prediction"],
-                      token_index=index, max_guest_logit_change=delta[index], upstream_change_at_index=upstream_delta,
-                      logit_change_resolved=min(delta[index], upstream_delta) > 0.002)
-    evidence["comparison"] = comparison
-    (out / "results.json").write_text(json.dumps(evidence, indent=2) + "\n")
-    print("comparison", json.dumps(comparison), flush=True)
+    prompt = bytes.fromhex(args.prompt_hex)
+    require(0 < len(prompt) <= 92 and all(32 <= byte < 127 for byte in prompt), "prompt outside declared limits")
+    case = "participant"
+    subject = prompt.decode("ascii")
+    oracle = subprocess.check_output([out / "oracle", model, tokenizer, subject], text=True).splitlines()
+    require(len(oracle) == 4 and oracle[3].startswith("DECODED_HEX "), "oracle decode")
+    (out / "oracle.txt").write_text("\n".join(oracle) + "\n")
+    evidence = boot(out / case, out / "text.elf", kernel, measure, prompt, 0, len(prompt),
+                    ["EXCERPT " + subject, *oracle[:3]], 0, args.qemu, args.firmware)
+    reply = bytes.fromhex(oracle[3].removeprefix("DECODED_HEX "))
+    results = dict(prompt=subject, prompt_sha256=sha(prompt), model=CHECKPOINT, tokenizer=TOKENIZER,
+                   upstream=REFERENCE, measured_kernel=measure, worker=sha((out / "text.elf").read_bytes()),
+                   input_ids=list(map(int, oracle[0].split()[1:])), output_ids=list(map(int, oracle[1].split()[1:])),
+                   stop=oracle[2].removeprefix("STOP "), decoded_hex=reply.hex(),
+                   decoded_text=reply.decode("utf-8", "backslashreplace"), **evidence)
+    (out / "results.json").write_text(json.dumps(results, indent=2) + "\n")
+    print("participant", json.dumps(results), flush=True)
 
 
 if __name__ == "__main__":
@@ -174,4 +144,5 @@ if __name__ == "__main__":
         parser.add_argument("--" + opt, required=True, type=Path)
     parser.add_argument("--qemu", default="qemu-system-x86_64")
     parser.add_argument("--firmware", type=Path)
+    parser.add_argument("--prompt-hex", required=True)
     run(parser.parse_args())

@@ -9,7 +9,7 @@ use core::fmt::{self, Write};
 #[path = "../../resident-workers/fixture/model.rs"]
 mod model;
 
-const POSITIONS: usize = 96;
+const POSITIONS: usize = 160;
 const VOCAB: &[u8] = include_bytes!(env!("PCPOS_TOKENIZER"));
 static mut CONTEXT: model::Context<POSITIONS> = model::Context::new();
 
@@ -159,12 +159,22 @@ extern "C" fn guest_main(stack: *const usize) -> ! {
     let context = unsafe { &mut *core::ptr::addr_of_mut!(CONTEXT) };
     let mut scores = [0.0; model::VOCAB];
     let [a, b, c] = model.complete(context, &tokens[..count], Some(&mut scores)).unwrap();
-    writeln!(Console, "OUTPUT {a} {b} {c}").unwrap();
-    for chunk in scores.chunks(16) {
-        write!(Console, "LOGITS").unwrap();
-        for score in chunk { write!(Console, " {:08x}", score.to_bits()).unwrap(); }
-        writeln!(Console).unwrap();
+    write!(Console, "OUTPUT").unwrap();
+    let mut next = a;
+    let mut stop = "CAP";
+    for i in 0..48 {
+        write!(Console, " {next}").unwrap();
+        if next == 2 { stop = "EOS"; break; }
+        if i < 47 {
+            next = match i {
+                0 => b,
+                1 => c,
+                _ => model.continue_token(context, next, count + i),
+            };
+        }
     }
+    writeln!(Console).unwrap();
+    writeln!(Console, "STOP {stop}").unwrap();
     exit(0)
 }
 

@@ -1,4 +1,4 @@
-name: Public resident worker Core readback
+name: Director 4 guest application item D5-G1
 
 on:
   pull_request:
@@ -45,7 +45,7 @@ jobs:
           curl --fail --location --retry 3 'https://huggingface.co/karpathy/tinyllamas/resolve/0bd21da7698eaf29a0d7de3992de8a46ef624add/stories260K/stories260K.bin' -o inputs/checkpoint.bin
           curl --fail --location --retry 3 'https://raw.githubusercontent.com/karpathy/llama2.c/350e04fe35433e6d2941dce5a1f53308f87058eb/run.c' -o inputs/run.c
           curl --fail --location --retry 3 'https://huggingface.co/karpathy/tinyllamas/resolve/0bd21da7698eaf29a0d7de3992de8a46ef624add/stories260K/tok512.bin' -o inputs/tok512.bin
-      - name: Exercise the original and Core-reading workers
+      - name: Build the public kernel
         env:
           CARGO_PROFILE_RELEASE_LTO: 'off'
           PCPOS_KERNEL_STAGE: ${{ runner.temp }}/method-worker-kernel
@@ -53,29 +53,21 @@ jobs:
           set -euo pipefail
           kernel=PCP_OS_Rust/crates/pcpos-kernel
           sh "$kernel/run.sh" build
-          python3 examples/method-readback/public-worker.py \
-            --fixture . --fixture-revision "$GITHUB_SHA" \
-            --kernel "$kernel/target/pcpos-kernel.elf32" \
-            --model inputs/checkpoint.bin --reference inputs/run.c \
-            --method adapter/method --out receipts
-      - name: Compare guest inference on actual Core excerpts with upstream llama2.c
+      - name: Deliver the assessor's exact item to one source-built guest
         run: |
           python3 examples/method-readback/text-input/run.py \
             --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
             --model inputs/checkpoint.bin --reference inputs/run.c --tokenizer inputs/tok512.bin \
-            --method adapter/method --out receipts/text-input
+            --method adapter/method --out receipts --prompt-hex 41206e6f74652073617973207468652062656c6c2072616e672e20596f7520646964206e6f7420686561722069742e20576861742063616e20796f75207361792066726f6d20746865206e6f746520616c6f6e653f
       - name: Retain the oracle, serial logs and cohort receipts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: resident-worker-core-readback
+          name: guest-application-D5-G1
           path: |
             receipts/**/*.serial
             receipts/**/*.stderr
-            receipts/**/events.jsonl
-            receipts/**/readback.json
-            receipts/control/oracle.json
-            receipts/inputs.json
-            receipts/text-input/results.json
-          if-no-files-found: warn
+            receipts/results.json
+            receipts/oracle.txt
+          if-no-files-found: error
           retention-days: 14
