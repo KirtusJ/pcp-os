@@ -1,0 +1,34 @@
+[package]
+name = "pcpos-gop-probe"
+version = "0.1.0"
+edition = "2021"
+authors = ["Kirtus Justus"]
+publish = false
+description = "Standalone native UEFI GOP observation probe (not a PCP OS loader)"
+
+[workspace]
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "pcpos-gop-probe"
+path = "src/main.rs"
+test = false
+bench = false
+
+[features]
+default = []
+# DANGEROUS BY DESIGN ON REAL HARDWARE: this opts in to SetMode and restore,
+# only for a disposable emulated GOP fixture. It is never enabled in default CI.
+exercise-mode-switch = []
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+lto = false
+opt-level = "s"
+
+[dependencies]
