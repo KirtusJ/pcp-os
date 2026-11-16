@@ -23,3 +23,19 @@ The host verifies the manifest and Core bytes, then embeds a reference copy in a
 | Exact file supplied with file access denied | DENIED |
 
 All cases reuse the same executable. They measure whether this process read the identified bytes in these boots. A language model receiving the source as input, retrieving a clause or applying it to a task requires separate observation in that model’s configuration.
+
+## Run the public resident worker with Core
+
+The public worker check repeats a complete 24-guest challenge using the original fixture, then links the byte reader into a second copy of the same Rust worker. Both builds use the pinned upstream checkpoint. The original fixture compares its 48 predicted token IDs with an independently compiled C reference. The second executable starts at `core_entry`, reads the separate boot module through EOF and passes the original process stack to the unchanged Rust entry point on a match. A same-length substitution and an absent file must produce different failed process exits before any model output. The same executable then completes a full challenge with the exact Core module attached. The supervisor and its wire protocol are unchanged.
+
+Use the Linux dependencies and two digest-checked inputs in the public fixture instructions. Check out the fixture and the Enterprise adapter at the revisions in the workflow. Build the kernel from the selected checkout and run:
+
+```sh
+sh fixture/PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+python3 examples/method-readback/public-worker.py \
+  --fixture fixture --kernel fixture/PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+  --model inputs/checkpoint.bin --reference inputs/run.c \
+  --method adapter/method --out receipts
+```
+
+The output directory must be new. The traces identify each guest and link its fresh response to the independent oracle. The test verifies process-level access to Core. The transformer still receives indexed prompts. [Public fixture and input pins](https://github.com/KirtusJ/pcp-os/tree/f1d1ec07ccc30dec4a8c54a6b454efec30cc0f6a/examples/resident-workers) · [GNU ld entry points](https://sourceware.org/binutils/docs/ld/Entry-Point.html)
