@@ -111,10 +111,11 @@ def assess_fresh_install(inventory: Inventory, plan: FreshInstallPlan) -> Prefli
         return _hold("duplicate-device-handle-or-path")
     if len(media_ids) != len(set(media_ids)):
         return _hold("duplicate-media-id")
-    candidates = [d for d in inventory.devices if d.present and not d.read_only
-                  and d.transport == FIRST_TRANSPORT]
+    # A second writable block device is ambiguous for the initial narrow
+    # installer profile even if its transport is currently unsupported.
+    candidates = [d for d in inventory.devices if d.present and not d.read_only]
     if len(candidates) != 1:
-        return _hold("first-tier-requires-one-writable-supported-target")
+        return _hold("first-tier-requires-one-writable-target")
     selected = [d for d in inventory.devices if d.handle == plan.handle]
     if len(selected) != 1:
         return _hold("named-handle-not-unique")
@@ -144,8 +145,10 @@ def assess_fresh_install(inventory: Inventory, plan: FreshInstallPlan) -> Prefli
         return _hold("durable-install-flush-not-advertised")
     if d.condition != MediaCondition.FULL_ZERO_SCAN_REPORTED:
         return _hold("target-not-reported-fully-blank")
-    if not d.media_id or d.media_id != plan.media_id:
-        return _hold("media-id-missing-or-mismatched")
+    # A virgin blank disk has no on-media ID. Do not demand one as a
+    # prerequisite for fresh setup; an ID alone would never grant authority.
+    if d.media_id != plan.media_id:
+        return _hold("media-id-mismatched")
     if (not _digest_looks_sha256(d.preflight_digest) or
             d.preflight_digest != plan.preflight_digest):
         return _hold("preflight-digest-missing-or-mismatched")
@@ -177,6 +180,8 @@ def classify_source(*, location: str, available: bool, inspected: bool,
     if inspected:
         return (SourceStatus.INSPECTED_LOCAL if location == "local"
                 else SourceStatus.INSPECTED_EXTERNAL)
-    if not available or (location == "external" and not networking_enabled):
+    # Accessible cached source bytes can remain unread while offline.
+    # Network state does not alter whether the source is available locally.
+    if not available:
         return SourceStatus.UNAVAILABLE
     return SourceStatus.NOT_INSPECTED
