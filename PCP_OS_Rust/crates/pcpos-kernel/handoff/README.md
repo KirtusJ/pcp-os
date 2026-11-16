@@ -60,6 +60,54 @@ container. The 42 Rust tests under `tests/validation.rs` are authored
 executed real-image and OVMF/hardware receipts. A textual test suite is
 not evidence of passing behavior.
 
+## Advisory GOP mode-change witness classifier (source-only)
+
+This crate also contains \`src/gop_witness.rs\`, which is a **separate, pure
+function** accepting a recorder's report of *one* GOP handle before and after
+a proposed \`SetMode\` call. It does not decode EDID, obtain any firmware pointer,
+perform \`SetMode\`, invoke QEMU, map framebuffer bytes, or authenticate a
+recorder. Its enumerated outcomes describe the **internal consistency of the
+supplied report**, not physical occurrence or authority.
+
+The smallest discriminating witness for **OS-owned mode selection** must
+originate in instrumented OS-controlled code **before ExitBootServices**:
+(1) a GOP handle/device-path identity and \`Mode.Mode=B\` observation,
+(2) a sequenced call to that same handle's \`GOP.SetMode(A)\` with \`A != B\`,
+the claimed initiator, and the actual return \`EFI_STATUS\`, and
+(3) a sequenced \`Mode.Mode=A\` readback with reported width, height, pitch
+(\`PixelsPerScanLine\`), pixel format and framebuffer base/size.
+The recorder must demonstrate that it is exhaustive for this one GOP handle
+over the interval, rather than merely declaring it. This last requirement
+**cannot** be checked by the pure function. If no call was captured, a
+matching initial/final resolution is at most *consistent with the already
+active mode*, not an OS-selected mode.
+
+The typed helper also refuses mixed-device handles, wrong stage/order,
+unavailable mode indices, out-of-range geometry and native-driver calls
+mistaken for UEFI Boot Services calls. Failed \`EFI_STATUS\` or contradictory
+readback never yields \`ConsistentWithOsModeChange\`. Unknown actor or
+incomplete capture stays unresolved, not silently promoted to PCP-OS credit.
+A valid \`PixelBltOnly\` mode may be selectable but supplies no direct
+writable framebuffer; the helper never authorizes drawing into it.
+
+**EDID preference needs further independently checked evidence:** bytes,
+checksum, active/discovered/override source, matching GOP device path,
+preferred timing and a versioned selection rule mapping that timing to one
+supported GOP mode. Matching width and height **alone** cannot prove the
+preferred refresh/timing or that EDID caused a mode-selection decision.
+No EDID preference conclusion is returned by this helper.
+
+The \`tests/gop_witness.rs\` file adds **28 synthetic controls**, including
+already-correct initial mode, firmware/GRUB/unknown actors, false success,
+failed calls, late post-ExitBootServices readbacks, wrong handle, stale
+sequences, padded pitch, and a BLT-only selection without framebuffer
+permission. These are **not** real firmware events or kernel execution.
+Test with the same \`cargo test --manifest-path\` commands above.
+The existing handoff wire ABI and 42 original validation cases are unchanged.
+This section does **not** mean PT's locally reported EFI preview has used
+this witness or that a trusted recorder exists yet.
+
+
 ## Compatibility with PT's reported GRUB Multiboot2 EFI amd64 preview
 
 Director PT [reports an OVMF/GRUB EFI amd64 Multiboot2 preview](https://github.com/KirtusJ/pcp-os/issues/132#issuecomment-6906026073). That is a **producer-reported emulator observation**, not a boot run or source-tree verification in this Session B. This contract is **not yet an adapter** for the preview's Multiboot2 information structure.
