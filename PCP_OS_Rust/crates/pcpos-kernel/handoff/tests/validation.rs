@@ -200,7 +200,9 @@ fn rejects_bitmask_overlap() {
 #[test]
 fn rejects_unsupported_five_six_five_bitmask_without_guessing() {
     let (mut h, regions, modules) = fixture();
-    h.framebuffer = bgr(1280, 720, 5120);
+    // Actual RGB565 can use two bytes per pixel. It is a valid GOP bitmask
+    // mode, but this first 32-bit-only renderer must not misclassify it.
+    h.framebuffer = bgr(1280, 720, 2560);
     h.framebuffer.pixel_format = PIXEL_BITMASK;
     h.framebuffer.red_mask = 0xf800;
     h.framebuffer.green_mask = 0x07e0;
