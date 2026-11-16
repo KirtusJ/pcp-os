@@ -190,3 +190,31 @@ jobs:
           echo "QEMU_Q35_RESULT=$q35_result"
           test "$pc_result" -eq 0
           test "$q35_result" -eq 0
+
+      - name: Get desktop supporting explicit scanout dimensions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 8f5992807e9b9c0bb8ce64e366c85ee4add31599
+          path: scale-desktop
+          persist-credentials: false
+      - name: Check Tailorbird scale, editor, and return at two screen sizes
+        env:
+          PCPOS_KERNEL_STAGE: ${{ runner.temp }}/scale-kernel
+          CARGO_PROFILE_RELEASE_LTO: 'off'
+        run: |
+          set -euo pipefail
+          kernel=scale-desktop/PCP_OS_Rust/crates/pcpos-kernel
+          sh "$kernel/run.sh" build
+          image="$kernel/target/pcpos-kernel.elf32"
+          measurement=$(python3 "$kernel/tools/measure.py" "$image")
+          python3 apps/tailorbird/guest/tests/view_scale.py "$image" \
+            apps/tailorbird/guest/target/x86_64-unknown-none/release/tailorbird \
+            scale-captures "$measurement"
+      - name: Retain native frames, serial and scale results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: tailorbird-view-scale
+          path: scale-captures/
+          if-no-files-found: ignore
+          retention-days: 14
