@@ -38,7 +38,7 @@ def menu_positions(programs, ethernet_grants=0):
     row += 1
     display_row = row
     store_row = row + 1
-    message_row = row + 2 + 1  # row +=2 after the display, store does not increment
+    message_row = row + 2  # row +=2 after display; store does not increment
     return {
         "program_rows": program_rows,
         "files_heading": files_heading,
@@ -51,7 +51,7 @@ def menu_positions(programs, ethernet_grants=0):
     }
 
 
-def inspect(session, ui):
+def inspect(session, ui, font):
     required_session = [
         "let mut row = 9;",
         "for (i, p) in programs.iter().enumerate() {",
@@ -68,9 +68,17 @@ def inspect(session, ui):
         'at(4, row, &format!("store:',
         'ui::fill(0, (rows - 2) * ui::CELL_H',
     ]
-    required_ui = ["pub const CELL_W: u32 = 10;", "pub const CELL_H: u32 = 20;"]
+    required_ui = [
+        "pub const CELL_W: u32 = CELL_WIDTH as u32;",
+        "pub const CELL_H: u32 = CELL_HEIGHT as u32;",
+    ]
+    required_font = [
+        "pub const CELL_WIDTH: usize = 10;",
+        "pub const CELL_HEIGHT: usize = 20;",
+    ]
     absent = [name for name in required_session if name not in session]
     absent += [name for name in required_ui if name not in ui]
+    absent += [name for name in required_font if name not in font]
     if absent:
         raise RuntimeError("layout source changed, model invalid: " + repr(absent))
     evaluated = {}
@@ -115,10 +123,12 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--session", type=Path, required=True)
     p.add_argument("--ui", type=Path, required=True)
+    p.add_argument("--font", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
     args = p.parse_args()
     source = args.session.read_text(encoding="utf-8")
     ui = args.ui.read_text(encoding="utf-8")
+    font = args.font.read_text(encoding="utf-8")
     result = {
         "source_scope": "pinned native launcher row arithmetic only",
         "not_native_frame_capture": True,
@@ -127,9 +137,10 @@ def main():
         "model": "direct translation of fixed draw_menu row positions",
         "session_file_sha256": hashlib.sha256(source.encode("utf-8")).hexdigest(),
         "ui_file_sha256": hashlib.sha256(ui.encode("utf-8")).hexdigest(),
+        "font_file_sha256": hashlib.sha256(font.encode("utf-8")).hexdigest(),
     }
     try:
-        result["cases"] = inspect(source, ui)
+        result["cases"] = inspect(source, ui, font)
         result["status"] = "SOURCE_MODEL_OVERLAP_REPRODUCED"
     except Exception as exc:
         result["status"] = "MODEL_NOT_APPLICABLE_OR_FAILED"
