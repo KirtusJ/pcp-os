@@ -1,0 +1,1 @@
+Director 3 requested two native 24-guest rounds on the public default-clock fixture after an interrupted shared-host recovery. Inspect the resulting workflow artifact and serials. This temporary qualification targets a dedicated base, outside master.
