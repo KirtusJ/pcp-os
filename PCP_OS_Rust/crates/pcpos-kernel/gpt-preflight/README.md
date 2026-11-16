@@ -52,13 +52,28 @@ image SHA-256
 `cd58140150f89f60377672afc8e014e48551cd3def35b116a08bc5f7b76ca157`,
 and the independent `sgdisk --verify` outcome **“No problems found.”**
 
-The crate's **26 synthetic GPT/device-facts tests passed in debug
-(26/26) and release (26/26)**, including independent Python-zlib
+The crate's **27 synthetic GPT/device-facts tests passed in debug
+(27/27) and release (27/27)**, including independent Python-zlib
 header/entry CRC, primary/backup corruption, unsupported profile,
 bounds, clone ambiguity, injected read failure, read-only and
 generation-change refusal. The `no_std` library was separately
 compiled with `cargo check --lib --target x86_64-unknown-none`.
 No connected PCI/virtio queue or kernel I/O path ran in this CI.
+
+**Additional 64-bit arithmetic discriminator:** [exact-head run 43821026665](https://github.com/KirtusJ/pcp-os/actions/runs/43821026665)
+at `82c9a1d44ac69e6643b73a730c23e6a03e91845a`
+independently repeated the Python-zlib and `sgdisk` positive checks,
+passed **27/27 debug and 27/27 release Rust tests**, and compiled the
+`no_std` source for `x86_64-unknown-none`. The new test supplies
+a **sparse, synthetic device** reporting capacity
+`2^32 + 512` sectors, a valid GPT at the large last-sector LBA,
+and a selected partition with start and end **above 2^32**.
+The caller receives valid high 64-bit addresses without allocating
+a multi-terabyte file. The test constructs this sparse mock using
+the already checked Rust CRC function; it is specifically
+**u64 LBA arithmetic coverage**, not an independent filesystem
+or real >2 TiB drive validation. No actual high-address DMA/PCI or
+physical sector was accessed.
 
 **Preserved CI setup failure:** The first workflow submission was
 rejected before any job started because `runner.temp` was used in
