@@ -117,6 +117,19 @@ fn test_service() -> io::Result<i32> {
         }
     };
 
+    // An END marker from an earlier wrapper is not sufficient without its
+    // separately retained native guest receipt. Refuse a plausible-looking
+    // stale journal if the serial was lost or replaced before restart.
+    for previous in 1..next {
+        let path = base.join(format!("qemu-{previous}.serial"));
+        if let Err(err) = attest_guest_serial_file(&path, &measurement) {
+            durable_attention(&base, &format!(
+                "INVALID_JOURNAL: prior attempt {previous} END without valid native receipt: {err}\n"
+            ))?;
+            return Ok(0);
+        }
+    }
+
     let start = base.join(format!("start-{next}.txt"));
     persist_new(&start, &format!("REQUEST={request};ATTEMPT={next};START\n"))?;
 
@@ -172,6 +185,10 @@ fn test_service() -> io::Result<i32> {
         ))?;
         return Ok(0);
     }
+    // The retained serial/error bytes must be forced to the host filesystem
+    // before an END marker is allowed to assert this synthetic boot finished.
+    File::open(&serial_path)?.sync_all()?;
+    File::open(&stderr_path)?.sync_all()?;
     persist_new(
         &base.join(format!("end-{next}.txt")),
         &format!("REQUEST={request};ATTEMPT={next};QEMU_EXIT=33;END\n"),
