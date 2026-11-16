@@ -23,11 +23,15 @@ def run(*args, cwd):
     subprocess.run(args, cwd=cwd, check=True)
 
 
-def build(directory, reference):
+def reference_object(directory, reference):
     (directory / "reference").write_bytes(reference)
     run("objcopy", "-I", "binary", "-O", "elf64-x86-64", "-B", "i386:x86-64",
         "--rename-section", ".data=.rodata,alloc,load,readonly,data,contents",
         "reference", "reference.o", cwd=directory)
+
+
+def build(directory, reference):
+    reference_object(directory, reference)
     run("cc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", "-ffreestanding",
         "-fno-stack-protector", "-fno-pie", "-mno-red-zone", "-mcmodel=large",
         "-c", HERE / "readback.c", "-o", "readback.o", cwd=directory)

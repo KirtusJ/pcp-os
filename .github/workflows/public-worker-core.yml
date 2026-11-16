@@ -1,0 +1,71 @@
+name: Public resident worker Core readback
+
+on:
+  pull_request:
+    paths:
+      - 'examples/method-readback/**'
+      - '.github/workflows/public-worker-core.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-worker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Check out the public worker and its original kernel
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: f1d1ec07ccc30dec4a8c54a6b454efec30cc0f6a
+          path: fixture
+          persist-credentials: false
+      - name: Check out the standalone Enterprise method
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: KirtusJ/pcp-os-claude
+          ref: c0fbde739b4cc3bc409878d901de0974702c506e
+          path: adapter
+          sparse-checkout: method
+          persist-credentials: false
+      - name: Prepare compiler, emulator and external reference inputs
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 seabios binutils lld
+          rustup target add x86_64-unknown-none
+          rustup component add rust-src
+          rustc -Vv
+          qemu-system-x86_64 --version
+          mkdir inputs
+          curl --fail --location --retry 3 'https://huggingface.co/karpathy/tinyllamas/resolve/0bd21da7698eaf29a0d7de3992de8a46ef624add/stories260K/stories260K.bin' -o inputs/checkpoint.bin
+          curl --fail --location --retry 3 'https://raw.githubusercontent.com/karpathy/llama2.c/350e04fe35433e6d2941dce5a1f53308f87058eb/run.c' -o inputs/run.c
+      - name: Exercise the original and Core-reading workers
+        env:
+          CARGO_PROFILE_RELEASE_LTO: 'off'
+          PCPOS_KERNEL_STAGE: ${{ runner.temp }}/method-worker-kernel
+        run: |
+          set -euo pipefail
+          kernel=fixture/PCP_OS_Rust/crates/pcpos-kernel
+          sh "$kernel/run.sh" build
+          python3 examples/method-readback/public-worker.py \
+            --fixture fixture --kernel "$kernel/target/pcpos-kernel.elf32" \
+            --model inputs/checkpoint.bin --reference inputs/run.c \
+            --method adapter/method --out receipts
+      - name: Retain the oracle, serial logs and cohort receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: resident-worker-core-readback
+          path: |
+            receipts/**/*.serial
+            receipts/**/*.stderr
+            receipts/**/events.jsonl
+            receipts/**/readback.json
+            receipts/control/oracle.json
+          if-no-files-found: warn
+          retention-days: 14
