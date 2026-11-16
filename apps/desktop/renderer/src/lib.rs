@@ -148,7 +148,7 @@ mod tests {
             let top = pixels[0];
             raster_row(s, h - 1, &mut pixels).unwrap();
             assert_ne!(top, pixels[0], "{w}x{h} must paint different scanlines");
-            assert!(pixels.iter().all(|x| x & 0xFF00_0000 == 0));
+            assert!(pixels.iter().all(|x| (*x & 0xFF00_0000) == 0));
         }
     }
 
