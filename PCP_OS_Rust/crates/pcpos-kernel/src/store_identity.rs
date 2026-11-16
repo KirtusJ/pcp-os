@@ -69,3 +69,95 @@ pub fn marker_sector(id: &[u8; ID_BYTES]) -> Option<[u8; SECTOR_BYTES]> {
 pub fn matches_marker(sector: &[u8; SECTOR_BYTES], id: &[u8; ID_BYTES]) -> bool {
     marker_sector(id).is_some_and(|expected| sector == &expected)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const EXPECTED: [u8; 16] = [
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+        0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+    ];
+    const HEX: &str = "00112233445566778899aabbccddeeff";
+
+    #[test]
+    fn exactly_one_canonical_id_is_recognized() {
+        assert_eq!(
+            requested_id("auto=program then=off store=ide0 store_id=00112233445566778899aabbccddeeff"),
+            Some(EXPECTED)
+        );
+    }
+
+    #[test]
+    fn missing_id_fails_closed() {
+        assert_eq!(requested_id("auto=program store=ide0"), None);
+    }
+
+    #[test]
+    fn duplicate_id_tokens_fail_even_if_both_equal() {
+        assert_eq!(requested_id(&format!("store_id={HEX} store_id={HEX}")), None);
+    }
+
+    #[test]
+    fn zero_id_and_wrong_length_fail() {
+        assert_eq!(requested_id("store_id=00000000000000000000000000000000"), None);
+        assert_eq!(requested_id("store_id=abcd"), None);
+        assert_eq!(requested_id(&format!("store_id={HEX}0")), None);
+        assert_eq!(requested_id("store_id="), None);
+    }
+
+    #[test]
+    fn uppercase_and_invalid_hex_fail() {
+        assert_eq!(requested_id("store_id=00112233445566778899AABBCCDDEEFF"), None);
+        assert_eq!(requested_id("store_id=00112233445566778899aabbccddeezz"), None);
+    }
+
+    #[test]
+    fn marker_contains_exact_version_two_id_and_zero_reserved_bytes() {
+        let marker = marker_sector(&EXPECTED).unwrap();
+        assert_eq!(&marker[..MARKER_V2.len()], MARKER_V2);
+        assert_eq!(&marker[ID_OFFSET..ID_OFFSET + 16], &EXPECTED);
+        assert!(marker[MARKER_V2.len()..ID_OFFSET].iter().all(|x| *x == 0));
+        assert!(marker[ID_OFFSET + ID_BYTES..].iter().all(|x| *x == 0));
+        assert!(matches_marker(&marker, &EXPECTED));
+    }
+
+    #[test]
+    fn wrong_requested_id_is_rejected() {
+        let mut wrong = EXPECTED;
+        wrong[0] ^= 0x01;
+        assert!(!matches_marker(&marker_sector(&EXPECTED).unwrap(), &wrong));
+    }
+
+    #[test]
+    fn version_one_marker_cannot_be_silent_downgrade() {
+        let mut v1 = [0u8; SECTOR_BYTES];
+        v1[..b"PCPOS USER STORE 1\n".len()].copy_from_slice(b"PCPOS USER STORE 1\n");
+        assert!(!matches_marker(&v1, &EXPECTED));
+    }
+
+    #[test]
+    fn clone_of_same_marker_remains_accepted_and_is_not_authentication() {
+        let marker = marker_sector(&EXPECTED).unwrap();
+        let copied = marker;
+        assert!(matches_marker(&copied, &EXPECTED));
+    }
+
+    #[test]
+    fn reserved_byte_mutation_fails_closed() {
+        let mut marker = marker_sector(&EXPECTED).unwrap();
+        marker[ID_OFFSET + ID_BYTES] = 1;
+        assert!(!matches_marker(&marker, &EXPECTED));
+    }
+
+    #[test]
+    fn zero_id_cannot_be_formatted() {
+        assert!(marker_sector(&[0u8; ID_BYTES]).is_none());
+    }
+
+    #[test]
+    fn stray_text_cannot_make_id_match() {
+        assert_eq!(requested_id(&format!("not_store_id={HEX}")), None);
+        assert_eq!(requested_id(&format!("other={HEX}")), None);
+    }
+}
