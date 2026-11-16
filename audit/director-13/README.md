@@ -8,9 +8,9 @@ The hosted Rust [Parrots all the way Down](../../store/apps/parrots-all-the-way-
 
 The Python [probe](containment_probe.py) operates only on a new temporary redb database and two test-only process trees:
 
-1. **Positive control:** A directly supervised worker writes a heartbeat. Cancel its desk node and read back its termination; its heartbeat must stop.
+1. **Positive control:** A directly supervised worker writes a heartbeat. Cancel its desk node; check its original PID and Linux start tick for actual process exit, then check the heartbeat stopped. A *separate silent-but-live process* is a negative oracle control: lack of heartbeat alone is not evidence of termination.
 2. **Adverse control:** A worker spawns one **unregistered child** into a separate Linux session. Cancel its desk node, wait for the directly supervised worker to end, then check whether the child's heartbeat still advances while the desk reports Cancelled. This is a deliberately constructed adversary with real process behavior, not a real model, Qwen guest or PCP OS kernel.
-3. **Cleanup:** The test sends a release signal to the detached child and, if necessary, terminates only its test-created process group. It binds the process PID to the /proc start tick before signaling to avoid acting on a reused PID. An unclean or ambiguous run is not a pass.
+3. **Cleanup:** The test verifies the registered actor's PID and Linux start tick even if its adapter already exited, and terminates an unexpected live actor. It releases the detached child and, where necessary, signals only its verified test-created process group. An unclean or ambiguous run is not a pass.
 
 The adverse test **currently expects an observed escaped child**. A green result therefore means **the containment gap was reproduced**, *not* that PCP OS is contained. If the adapter is later hardened, this expectation must be revised to require the descendant to terminate under the intended policy and to include negative cases for process-group escape, crash recovery and model service boundaries.
 
@@ -22,6 +22,10 @@ The independent [group-boundary probe](group_boundary.py) starts **each** test a
 - A descendant that creates a **new session** must keep writing even after that parent group is signaled. This is the deliberate *adverse control*: a process-group kill by itself does not enforce containment against a process able to call `setsid`.
 
 Both groups are test-created, their PIDs are checked against `/proc` start ticks before use, and the detached child is independently cleaned up. Neither case uses a real PCP OS guest, device, model, installed host or service. A passing test **demonstrates the residual escape**, not an enforceable container. A selected cgroup/VM containment mechanism must later be tested separately with direct and detached descendants, crash and restart controls, and externally verified enforcement.
+
+## Read-only cgroup feasibility check
+
+The separate [cgroup preflight](cgroup_preflight.py) does **not** create cgroups, move processes, modify a mount, issue a privilege escalation or establish an enforcement mechanism. It reads the transient Linux worker's cgroup v2 mount and namespace-relative membership, controller names, available control files, observed read-only mount flags, write-access hints, and whether a pidfd for the current test process can be opened. It omits the actual host cgroup path. A successful preflight merely identifies the observed API surface and hints about delegation; it cannot qualify a cgroup parent, usable enforcement, process confinement, crash recovery or resident service. A future confinement test must use an explicitly authorized, isolated resource boundary and an independent before/during/after process check. 
 
 ## Run on a disposable Linux host
 
@@ -38,9 +42,11 @@ python3 audit/director-13/group_boundary.py \
   --cli store/apps/parrots-all-the-way-down/host/target/release/parrots-all-the-way-down \
   --delegate store/apps/parrots-all-the-way-down/host/target/release/pcp-delegate \
   --output d13-evidence/process_group_boundary.json
+python3 audit/director-13/cgroup_preflight.py \
+  --output d13-evidence/cgroup_preflight.json
 ~~~
 
-The workflow at .github/workflows/director-13-containment.yml builds and executes the **actual Rust adapter** on a transient Linux Actions runner and retains both JSON observations as one ephemeral artifact. A fake-adapter rehearsal, if separately performed, would check only harness structure, not Rust behavior. The actual code revision, job outcome and raw saved artifact must be inspected for any native-host finding. Neither this test nor a green Actions job establishes a resident runtime.
+The workflow at .github/workflows/director-13-containment.yml builds and executes the **actual Rust adapter** on a transient Linux Actions runner and retains the two process-test JSON observations and cgroup preflight result as one ephemeral artifact. A fake-adapter rehearsal, if separately performed, would check only harness structure, not Rust behavior. The actual code revision, job outcome and raw saved artifact must be inspected for any native-host finding. Neither this test nor a green Actions job establishes a resident runtime.
 
 ## Acceptance still missing
 
