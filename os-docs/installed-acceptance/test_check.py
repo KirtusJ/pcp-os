@@ -185,6 +185,26 @@ class ResultRecording(unittest.TestCase):
         self.assertEqual(list(result["boots"]), ["recovery", "desktop"])
         self.assertEqual(result["disk_sha256_after"], result["disk_sha256_before"])
 
+    def test_non_diagnostic_boots_need_no_reference_tokens(self):
+        start = self.args.index("--expected-tokens")
+        del self.args[start:start + 4]
+        self.run_with_boot(lambda *args: {"qemu_exit": 33})
+        result = self.result()
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(list(result["boots"]), ["recovery", "desktop"])
+        self.assertIsNone(result["expected_tokens"])
+
+    def test_diagnostic_requires_tokens_before_creating_results(self):
+        start = self.args.index("--expected-tokens")
+        base = self.args[:start]
+        for selection in ([], ["--modes", "recovery", "diagnostic"], ["--modes", "diagnostic"]):
+            with self.subTest(selection=selection):
+                self.args = base + selection
+                with self.assertRaises(SystemExit) as error, contextlib.redirect_stderr(io.StringIO()):
+                    self.run_with_boot(None)
+                self.assertEqual(error.exception.code, 2)
+                self.assertFalse(self.results.exists())
+
     def test_checkpoints_identify_the_manifest_used_for_the_boot(self):
         manifest = self.root / "release.json"
         original = manifest.read_bytes() + b"\n"

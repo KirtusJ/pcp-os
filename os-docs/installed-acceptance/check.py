@@ -209,9 +209,11 @@ def main():
     parser.add_argument("--model-memory-mib", type=int, default=1152,
                         help="RAM for each model-capable VM in MiB")
     parser.add_argument("--timeout", type=int, default=360, help="seconds per boot")
-    parser.add_argument("--expected-tokens", type=int, nargs=3, required=True,
-                        help="three token IDs from a separate reference for this installed diagnostic")
+    parser.add_argument("--expected-tokens", type=int, nargs=3,
+                        help="three token IDs from a separate reference, required for the diagnostic boot")
     args = parser.parse_args()
+    if "diagnostic" in args.modes and args.expected_tokens is None:
+        parser.error("--expected-tokens is required when running the diagnostic")
     if len(args.modes) != len(set(args.modes)):
         parser.error("Each boot path can be selected once per run")
     if args.model_memory_mib < 1 or args.timeout < 1:
