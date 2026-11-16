@@ -65,8 +65,19 @@ revisions, invalid/absent first DTD, interlacing, and the explicit
 dimensions-only matching limit. One additional `tests/abi.rs` case
 checks both UEFI EDID protocol GUIDs and the x86-64 C struct layout,
 giving **13 ABI tests**. The tests do not generate firmware records or
-prove native monitor selection. These new source tests require a fresh
-exact-revision GitHub CI receipt before they can be called executed.
+prove native monitor selection. **Executed, source-bound result:** [GitHub Actions run 43807258854](https://github.com/KirtusJ/pcp-os/actions/runs/43807258854)
+checked out exact head `5ec6b56f0f9e46ed8d9cd3c3fa1ea70eb7dafac8`
+on Ubuntu 24.04 with Rust/Cargo 1.99.1. The **23 EDID synthetic
+fixtures passed in debug and release** (0 failed); the **13 UEFI ABI
+tests passed in debug and release** (0 failed). The same job cross-compiled
+the default read-only `x86_64-unknown-uefi` PE32+ EFI_APPLICATION and
+opt-in fixture **without launching either**, and confirmed two full-clean
+default builds were byte-identical (8,704 bytes, SHA-256
+`55b32462189ad6ac1ed9e296def3f0f5e300c6e0832f5c7c724a22eabde3d0d2`,
+COFF TimeDateStamp 0). The unchanged default EFI image digest is
+consistent with the new pure EDID parser remaining unused at runtime.
+This receipt is host synthetic/ABI validation and EFI file compilation only,
+not a firmware EDID or GOP capture.
 
 Source distinctions: [UEFI 2.11 GOP and EDID protocols](https://uefi.org/specs/UEFI/2.11/12_Protocols_Console_Support.html),
 [Linux `drm_edid.c` detailed timing conversion](https://github.com/torvalds/linux/blob/master/drivers/gpu/drm/drm_edid.c),
