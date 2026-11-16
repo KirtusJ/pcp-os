@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 import re
 
-FONT = Path(__file__).resolve().parents[2] / "PCP_OS_Rust/crates/pcpos-kernel/src/font.rs"
+FONT = Path(__file__).resolve().parents[3] / "PCP_OS_Rust/crates/pcpos-kernel/src/font.rs"
 FONT_PATTERN = re.compile(r"pub static GLYPHS:[^=]+=\s*(\[.*?\]);", re.DOTALL)
 
 
