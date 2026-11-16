@@ -150,6 +150,7 @@ def wait_screen(qmp, checker, serial, child, path, width, height, glyphs, timeou
             and text_at(size,pixels,19,2,'PCP OS',glyphs,TEXT,GROUND)
             and text_at(size,pixels,2,rows-2,'Up/Down choose',glyphs,TEXT,PANEL)
             and text_at(size,pixels,2,rows-1,'Ctrl+Alt+Delete',glyphs,SOFT,PANEL)):
+            launcher_pixels = pixels
             break
         time.sleep(.3)
     else:
@@ -169,7 +170,7 @@ def wait_screen(qmp, checker, serial, child, path, width, height, glyphs, timeou
         # the most obvious mid-draw race but do not prove zero subsequent changes.
         final = b''.join(pixels[((40+y)*width+700)*3:((40+y)*width+710)*3] for y in range(20))
         if region is not None and final != GROUND * 200 and region == last:
-            return
+            return launcher_pixels
         last = region
         time.sleep(.5)
     raise TimeoutError('full stable head row not available')
@@ -212,7 +213,8 @@ def run(args):
             monitor = QMP(guest,args.timeout)
             report['qmp_greeting']=monitor.greeting()
             monitor.command('qmp_capabilities')
-            wait_screen(monitor,checker,serial,guest,live_ppm,width,height,glyphs,args.timeout)
+            launcher_pixels = wait_screen(monitor,checker,serial,guest,live_ppm,width,height,glyphs,args.timeout)
+            report['launcher_pixels_sha256'] = hashlib.sha256(launcher_pixels).hexdigest()
             # Stop and query QEMU's observed state before BOTH captures.
             monitor.command('stop')
             qstatus = monitor.command('query-status')
@@ -253,6 +255,20 @@ def run(args):
             if not report['candidate_accepted']:
                 raise RuntimeError('native RAM candidate and paused pixels do not match')
             monitor.command('cont')
+            # P is consumed only by the MENU, not by register_view. The
+            # register's live wait loop ignores P. First return with Esc and
+            # confirm the actual original launcher is back, then power off.
+            monitor.key('esc')
+            returned = args.output / 'returned-launcher.ppm'
+            end = time.monotonic() + args.timeout
+            while time.monotonic() < end:
+                size, restored = screenshot(monitor, checker, returned)
+                if size == (width,height) and restored == launcher_pixels:
+                    report['returned_launcher_sha256'] = hashlib.sha256(returned.read_bytes()).hexdigest()
+                    break
+                time.sleep(.25)
+            else:
+                raise TimeoutError('Esc did not restore launcher after paused register capture')
             monitor.key('p')
             code = guest.wait(timeout=args.timeout)
             raw=serial.read_bytes()
