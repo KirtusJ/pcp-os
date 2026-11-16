@@ -1,0 +1,28 @@
+name: D11 register image decision-oracle controls
+
+on:
+  push:
+    branches:
+      - director-11/register-default-build-parity-20261116
+    paths:
+      - "os-docs/register-forensics/test_evaluate_default_image.py"
+      - ".github/workflows/d11-parity-oracle-controls.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bounded_oracle_controls:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout pinned D11 candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Check known positives and adverse controls without QEMU
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s os-docs/register-forensics \
+            -p 'test_evaluate_default_image.py' -v
