@@ -389,11 +389,14 @@ pub fn interrupt(line: u8) {
     }
 }
 
-/// The self-test can let keys arrive freely or hold each one until a process is blocked in a keyboard read.
+/// How the boot fixture times simulated keyboard input.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum KeyPacing {
     Timed,
     BlockedRead,
+    /// Send the Stop chord once the sleeper has idled for the requested number of timer periods.
+    /// At the test deadline, send it regardless so a broken sleeper can finish with a failing result.
+    Sleeping { idle_ticks: u64, timeout: u64 },
 }
 struct Script {
     at: u64,
@@ -438,6 +441,12 @@ fn script_tick(ticks: u64) {
     SCRIPT.with(|s| {
         // One byte a tick, and only when the controller holds nothing: neither a byte to be read nor one being taken.
         if s.next < s.len && ticks >= s.at && in8(0x64) & 3 == 0 {
+            if let KeyPacing::Sleeping { idle_ticks, timeout } = s.pacing {
+                if ticks.saturating_sub(s.at) < timeout &&
+                    !crate::user::sleeping_idle_ticks(ticks).is_some_and(|idle| idle >= idle_ticks) {
+                    return;
+                }
+            }
             if s.pacing == KeyPacing::BlockedRead {
                 if !crate::user::idle_in_key_read() {
                     return;

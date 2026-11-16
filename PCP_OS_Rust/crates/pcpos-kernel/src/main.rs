@@ -520,7 +520,7 @@ fn script_drain() -> Result<(), &'static str> {
 /// sleeps or waits. Keys arrive through the keyboard's interrupt (see `dev::keyboard_script`). Interrupts are off
 /// when this is called and when it returns. None of these runs is a task in the kernel's register.
 fn asynchronous(failed: &mut u32) {
-    use dev::KeyPacing::{BlockedRead, Timed};
+    use dev::KeyPacing::{BlockedRead, Sleeping, Timed};
     use user::{End, Grants, Program, Start, World};
     let world = || World { files: alloc::vec::Vec::new(), store: alloc::vec::Vec::new(), epoch_at_start: 0, unanswered: alloc::vec::Vec::new() };
     let grants = Grants { console: true, keys: true, ..Grants::default() };
@@ -581,11 +581,15 @@ fn asynchronous(failed: &mut u32) {
           end == Some(End::Exited(0)) && idle >= 3 && calls == 8 && free0 == free1, failed);
 
     // 4. The stop key while a program is asleep, with the longest sleep the kernel accepts (2^32 s and 999,999,999 ns).
-    let (r, free0, free1, took) = loaded("sleeper_long", &["sleeper_long"], &STOP_KEYS, 10, Timed);
-    let (end, idle) = r.as_ref().map(|p| (p.end, p.idle)).unwrap_or((None, 0));
-    say!("  note stop key while asleep: {:?}, end {:?}, idle {} of {} timer periods", r.as_ref().err(), end, idle, took);
+    const SLEEP_IDLE_TICKS: u64 = 10;
+    const STOP_TIMEOUT: u64 = 100;
+    let pacing = Sleeping { idle_ticks: SLEEP_IDLE_TICKS, timeout: STOP_TIMEOUT };
+    let (r, free0, free1, took) = loaded("sleeper_long", &["sleeper_long"], &STOP_KEYS, 0, pacing);
+    let (end, idle, calls, settled) = r.as_ref().map(|p| (p.end, p.idle, p.calls, p.settled)).unwrap_or((None, 0, 0, None));
+    say!("  note stop key while asleep: {:?}, end {:?}, idle {} of {} timer periods, syscall count {}, free frames {} before and {} after, task {:?}",
+         r.as_ref().err(), end, idle, took, calls, free0, free1, settled);
     check("the stop key ends a program that is asleep (for the longest sleep accepted: its deadline does not overflow) at once, and all its memory comes back",
-          end == Some(End::Stopped) && idle >= 10 && took < 100 && free0 == free1, failed);
+          end == Some(End::Stopped) && settled == Some(Task::Stopped) && idle >= SLEEP_IDLE_TICKS && took < STOP_TIMEOUT && calls == 1 && free0 == free1, failed);
 
     // 5. The stop key while a program waits in a read of the keyboard. Ctrl and Alt wake it and it waits again; Delete ends it.
     // Six calls: open, and three reads that wait, of which the first two are made again and answered with Ctrl and with Alt.

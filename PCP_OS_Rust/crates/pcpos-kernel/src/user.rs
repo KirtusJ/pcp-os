@@ -300,6 +300,16 @@ pub fn idle_in_key_read() -> bool {
         t.procs.iter().any(|p| p.end.is_none() && p.waiting == Waiting::Key)))
 }
 
+/// Number of completed idle timer periods in the single-sleeper boot test, while its deadline is still ahead.
+pub fn sleeping_idle_ticks(now: u64) -> Option<u64> {
+    TABLE.with(|slot| {
+        let table = slot.as_ref()?;
+        let [process] = table.procs.as_slice() else { return None };
+        (table.current.is_none() && process.end.is_none() &&
+            matches!(process.waiting, Waiting::Until(deadline) if deadline > now)).then_some(table.idle)
+    })
+}
+
 /// Entered from `arch` on every entry that concerns programs. On return, `frame` is what the processor resumes.
 pub fn trap(frame: &mut Frame, trap: Trap, from_user: bool) {
     TABLE.with(|slot| match slot.as_mut() {
