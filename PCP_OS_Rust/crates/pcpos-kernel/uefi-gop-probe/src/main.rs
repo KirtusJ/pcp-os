@@ -140,9 +140,13 @@ unsafe fn show_mode(con: *mut SimpleTextOutput, label: &str, gop: *mut GraphicsO
 unsafe fn app(table: *mut SystemTable) -> EfiStatus {
     if table.is_null() { return EFI_INVALID_PARAMETER; }
     let st = unsafe { &*table };
-    if st.hdr.signature != SYSTEM_TABLE_SIGNATURE || st.con_out.is_null() {
+    if st.hdr.signature != SYSTEM_TABLE_SIGNATURE {
         return EFI_INVALID_PARAMETER;
     }
+    // A headless UEFI system may have no usable ConOut. Line::send()
+    // deliberately skips a null console while the explicitly opt-in
+    // QEMU debugcon trace still records the GOP/no-GOP result.
+    // Lack of a video text console must not prevent reporting no GOP.
     let con = st.con_out;
     let bs_ptr = st.boot_services;
     if bs_ptr.is_null() { return EFI_INVALID_PARAMETER; }
