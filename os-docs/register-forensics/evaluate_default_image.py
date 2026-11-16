@@ -15,7 +15,7 @@ import sys
 ROOT = Path(__file__).resolve().parent
 LABELS = ("base_1", "base_2", "candidate_off", "candidate_on")
 PIN_BASE = "74c4d4a9934ad68e1b5be380971bf3377a464c6d"
-PIN_DIAGNOSTIC = "9fa9819103a67b0f2b124991a2d0d88b4c64b755"
+PIN_DIAGNOSTIC = "f1b7430a9c1aaabc5587f19b16e0c1e76646ef81"
 
 
 def load_observation(data_dir):
