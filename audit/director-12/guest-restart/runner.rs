@@ -162,9 +162,15 @@ fn test_service() -> io::Result<i32> {
         // with vCPUs paused. This is *not* a completed or booted PCP guest.
         qemu.arg("-S");
     }
-    let status = qemu.status()?;
-
-    if status.code() != Some(33) {
+    // Adversarial harness-only arm: simulate an exit code of 33 without
+    // launching QEMU, and leave a clearly non-native serial. This checks
+    // whether an exit-code-only end oracle could fabricate completion.
+    let spoofed = env::var("D12_SPOOF_EXIT33").as_deref() == Ok("1");
+    let status = if spoofed { None } else { Some(qemu.status()?) };
+    if spoofed {
+        fs::write(&serial_path, b"SYNTHETIC TEST: fabricated QEMU exit code 33 without native guest\\n")?;
+    }
+    if !spoofed && status.as_ref().and_then(|status| status.code()) != Some(33) {
         durable_attention(&base, &format!(
             "UNCONFIRMED: QEMU result {status:?}; no automatic duplicate launch\n"
         ))?;
