@@ -100,7 +100,10 @@ pub struct MapView<'a> {
 pub struct Inspection<'a> {
     pub info_bytes: u32,
     pub tag_count: usize,
-    pub unknown_tag_count: usize,
+    /// Counts skipped tags, including standardized but unimplemented types
+    /// (for example information tag 9, ELF sections) and future unknown
+    /// types. It does not claim they have no defined Multiboot2 meaning.
+    pub uninterpreted_tag_count: usize,
     pub framebuffer: Option<Framebuffer>,
     /// The generic Multiboot2 memory map (tag 6), not the EFI map.
     pub basic_memory_map: Option<MapView<'a>>,
@@ -307,7 +310,7 @@ pub fn inspect_efi_amd64<'a>(
     }
     // Reserved fixed field is ignored as prescribed by Multiboot2.
     let mut state = Inspection {
-        info_bytes: total as u32, tag_count: 0, unknown_tag_count: 0,
+        info_bytes: total as u32, tag_count: 0, uninterpreted_tag_count: 0,
         framebuffer: None, basic_memory_map: None, efi_memory_map: None,
         efi_boot_services_not_terminated: false, efi64_system_table: None,
         load_base32: None, command_line: None,
@@ -411,7 +414,7 @@ pub fn inspect_efi_amd64<'a>(
                 }
                 state.load_base32 = Some(get32(tag, 8)?);
             }
-            _ => state.unknown_tag_count += 1,
+            _ => state.uninterpreted_tag_count += 1,
         }
         state.tag_count += 1;
         let next = aligned8(end)?;
