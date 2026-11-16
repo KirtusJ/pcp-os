@@ -20,7 +20,9 @@ virtio-register-probe = ["virtio-rx-probe"] # receive two bounded application at
 virtio-worker-probe = ["virtio-rx-probe"] # two isolated guests and one allowlisted user process
 fault-demo = []            # after the self-tests, fault on purpose to show that an unexpected exception is reported and stops the kernel
 
-overflow-demo = []         # after the self-tests, exhaust the stack on purpose to show that it is reported
+overflow-demo = []
+# Opt-in experimental v2 accidental-swap ID gate. NOT a device identity or installer.
+store-id-gate = []         # after the self-tests, exhaust the stack on purpose to show that it is reported
 
 [profile.dev]
 panic = "abort"
