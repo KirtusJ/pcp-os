@@ -71,6 +71,7 @@ jobs:
             echo "$name ELF=$(cat witness/$name.elf_sha256) TEXT=$(cat witness/$name.text_sha256)"
           done
           python3 os-docs/register-forensics/compare_rodata_cases.py witness
+          python3 os-docs/register-forensics/check_rodata_line_fields.py witness
           rm witness/*.text.bin witness/*.rodata.bin
       - name: Retain bounded section-diff summary, no executables or section bytes
         if: always()
@@ -83,6 +84,7 @@ jobs:
             witness/*.measurement
             witness/*.text_sha256
             witness/rodata-differential.json
+            witness/rodata-line-field-readback.json
             witness/rustc.txt
             witness/cargo.txt
           if-no-files-found: warn
