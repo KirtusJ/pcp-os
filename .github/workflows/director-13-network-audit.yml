@@ -109,3 +109,49 @@ jobs:
             ${{ runner.temp }}/d13-link-down-up/frames.pcap
           if-no-files-found: warn
           retention-days: 7
+
+  historical-surfbird-reference:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout pinned historically accepted native TCP source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 1cff81e4b935dc72a95a669a5214508ab8712efc
+          path: historic
+          persist-credentials: false
+      - name: Recreate stated historical compiler and inspect QEMU
+        run: |
+          rustup toolchain install 1.91.1 --profile minimal --component rust-src --target x86_64-unknown-none
+          rustup default 1.91.1
+          rustc -Vv
+          cargo -V
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 seabios lld
+          qemu-system-x86_64 --version | head -n 1
+      - name: Build kernel and guest from same older commit without altering current source
+        run: |
+          PCPOS_KERNEL_STAGE="$RUNNER_TEMP/d13-historic-stage" \
+            PCPOS_KERNEL_FEATURES=guest-ethernet \
+            sh historic/PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          cargo build --locked --release --target x86_64-unknown-none \
+            --manifest-path historic/apps/surfbird/guest/Cargo.toml --features tcp-ip
+      - name: Replay unchanged archived Surfbird allowed-network test on current emulator
+        run: |
+          mkdir -p "$RUNNER_TEMP/d13-historic"
+          cd historic/apps/surfbird/guest
+          python3 replay.py ../../../PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            target/x86_64-unknown-none/release/surfcable --tcp --arm allowed \
+            --output "$RUNNER_TEMP/d13-historic"
+      - name: Retain pinned-old-commit positive or adverse result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: director-13-historical-surfbird-reference
+          path: |
+            ${{ runner.temp }}/d13-historic/**/serial.log
+            ${{ runner.temp }}/d13-historic/**/stderr.log
+            ${{ runner.temp }}/d13-historic/**/guest.pcap
+            ${{ runner.temp }}/d13-historic/**/fixture.json
+          if-no-files-found: warn
+          retention-days: 7
