@@ -1,0 +1,63 @@
+name: Replay Director 9 first-round evidence
+on:
+  push:
+    branches: ['director-9/replay-core-nov16']
+    paths: ['.github/workflows/director-9-replay.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  replay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 0d0007eece6d02af6119d61f83b6cc3ea01f7e3d
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: 14243963597
+          run-id: 43904465118
+          github-token: ${{ github.token }}
+          path: frozen
+      - name: Verify the frozen serials, topology, Core delivery and model replies
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          import sys
+          import zipfile
+
+          sys.path.insert(0, 'examples/resident-workers')
+          from verify import verify
+
+          path = Path('frozen/director-9-round-one.zip')
+          digest = hashlib.sha256(path.read_bytes()).hexdigest()
+          assert digest == Path('frozen/director-9-round-one.sha256').read_text().split()[0]
+          inputs = json.loads(Path('frozen/inputs.json').read_bytes())
+          assert inputs['fixture'] == '05a195d182a1ea7aa3ce5b7db234e491f8849623'
+          assert inputs['manifest'] == '7ff72eed9162e2c11fc62f6681c4afbc29524bfa96b87d45a455423d027d4707'
+          assert inputs['hashes']['Core'] == '649211ff2d765e06b5d5eb31dc80af6f97aedea242f2dcb5b77b3fa270ef34d6'
+          with zipfile.ZipFile(path) as archive:
+              root = zipfile.Path(archive)
+              run = root / 'cohort'
+              result = verify(run, root / 'fixture' / 'oracle.json', 1, check_history=True)
+              assert result == json.loads(Path('frozen/round-one.json').read_bytes())
+              config = json.loads((run / 'events.jsonl').read_bytes().splitlines()[0])
+              assert config['kernel_sha256'] == inputs['hashes']['kernel']
+              assert config['worker_sha256'] == inputs['hashes']['worker']
+              assert config['measurement'] == inputs['measurement']
+              assert config['oracle_sha256'] == inputs['hashes']['oracle']
+              record = json.loads((run / 'readback.json').read_bytes())
+              assert record['time'] == result['time']
+              assert hashlib.sha256((run / 'readback.json').read_bytes()).hexdigest() == result['sha256']
+              for row in record['nodes']:
+                  data = (run / row['serial_file']).read_bytes()
+                  assert len(data) == row['serial_bytes']
+                  deliveries = [line for line in data.splitlines() if line.startswith(b'file from the loader: core-spec.md ')]
+                  assert len(deliveries) == 1 and deliveries[0].startswith(b'file from the loader: core-spec.md (138793 bytes at ')
+              assert len(record['nodes']) == result['guests'] == 24 and result['edges'] == 23
+          print('D9_REPLAY', json.dumps(dict(result, core_deliveries=24, archive_sha256=digest), sort_keys=True))
+          PY
