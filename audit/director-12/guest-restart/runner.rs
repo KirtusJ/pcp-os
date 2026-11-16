@@ -1,0 +1,357 @@
+//! Disposable, fail-closed journaled QEMU launcher for one synthetic test.
+//! It is NOT a production supervisor, service, ACR enforcement layer, or PCP kernel.
+mod journal;
+use std::{
+    env,
+    fs::{self, File, OpenOptions},
+    io::{self, Read, Write},
+    path::{Path, PathBuf},
+    os::fd::AsRawFd,
+    process::{self, Command, Stdio},
+    thread,
+    time::Duration,
+};
+
+fn persist_new(path: &Path, text: &str) -> io::Result<()> {
+    let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
+    file.write_all(text.as_bytes())?;
+    file.sync_all()?;
+    // On this Linux test filesystem, sync the parent directory metadata as
+    // well. File sync alone does not cover creation of the directory entry.
+    if let Some(parent) = path.parent() {
+        File::open(parent)?.sync_all()?;
+    }
+    Ok(())
+}
+
+fn read(path: &Path) -> io::Result<String> {
+    let mut output = String::new();
+    File::open(path)?.read_to_string(&mut output)?;
+    Ok(output)
+}
+
+fn hex64(input: &str) -> bool {
+    input.len() == 64 && input.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+}
+
+fn durable_attention(state: &Path, reason: &str) -> io::Result<()> {
+    let path = state.join("attention.txt");
+    if !path.exists() {
+        persist_new(&path, reason)?;
+    }
+    Ok(())
+}
+
+const MAX_SERIAL_BYTES: u64 = 1024 * 1024;
+
+fn attest_guest_serial(serial: &str, measurement: &str) -> Result<(), &'static str> {
+    // This is independent checking of QEMU's actual serial, not the proof of
+    // authenticity of the guest or of a person/ACR participant.
+    let native_banner = serial.lines().any(|line| line.starts_with("PCP OS kernel ") && line.contains("x86_64"));
+    if !native_banner {
+        return Err("no PCP OS x86_64 kernel banner");
+    }
+    let expected = format!(
+        "running image (code and read-only data), SHA-256: {} (measured; equal to the value the loader named)",
+        measurement
+    );
+    if serial.lines().filter(|line| *line == expected).count() != 1 {
+        return Err("kernel did not exactly confirm this externally named image");
+    }
+    if serial.lines().filter(|line| line.starts_with("ALL SELF-TESTS PASS.")).count() != 1
+        || serial.contains("SELF-TEST(S) FAILED")
+    {
+        return Err("native self-test success absent or contradicted");
+    }
+    let mut heads = serial.lines().filter(|line| line.starts_with("kernel register: "));
+    let head = heads.next().ok_or("native register receipt absent")?;
+    if heads.next().is_some() {
+        return Err("ambiguous duplicate register receipt");
+    }
+    let after = head.strip_prefix("kernel register: ").ok_or("native register prefix missing")?;
+    let (count, digest) = after.split_once(" events, head ").ok_or("invalid register receipt")?;
+    if count.parse::<usize>().map_err(|_| "invalid register event count")? < 7
+        || digest.len() != 64
+        || !digest.bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        return Err("invalid register count or SHA-256");
+    }
+    Ok(())
+}
+
+// Detect unintended replay of a *valid* kernel transcript from another
+// synthetic request or completed attempt. This is a correlation control,
+// NOT proof against a party who can forge kernel serial output and tickets.
+fn attest_guest_serial_for(
+    serial: &str, measurement: &str, request: &str, attempt: usize,
+) -> Result<(), &'static str> {
+    attest_guest_serial(serial, measurement)?;
+    if request.len() != 24
+        || !request.bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        || !(1..=3).contains(&attempt)
+    {
+        return Err("invalid synthetic request/attempt");
+    }
+    let expected = format!(
+        "command line: /kernel.elf32 then=off image={measurement} d12_ticket={request} d12_attempt={attempt}"
+    );
+    let mut command_lines = serial.lines().filter(|line| line.starts_with("command line: "));
+    if command_lines.next() != Some(expected.as_str()) || command_lines.next().is_some() {
+        return Err("native kernel command line does not match the exact request and attempt");
+    }
+    Ok(())
+}
+
+fn attest_guest_serial_file_for(
+    path: &Path, measurement: &str, request: &str, attempt: usize,
+) -> io::Result<()> {
+    let file = File::open(path)?;
+    let mut data = String::new();
+    file.take(MAX_SERIAL_BYTES + 1).read_to_string(&mut data)?;
+    if data.len() as u64 > MAX_SERIAL_BYTES {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "native serial exceeds 1MiB limit"));
+    }
+    attest_guest_serial_for(&data, measurement, request, attempt)
+        .map_err(|why| io::Error::new(io::ErrorKind::InvalidData, why))
+}
+
+// Linux-only, cooperative same-host lease. The descriptor stays owned by
+// this process for the complete guest attempt and is released on normal
+// return, abort, or process death. This is NOT an authority boundary against
+// other processes capable of writing to the same test volume.
+unsafe extern "C" {
+    fn flock(fd: std::os::raw::c_int, operation: std::os::raw::c_int) -> std::os::raw::c_int;
+}
+const LOCK_EX: std::os::raw::c_int = 2;
+const LOCK_NB: std::os::raw::c_int = 4;
+
+fn acquire_controller_lock(state: &Path) -> io::Result<Option<File>> {
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(state.join("controller.lock"))?;
+    let result = unsafe { flock(file.as_raw_fd(), LOCK_EX | LOCK_NB) };
+    if result == 0 {
+        return Ok(Some(file));
+    }
+    let error = io::Error::last_os_error();
+    if error.raw_os_error() == Some(11) {
+        // A live controller owns this request's journal now. Do not infer
+        // a crash, do not write INDETERMINATE, and do not spawn a guest.
+        return Ok(None);
+    }
+    Err(error)
+}
+
+fn test_service() -> io::Result<i32> {
+    let base = PathBuf::from("/state");
+    let request = env::var("D12_REQUEST").map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    let measurement = env::var("D12_MEASUREMENT")
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    if request.len() != 24 || !request.bytes().all(|b| b.is_ascii_hexdigit()) || !hex64(&measurement) {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid synthetic request or image pin"));
+    }
+    let _exclusive_controller_lock = match acquire_controller_lock(&base)? {
+        Some(guard) => guard,
+        None => {
+            // Status 0 here means this *contender* has stopped cleanly, not
+            // that the requested operation completed. Preserve an explicit
+            // process-output discriminator without mutating the shared state.
+            eprintln!("D12_BUSY: another same-host controller holds the journal; no dispatch");
+            return Ok(0);
+        }
+    };
+    let pin = base.join("request.txt");
+    if !pin.exists() {
+        persist_new(&pin, &request)?;
+    }
+    if read(&pin)? != request {
+        durable_attention(&base, "REQUEST_MISMATCH: stale unrelated test state was supplied\n")?;
+        return Ok(0);
+    }
+
+    // A previously recorded explicit attention marker and any incomplete,
+    // sparse, or future attempt prevent automatic dispatch. Inspect the whole
+    // bounded journal instead of stopping at the first absent marker.
+    let next = match journal::inspect_journal(&base, &request)? {
+        journal::Decision::Ready(n) => n,
+        journal::Decision::CompleteOrHeld => {
+            // A preexisting attention fence is terminal for this controller.
+            // A fully completed 3-attempt journal still needs all three raw
+            // receipts checked before it may be called complete on restart.
+            if fs::symlink_metadata(base.join("attention.txt")).is_ok() {
+                return Ok(0);
+            }
+            4
+        },
+        journal::Decision::Attention(reason) => {
+            durable_attention(&base, &format!("{reason}\n"))?;
+            return Ok(0);
+        }
+    };
+
+    // An END marker from an earlier wrapper is not sufficient without its
+    // separately retained native guest receipt. Refuse a plausible-looking
+    // stale journal if the serial was lost or replaced before restart.
+    for previous in 1..next {
+        let path = base.join(format!("qemu-{previous}.serial"));
+        if let Err(err) = attest_guest_serial_file_for(&path, &measurement, &request, previous) {
+            durable_attention(&base, &format!(
+                "INVALID_JOURNAL: prior attempt {previous} END without valid native receipt: {err}\n"
+            ))?;
+            return Ok(0);
+        }
+    }
+
+    // Here next=4 represents three syntactically complete attempts whose
+    // native receipts have *all* just passed the same independent check.
+    if next > 3 {
+        return Ok(0);
+    }
+    let start = base.join(format!("start-{next}.txt"));
+    persist_new(&start, &format!("REQUEST={request};ATTEMPT={next};START\n"))?;
+
+    // This fault occurs AFTER the START record is flushed and BEFORE
+    // launching QEMU. A Docker-managed restart encounters unresolved prior
+    // work and refuses to invent a completion or launch a duplicate guest.
+    if env::var("D12_FAULT_PRESPAWN").as_deref() == Ok("1") {
+        thread::sleep(Duration::from_millis(11_200));
+        process::abort();
+    }
+
+    let serial_path = base.join(format!("qemu-{next}.serial"));
+    let stderr_path = base.join(format!("qemu-{next}.stderr"));
+    // A preexisting output is an ambiguous crash residue, not permission
+    // to truncate somebody else's previous evidence.
+    let serial = OpenOptions::new().write(true).create_new(true).open(&serial_path)?;
+    let stderr = OpenOptions::new().write(true).create_new(true).open(&stderr_path)?;
+    let mut qemu = Command::new("/usr/bin/qemu-system-x86_64");
+    qemu.args([
+        "-accel", "tcg", "-cpu", "max", "-m", "128M",
+        "-display", "none", "-monitor", "none", "-no-reboot",
+        "-kernel", "/kernel.elf32",
+        "-serial", "stdio", "-net", "none",
+        "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
+    ])
+    .arg("-append").arg(format!("then=off image={measurement} d12_ticket={request} d12_attempt={next}"))
+    .stdout(Stdio::from(serial))
+    .stderr(Stdio::from(stderr));
+    if env::var("D12_HOLD_GUEST").as_deref() == Ok("1") {
+        // Deliberate test-only post-spawn crash window: QEMU remains alive
+        // with vCPUs paused. This is *not* a completed or booted PCP guest.
+        qemu.arg("-S");
+    }
+    // Adversarial harness-only arm: simulate an exit code of 33 without
+    // launching QEMU, and leave a clearly non-native serial. This checks
+    // whether an exit-code-only end oracle could fabricate completion.
+    let spoofed = env::var("D12_SPOOF_EXIT33").as_deref() == Ok("1");
+    let status = if spoofed { None } else { Some(qemu.status()?) };
+    if spoofed {
+        fs::write(&serial_path, b"SYNTHETIC TEST: fabricated QEMU exit code 33 without native guest\n")?;
+    }
+    if !spoofed && status.as_ref().and_then(|status| status.code()) != Some(33) {
+        durable_attention(&base, &format!(
+            "UNCONFIRMED: QEMU result {status:?}; no automatic duplicate launch\n"
+        ))?;
+        return Ok(0);
+    }
+    // QEMU's diagnostic exit status alone is insufficient: another process
+    // could produce it without executing the expected measured guest.
+    if let Err(err) = attest_guest_serial_file_for(&serial_path, &measurement, &request, next) {
+        durable_attention(&base, &format!(
+            "UNCONFIRMED: QEMU exited 33 but native receipt invalid: {err}; no END\n"
+        ))?;
+        return Ok(0);
+    }
+    // The retained serial/error bytes must be forced to the host filesystem
+    // before an END marker is allowed to assert this synthetic boot finished.
+    File::open(&serial_path)?.sync_all()?;
+    File::open(&stderr_path)?.sync_all()?;
+    persist_new(
+        &base.join(format!("end-{next}.txt")),
+        &format!("REQUEST={request};ATTEMPT={next};QEMU_EXIT=33;END\n"),
+    )?;
+
+    // Docker's on-failure restart policy is deliberately exercised on a
+    // synthetic nonzero wrapper exit. This is not a kernel crash or recovery.
+    // Its >=10-second lifetime satisfies Docker's restart activation floor.
+    if next < 3 {
+        thread::sleep(Duration::from_millis(11_200));
+        Ok(42)
+    } else {
+        Ok(0)
+    }
+}
+
+fn main() {
+    match test_service() {
+        Ok(code) => process::exit(code),
+        Err(e) => {
+            eprintln!("D12 disposable runner failed: {e}");
+            process::exit(2);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{attest_guest_serial, attest_guest_serial_for};
+
+    fn candidate(digest: &str, measurement: &str) -> String {
+        format!(
+            "PCP OS kernel 0.3.1 | x86_64 | early\n\
+             running image (code and read-only data), SHA-256: {measurement} (measured; equal to the value the loader named)\n\
+             kernel register: 43 events, head {digest}\n\
+             ALL SELF-TESTS PASS. Present: native user mode\n"
+        )
+    }
+
+    #[test]
+    fn accepts_only_one_exact_native_receipt_after_measured_image_pass() {
+        let digest = "a".repeat(64);
+        let measurement = "b".repeat(64);
+        let serial = candidate(&digest, &measurement);
+        assert!(attest_guest_serial(&serial, &measurement).is_ok());
+        for adversary in [
+            serial.replace(&measurement, &"c".repeat(64)),
+            serial.replace("43 events", "0 events"),
+            serial.replace(&digest, &"z".repeat(64)),
+            serial.replace("PCP OS kernel", "Other kernel"),
+            serial.replace("ALL SELF-TESTS PASS.", "1 SELF-TEST(S) FAILED"),
+            format!("{serial}kernel register: 43 events, head {digest}\n"),
+            serial.replace("measured; equal", "measured; NOT equal"),
+            serial.replace("kernel register: ", "unproven register: "),
+        ] {
+            assert!(
+                attest_guest_serial(&adversary, &measurement).is_err(),
+                "a modified receipt was falsely accepted"
+            );
+        }
+    }
+    #[test]
+    fn wrong_request_or_attempt_replay_must_not_satisfy_native_receipt() {
+        let digest = "a".repeat(64);
+        let measurement = "b".repeat(64);
+        let old_request = "f".repeat(24);
+        let expected_request = "e".repeat(24);
+        let otherwise_valid = format!(
+            "command line: /kernel.elf32 then=off image={measurement} d12_ticket={old_request} d12_attempt=1\n{}",
+            candidate(&digest, &measurement),
+        );
+        // Positive control: all existing image/self-test/register checks pass.
+        assert!(attest_guest_serial(&otherwise_valid, &measurement).is_ok());
+        // The ordinary attester alone cannot establish this attempt; the
+        // per-request attester must reject a prior valid-looking transcript.
+        assert!(attest_guest_serial_for(
+            &otherwise_valid, &measurement, &old_request, 1,
+        ).is_ok(), "exact source request and attempt should remain accepted");
+        assert!(attest_guest_serial_for(
+            &otherwise_valid, &measurement, &expected_request, 1,
+        ).is_err(), "valid-looking prior serial must not prove a new request");
+        assert!(attest_guest_serial_for(
+            &otherwise_valid, &measurement, &old_request, 2,
+        ).is_err(), "an earlier serial must not prove a second attempt");
+    }
+
+}
