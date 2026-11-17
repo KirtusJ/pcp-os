@@ -1,0 +1,49 @@
+name: PCP OS x86-64 firmware handoff contract checks
+
+on:
+  pull_request:
+    paths:
+      - 'PCP_OS_Rust/crates/pcpos-kernel/handoff/**'
+      - '.github/workflows/native-64-handoff.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  handoff-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout exact PR source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Runner/source provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          rustc --version --verbose
+          cargo --version
+      - name: Synthetic contract tests (debug)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --offline --all-targets --manifest-path PCP_OS_Rust/crates/pcpos-kernel/handoff/Cargo.toml -- --nocapture
+      - name: Synthetic contract tests (release)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --offline --release --all-targets --manifest-path PCP_OS_Rust/crates/pcpos-kernel/handoff/Cargo.toml -- --nocapture
+      - name: Install official bare-metal core target (CI toolchain only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add x86_64-unknown-none
+      - name: Check no_std library for x86_64-unknown-none
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --offline --lib --target x86_64-unknown-none --manifest-path PCP_OS_Rust/crates/pcpos-kernel/handoff/Cargo.toml
