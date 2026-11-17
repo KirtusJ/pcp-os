@@ -389,7 +389,7 @@ impl Ui {
         self.decision_choice = None;
     }
 
-    fn start_task(&mut self, task_id: u64, seq: u64) {
+    fn start_task(&mut self, task_id: u64, seq: u64, consumes_local_submission: bool) {
         self.task = Task { id: task_id, seq, state: TaskState::Running };
         self.pending_submit = None;
         self.stop_intent_task = None;
@@ -397,9 +397,16 @@ impl Ui {
         self.decision_pending = None;
         self.decision_choice = None;
         self.count = 0;
-        self.input.clear();
+        // A status-only Started may describe other admitted work. It must
+        // not erase text the operator never submitted. Clear the editor only
+        // for the matching, explicitly keyed local SubmissionStarted receipt.
+        if consumes_local_submission { self.input.clear(); }
         self.log(seq, "START", "TASK START REPORTED");
-        self.notice("RUNNING - SERVICE REPORTED");
+        self.notice(if !consumes_local_submission && !self.input.is_empty() {
+            "TASK STARTED - UNSENT DRAFT RETAINED"
+        } else {
+            "RUNNING - SERVICE REPORTED"
+        });
     }
 
     pub fn intent(&mut self, action: Action) -> Option<Intent> {
@@ -541,7 +548,7 @@ impl Ui {
                     && task_id != self.task.id
                     && !self.task.state.is_active() =>
             {
-                self.start_task(task_id, seq);
+                self.start_task(task_id, seq, false);
                 true
             }
             BackendEvent::SubmissionStarted { idempotency_key, task_id, seq }
@@ -550,7 +557,7 @@ impl Ui {
                     && self.pending_submit.map(|p| p.idempotency_key)
                         == Some(idempotency_key) =>
             {
-                self.start_task(task_id, seq);
+                self.start_task(task_id, seq, true);
                 true
             }
             BackendEvent::SubmissionRejected { idempotency_key }
@@ -709,6 +716,51 @@ mod tests {
     fn running(u: &mut Ui) {
         connected(u);
         assert!(u.observe(BackendEvent::Started { task_id: 7, seq: 1 }));
+    }
+
+    #[test]
+    fn status_only_start_preserves_a_draft_that_was_never_submitted() {
+        let mut u = Ui::new();
+        connected(&mut u);
+        for b in b"draft_A/case.rs" {
+            assert!(u.input.push_ascii(*b));
+        }
+        let original = u.input;
+        assert!(u.controls().submit_enabled);
+        // A start status without a matching local idempotency key cannot
+        // claim that this editor's draft was consumed by a task.
+        assert!(u.observe(BackendEvent::Started { task_id: 7, seq: 1 }));
+        assert_eq!(u.input, original);
+        assert!(u.pending_submit.is_none());
+        assert!(!u.controls().submit_enabled);
+        assert_eq!(u.notice.as_str(), "TASK STARTED - UNSENT DRAFT RETAINED");
+        assert!(u.observe(BackendEvent::Completed { task_id: 7, seq: 2 }));
+        assert_eq!(u.input, original);
+        assert!(u.controls().submit_enabled);
+        assert_eq!(u.intent(Action::Submit), Some(Intent::Submit {
+            idempotency_key: 1, prompt: original, mode: Mode::Single,
+        }));
+    }
+
+    #[test]
+    fn matched_submission_start_still_consumes_exact_local_editor_snapshot() {
+        let mut u = Ui::new();
+        connected(&mut u);
+        for b in b"draft_A/case.rs" {
+            assert!(u.input.push_ascii(*b));
+        }
+        let sent = u.input;
+        assert_eq!(u.intent(Action::Submit), Some(Intent::Submit {
+            idempotency_key: 1, prompt: sent, mode: Mode::Single,
+        }));
+        assert!(!u.observe(BackendEvent::Started { task_id: 7, seq: 1 }));
+        assert_eq!(u.input, sent);
+        assert!(u.observe(BackendEvent::SubmissionStarted {
+            idempotency_key: 1, task_id: 7, seq: 1,
+        }));
+        assert!(u.input.is_empty());
+        assert!(u.pending_submit.is_none());
+        assert_eq!(u.task.state, TaskState::Running);
     }
 
     #[test]
