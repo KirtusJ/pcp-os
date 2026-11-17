@@ -86,6 +86,26 @@ def decode_head(size, pixels, font, lut):
     return "".join(chars)
 
 
+def verify_event_overlap(size, first_pixels, second_pixels, first_top, second_top, per, event_count):
+    """Pixel-exact overlap under the kernel's grid-row shift, without OCR."""
+    width, height = size
+    lo = max(first_top, second_top)
+    hi = min(first_top + per, second_top + per, event_count)
+    if hi <= lo:
+        raise ValueError("no event rows to compare")
+    for seq in range(lo, hi):
+        y1 = (4 + seq - first_top) * 20
+        y2 = (4 + seq - second_top) * 20
+        for delta in range(20):
+            a = ((y1 + delta) * width + 20) * 3
+            b = ((y2 + delta) * width + 20) * 3
+            count = (width - 40) * 3
+            if first_pixels[a:a+count] != second_pixels[b:b+count]:
+                raise ValueError("event row %d changed on scroll %d -> %d" %
+                                 (seq, first_top, second_top))
+    return (hi - lo) * 20 * (width - 40)
+
+
 def visit(kernel, measured, root, width, height, vram, font, timeout):
     root.mkdir(parents=True, exist_ok=False)
     serial = root / "serial.log"
@@ -164,21 +184,79 @@ def visit(kernel, measured, root, width, height, vram, font, timeout):
                 raise RuntimeError("changed last hex digit falsely accepted")
             report["changed_tail_negative"] = adverse
 
-            monitor.key("up")
-            time.sleep(.30)
-            path, (size, pixels) = screenshot("register_up")
-            if decode_head(size, pixels, font, lut) != head:
-                raise ValueError("head changed during Up")
-            report["frames"]["register_up"] = hashlib.sha256(path.read_bytes()).hexdigest()
-            monitor.key("down")
-            time.sleep(.30)
-            path, (size, pixels) = screenshot("register_down")
-            if decode_head(size, pixels, font, lut) != head:
-                raise ValueError("head changed during Down")
-            report["frames"]["register_down"] = hashlib.sha256(path.read_bytes()).hexdigest()
-            report["up_down_changed_frame"] = report["frames"]["register_up"] != report["frames"]["register"]
-            if not report["up_down_changed_frame"] or report["frames"]["register_down"] != report["frames"]["register"]:
-                raise ValueError("Up/Down did not change then restore the register frame")
+            # The committed native test fixture displays 41 register events.
+            # Confirm that count in real framebuffer pixels before using it to
+            # calculate the expected top indices: no serial/shutdown count proxy.
+            event_count = 41
+            if not exact_cells(size, pixels, 20, 20,
+                               "THE KERNEL'S REGISTER: 41 events, chain intact",
+                               font, TEAL):
+                raise ValueError("actual register event count is not 41")
+            per = height // 20 - 6
+            initial_top = max(0, event_count - per)
+            half_page = per // 2
+            original = pixels
+
+            def next_frame(key, name):
+                monitor.key(key)
+                time.sleep(.30)
+                shot_path, (shot_size, shot_pixels) = screenshot(name)
+                if shot_size != (width, height):
+                    raise ValueError("mode changed during scroll " + name)
+                if decode_head(shot_size, shot_pixels, font, lut) != head:
+                    raise ValueError("verified head changed during scroll " + name)
+                if not exact_cells(shot_size, shot_pixels, 20, 20,
+                                   "THE KERNEL'S REGISTER: 41 events, chain intact",
+                                   font, TEAL):
+                    raise ValueError("count/header changed during scroll " + name)
+                report["frames"][name] = hashlib.sha256(shot_path.read_bytes()).hexdigest()
+                return shot_pixels
+
+            # A single Up did not reach the top on the 800x600 actual guest;
+            # require a second Up, then an unchanged saturated-top negative.
+            up1_top = max(0, initial_top - half_page)
+            up1 = next_frame("up", "register_up")
+            overlap1 = verify_event_overlap(size, original, up1,
+                                            initial_top, up1_top, per, event_count)
+            if up1 == original:
+                raise ValueError("first Up did not move visible events")
+            up2_top = max(0, up1_top - half_page)
+            up2 = next_frame("up", "register_up_2")
+            overlap2 = verify_event_overlap(size, up1, up2,
+                                            up1_top, up2_top, per, event_count)
+            if (up2 == up1) != (up2_top == up1_top):
+                raise ValueError("second Up transition contradicts top bound")
+            if up2_top != 0:
+                raise ValueError("two Up presses never reached first event")
+            up3 = next_frame("up", "register_up_saturated")
+            if up3 != up2:
+                raise ValueError("saturated Up changed first-page pixels")
+
+            # A Down from top must advance a half-page until the bottom
+            # saturates, then restore the complete original register frame.
+            down1_top = min(initial_top, up2_top + half_page)
+            down1 = next_frame("down", "register_down_from_top")
+            overlap3 = verify_event_overlap(size, up3, down1,
+                                            up2_top, down1_top, per, event_count)
+            down2_top = min(initial_top, down1_top + half_page)
+            down2 = next_frame("down", "register_down_2")
+            overlap4 = verify_event_overlap(size, down1, down2,
+                                            down1_top, down2_top, per, event_count)
+            down3 = next_frame("down", "register_down")
+            if down3 != original or down2_top != initial_top:
+                raise ValueError("Down did not return to original bottom page")
+            if (down2 != down1) != (down2_top != down1_top):
+                raise ValueError("second Down transition contradicts bottom bound")
+
+            report["up_down_changed_frame"] = True
+            report["scroll_boundary"] = {
+                "count": event_count, "page_rows": per,
+                "top_windows": [initial_top, up1_top, up2_top],
+                "down_windows": [down1_top, down2_top, initial_top],
+                "overlap_checked_pixels": [overlap1, overlap2, overlap3, overlap4],
+                "saturated_up_identical": True,
+                "returned_bottom_identical": True,
+            }
 
             monitor.key("esc")
             end = time.monotonic() + timeout
