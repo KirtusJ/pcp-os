@@ -1,0 +1,80 @@
+name: D2 isolated native PCP OS 640px register-width negative
+on:
+  pull_request:
+    paths:
+      - 'os-docs/display-acceptance/register/native_640_probe.py'
+      - '.github/workflows/director2-register-native-640.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  q35_640_negative:
+    name: Native Q35 640p head clipping (test-kernel variant only)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact proposed head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Pin independent glyph decoder from D2 checker
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: 12de565d3c56baffd609f6c1957b69b150867072
+          path: checker
+      - name: Record source identity and override only the Bochs preference in disposable checkout
+        run: |
+          set -euo pipefail
+          echo "EXACT_TEST_HEAD $(git rev-parse HEAD)"
+          session=PCP_OS_Rust/crates/pcpos-kernel/src/session.rs
+          source=PCP_OS_Rust/crates/pcpos-kernel/src/dev.rs
+          echo "ORIGINAL_SESSION_BLOB $(git hash-object "$session")"
+          echo "ORIGINAL_DEV_BLOB $(git hash-object "$source")"
+          test "$(git hash-object "$session")" = 0dffe0f7be2066fdb63aa32d9cd16bc98feb257d
+          test "$(git hash-object "$source")" = 12f28583d9ecb7bd8ba89b8e72a36fff695f7353
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("PCP_OS_Rust/crates/pcpos-kernel/src/dev.rs")
+          old = "return display_set(1024, 768).or_else(|| display_set(800, 600)).or_else(|| display_set(640, 480));"
+          new = "return display_set(640, 480);"
+          body = source.read_text()
+          if body.count(old) != 1:
+              raise SystemExit("unsupported Bochs-preference source; no test override")
+          source.write_text(body.replace(old, new, 1))
+          PY
+          echo "TEST_ONLY_DEV_BLOB $(git hash-object "$source")"
+          echo "TEST_ONLY_SOURCE_DIFF"
+          git diff -- "$source"
+          echo "TEST_KERNEL_VARIANT_ONLY: this is not an unmodified PCP OS build"
+      - name: Build isolated native test kernel and boot one Q35 guest
+        env:
+          PCPOS_KERNEL_STAGE: ${{ runner.temp }}/d2-native-640-kernel
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 binutils lld
+          rustup target add x86_64-unknown-none
+          rustup component add rust-src
+          qemu-system-x86_64 --version
+          rustc -Vv
+          sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          kernel=PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
+          measurement=$(python3 PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py "$kernel")
+          echo "TEST_ONLY_KERNEL_SHA256 $(sha256sum "$kernel")"
+          echo "TEST_ONLY_KERNEL_MEASUREMENT $measurement"
+          python3 os-docs/display-acceptance/register/native_640_probe.py \
+            --kernel "$kernel" --measurement "$measurement" \
+            --font PCP_OS_Rust/crates/pcpos-kernel/src/font.rs \
+            --output captures/register-640
+      - name: Retain native P6, serial, error and outcome on every result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: director2-register-640-test-kernel-negative
+          path: captures/register-640/
+          if-no-files-found: warn
+          retention-days: 14
