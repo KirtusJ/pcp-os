@@ -1,0 +1,69 @@
+name: PCP OS Rust host verification
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/pcpos-host-tests.yml"
+      - "PCP_OS_Rust/Cargo.toml"
+      - "PCP_OS_Rust/Cargo.lock"
+      - "PCP_OS_Rust/crates/pcpos-core/**"
+      - "PCP_OS_Rust/crates/pcpos-host/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust-host:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: PCP_OS_Rust
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install documented Rust toolchain
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal
+          rustup default 1.97.0
+          rustc --version
+          cargo --version
+      - name: Generate native guard vectors
+        run: cargo run --locked --release --bin pcpos-vectors -- vectors
+      - name: Run host and core tests
+        run: cargo test --locked --workspace
+      - name: Compile release host binary
+        run: cargo build --locked --release --bin pcpos
+      - name: Checkout pinned build 22 Commercial method (checkout-byte repair)
+        uses: actions/checkout@v4
+        with:
+          repository: KirtusJ/pcp-os-claude
+          ref: 2197e6f12e24af8651abdeceb93c17f0e19b9ec6
+          path: released-plugin
+          persist-credentials: false
+      - name: Checkout pinned independent method-inventory regression
+        uses: actions/checkout@v4
+        with:
+          repository: KirtusJ/pcp-os-claude
+          ref: e06d58ecd384e13c0257b58c130804615728bc38
+          path: regression-tests
+          persist-credentials: false
+      - name: Check rebuilt host against real plugin method and mutations
+        run: |
+          python3 "$GITHUB_WORKSPACE/regression-tests/tests/method_inventory_regression.py" \
+            --binary "$GITHUB_WORKSPACE/PCP_OS_Rust/target/release/pcpos" \
+            --method "$GITHUB_WORKSPACE/released-plugin/method"
+
+      - name: Refuse unlisted modules after a verified method loses its manifest
+        run: |
+          python3 "$GITHUB_WORKSPACE/audit/build22-method-pinning/method_pin_manifest_removal.py" \
+            --pcpos "$GITHUB_WORKSPACE/PCP_OS_Rust/target/release/pcpos" \
+            --method "$GITHUB_WORKSPACE/released-plugin/method" \
+            --expect-fixed
+
+      - name: Refuse unlisted review modules after a verified method loses its manifest
+        run: |
+          python3 "$GITHUB_WORKSPACE/audit/build22-method-pinning/commission_manifest_removal.py" \
+            --pcpos "$GITHUB_WORKSPACE/PCP_OS_Rust/target/release/pcpos" \
+            --method "$GITHUB_WORKSPACE/released-plugin/method" \
+            --expect-fixed

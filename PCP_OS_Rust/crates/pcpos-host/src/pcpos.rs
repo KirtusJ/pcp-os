@@ -31,7 +31,7 @@ use pcpos_core::authority::{Edition, Method, ModelFindings, Standard};
 use pcpos_core::machine::{self, Delivery, Link, Review, System, Use};
 use pcpos_core::value::{ParseError, Value, MAX_DEPTH};
 use pcpos_core::{ledger, sha256_hex};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io::{BufRead, IsTerminal, Read, Seek, SeekFrom, Write};
@@ -209,6 +209,8 @@ mod lenient {
 const O_NOFOLLOW: i32 = 0o100000;
 #[cfg(all(target_os = "linux", not(any(target_arch = "aarch64", target_arch = "arm"))))]
 const O_NOFOLLOW: i32 = 0o400000;
+#[cfg(target_os = "linux")]
+const O_NONBLOCK: i32 = 0o4000;
 #[cfg(any(target_os = "macos", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))]
 const O_NOFOLLOW: i32 = 0x0100;
 #[cfg(all(unix, not(any(target_os = "linux", target_os = "macos", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))))]
@@ -908,6 +910,8 @@ struct MethodCheck {
     /// Files absent that are not among the packet's programs and probes.
     absent_text: usize,
     differing: Vec<String>,
+    /// Entries present in the tree but not named by the release manifest.
+    unexpected: Vec<String>,
 }
 
 impl MethodCheck {
@@ -916,14 +920,20 @@ impl MethodCheck {
     }
 
     fn complete(&self) -> bool {
-        self.is_native() && self.differing.is_empty() && self.absent_text == 0 && self.equal > 0
+        self.is_native() && self.differing.is_empty() && self.unexpected.is_empty()
+            && self.absent_text == 0 && self.equal > 0
     }
 
     fn text(&self) -> String {
-        format!("manifest {} ({} the release this core implements); {} file(s) listed: {} present and equal, {} absent{}, {} differing{}",
+        format!("manifest {} ({} the release this core implements); {} file(s) listed: {} present and equal, {} absent{}, {} differing{}; {} unexpected entries{}",
                 self.fingerprint, if self.is_native() { "is" } else { "IS NOT" }, self.listed, self.equal, self.absent,
-                if self.absent > 0 && self.absent_text == 0 { " (all of them the packet's programs and probes, which a plugin does not carry)" } else { "" }, self.differing.len(),
-                if self.differing.is_empty() { String::new() } else { format!(" [{}]", self.differing.join(" ")) })
+                if self.absent > 0 && self.absent_text == 0 { " (all of them the packet's programs and probes, which a plugin does not carry)" } else { "" },
+                self.differing.len(),
+                if self.differing.is_empty() { String::new() } else { format!(" [{}]", self.differing.join(" ")) },
+                self.unexpected.len(),
+                if self.unexpected.is_empty() { String::new() } else {
+                    format!(" [{}]", self.unexpected.iter().take(8).map(|p| format!("{p:?}")).collect::<Vec<_>>().join(" "))
+                })
     }
 }
 
@@ -931,24 +941,144 @@ impl MethodCheck {
 /// delivery, model answers included. A plugin holds the method's text, each file the packet's own bytes.
 const NOT_IN_A_PLUGIN: [&str; 2] = ["INTEGRATION/", "TOOLS/"];
 
-/// Compare a method packet's files with its own manifest, and the manifest with the release this core implements.
+/// Check both release inventory and local additions. Expected directories are
+/// derived from the payload list, including optional plugin tools. Do not
+/// follow symlinks. This is a bounded diagnostic, not an atomic filesystem
+/// snapshot or independent publisher authentication.
+fn unlisted_method_entries(dir: &Path, expected: &BTreeSet<PathBuf>) -> Result<Vec<String>, String> {
+    const MAX_ENTRIES: usize = 16_384;
+    let mut expected_dirs = BTreeSet::new();
+    for file in expected {
+        let mut parent = file.parent();
+        while let Some(p) = parent {
+            if p.as_os_str().is_empty() { break; }
+            expected_dirs.insert(p.to_path_buf());
+            parent = p.parent();
+        }
+    }
+    let mut stack = vec![PathBuf::new()];
+    let mut seen = 0usize;
+    let mut extra = Vec::new();
+    while let Some(rel) = stack.pop() {
+        let entries = fs::read_dir(dir.join(&rel))
+            .map_err(|e| format!("method tree not readable: {e}"))?;
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("method tree entry not readable: {e}"))?;
+            seen += 1;
+            if seen > MAX_ENTRIES {
+                return Err("method tree too large to attest".into());
+            }
+            let path = rel.join(entry.file_name());
+            let kind = entry.file_type()
+                .map_err(|e| format!("method tree entry type not readable: {e}"))?;
+            if kind.is_dir() {
+                if !expected_dirs.contains(&path) {
+                    extra.push(format!("{}/", path.to_string_lossy()));
+                }
+                stack.push(path);
+            } else if !kind.is_file() || !expected.contains(&path) {
+                extra.push(path.to_string_lossy().into_owned());
+            }
+        }
+    }
+    extra.sort();
+    Ok(extra)
+}
+
+/// Read ordinary, bounded method files only. None means genuinely absent;
+/// an unreadable present file or nonregular path must never count as a valid
+/// omission of optional plugin code. On Linux, nonblocking no-follow opens
+/// guard against a file swapped to a FIFO or symlink before the actual open.
+fn read_method_regular_file(path: &Path) -> Result<Option<Vec<u8>>, String> {
+    let before = match fs::symlink_metadata(path) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("cannot inspect {}: {e}", path.display())),
+    };
+    if !before.file_type().is_file() {
+        return Err(format!("{} is not an ordinary method file", path.display()));
+    }
+    if before.len() > MAX_SPECIFICATION {
+        return Err(format!("{} exceeds the method file size limit", path.display()));
+    }
+    let mut opts = OpenOptions::new();
+    opts.read(true);
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.custom_flags(O_NOFOLLOW | O_NONBLOCK);
+    }
+    #[cfg(all(unix, not(target_os = "linux")))]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.custom_flags(O_NOFOLLOW);
+    }
+    let f = opts.open(path)
+        .map_err(|e| format!("cannot open {}: {e}", path.display()))?;
+    let opened = f.metadata()
+        .map_err(|e| format!("cannot inspect opened {}: {e}", path.display()))?;
+    if !opened.is_file() || opened.len() > MAX_SPECIFICATION {
+        return Err(format!("{} is not a bounded ordinary method file", path.display()));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if before.dev() != opened.dev() || before.ino() != opened.ino() {
+            return Err(format!("{} changed while opening", path.display()));
+        }
+    }
+    let mut raw = Vec::new();
+    f.take(MAX_SPECIFICATION + 1).read_to_end(&mut raw)
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    if raw.len() as u64 > MAX_SPECIFICATION {
+        return Err(format!("{} grew beyond the method file size limit", path.display()));
+    }
+    let after = fs::symlink_metadata(path)
+        .map_err(|e| format!("cannot recheck {}: {e}", path.display()))?;
+    if !after.file_type().is_file() {
+        return Err(format!("{} changed type during reading", path.display()));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if after.dev() != opened.dev() || after.ino() != opened.ino() {
+            return Err(format!("{} changed while reading", path.display()));
+        }
+    }
+    Ok(Some(raw))
+}
+
+/// Compare the method packet's files with its own manifest and the release
+/// fingerprint this core implements; track unlisted files separately.
 fn method_check(dir: &Path) -> Result<MethodCheck, String> {
-    let raw = fs::read(dir.join("MANIFEST.json")).map_err(|e| format!("cannot read the manifest in {}: {}", dir.display(), e))?;
+    let raw = read_method_regular_file(&dir.join("MANIFEST.json"))?
+        .ok_or_else(|| format!("method manifest absent in {}", dir.display()))?;
     let m = lenient::parse(&raw).ok_or("the manifest is not readable")?;
     let files = match m.get("files") {
         Some(Value::List(l)) => l,
         _ => return Err("the manifest lists no files".to_string()),
     };
-    let mut c = MethodCheck { fingerprint: sha256_hex(&raw), listed: files.len(), equal: 0, absent: 0, absent_text: 0, differing: Vec::new() };
+    let mut c = MethodCheck {
+        fingerprint: sha256_hex(&raw), listed: files.len(), equal: 0,
+        absent: 0, absent_text: 0, differing: Vec::new(), unexpected: Vec::new(),
+    };
+    let mut expected = BTreeSet::new();
+    expected.insert(PathBuf::from("MANIFEST.json"));
     for f in files {
-        let (path, want) = match (f.get("path").and_then(Value::as_str), f.get("sha256").and_then(Value::as_str)) {
-            (Some(p), Some(w)) if Path::new(p).components().all(|c| matches!(c, Component::Normal(_))) => (p, w),
+        let (path, want) = match (f.get("path").and_then(Value::as_str),
+                                  f.get("sha256").and_then(Value::as_str)) {
+            (Some(p), Some(w))
+                if Path::new(p).components().all(|c| matches!(c, Component::Normal(_))) => (p, w),
             _ => return Err("the manifest holds an entry this program does not accept".to_string()),
         };
-        match fs::read(dir.join(path)) {
-            Ok(b) if sha256_hex(&b) == want => c.equal += 1,
-            Ok(_) => c.differing.push(path.to_string()),
-            Err(_) => {
+        if !expected.insert(PathBuf::from(path)) {
+            return Err(format!("duplicate method manifest entry: {path}"));
+        }
+        match read_method_regular_file(&dir.join(path)) {
+            Ok(Some(b)) if sha256_hex(&b) == want => c.equal += 1,
+            Ok(Some(_)) => c.differing.push(path.to_string()),
+            Err(e) => c.differing.push(format!("{path} (unreadable/non-regular: {e})")),
+            Ok(None) => {
                 c.absent += 1;
                 if !NOT_IN_A_PLUGIN.iter().any(|d| path.starts_with(d)) {
                     c.absent_text += 1;
@@ -956,6 +1086,7 @@ fn method_check(dir: &Path) -> Result<MethodCheck, String> {
             }
         }
     }
+    c.unexpected = unlisted_method_entries(dir, &expected)?;
     Ok(c)
 }
 
@@ -1007,8 +1138,42 @@ fn component_header(text: &str) -> Result<(String, String, String, Option<String
     Ok((id, key, version, core))
 }
 
-/// The largest Specification this program reads.
+/// The largest method text file this program reads, including a Specification.
 const MAX_SPECIFICATION: u64 = 4 * 1024 * 1024;
+
+/// When a method tree carries a manifest, that file defines the *whole* set of
+/// Specifications eligible to be discovered as method modules. A valid header
+/// alone does not give an unlisted acr.* file the standing of a released module.
+///
+/// Old development fixtures without a manifest are still inspectable; their
+/// release is never reported as verified. A present but malformed/unreadable
+/// manifest instead yields an empty eligible set (fail closed).
+fn declared_method_specifications(method: &Path) -> Option<BTreeMap<PathBuf, String>> {
+    let raw = match read_method_regular_file(&method.join("MANIFEST.json")) {
+        Ok(Some(bytes)) => bytes,
+        Ok(None) => return None,
+        Err(_) => return Some(BTreeMap::new()),
+    };
+    let mut eligible = BTreeMap::new();
+    let Some(doc) = lenient::parse(&raw) else { return Some(eligible) };
+    let Some(Value::List(entries)) = doc.get("files") else { return Some(eligible) };
+    let mut seen = BTreeSet::new();
+    for entry in entries {
+        let (Some(path), Some(digest)) =
+            (entry.get("path").and_then(Value::as_str), entry.get("sha256").and_then(Value::as_str))
+        else { return Some(BTreeMap::new()) };
+        let relative = Path::new(path);
+        if !relative.components().all(|c| matches!(c, Component::Normal(_)))
+            || !seen.insert(relative.to_path_buf())
+        {
+            return Some(BTreeMap::new());
+        }
+        if path.starts_with("MODULES/") && path.ends_with("/SOURCE/Specification.md") {
+            eligible.insert(relative.to_path_buf(), digest.to_string());
+        }
+    }
+    Some(eligible)
+}
 
 /// The modules at hand: every folder under the method text's MODULES that holds a Specification naming its
 /// own component, and then every module a person added beside the register. Adding or removing a module is
@@ -1024,12 +1189,25 @@ fn modules_and_oddities(se: &Session) -> (Vec<Module>, Vec<String>) {
     let mut odd: Vec<String> = Vec::new();
     let mut out: Vec<Module> = Vec::new();
     let mut ambiguous: Vec<String> = Vec::new();
+    let manifested = se.method.as_deref().and_then(declared_method_specifications);
     let added = se.added().filter(|d| d.canonicalize().map(|c| c.starts_with(&se.root)).unwrap_or(false));
     let sources: Vec<(PathBuf, bool)> = se.method.iter().map(|m| (m.join("MODULES"), false)).chain(added.into_iter().map(|d| (d, true))).collect();
     if se.method.is_some() && !se.method.as_ref().map(|m| m.join("MODULES").is_dir()).unwrap_or(false) {
         odd.push("there is no MODULES folder".to_string());
     }
     for (base, is_added) in sources {
+        // A linked top-level MODULES or added-module directory must not
+        // redirect module discovery outside the supplied source tree.
+        if !fs::symlink_metadata(&base)
+            .map(|m| m.file_type().is_dir())
+            .unwrap_or(false)
+        {
+            odd.push(format!(
+                "{}: module directory is missing, linked or nonregular; not inspected",
+                if is_added { "added modules" } else { "MODULES" }
+            ));
+            continue;
+        }
         let mut dirs: Vec<PathBuf> = match fs::read_dir(&base) {
             Ok(d) => d.filter_map(|e| e.ok()).map(|e| e.path()).collect(),
             Err(_) => continue,
@@ -1038,13 +1216,30 @@ fn modules_and_oddities(se: &Session) -> (Vec<Module>, Vec<String>) {
         let packet: Vec<String> = out.iter().map(|m| m.key.clone()).chain(ambiguous.iter().cloned()).collect();
         for d in dirs {
             let folder = format!("{}{}", if is_added { "added/" } else { "" }, clip(&d.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(), 80));
-            if !d.is_dir() {
+            // Path::is_dir follows symlinks. An attacker-controlled module
+            // directory could otherwise redirect to a Specification outside
+            // the chosen method tree even though the final filename is safe.
+            if !fs::symlink_metadata(&d)
+                .map(|m| m.file_type().is_dir())
+                .unwrap_or(false)
+            {
+                odd.push(format!("{folder}: not an ordinary module directory; not used"));
                 continue;
             }
-            let file = d.join("SOURCE").join("Specification.md");
-            let bytes = match fs::metadata(&file).ok().filter(|m| m.is_file() && m.len() <= MAX_SPECIFICATION).and_then(|_| fs::read(&file).ok()) {
-                Some(b) => b,
-                None => {
+            let source_dir = d.join("SOURCE");
+            if !fs::symlink_metadata(&source_dir)
+                .map(|m| m.file_type().is_dir())
+                .unwrap_or(false)
+            {
+                odd.push(format!("{folder}: no SOURCE/Specification.md that can be read; not a module"));
+                continue;
+            }
+            let file = source_dir.join("Specification.md");
+            // Discovery and clause rendering share the bounded, nonblocking reader.
+            // A path swapped to a FIFO between type inspection and open must not hang.
+            let bytes = match read_method_regular_file(&file) {
+                Ok(Some(b)) => b,
+                Ok(None) | Err(_) => {
                     odd.push(format!("{folder}: no SOURCE/Specification.md that can be read; not a module"));
                     continue;
                 }
@@ -1061,6 +1256,18 @@ fn modules_and_oddities(se: &Session) -> (Vec<Module>, Vec<String>) {
                 odd.push(format!("{folder}: {id} is not {}; not used", if is_added { "named `local.<name>`, as an added module is" } else { "named `acr.<name>`, as a module of the method is" }));
                 continue;
             }
+            // Resolve manifest membership before an ineligible folder can
+            // contribute a name to duplicate-identity detection.
+            let actual_sha = sha256_hex(&bytes);
+            if !is_added {
+                if let (Some(listed), Some(method)) = (&manifested, se.method.as_deref()) {
+                    let declared = file.strip_prefix(method).ok().and_then(|path| listed.get(path));
+                    if declared != Some(&actual_sha) {
+                        odd.push(format!("{folder}: {id} is not a manifest-listed Specification with its declared SHA-256; not a released module"));
+                        continue;
+                    }
+                }
+            }
             if is_added && packet.contains(&key) {
                 odd.push(format!("{folder}: {id} takes the name of a module of the method text; the added folder is not used"));
                 continue;
@@ -1075,7 +1282,7 @@ fn modules_and_oddities(se: &Session) -> (Vec<Module>, Vec<String>) {
                 ambiguous.push(key);
                 continue;
             }
-            let m = Module { key, id, version, sha256: sha256_hex(&bytes), words: text.split_whitespace().count(), core, file, added: is_added };
+            let m = Module { key, id, version, sha256: actual_sha, words: text.split_whitespace().count(), core, file, added: is_added };
             if m.other_core() {
                 odd.push(format!("{folder}: {} says it was written for another Core than this program implements; it can be read, and cannot be selected", m.id));
             }
@@ -1113,6 +1320,23 @@ fn provision_start(line: &str) -> Option<(String, u8)> {
     Some((number.to_string(), depth))
 }
 
+/// Serve text only if the bytes read now match the identity established during
+/// module discovery. This does not freeze the method directory, but prevents a
+/// returned provision being labelled with another Specification's digest.
+fn coherent_specification_text(m: &Module) -> Result<String, String> {
+    let bytes = read_method_regular_file(&m.file)
+        .map_err(|e| format!("the Specification of {} cannot be read: {e}", m.id))?
+        .ok_or_else(|| format!("the Specification of {} is absent", m.id))?;
+    if sha256_hex(&bytes) != m.sha256 {
+        return Err(format!(
+            "the Specification of {} changed during clause retrieval; retry with a stable source",
+            m.id
+        ));
+    }
+    String::from_utf8(bytes)
+        .map_err(|e| format!("the Specification of {} is not valid UTF-8: {e}", m.id))
+}
+
 /// The exact text of one provision of a module's Specification, or the list of its headings.
 fn clause_text(se: &Session, module: &str, section: Option<&str>) -> Result<String, String> {
     se.method.as_deref().ok_or("no method text is at hand")?;
@@ -1123,7 +1347,7 @@ fn clause_text(se: &Session, module: &str, section: Option<&str>) -> Result<Stri
         Some(o) => format!("{want} is ambiguous in the method text at hand and no text is served for it ({o}). Remove one of the folders"),
         None => format!("{} is not a module of the method text at hand. The modules are: {}", clip(module, 60), found.iter().map(|m| m.key.as_str()).collect::<Vec<_>>().join(", ")),
     })?;
-    let text = fs::read_to_string(&m.file).map_err(|e| format!("the Specification of {} cannot be read: {e}", m.id))?;
+    let text = coherent_specification_text(m)?;
     let lines: Vec<&str> = text.lines().collect();
     let marks: Vec<(usize, String, u8)> = lines.iter().enumerate().filter_map(|(i, l)| provision_start(l).map(|(n, d)| (i, n, d))).collect();
     let head = format!("{} {} | Specification SHA-256 {}", m.id, m.version, m.sha256);
@@ -1141,10 +1365,22 @@ fn clause_text(se: &Session, module: &str, section: Option<&str>) -> Result<Stri
     let at = marks.iter().position(|(_, n, _)| *n == section).ok_or(format!("{} has no provision numbered {}. Call this tool without a section for its headings. Nothing was fetched; do not supply the text from memory", m.id, clip(&section, 40)))?;
     let (start, _, depth) = (marks[at].0, &marks[at].1, marks[at].2);
     let end = marks[at + 1..].iter().find(|(_, _, d)| depth == 9 || (*d != 9 && *d <= depth)).map(|(i, _, _)| *i).unwrap_or(lines.len());
-    // What is shown is exactly what the digest is of: the provision without the white space around it, and one line end.
+    // Exact clause retrieval must not label a clipped preview as complete text.
+    // Keep the established output limit, but refuse the whole clause instead
+    // of returning partial text under the digest of an unseen remainder.
+    const MAX_EXACT_CLAUSE_CHARS: usize = 60_000;
     let body = lines[start..end].join("\n").trim().to_string();
+    let length = body.chars().count();
+    if length > MAX_EXACT_CLAUSE_CHARS {
+        return Err(format!(
+            "{} provision {} has {} characters, beyond the exact clause output limit of {}; no provision text was served",
+            m.id, section, length, MAX_EXACT_CLAUSE_CHARS
+        ));
+    }
+    // The returned provision is byte-for-byte the text the digest identifies,
+    // with a single final line end.
     let digest = sha256_hex(format!("{body}\n").as_bytes());
-    Ok(format!("{head}\nPROVISION {section} | lines {}..{} | SHA-256 of this text {digest}\n\n{}\n", start + 1, end, clip_long(&body, 60_000)))
+    Ok(format!("{head}\nPROVISION {section} | lines {}..{} | SHA-256 of this text {digest}\n\n{}\n", start + 1, end, body))
 }
 
 /// Text passed on whole, up to a limit that only a damaged file would reach.
@@ -1152,15 +1388,41 @@ fn clip_long(text: &str, chars: usize) -> String {
     if text.chars().count() <= chars { text.to_string() } else { format!("{}\n[cut at {chars} characters]", text.chars().take(chars).collect::<String>()) }
 }
 
+/// A METHOD_PINNED event reports a check at the time it was recorded. It
+/// cannot grant a new released-module selection from text that has since
+/// changed, even when the register's own hash chain remains intact.
+///
+/// Provisional registers that have never reported verified method files retain
+/// their development-mode handling. The check is made only for a consequential
+/// new released-namespace selection, not on the ordinary work path.
+fn require_current_method_after_verified_pin(tx: &Tx, se: &Session) -> Result<(), String> {
+    // The record's incremental replay has already applied the last METHOD_PINNED
+    // event. Do not re-verify the entire ledger for a single new selection.
+    if !tx.state().method_verified_at_pin() {
+        return Ok(());
+    }
+    let method = se.method.as_deref()
+        .ok_or("this register previously verified the method, but no current method text is at hand; a new released-module selection is held")?;
+    let check = method_check(method)
+        .map_err(|e| format!("this register previously verified the method, but current verification failed: {e}; no released-module selection was made"))?;
+    if !check.complete() {
+        return Err(format!("this register previously verified the method, but its present files no longer match the pinned release: {}; no released-module selection was made", clip(&check.text(), 1100)));
+    }
+    Ok(())
+}
+
 /// A commission names its modules by identifier, version and digest. Where the method text is at hand,
 /// each must be a specialist module found there, with that version and that digest, once.
-fn commission_modules(se: &Session, body: &Value) -> Result<(), String> {
+fn commission_modules(se: &Session, tx: &Tx, body: &Value) -> Result<(), String> {
     let list = match body.get("modules") {
         Some(Value::List(l)) if !l.is_empty() => l,
         _ => return Ok(()),
     };
+    if list.iter().any(|m| m.get("id").and_then(Value::as_str).map(|id| id.starts_with("acr.")).unwrap_or(false)) {
+        require_current_method_after_verified_pin(tx, se)?;
+    }
     if se.method.is_none() {
-        return Ok(()); // nothing to compare with: the record keeps what was declared, and METHOD_PINNED says the text was not at hand
+        return Ok(()); // no source to compare on an unverified provisional register
     }
     let found = modules_in(se);
     let mut seen: Vec<&str> = Vec::new();
@@ -1231,6 +1493,9 @@ fn set_profile(tx: &mut Tx, se: &Session, names: &[&str], by: &str, observed: &s
             Some(_) => {}
             None => return Err(format!("{} is not a module of the method text at hand. The modules are: {}", clip(n, 60), found.iter().map(|m| m.key.as_str()).collect::<Vec<_>>().join(", "))),
         }
+    }
+    if chosen.iter().any(|m| !m.added) {
+        require_current_method_after_verified_pin(tx, se)?;
     }
     let mut body = vec![("event", s("WORKSPACE_PROFILE")), ("by", s(by)), ("observed", s(observed)), ("words", s(&clip(words, 2000))),
                         ("modules", Value::List(chosen.iter().map(|m| m.record()).collect()))];
@@ -1809,7 +2074,7 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
                 return Ok(format!("REFUSE (exit code {}) [Core 4.3]\nA review is open, and material recorded now as SUPPLIED on a digest alone is your report that it was supplied: the server did not read it. Use acr_artifact with its path or its text, so that the server reads it and says how it came by it; record a source you retrieved as RETRIEVED, with where and when; record your own working as PRODUCED.\nNothing was written.\n", acr::REFUSED));
             }
             if kind == "REVIEW_COMMISSIONED" {
-                if let Err(why) = commission_modules(se, body) {
+                if let Err(why) = commission_modules(se, &tx, body) {
                     return Ok(format!("REFUSE (exit code {}) [Core 14.1]\n{why}\nNothing was written.\n", acr::REFUSED));
                 }
             }
@@ -2703,7 +2968,7 @@ fn main() {
         Some("method") if args.len() == 2 => match method_check(Path::new(&args[1])) {
             Ok(c) => {
                 println!("{}", c.text());
-                exit(if c.complete() { 0 } else if c.is_native() && c.differing.is_empty() { 1 } else { 6 })
+                exit(if c.complete() { 0 } else if c.is_native() && c.differing.is_empty() && c.unexpected.is_empty() { 1 } else { 6 })
             }
             Err(e) => {
                 eprintln!("pcpos: {e}");
@@ -2760,5 +3025,299 @@ fn main() {
             }
         }
         _ => usage(),
+    }
+}
+
+
+#[cfg(test)]
+mod method_tree_inventory_tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn sample() -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "pcpos-method-inventory-{}-{nonce}", std::process::id()
+        ));
+        fs::create_dir_all(dir.join("MODULES/01_Core/SOURCE")).unwrap();
+        let bytes = b"test Specification";
+        fs::write(dir.join("MODULES/01_Core/SOURCE/Specification.md"), bytes).unwrap();
+        let manifest = format!(
+            r#"{{"files":[{{"path":"MODULES/01_Core/SOURCE/Specification.md","sha256":"{}"}},{{"path":"TOOLS/acr.py","sha256":"{}"}}]}}"#,
+            sha256_hex(bytes), sha256_hex(b"optional program")
+        );
+        fs::write(dir.join("MANIFEST.json"), manifest).unwrap();
+        dir
+    }
+
+    #[test]
+    fn pristine_method_and_optional_tool_omission_are_distinct() {
+        let dir = sample();
+        let c = method_check(&dir).unwrap();
+        assert_eq!(c.equal, 1);
+        assert_eq!(c.absent, 1);
+        assert_eq!(c.absent_text, 0);
+        assert!(c.differing.is_empty());
+        assert!(c.unexpected.is_empty());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn module_discovery_uses_the_same_manifest_size_limit_as_verification() {
+        let dir = sample();
+        let manifest = dir.join("MANIFEST.json");
+        let mut raw = fs::read(&manifest).unwrap();
+        raw.resize(MAX_SPECIFICATION as usize, b' ');
+        fs::write(&manifest, &raw).unwrap();
+        assert_eq!(declared_method_specifications(&dir).unwrap().len(), 1);
+        raw.push(b' ');
+        fs::write(&manifest, &raw).unwrap();
+        assert!(declared_method_specifications(&dir).unwrap().is_empty());
+        assert!(method_check(&dir).is_err());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn unlisted_module_and_empty_directory_invalidate_tree_inventory() {
+        let dir = sample();
+        let extra = dir.join("MODULES/99_Probe/SOURCE/Specification.md");
+        fs::create_dir_all(extra.parent().unwrap()).unwrap();
+        fs::write(&extra, b"extra module").unwrap();
+        let c = method_check(&dir).unwrap();
+        assert_eq!(c.equal, 1);
+        assert!(c.unexpected.iter().any(|p| p == "MODULES/99_Probe/"));
+        assert!(c.unexpected.iter().any(|p| p == "MODULES/99_Probe/SOURCE/Specification.md"));
+        fs::remove_file(extra).unwrap();
+        fs::remove_dir(dir.join("MODULES/99_Probe/SOURCE")).unwrap();
+        fs::remove_dir(dir.join("MODULES/99_Probe")).unwrap();
+        fs::create_dir(dir.join("MODULES/99_Empty")).unwrap();
+        let empty = method_check(&dir).unwrap();
+        assert!(empty.unexpected.iter().any(|p| p == "MODULES/99_Empty/"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn changed_listed_file_is_not_reported_equal() {
+        let dir = sample();
+        fs::write(dir.join("MODULES/01_Core/SOURCE/Specification.md"), b"changed").unwrap();
+        let c = method_check(&dir).unwrap();
+        assert_eq!(c.equal, 0);
+        assert_eq!(c.differing, vec!["MODULES/01_Core/SOURCE/Specification.md"]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinks_cannot_satisfy_listed_or_unlisted_release_paths() {
+        use std::os::unix::fs::symlink;
+        let dir = sample();
+        let listed = dir.join("MODULES/01_Core/SOURCE/Specification.md");
+        let outside = dir.with_extension("shadow");
+        fs::write(&outside, b"test Specification").unwrap();
+        fs::remove_file(&listed).unwrap();
+        symlink(&outside, &listed).unwrap();
+        symlink(&outside, dir.join("unexpected-link.md")).unwrap();
+        let c = method_check(&dir).unwrap();
+        assert_eq!(c.equal, 0);
+        assert!(c.differing.iter().any(|p| p.starts_with("MODULES/01_Core/SOURCE/Specification.md")));
+        assert!(c.unexpected.iter().any(|p| p == "MODULES/01_Core/SOURCE/Specification.md"));
+        assert!(c.unexpected.iter().any(|p| p == "unexpected-link.md"));
+        fs::remove_dir_all(dir).unwrap();
+        fs::remove_file(outside).unwrap();
+    }
+
+    #[test]
+    fn absent_and_nonregular_method_paths_are_different() {
+        let dir = sample();
+        assert!(read_method_regular_file(&dir.join("absent")).unwrap().is_none());
+        assert!(read_method_regular_file(&dir.join("MODULES")).is_err());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn oversized_method_file_is_rejected_before_reading() {
+        let dir = sample();
+        let oversized = dir.join("oversized");
+        let file = File::create(&oversized).unwrap();
+        file.set_len(4 * 1024 * 1024 + 1).unwrap();
+        assert!(read_method_regular_file(&oversized).is_err());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn fifo_at_manifest_or_listed_path_is_rejected_without_reading() {
+        let dir = sample();
+        for relative in ["MANIFEST.json", "MODULES/01_Core/SOURCE/Specification.md"] {
+            let path = dir.join(relative);
+            fs::remove_file(&path).unwrap();
+            let status = std::process::Command::new("mkfifo").arg(&path)
+                .status().expect("Linux test requires mkfifo");
+            assert!(status.success());
+            assert!(read_method_regular_file(&path).is_err());
+            assert!(method_check(&dir).map(|c| !c.differing.is_empty()).unwrap_or(true));
+            fs::remove_file(path).unwrap();
+            // Restore the manifest and listed payload for the next iteration.
+            if relative == "MANIFEST.json" {
+                let bytes = b"test Specification";
+                fs::write(dir.join("MANIFEST.json"), format!(
+                    r#"{{"files":[{{"path":"MODULES/01_Core/SOURCE/Specification.md","sha256":"{}"}},{{"path":"TOOLS/acr.py","sha256":"{}"}}]}}"#,
+                    sha256_hex(bytes), sha256_hex(b"optional program")
+                )).unwrap();
+            } else {
+                fs::write(dir.join(relative), b"test Specification").unwrap();
+            }
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod coherent_specification_tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn fixture(bytes: &[u8]) -> (PathBuf, Module) {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let dir = env::temp_dir().join(format!(
+            "pcpos-clause-identity-{}-{nonce}", std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("Specification.md");
+        fs::write(&file, bytes).unwrap();
+        let module = Module {
+            key: "core".into(), id: "acr.core".into(), version: "1.0".into(),
+            sha256: sha256_hex(bytes), words: 1, core: None,
+            file, added: false,
+        };
+        (dir, module)
+    }
+
+    #[test]
+    fn coherent_source_is_served_with_its_discovered_digest() {
+        let (dir, module) = fixture(b"the first complete source");
+        assert_eq!(
+            coherent_specification_text(&module).unwrap(),
+            "the first complete source"
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn changed_source_is_not_labelled_with_an_earlier_digest() {
+        let (dir, module) = fixture(b"the first complete source");
+        fs::write(&module.file, b"another complete source").unwrap();
+        let error = coherent_specification_text(&module).unwrap_err();
+        assert!(error.contains("changed during clause retrieval"), "{error}");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn invalid_utf8_is_not_served_as_exact_specification_text() {
+        let (dir, module) = fixture(&[0xff, 0xfe]);
+        let error = coherent_specification_text(&module).unwrap_err();
+        assert!(error.contains("not valid UTF-8"), "{error}");
+        fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod method_inventory_tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn fixture() -> PathBuf {
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let dir = env::temp_dir().join(format!("pcpos-inventory-{}-{nonce}", std::process::id()));
+        let spec = dir.join("MODULES/01_Core/SOURCE/Specification.md");
+        fs::create_dir_all(spec.parent().unwrap()).unwrap();
+        fs::write(&spec, b"source bytes").unwrap();
+        fs::write(dir.join("MANIFEST.json"), format!(
+            r#"{{"files":[{{"path":"MODULES/01_Core/SOURCE/Specification.md","sha256":"{}"}}]}}"#,
+            sha256_hex(b"source bytes")
+        )).unwrap();
+        dir
+    }
+
+    #[test]
+    fn clean_tree_and_unlisted_module() {
+        let dir = fixture();
+        let clean = method_check(&dir).unwrap();
+        assert_eq!(clean.equal, 1);
+        assert!(clean.unexpected.is_empty());
+        let extra = dir.join("MODULES/99_New/SOURCE/Specification.md");
+        fs::create_dir_all(extra.parent().unwrap()).unwrap();
+        fs::write(&extra, b"unlisted module").unwrap();
+        let altered = method_check(&dir).unwrap();
+        assert_eq!(altered.equal, 1);
+        assert!(altered.unexpected.iter().any(|x| x.contains("99_New")));
+        assert!(!altered.complete());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn unlisted_file_and_empty_directory() {
+        let dir = fixture();
+        fs::write(dir.join("unlisted.txt"), b"extra").unwrap();
+        fs::create_dir_all(dir.join("MODULES/98_Empty")).unwrap();
+        let check = method_check(&dir).unwrap();
+        assert!(check.unexpected.contains(&"unlisted.txt".to_string()));
+        assert!(check.unexpected.contains(&"MODULES/98_Empty/".to_string()));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn symlink_is_not_release_text() {
+        use std::os::unix::fs::symlink;
+        let dir = fixture();
+        let source = dir.join("MODULES/01_Core/SOURCE/Specification.md");
+        fs::rename(&source, dir.join("original-source")).unwrap();
+        symlink(dir.join("original-source"), &source).unwrap();
+        let check = method_check(&dir).unwrap();
+        assert_eq!(check.equal, 0, "the verifier must refuse the link before reading its bytes");
+        assert!(check.differing.iter().any(|x| x.starts_with("MODULES/01_Core/SOURCE/Specification.md")));
+        assert!(check.unexpected.iter().any(|x| x.ends_with("Specification.md")));
+        assert!(!check.complete());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn unreadable_optional_file_must_not_count_as_omitted() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = fixture();
+        let optional = dir.join("TOOLS/acr.py");
+        fs::create_dir_all(optional.parent().unwrap()).unwrap();
+        fs::write(&optional, b"an optionally omitted file").unwrap();
+        let manifest = format!(
+            r#"{{"files":[{{"path":"MODULES/01_Core/SOURCE/Specification.md","sha256":"{}"}},{{"path":"TOOLS/acr.py","sha256":"{}"}}]}}"#,
+            sha256_hex(b"source bytes"), sha256_hex(b"an optionally omitted file")
+        );
+        fs::write(dir.join("MANIFEST.json"), manifest).unwrap();
+        fs::set_permissions(&optional, fs::Permissions::from_mode(0o000)).unwrap();
+        // A privileged test runner may remain able to read mode 000 files.
+        // Do not misreport that as a negative-control result.
+        if fs::read(&optional).is_err() {
+            let checked = method_check(&dir).unwrap();
+            assert_eq!(checked.absent, 0, "present but unreadable is not absent");
+            assert!(checked.differing.iter().any(|x| x.contains("TOOLS/acr.py")));
+        }
+        fs::set_permissions(&optional, fs::Permissions::from_mode(0o600)).unwrap();
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn complete_requires_no_unlisted_entries() {
+        let mut check = MethodCheck {
+            fingerprint: acr::METHOD_FINGERPRINT.to_string(),
+            listed: 1, equal: 1, absent: 0, absent_text: 0,
+            differing: Vec::new(), unexpected: Vec::new(),
+        };
+        assert!(check.complete());
+        check.unexpected.push("unlisted.txt".to_string());
+        assert!(!check.complete());
     }
 }

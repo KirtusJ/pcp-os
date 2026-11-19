@@ -774,6 +774,71 @@ fn a_clause_is_fetched_by_the_program_itself_from_the_text_at_hand_or_said_to_be
 }
 
 #[test]
+fn mcp_clause_lookup_preserves_source_identity_and_refuses_bad_sources() {
+    let root = dir("mcp-clause-snapshot");
+    let method = small_method(&root);
+    let spec = method.join("MODULES/01_Core/SOURCE/Specification.md");
+
+    // Read-only MCP sessions; none adopts ACR, writes a register or grants a role.
+    let clause = || {
+        let mut c = with_method(&root, &method);
+        c.arg("mcp");
+        let (out, code) = feed(
+            c,
+            br#"{"id":1,"jsonrpc":"2.0","method":"tools/call","params":{"arguments":{"module":"core","section":"1.1"},"name":"acr_clause"}}
+"#,
+        );
+        assert_eq!(code, 0, "MCP server exited abnormally: {out}");
+        let v = Value::parse(out.lines().next().unwrap().as_bytes()).unwrap();
+        let r = v.get("result").unwrap();
+        let content = match r.get("content") {
+            Some(Value::List(c)) => c[0].get("text").and_then(Value::as_str).unwrap().to_owned(),
+            _ => panic!("MCP call has no text content: {out}"),
+        };
+        (content, r.get("isError") == Some(&Value::Bool(true)))
+    };
+
+    let a = b"# T\n\n**Component:** `acr.core`, Version 1.0  \n\n## 1. Evidence\n\n### 1.1 Source\n\nSOURCE_VERSION_ALPHA\n\n## 2. End\n";
+    let b = b"# T\n\n**Component:** `acr.core`, Version 1.0  \n\n## 1. Evidence\n\n### 1.1 Source\n\nSOURCE_VERSION_BETA\n\n## 2. End\n";
+    fs::write(&spec, a).unwrap();
+    let (reply_a, error_a) = clause();
+    assert!(!error_a && reply_a.contains("SOURCE_VERSION_ALPHA")
+        && !reply_a.contains("SOURCE_VERSION_BETA")
+        && reply_a.contains(&sha256_hex(a)), "{reply_a}");
+
+    fs::write(&spec, b).unwrap();
+    let (reply_b, error_b) = clause();
+    assert!(!error_b && reply_b.contains("SOURCE_VERSION_BETA")
+        && !reply_b.contains("SOURCE_VERSION_ALPHA")
+        && reply_b.contains(&sha256_hex(b))
+        && !reply_b.contains(&sha256_hex(a)), "{reply_b}");
+
+    // Invalid UTF-8 cannot be attributed to a valid released module.
+    fs::write(&spec, [0xff, 0xfe, 0xfd]).unwrap();
+    let (invalid, is_error) = clause();
+    assert!(is_error && !invalid.contains("SOURCE_VERSION_BETA"), "{invalid}");
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+        let replacement = root.join("outside-specification.md");
+        fs::write(&replacement, a).unwrap();
+        fs::remove_file(&spec).unwrap();
+        symlink(&replacement, &spec).unwrap();
+        let (linked, is_error) = clause();
+        assert!(is_error && !linked.contains("SOURCE_VERSION_ALPHA"), "{linked}");
+        fs::remove_file(&spec).unwrap();
+    }
+
+    fs::write(&spec, a).unwrap();
+    let (restored, is_error) = clause();
+    assert!(!is_error && restored.contains("SOURCE_VERSION_ALPHA")
+        && restored.contains(&sha256_hex(a)), "{restored}");
+    assert!(!root.join(REG).exists(), "read-only MCP lookups created a register");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn a_prompt_that_is_only_a_word_to_stop_is_a_halt_the_host_saw_and_other_prompts_are_left_alone() {
     let root = dir("bare-stop");
     let p = |text: &str| hook(&root, "prompt", &format!(r#"{{"hook_event_name":"UserPromptSubmit","prompt":"{text}","cwd":"{}"}}"#, root.display()));
@@ -1041,4 +1106,68 @@ fn an_instrument_is_run_by_the_program_and_recorded_as_a_check_it_ran() {
     let k = kinds(&quiet).len();
     let (out, _) = tool(&quiet, "acr_instrument", r#"{"instrument":"engineering.units","input":{"from":"1 in","to":"25.4 mm"}}"#);
     assert!(out.contains("EQUAL to the last digit given") && out.contains("No review is open") && kinds(&quiet).len() == k, "{out}");
+}
+
+
+/// If a method folder supplies a manifest, its unlisted folders must not
+/// become released acr.* modules merely because a Specification header parses.
+/// This fixture is deliberately not the official release, so no private packet
+/// or signing identity is required to exercise the selection boundary.
+#[test]
+fn a_manifested_method_does_not_select_unlisted_specialists() {
+    let root = dir("manifested-module-membership");
+    let m = small_method(&root);
+    let listed = [
+        "MODULES/01_Core/SOURCE/Specification.md",
+        "MODULES/03_Science/SOURCE/Specification.md",
+    ];
+    let files: Vec<String> = listed.iter().map(|path| {
+        let digest = sha256_hex(&fs::read(m.join(path)).unwrap());
+        format!(r#"{{"path":"{path}","sha256":"{digest}"}}"#)
+    }).collect();
+    fs::write(m.join("MANIFEST.json"), format!(r#"{{"files":[{}]}}"#, files.join(","))).unwrap();
+
+    // Only the catalogued Science edition participates in name resolution.
+    // Directory ordering must not affect selection of that edition.
+    for folder in ["02_Science_previous", "04_Science_previous"] {
+        let previous = m.join("MODULES").join(folder).join("SOURCE");
+        fs::create_dir_all(&previous).unwrap();
+        fs::copy(m.join(listed[1]), previous.join("Specification.md")).unwrap();
+    }
+
+    // The manifest lists core and science, not the folklore fixture.
+    let mut list = pcpos(&root);
+    list.args(["modules", m.to_str().unwrap()]);
+    let (text, code) = feed(list, b"");
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("acr.core") && text.contains("acr.science"), "{text}");
+    assert!(!text.lines().any(|line| line.contains("acr.folklore") && line.contains("SPECIALIST")),
+            "an unlisted acr.* module was presented as released: {text}");
+    assert!(text.contains("not a manifest-listed Specification"), "the excluded source should be explained: {text}");
+
+    let mut init = with_method(&root, &m);
+    init.args(["init", REG, "--principal", "principal"]);
+    assert_eq!(feed(init, b"").1, 0);
+    let before = fs::read(root.join(REG)).unwrap();
+    let mut select = with_method(&root, &m);
+    select.args(["workspace", REG, "--by", "principal", "folklore"]);
+    let (reply, code) = feed(select, b"");
+    assert_ne!(code, 0, "unlisted specialist was selectable: {reply}");
+    assert_eq!(fs::read(root.join(REG)).unwrap(), before, "rejected selection changed register");
+    let mut select = with_method(&root, &m);
+    select.args(["workspace", REG, "--by", "principal", "science"]);
+    assert_eq!(feed(select, b"").1, 0, "listed specialist should remain usable");
+
+    let mut clause = pcpos(&root);
+    clause.args(["clause", m.to_str().unwrap(), "folklore"]);
+    let (reply, code) = feed(clause, b"");
+    assert_ne!(code, 0, "an unlisted official-namespace clause was served: {reply}");
+
+    // A manifest-listed path whose bytes have changed also loses its
+    // released-module standing until its manifest/digest is updated.
+    fs::write(m.join(listed[1]), b"**Component:** `acr.science`, Version 1.0\n\nChanged bytes\n").unwrap();
+    let mut select = with_method(&root, &m);
+    select.args(["workspace", REG, "--by", "principal", "science"]);
+    let (reply, code) = feed(select, b"");
+    assert_ne!(code, 0, "changed source was still treated as a pinned specialist: {reply}");
 }

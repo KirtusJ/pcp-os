@@ -1,0 +1,176 @@
+name: PCP OS Rust host checks
+
+on:
+  pull_request:
+    paths:
+      - "PCP_OS_Rust/**"
+      - ".github/workflows/rust-host-checks.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: PCP_OS_Rust
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install source-release Rust toolchain
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal
+          rustup default 1.97.0
+          rustc --version
+      - name: Generate native published guard vectors
+        run: cargo run --locked --release --bin pcpos-vectors -- vectors
+      - name: Test all workspace crates
+        run: cargo test --locked --workspace
+      - name: Compile release host binary
+        run: cargo build --locked --release --bin pcpos
+      - name: Check out byte-faithful build 22 plugin method
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: KirtusJ/pcp-os-claude
+          ref: 2197e6f12e24af8651abdeceb93c17f0e19b9ec6
+          path: released-plugin
+          persist-credentials: false
+      - name: Check out independently authored acceptance controls
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: KirtusJ/pcp-os-claude
+          ref: e06d58ecd384e13c0257b58c130804615728bc38
+          path: regression-tests
+          persist-credentials: false
+      - name: Verify rebuilt host against plugin method and negative controls
+        run: |
+          python3 "$GITHUB_WORKSPACE/regression-tests/tests/method_inventory_regression.py" \
+            --binary "$GITHUB_WORKSPACE/PCP_OS_Rust/target/release/pcpos" \
+            --method "$GITHUB_WORKSPACE/released-plugin/method"
+
+      - name: Check out independent clause and FIFO race regressions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: KirtusJ/pcp-os-claude
+          ref: 14a298bdd0a565df9fde9d9b9f46e3ef01615e92
+          path: clause-tests
+          persist-credentials: false
+      - name: Test coherent clause source under concurrent regular-file replacement
+        run: |
+          # The coherence check needs two readable editions of Core.
+          # The released catalog deliberately admits only its original edition.
+          method="$RUNNER_TEMP/provisional-clause-method"
+          core="MODULES/01_Core/SOURCE/Specification.md"
+          install -D "$GITHUB_WORKSPACE/released-plugin/method/$core" "$method/$core"
+          python3 "$GITHUB_WORKSPACE/clause-tests/tests/clause_snapshot_regression.py" \
+            "$GITHUB_WORKSPACE/PCP_OS_Rust/target/release/pcpos" \
+            "$method"
+      - name: Test nonblocking clause access during concurrent FIFO replacement
+        run: |
+          python3 "$GITHUB_WORKSPACE/clause-tests/tests/clause_fifo_race_regression.py" \
+            --binary "$GITHUB_WORKSPACE/PCP_OS_Rust/target/release/pcpos" \
+            --method "$GITHUB_WORKSPACE/released-plugin/method"
+
+      - name: Record exact test-build binary digest
+        run: sha256sum target/release/pcpos
+      - name: Retain Linux x86_64 host executable for full-packet acceptance
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pcpos-ci-linux-x86_64
+          path: PCP_OS_Rust/target/release/pcpos
+          retention-days: 1
+          if-no-files-found: error
+
+  static-targets:
+    needs: host
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: PCP_OS_Rust
+    steps:
+      - name: Check out Rust source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install the documented Rust release toolchain and targets
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal
+          rustup default 1.97.0
+          rustup target add --toolchain 1.97.0 x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+          rustc --version
+      - name: Build static x86_64 and aarch64 Linux host programs
+        run: |
+          set -euo pipefail
+          cargo build --locked --release --bin pcpos --target x86_64-unknown-linux-musl
+          HOST_TRIPLE="$(rustc -vV | sed -n 's/^host: //p')"
+          LLD="$(rustc --print sysroot)/lib/rustlib/$HOST_TRIPLE/bin/rust-lld"
+          test -x "$LLD"
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER="$LLD" \
+            cargo build --locked --release --bin pcpos --target aarch64-unknown-linux-musl
+          file target/x86_64-unknown-linux-musl/release/pcpos target/aarch64-unknown-linux-musl/release/pcpos
+          sha256sum target/x86_64-unknown-linux-musl/release/pcpos target/aarch64-unknown-linux-musl/release/pcpos
+      - name: Check out byte-faithful build 22 plugin method
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: KirtusJ/pcp-os-claude
+          ref: 2197e6f12e24af8651abdeceb93c17f0e19b9ec6
+          path: released-plugin
+          persist-credentials: false
+      - name: Test the x86_64 static host against the pinned plugin method
+        run: |
+          set -euo pipefail
+          target/x86_64-unknown-linux-musl/release/pcpos method "$GITHUB_WORKSPACE/released-plugin/method"
+          target/x86_64-unknown-linux-musl/release/pcpos clause "$GITHUB_WORKSPACE/released-plugin/method" core 15.2 > /dev/null
+      - name: Install QEMU user emulation
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends qemu-user
+          qemu-aarch64 --version
+      - name: Test the aarch64 static host under QEMU user mode
+        run: |
+          set -euo pipefail
+          qemu-aarch64 target/aarch64-unknown-linux-musl/release/pcpos method "$GITHUB_WORKSPACE/released-plugin/method"
+          qemu-aarch64 target/aarch64-unknown-linux-musl/release/pcpos clause "$GITHUB_WORKSPACE/released-plugin/method" core 15.2 > /dev/null
+      - name: Check out pinned method-inventory acceptance script for ARM
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: KirtusJ/pcp-os-claude
+          ref: e06d58ecd384e13c0257b58c130804615728bc38
+          path: regression-tests
+          persist-credentials: false
+      - name: Exercise ARM nonregular method reads and register pins under QEMU
+        run: |
+          set -euo pipefail
+          ARM="$GITHUB_WORKSPACE/PCP_OS_Rust/target/aarch64-unknown-linux-musl/release/pcpos"
+          WRAPPER="$RUNNER_TEMP/pcpos-arm-via-qemu"
+          printf '#!/bin/sh\nexec qemu-aarch64 "%s" "$@"\n' "$ARM" > "$WRAPPER"
+          chmod 700 "$WRAPPER"
+          python3 "$GITHUB_WORKSPACE/regression-tests/tests/method_inventory_regression.py" \
+            --binary "$WRAPPER" \
+            --method "$GITHUB_WORKSPACE/released-plugin/method"
+      - name: Check ARM MCP clause lookup without creating a register
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/pcpos-arm-readonly"
+          mkdir -p "$ROOT"
+          printf '%s\n' '{"id":1,"jsonrpc":"2.0","method":"tools/call","params":{"arguments":{"module":"core","section":"15.2"},"name":"acr_clause"}}' |
+            env PCPOS_ROOT="$ROOT" PCPOS_METHOD="$GITHUB_WORKSPACE/released-plugin/method" \
+            qemu-aarch64 target/aarch64-unknown-linux-musl/release/pcpos mcp |
+            python3 -c 'import json,sys; r=json.loads(sys.stdin.readline())["result"]; t=r["content"][0]["text"]; assert not r.get("isError") and "### 15.2 Halt" in t and "Specification SHA-256 649211ff2d765e06b5d5eb31dc80af6f97aedea242f2dcb5b77b3fa270ef34d6" in t'
+          test ! -e "$ROOT/.pcp/register.jsonl"
+      - name: Check ARM linked-module ancestry through QEMU CLI and MCP
+        run: |
+          python3 "$GITHUB_WORKSPACE/PCP_OS_Rust/crates/pcpos-host/tests/linked_module_ancestors_arm.py" \
+            --binary "$GITHUB_WORKSPACE/PCP_OS_Rust/target/aarch64-unknown-linux-musl/release/pcpos" \
+            --runner qemu-aarch64
+      - name: Retain test-only static host binaries
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pcpos-ci-static-linux-targets
+          path: |
+            PCP_OS_Rust/target/x86_64-unknown-linux-musl/release/pcpos
+            PCP_OS_Rust/target/aarch64-unknown-linux-musl/release/pcpos
+          retention-days: 1
+          if-no-files-found: error
