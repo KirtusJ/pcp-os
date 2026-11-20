@@ -203,7 +203,7 @@ jobs:
       - name: Compare native keyboard batch against PC and Q35 scanout
         shell: bash
         run: |
-          set -uo pipefail
+          set -euo pipefail
           python3 - <<'PY'
           import sys
           if sys.flags.optimize:
