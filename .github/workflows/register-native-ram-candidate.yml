@@ -1,0 +1,85 @@
+name: Disposable native register RAM candidate (experimental)
+
+on:
+  push:
+    branches:
+      - director-11/register-ram-candidate-oracle-20261116
+    paths:
+      - "os-docs/register-forensics/probe_native_ram.py"
+      - "os-docs/register-forensics/register_ram_oracle.py"
+      - "os-docs/register-forensics/test_candidate_provenance.py"
+      - ".github/workflows/register-native-ram-candidate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native_ram_candidate:
+    name: Paused native guest RAM + independent P6 ${{ matrix.mode }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: ["800x600", "1024x768"]
+    steps:
+      - name: Check out Director 11 evidence tools
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Pin Director 10 candidate source exactly
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: 74c4d4a9934ad68e1b5be380971bf3377a464c6d
+          path: source
+      - name: Pin Director 2 optical checker exactly
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: 12de565d3c56baffd609f6c1957b69b150867072
+          path: checker
+      - name: Build reproducible candidate kernel with its own image measurement
+        env:
+          PCPOS_KERNEL_STAGE: ${{ runner.temp }}/d11-register-kernel
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 binutils lld
+          rustup target add x86_64-unknown-none
+          rustup component add rust-src
+          test "$(git -C source rev-parse HEAD)" = "74c4d4a9934ad68e1b5be380971bf3377a464c6d"
+          test "$(git -C source hash-object PCP_OS_Rust/crates/pcpos-kernel/src/session.rs)" = "0dffe0f7be2066fdb63aa32d9cd16bc98feb257d"
+          test "$(git -C checker rev-parse HEAD)" = "12de565d3c56baffd609f6c1957b69b150867072"
+          sh source/PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          kernel=source/PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
+          sha256sum "$kernel"
+          python3 source/PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py "$kernel" | tee /tmp/d11-measurement.txt
+      - name: Acquire paused P6 and RAM-candidate oracle in disposable model-free QEMU
+        run: |
+          set -euo pipefail
+          kernel=source/PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
+          python3 os-docs/register-forensics/probe_native_ram.py \
+            --kernel "$kernel" \
+            --measurement "$(cat /tmp/d11-measurement.txt)" \
+            --font source/PCP_OS_Rust/crates/pcpos-kernel/src/font.rs \
+            --checker checker/os-docs/display-acceptance/register/check_register.py \
+            --mode "${{ matrix.mode }}" \
+            --timeout 300 \
+            --output "captures/${{ matrix.mode }}"
+      - name: Retain only P6/QMP/serial diagnostics, never raw guest RAM
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: register-ram-candidate-${{ matrix.mode }}
+          # Strict allowlist, not captures/: a runner kill/timeout can skip
+          # Python's finally and leave raw 128 MiB guest RAM on disk.
+          path: |
+            captures/**/result.json
+            captures/**/serial.log
+            captures/**/qemu.stderr
+            captures/**/register-paused.ppm
+            captures/**/returned-launcher.ppm
+          if-no-files-found: warn
+          retention-days: 7
