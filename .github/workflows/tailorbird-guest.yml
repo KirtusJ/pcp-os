@@ -1,0 +1,220 @@
+name: Tailorbird native guest source and ELF checks
+
+on:
+  pull_request:
+    paths:
+      - 'apps/tailorbird/guest/**'
+      - 'store/native/guest/src/device.rs'
+      - '.github/workflows/tailorbird-guest.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust-ui-and-native-link:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact proposed source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Record source and toolchain identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          rustc --version --verbose
+          cargo --version
+      - name: Execute unit and adverse UI reducer tests in debug
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --offline --lib --manifest-path apps/tailorbird/guest/Cargo.toml -- --nocapture
+      - name: Execute unit and adverse UI reducer tests in release
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --offline --release --lib --manifest-path apps/tailorbird/guest/Cargo.toml -- --nocapture
+      - name: Verify guest framebuffer padding and page flips
+        run: |
+          rustc --edition 2021 --test apps/tailorbird/guest/tests/display_pages.rs -o "$RUNNER_TEMP/display-pages"
+          "$RUNNER_TEMP/display-pages"
+      - name: Install official x86_64 freestanding Rust target
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add x86_64-unknown-none
+      - name: Provision documented linker and ELF inspection
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v ld.lld >/dev/null 2>&1 || ! command -v readelf >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends lld binutils
+          fi
+          ld.lld --version
+          readelf --version | head -1
+      - name: Compile native no_std guest ELF64 without launching it
+        shell: bash
+        env:
+          CARGO_PROFILE_RELEASE_LTO: 'off'
+        run: |
+          set -euo pipefail
+          # Cargo discovers .cargo/config.toml relative to the current
+          # directory, NOT the directory containing --manifest-path.
+          # The guest's config supplies the static high-address linker script.
+          cd apps/tailorbird/guest
+          cargo build --offline --release --target x86_64-unknown-none
+      - name: Inspect exact ELF64 output and hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          ELF="apps/tailorbird/guest/target/x86_64-unknown-none/release/tailorbird"
+          test -s "$ELF"
+          readelf -h "$ELF"
+          readelf -l "$ELF"
+          readelf -r "$ELF"
+          # Reject default PIE/low-address layouts that are ELF64 but do not
+          # match PCP OS' guest linker script or loader expectations.
+          python3 - "$ELF" <<'PY'
+          import pathlib
+          import struct
+          import sys
+
+          data = pathlib.Path(sys.argv[1]).read_bytes()
+          assert data[:6] == b"\x7fELF\x02\x01", "expected ELF64 little endian"
+          (
+              e_type, machine, version, entry, phoff, shoff, flags,
+              ehsize, phentsize, phnum, shentsize, shnum, shstrndx
+          ) = struct.unpack_from("<HHIQQQIHHHHHH", data, 16)
+          assert e_type == 2, f"expected ET_EXEC (2), got {e_type}"
+          assert machine == 62, f"expected x86_64, got {machine}"
+          assert entry == 0x8000400000, f"unexpected entry {entry:#x}"
+          assert phentsize == 56 and 0 < phnum <= 64
+          assert phoff + phentsize * phnum <= len(data)
+          loads = []
+          entry_executable = False
+          for i in range(phnum):
+              (kind, permissions, offset, vaddr, paddr,
+               filesz, memsz, align) = struct.unpack_from(
+                  "<IIQQQQQQ", data, phoff + i * phentsize
+              )
+              assert kind not in (2, 3), "dynamic segment / interpreter not allowed"
+              if kind != 1:
+                  continue
+              assert filesz <= memsz and offset + filesz <= len(data)
+              assert not (permissions & 3 == 3), "writable-and-executable segment"
+              assert vaddr >= 0x8000400000
+              if permissions & 1 and vaddr <= entry < vaddr + memsz:
+                  entry_executable = True
+              loads.append((hex(vaddr), hex(memsz), permissions))
+          assert loads and entry_executable, "entry not in executable PT_LOAD"
+          if shoff and shnum:
+              assert shentsize == 64 and shoff + shentsize * shnum <= len(data)
+              for i in range(shnum):
+                  sh_type = struct.unpack_from("<I", data, shoff + i * shentsize + 4)[0]
+                  sh_size = struct.unpack_from("<Q", data, shoff + i * shentsize + 32)[0]
+                  assert not (sh_type in (4, 9) and sh_size), (
+                      "unprocessed runtime relocations are not supported by PCP OS"
+                  )
+          print("PASS: intended static high-address ELF64 guest layout", loads)
+          PY
+          sha256sum "$ELF"
+          git rev-parse HEAD
+
+  qemu-model-free-guest:
+    needs: rust-ui-and-native-link
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact proposed source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Record kernel/guest source and executor identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          rustc --version --verbose
+          cargo --version
+          python3 --version
+      - name: Install freestanding compiler and QEMU emulator prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add x86_64-unknown-none
+          rustup component add rust-src
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 lld binutils
+          qemu-system-x86_64 --version
+          ld.lld --version
+          objcopy --version | head -1
+      - name: Build pinned public PCP OS kernel and native Tailorbird guest
+        shell: bash
+        env:
+          CARGO_PROFILE_RELEASE_LTO: 'off'
+          PCPOS_KERNEL_STAGE: ${{ runner.temp }}/pcpos-kernel-build
+        run: |
+          set -euo pipefail
+          # Test the normal public guest, without any keycode tracing.
+          # The older diagnostic runs remain in Actions history.
+          (cd apps/tailorbird/guest && cargo build --offline --release --target x86_64-unknown-none)
+          sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          test -s PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
+          test -s apps/tailorbird/guest/target/x86_64-unknown-none/release/tailorbird
+          sha256sum PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
+          sha256sum apps/tailorbird/guest/target/x86_64-unknown-none/release/tailorbird
+          git rev-parse HEAD
+      - name: Compare native keyboard batch against PC and Q35 scanout
+        shell: bash
+        run: |
+          set -uo pipefail
+          KERNEL=PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
+          GUEST=apps/tailorbird/guest/target/x86_64-unknown-none/release/tailorbird
+          # Run BOTH arms even if one fails. The prior public-PC failure
+          # must remain visible, not disappear by switching to Q35 only.
+          set +e
+          python3 apps/tailorbird/guest/tests/qemu_smoke.py \
+            "$KERNEL" "$GUEST" --machine pc --timeout 100
+          pc_result=$?
+          python3 apps/tailorbird/guest/tests/qemu_smoke.py \
+            "$KERNEL" "$GUEST" --machine q35 --timeout 100
+          q35_result=$?
+          set -e
+          echo "QEMU_PC_RESULT=$pc_result"
+          echo "QEMU_Q35_RESULT=$q35_result"
+          test "$pc_result" -eq 0
+          test "$q35_result" -eq 0
+
+      - name: Get desktop supporting explicit scanout dimensions
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 8f5992807e9b9c0bb8ce64e366c85ee4add31599
+          path: scale-desktop
+          persist-credentials: false
+      - name: Check Tailorbird scale, editor, and return at two screen sizes
+        env:
+          PCPOS_KERNEL_STAGE: ${{ runner.temp }}/scale-kernel
+          CARGO_PROFILE_RELEASE_LTO: 'off'
+        run: |
+          set -euo pipefail
+          kernel=scale-desktop/PCP_OS_Rust/crates/pcpos-kernel
+          sh "$kernel/run.sh" build
+          image="$kernel/target/pcpos-kernel.elf32"
+          measurement=$(python3 "$kernel/tools/measure.py" "$image")
+          python3 apps/tailorbird/guest/tests/view_scale.py "$image" \
+            apps/tailorbird/guest/target/x86_64-unknown-none/release/tailorbird \
+            scale-captures "$measurement"
+      - name: Retain native frames, serial and scale results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: tailorbird-view-scale
+          path: scale-captures/
+          if-no-files-found: ignore
+          retention-days: 14
