@@ -87,6 +87,11 @@ jobs:
           import struct
           import sys
 
+          # The structural gate below relies on assert statements.
+          # PYTHONOPTIMIZE (or -O) would delete them silently.
+          if sys.flags.optimize:
+              raise SystemExit("Refuse optimized Python for ELF admission checks")
+
           data = pathlib.Path(sys.argv[1]).read_bytes()
           assert data[:6] == b"\x7fELF\x02\x01", "expected ELF64 little endian"
           (
@@ -199,6 +204,11 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
+          python3 - <<'PY'
+          import sys
+          if sys.flags.optimize:
+              raise SystemExit("Refuse optimized Python for native keyboard assertions")
+          PY
           KERNEL=PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32
           GUEST=apps/tailorbird/guest/target/x86_64-unknown-none/release/tailorbird
           # Run BOTH arms even if one fails. The prior public-PC failure
@@ -228,6 +238,11 @@ jobs:
           CARGO_PROFILE_RELEASE_LTO: 'off'
         run: |
           set -euo pipefail
+          python3 - <<'PY'
+          import sys
+          if sys.flags.optimize:
+              raise SystemExit("Refuse optimized Python for title and Stop glyph assertions")
+          PY
           kernel=scale-desktop/PCP_OS_Rust/crates/pcpos-kernel
           sh "$kernel/run.sh" build
           image="$kernel/target/pcpos-kernel.elf32"
