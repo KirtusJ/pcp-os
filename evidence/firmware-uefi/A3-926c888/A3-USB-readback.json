@@ -1,0 +1,246 @@
+{
+  "commit": "926c888e01e2892d0378d7992f7224e7dbf5c868",
+  "tree": "9a81f4c93b98019c8892a68e616381b000e96c24",
+  "hosted": {
+    "128": {
+      "display": "display: Bochs, 1920x1080, 2 page(s), 16384 KiB of its memory mapped at 0x80000000",
+      "home_pixels": "1920 1080",
+      "framebuffer": "0000000080000000",
+      "pitch_bytes": 5120,
+      "home_sha256": "9ed103015e66b97de216d76bd92de8e1e392b415cd46fe1054bebdce9c5e33fe",
+      "verified_return": true,
+      "self_tests": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "nvme_sha256": "9594abb6b6a56ec0b92b4c3b4baa5cf7edc053aa8e4e033a5adef94955bfbd0a",
+      "before_to_home_variable_bytes": 16248,
+      "home_to_shutdown_variable_bytes": 0
+    },
+    "256": {
+      "display": "display: Bochs, 1920x1080, 2 page(s), 16384 KiB of its memory mapped at 0x80000000",
+      "home_pixels": "1920 1080",
+      "framebuffer": "0000000080000000",
+      "pitch_bytes": 5120,
+      "home_sha256": "9ed103015e66b97de216d76bd92de8e1e392b415cd46fe1054bebdce9c5e33fe",
+      "verified_return": true,
+      "self_tests": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "nvme_sha256": "9594abb6b6a56ec0b92b4c3b4baa5cf7edc053aa8e4e033a5adef94955bfbd0a",
+      "before_to_home_variable_bytes": 16248,
+      "home_to_shutdown_variable_bytes": 0
+    },
+    "virtio-vga": {
+      "display": "display: Loader, 1280x800, 1 page(s), 4096 KiB of its memory mapped at 0x80000000",
+      "home_pixels": "1280 800",
+      "framebuffer": "0000000080000000",
+      "pitch_bytes": 5120,
+      "home_sha256": "72fe8f29a2709bf356eac7cf1ed4960cb2c677a92e1e2e97633ed426c4d10fc8",
+      "verified_return": true,
+      "self_tests": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "nvme_sha256": "9594abb6b6a56ec0b92b4c3b4baa5cf7edc053aa8e4e033a5adef94955bfbd0a",
+      "before_to_home_variable_bytes": 16248,
+      "home_to_shutdown_variable_bytes": 0
+    }
+  },
+  "local": {
+    "std-128": {
+      "display": "display: Bochs, 1920x1080, 2 page(s), 16384 KiB of its memory mapped at 0x80000000",
+      "home_pixels": "1920 1080",
+      "framebuffer": "0000000080000000",
+      "pitch_bytes": 5120,
+      "home_sha256": "9ed103015e66b97de216d76bd92de8e1e392b415cd46fe1054bebdce9c5e33fe",
+      "verified_return": true,
+      "self_tests": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "nvme_sha256": "9594abb6b6a56ec0b92b4c3b4baa5cf7edc053aa8e4e033a5adef94955bfbd0a",
+      "before_to_home_variable_bytes": 6047,
+      "home_to_shutdown_variable_bytes": 0
+    },
+    "std-256": {
+      "display": "display: Bochs, 1920x1080, 2 page(s), 16384 KiB of its memory mapped at 0x80000000",
+      "home_pixels": "1920 1080",
+      "framebuffer": "0000000080000000",
+      "pitch_bytes": 5120,
+      "home_sha256": "9ed103015e66b97de216d76bd92de8e1e392b415cd46fe1054bebdce9c5e33fe",
+      "verified_return": true,
+      "self_tests": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "nvme_sha256": "9594abb6b6a56ec0b92b4c3b4baa5cf7edc053aa8e4e033a5adef94955bfbd0a",
+      "before_to_home_variable_bytes": 6047,
+      "home_to_shutdown_variable_bytes": 0
+    },
+    "virtio-vga": {
+      "display": "display: Loader, 1280x800, 1 page(s), 4096 KiB of its memory mapped at 0x80000000",
+      "home_pixels": "1280 800",
+      "framebuffer": "0000000080000000",
+      "pitch_bytes": 5120,
+      "home_sha256": "72fe8f29a2709bf356eac7cf1ed4960cb2c677a92e1e2e97633ed426c4d10fc8",
+      "verified_return": true,
+      "self_tests": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "nvme_sha256": "9594abb6b6a56ec0b92b4c3b4baa5cf7edc053aa8e4e033a5adef94955bfbd0a",
+      "before_to_home_variable_bytes": 6047,
+      "home_to_shutdown_variable_bytes": 0
+    },
+    "virtio-edid": {
+      "display": "display: Loader, 1280x800, 1 page(s), 4096 KiB of its memory mapped at 0x80000000",
+      "home_pixels": "1280 800",
+      "framebuffer": "0000000080000000",
+      "pitch_bytes": 5120,
+      "home_sha256": "72fe8f29a2709bf356eac7cf1ed4960cb2c677a92e1e2e97633ed426c4d10fc8",
+      "verified_return": true,
+      "self_tests": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "nvme_sha256": "9594abb6b6a56ec0b92b4c3b4baa5cf7edc053aa8e4e033a5adef94955bfbd0a",
+      "before_to_home_variable_bytes": 6047,
+      "home_to_shutdown_variable_bytes": 0
+    }
+  },
+  "kernel_measurement": "8be588744953d5d5eaa9f259f9db9d90b7a7cff455a6b14f0a3c08a6df06765e",
+  "usb_sha256": "fe8bc66801f2eef6125bd03f7ec2b15fab1fc13307dd93a7f52c0cfdcdc827aa",
+  "kernel_elf_sha256": "54651c063c7132d83eba0f4766c687531b0a2f53d1f23ff7b69b4ed8da0fcd9c",
+  "efi_sha256": "c75db7a2c9e10d7d61145b447d232b2afa4de60a7c1bcad4d1bfeb2dc1e19dcf",
+  "local_ovmf_code": "624e06de18b4fa535e90db7160d00d3d07d206422b89999bf1e27d920264e4e0",
+  "hosted_ovmf_code": "ad23261d43116abc3747d59a7837fbf578c9586a8993f4eeba064cd07eccb083",
+  "hosted_observer_control": {
+    "changed_disk_bytes": 7,
+    "changed_variable_store_bytes": 124
+  },
+  "ramfb": {
+    "console": [
+      "console_framebuffer=0000000006a3f000",
+      "console_pitch=0000000000000c80"
+    ],
+    "exit": 0,
+    "shutdown": {
+      "guest": true,
+      "reason": "guest-shutdown"
+    },
+    "self_tests": 71,
+    "screen_sha256": "3caf4ff91d16af625728a09e5c2f6e3966a745530b442840a28247e314b2a3ef",
+    "screen_size": "800 600",
+    "serial_display": "display: none this kernel can drive"
+  },
+  "headers": {
+    "virtio-vga": {
+      "device": "virtio-vga",
+      "info_address": "0x3204000",
+      "flags": "0x104c",
+      "framebuffer": "0x80000000",
+      "width": 1280,
+      "height": 800,
+      "pitch_bytes": 5120,
+      "bpp": 32,
+      "type": 1,
+      "RGB": [
+        [
+          16,
+          8
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          0,
+          8
+        ]
+      ],
+      "self_tests": 72,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "exit": 0
+    },
+    "ramfb": {
+      "device": "ramfb",
+      "info_address": "0x3204000",
+      "flags": "0x104c",
+      "framebuffer": "0x6a3f000",
+      "width": 800,
+      "height": 600,
+      "pitch_bytes": 3200,
+      "bpp": 32,
+      "type": 1,
+      "RGB": [
+        [
+          16,
+          8
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          0,
+          8
+        ]
+      ],
+      "self_tests": 71,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "exit": 0
+    }
+  },
+  "secure_boot": {
+    "firmware_sha256": "1a46295574430cfb7f825ee3e4dc64b052acbef08e310377ed7c64cb757a9dc1",
+    "vars_template_sha256": "0d12f9839018a68f4b13c9819cbf607b8b62d566f9c9dd7966550d93335f06b2",
+    "usb_sha256": "fe8bc66801f2eef6125bd03f7ec2b15fab1fc13307dd93a7f52c0cfdcdc827aa",
+    "efi_sha256": "c75db7a2c9e10d7d61145b447d232b2afa4de60a7c1bcad4d1bfeb2dc1e19dcf",
+    "pe_certificate_offset": 0,
+    "pe_certificate_size": 0,
+    "enrolled_names": [
+      "db",
+      "KEK",
+      "PK"
+    ],
+    "denial": [
+      "BdsDxe: failed to load Boot0001 \"UEFI QEMU QEMU USB HARDDRIVE 1-0000:00:03.0-1\" from PciRoot(0x0)/Pci(0x3,0x0)/USB(0x0,0x0): Access Denied"
+    ],
+    "owned_handoff_seen": false,
+    "measurement_seen": false,
+    "stopped_by": "Controller via QMP after USB refusal",
+    "qemu_exit": 0
+  },
+  "local_qemu": "QEMU emulator version 10.0.13 (Debian 1:10.0.13+ds-0+deb13u1)",
+  "hosted_qemu": "QEMU emulator version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.18)",
+  "hosted_artifacts": {
+    "usb_observations": 14709620766,
+    "usb_zip_sha256": "1b9729ac4a7cbb28141a7aa40b5b33ccf462d4acebb4ec78910c0dda2928f75d",
+    "ownership": 14709860464,
+    "ownership_zip_sha256": "25a37eb8e9c95280c810c47a2b98210453224be9b5a0b291cf52e52741e07f5a",
+    "run": 44910215712
+  },
+  "scope": "Read-only unsigned USB fixture under Q35/OVMF and QEMU TCG. Four ordinary interactive boots, a RAMFB control, two raw-header confirmations and a factory-enrolled Secure Boot refusal. Changing the advertised virtio size to 1600x900 still produced 1280x800."
+}
