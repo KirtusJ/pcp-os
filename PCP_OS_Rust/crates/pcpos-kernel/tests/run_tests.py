@@ -233,6 +233,7 @@ def _(ck):
     m = Machine("play", modules=[DOOM, SHAREWARE], sound=True)
     ck("the kernel found display, keyboard, sound and music", m.wait_log("music: an FM synthesiser", 60), m.log()[-300:]); time.sleep(1.5)
     menu = m.picture("1_menu"); ck("the kernel's menu lists the program", colours(menu) > 20 and menu.size == (1920, 1080))
+    m.key("ret"); time.sleep(1.5)   # the desktop is empty: Enter opens the launcher, and Enter there starts the program
     m.key("ret"); ck("Enter starts it", m.wait_log("doom on PCP OS: display 640x400", 30)); time.sleep(7)
     title = m.picture("2_title"); ck("the game draws at 640 by 400 with many colours", title.size == (640, 400) and colours(title) > 100, (title.size, colours(title)))
     for k in ("esc", "ret", "ret", "ret"): m.key(k); time.sleep(0.7)

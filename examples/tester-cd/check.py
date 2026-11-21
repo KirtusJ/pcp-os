@@ -204,17 +204,6 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
         seen = log()
         result["startup_pass_lines"] = sum(line.startswith("  pass ") for line in seen.splitlines())
         result["startup_fail_lines"] = sum(line.lower().startswith("  fail") for line in seen.splitlines())
-        screen("launcher")
-        key("ret")
-        wait("SURFBIRD media ready")
-        screen("surfbird")
-        key("spc")
-        wait("surf.elf ended DONE: exit 0")
-        key("ret")
-        wait("SURFBIRD media ready", 2)
-        key("ctrl", "alt", "delete")
-        wait("surf.elf ended STOPPED")
-        key("r")
         def wait_screen(name, matches):
             path = out / (name + ".ppm")
             end = time.monotonic() + timeout
@@ -232,17 +221,67 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
             status = f"Verified at start: all {STARTUP_CHECKS} self-tests passed."
             return any(status in row for row in rows)
 
+        def home_visible(rows):
+            """The desktop: the status sentence and the desktop's own keys (widgets, files)."""
+            return launcher_visible(rows) and any("widgets" in row and "files" in row for row in rows)
+
+        def launcher_list_visible(rows):
+            """The launcher: the status sentence and a chosen program with what it may use."""
+            return launcher_visible(rows) and any("> surf.elf" in row for row in rows) and any("may use:" in row for row in rows)
+
+        def home_activity(rows):
+            """The outcomes on the desktop's activity widget, oldest first."""
+            return [word for row in rows if "surf.elf" in row for word in ("DONE", "STOPPED") if " " + word + " " in row]
+
+        def placed(rows):
+            """Whether anything the person can place is on the desktop: a shortcut or a widget."""
+            text = "\n".join(rows)
+            return any(word in text for word in ("surf.elf", "RECENT ACTIVITY", "THIS MACHINE", "SESSION"))
+
+        # The first screen is the desktop, and it is empty: nothing is on it that the person did not put
+        # there. Enter opens the launcher. Each screen must be recognised as itself and not as the other.
+        home = wait_screen("home", home_visible)
+        if launcher_list_visible(home) or placed(home):
+            raise RuntimeError("the first desktop was not empty")
+        # The person turns on the activity widget, then opens the launcher and places a shortcut.
+        key("w")
+        wait_screen("widgets", lambda view: any("WIDGETS ON THE DESKTOP" in row for row in view))
+        key("ret")
+        key("esc")
+        wait_screen("home-with-widget", lambda view: home_visible(view) and any("RECENT ACTIVITY" in row for row in view) and not home_activity(view))
+        key("ret")
+        listed = wait_screen("launcher", launcher_list_visible)
+        if home_visible(listed):
+            raise RuntimeError("the launcher was also recognised as the desktop")
+        key("s")
+        wait_screen("launcher-with-shortcut", lambda view: launcher_list_visible(view) and any("on the desktop" in row for row in view))
+        key("ret")
+        wait("SURFBIRD media ready")
+        screen("surfbird")
+        key("spc")
+        wait("surf.elf ended DONE: exit 0")
+        key("ret")
+        wait("SURFBIRD media ready", 2)
+        key("ctrl", "alt", "delete")
+        wait("surf.elf ended STOPPED")
+        key("r")
         rows = wait_screen("register", lambda view: not register_problems(view))
         (out / "register.txt").write_text("\n".join(rows) + "\n")
         result["register_problems"] = register_problems(rows)
         key("esc")
-        wait_screen("back-at-launcher", launcher_visible)
+        wait_screen("back-at-launcher", launcher_list_visible)
+        # Esc leaves the launcher for the desktop and does not power off; the desktop now shows, from the
+        # register, the program that finished and the one that was stopped.
         key("esc")
+        after = wait_screen("home-after-run", lambda view: home_visible(view) and not launcher_list_visible(view))
+        result["home_activity"] = home_activity(after)
         key("r")
         wait_screen("reopened-register", lambda view: view == rows)
         key("esc")
-        wait_screen("launcher-before-poweroff", launcher_visible)
+        wait_screen("home-before-poweroff", lambda view: home_visible(view) and any("surf.elf" in row for row in view))
         if queue_desk:
+            key("spc")
+            wait_screen("launcher-before-queue", launcher_list_visible)
             exercise_queue(key, wait, screen, out)
             wait_screen("launcher-after-queue", launcher_visible)
         key("p")
@@ -271,6 +310,8 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
         if result["final_pass_lines"] != STARTUP_CHECKS + 1:
             problems.append("expected one more passing check at power off (the kernel's register of itself), counted %d in all" % result["final_pass_lines"])
         problems += result["register_problems"]
+        if result.get("home_activity") != ["DONE", "STOPPED"]:
+            problems.append("the desktop did not show the two runs ending DONE then STOPPED: %s" % result.get("home_activity"))
         if result["guest_ethernet_compiled_in"]:
             problems.append("guest Ethernet is compiled into a CD that is meant to have none")
         if result["exit_code"] != 0 or not result["shutdown"] or result["shutdown"].get("guest") is not True:
