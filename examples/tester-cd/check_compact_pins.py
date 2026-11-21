@@ -15,6 +15,11 @@ A last boot at 640 by 480 has one program under a name of forty characters, whic
 admit as a task (its self-tests say so for 33 bytes). Enter on its pin must leave, on the desktop, the
 words that it could not be started, with its identity still whole (A3's finding: the refusal was silent).
 
+A boot at 320 by 200 has the same program under two names of 64 characters that differ only at
+character 31 (B3's case: beginning, ending, size and digest all equal). Each is pinned and chosen, and the
+parts of its name are turned with Right: joined, they must be the whole name the loader gave, and the two
+pins must differ in exactly the part that holds character 31.
+
 It also proves its own reading: three altered copies of a good screen must be refused (the identity's
 size-and-digest row replaced by the keys, which is the defect B3 found; the wrong program named; the keys
 row overwritten).
@@ -68,14 +73,19 @@ def home_problems(rows, chosen, places, facts, wide, widgets=()):
     keys = len(rows) - 2
     if rows[keys].strip() != (KEYS_WIDE if wide else KEYS_NARROW):
         problems.append("the row of the keys reads %r" % rows[keys])
-    note = re.fullmatch(r"  Places (\d+) to (\d+) of (\d+)(?: \| .*)?", rows[4])
-    if not note or int(note[3]) != places or not int(note[1]) <= chosen + 1 <= int(note[2]):
-        problems.append("row 4 does not say which places are shown, with the chosen one among them: %r" % rows[4])
     listed = [row.strip() for row in rows[5:keys] if row.strip().startswith(("PINNED ", "Programs"))]
     if "PINNED " + name not in listed:
         problems.append("the chosen pin is not in the list shown")
-    if note and len(listed) != int(note[2]) - int(note[1]) + 1:
-        problems.append("the list has %d rows and row 4 says %s to %s" % (len(listed), note[1], note[2]))
+    if wide:
+        note = re.fullmatch(r"  Places (\d+) to (\d+) of (\d+)(?: \| .*)?", rows[4])
+        if not note or int(note[3]) != places or not int(note[1]) <= chosen + 1 <= int(note[2]):
+            problems.append("row 4 does not say which places are shown, with the chosen one among them: %r" % rows[4])
+        elif len(listed) != int(note[2]) - int(note[1]) + 1:
+            problems.append("the list has %d rows and row 4 says %s to %s" % (len(listed), note[1], note[2]))
+    else:
+        # A row of 28 characters says it shortly: which place is chosen of how many.
+        if rows[4].strip() != "Place %d/%d" % (chosen + 1, places) or len(listed) != 1:
+            problems.append("row 4 should read 'Place %d/%d' over one row of the list: %r, %r" % (chosen + 1, places, rows[4], listed))
     below = [row.strip() for row in rows[5 + len(listed):keys]]
     text = [row for row in below if row]
     wanted = (["Enter starts"] if wide else []) + [name, facts if wide else facts[:len(facts)]] + list(widgets)
@@ -266,6 +276,43 @@ def main():
         stream.close()
     if long_name + " could not be started: the program could not be admitted as a task" not in (out / "serial.txt").read_text(errors="replace"):
         problems.append("refused-640x480: the serial log does not record the refusal")
+    # Two names that differ in the middle only, on the smallest display: every character must be readable.
+    aliases = ["a" * 30 + letter + "z" * 29 + ".elf" for letter in "AB"]
+    for name in aliases:
+        (folder / name).write_bytes(surf)
+    out = evidence / "aliases-320x200"
+    rpc, key, screen, guest, stream = boot(args.qemu, folder / "kernel.elf32", folder, receipt["kernel_measurement"], "320x200", out, glyphs, args.timeout, programs=aliases)
+    try:
+        read_parts = []
+        for pin in (1, 2):
+            if pin == 2:
+                key("down")
+            parts = []
+            for part in (1, 2, 3):
+                if part > 1:
+                    key("right")
+                rows = screen("pin%d-part%d" % (pin, part), lambda rows, pin=pin, part=part: rows[4].strip() == "Place %d/3 | name %d/3 <- ->" % (pin + 1, part))
+                body = [row.strip() for row in rows[5:len(rows) - 2] if row.strip()]
+                if len(body) != 3 or not body[0].startswith("PINNED aaaa") or not re.fullmatch(r"\d+ KiB sha [0-9a-f]{8,16}\.\.", body[2]):
+                    raise RuntimeError("pin %d part %d: unexpected rows %r" % (pin, part, body))
+                parts.append(body[1])
+            if "".join(parts) != aliases[pin - 1]:
+                problems.append("aliases-320x200: pin %d's parts join to %r, not the loader's name" % (pin, "".join(parts)))
+            read_parts.append(parts)
+        differing = [i + 1 for i in range(3) if read_parts[0][i] != read_parts[1][i]]
+        if differing != [2]:
+            problems.append("aliases-320x200: the two names should differ in part 2 only; they differ in %r" % differing)
+        results["aliases-320x200"] = {"parts": read_parts, "differ_in_part": differing}
+        key("f10")
+        screen("power-question", lambda rows: any("POWER OFF" in row for row in rows))
+        key("ret")
+        results["aliases-320x200"]["exit_code"] = guest.wait(timeout=40)
+    except Exception as error:
+        problems.append("aliases-320x200: %s" % error)
+    finally:
+        if guest.poll() is None:
+            guest.kill()
+        stream.close()
     summary = {"kernel_measurement": receipt["kernel_measurement"], "programs": len(PROGRAMS), "results": results, "problems": problems, "passed": not problems}
     (evidence / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     for mode in results:

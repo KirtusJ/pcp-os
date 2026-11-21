@@ -198,6 +198,8 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     let mut chosen = 0usize;
     let mut place = 0usize;
     let mut last_refusal = None;
+    // Which part of the chosen pin's name the small-display desktop shows, and how many parts it has.
+    let (mut name_page, mut name_pages) = (0usize, 1usize);
     // `first=details` on the loader's command line starts on the plain list of everything the loader gave,
     // which is the screen this kernel showed first before it had a desktop. Harnesses that drive that
     // screen by its keys and compare its pixels ask for it; a person gets the desktop.
@@ -233,7 +235,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
         // The dock holds the way to all the programs first, then what is pinned.
         place = place.min(shortcuts.len()).min(room - 1);
         match surface {
-            Surface::Home => draw_home(start, &programs, rec, &shortcuts, place, whole_bar, &widgets, &world.store, mounted, tasks - start.tasks, &message, last_refusal),
+            Surface::Home => name_pages = draw_home(start, &programs, rec, &shortcuts, place, whole_bar, &widgets, &world.store, mounted, tasks - start.tasks, &message, last_refusal, name_page),
             Surface::Launcher => draw_desktop(start, &programs, rec, chosen, &message, &shortcuts),
             Surface::Details => draw_menu(start, &programs, &files, rec, chosen, &message, world.store.len(),
                                           #[cfg(feature = "vm-store")] mounted),
@@ -263,14 +265,17 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
             (Surface::Launcher, (0x3B, false)) => keys_view("KEYS IN THE PROGRAMS", &LAUNCHER_KEYS),
             (Surface::Home, (0x25, false)) if letters => keys_view("KEYS ON THE DESKTOP", &HOME_KEYS),
             (Surface::Launcher, (0x25, false)) if letters => keys_view("KEYS IN THE PROGRAMS", &LAUNCHER_KEYS),
-            (Surface::Home, (0x4B, _)) | (Surface::Home, (0x48, _)) if place > 0 => place -= 1,
-            (Surface::Home, (0x4D, _)) | (Surface::Home, (0x50, _)) if place < shortcuts.len().min(room - 1) => place += 1,
+            // On the small-display desktop Left and Right turn the parts of a long name; Up and Down choose.
+            (Surface::Home, (0x4B, _)) if !graphic => name_page = name_page.saturating_sub(1),
+            (Surface::Home, (0x4D, _)) if !graphic => name_page = (name_page + 1).min(name_pages.saturating_sub(1)),
+            (Surface::Home, (0x4B, _)) | (Surface::Home, (0x48, _)) if place > 0 => { place -= 1; name_page = 0; }
+            (Surface::Home, (0x4D, _)) | (Surface::Home, (0x50, _)) if place < shortcuts.len().min(room - 1) => { place += 1; name_page = 0; }
             (Surface::Home, (0x39, false)) => surface = Surface::Launcher,
             (Surface::Home, (0x1C, _)) if to_start.is_none() => surface = Surface::Launcher,
             (Surface::Home, (0x3D, false)) => files_view(&world.store, mounted),
             (Surface::Home, (0x21, false)) if letters => files_view(&world.store, mounted),
             (Surface::Home, (0x3C, false)) => settings_view(&mut whole_bar, &mut widgets),
-            (Surface::Home, (0x53, _)) | (Surface::Home, (0x0E, false)) if place > 0 => { shortcuts.remove(place - 1); }
+            (Surface::Home, (0x53, _)) | (Surface::Home, (0x0E, false)) if place > 0 => { shortcuts.remove(place - 1); name_page = 0; }
             (Surface::Launcher, (0x48, _)) | (Surface::Details, (0x48, _)) if chosen > 0 => chosen -= 1,
             (Surface::Launcher, (0x50, _)) | (Surface::Details, (0x50, _)) if chosen + 1 < programs.len() => chosen += 1,
             (_, (0x1C, _)) if to_start.is_some() && safe => {
@@ -518,7 +523,7 @@ fn recent_tasks(rec: &Record, programs: &[Entry], most: usize) -> Vec<(String, S
 /// what the person has put there: shortcuts to programs, one of them chosen, and widgets. With nothing placed
 /// it is empty. On a display under 1280 by 720 the same things are said as plain lines.
 #[allow(clippy::too_many_arguments)]
-fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize], place: usize, whole: bool, widgets: &[bool; 3], store: &crate::regular::Files, mounted: bool, run: u32, message: &str, last_refusal: Option<(usize, &str)>) {
+fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize], place: usize, whole: bool, widgets: &[bool; 3], store: &crate::regular::Files, mounted: bool, run: u32, message: &str, last_refusal: Option<(usize, &str)>, name_page: usize) -> usize {
     use ui::{label, AMBER, BAD, GOOD, SOFT, TEAL, TEXT};
     let safe = start.failed != 0;
     let recent = if widgets[0] { recent_tasks(rec, programs, 3) } else { Vec::new() };
@@ -555,6 +560,11 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
             let mut left = body.saturating_sub(1);
             // The name gives way only when the display has fewer rows than the name alone needs, and says so.
             let name_rows = if chosen_pin.is_some() { name.len().min(left.saturating_sub(1).max(1)) } else { 0 };
+            // A name with more rows than there is room for is read a part at a time: Left and Right turn
+            // its parts, and row 4 says which part of how many is shown. Every character can be read
+            // before Enter (the ending alone does not tell two names apart that differ in the middle).
+            let name_pages = if name_rows == 0 { 1 } else { (name.len() + name_rows - 1) / name_rows };
+            let name_page = name_page.min(name_pages - 1);
             let facts = chosen_pin.is_some() && left > name_rows;
             left = left.saturating_sub(name_rows + facts as usize);
             // What the last program left to say, or why one was not started, comes next: a person who
@@ -572,7 +582,9 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
             let list_rows = (1 + left).min(places);
             let first = (place + 1).saturating_sub(list_rows);
             let mut notes: Vec<String> = Vec::new();
-            if list_rows < places { notes.push(format!("Places {} to {} of {}", first + 1, first + list_rows, places)); }
+            let narrow = across < 40;
+            if list_rows < places { notes.push(if narrow { format!("Place {}/{}", place + 1, places) } else { format!("Places {} to {} of {}", first + 1, first + list_rows, places) }); }
+            if name_pages > 1 { notes.push(if narrow { format!("name {}/{} <- ->", name_page + 1, name_pages) } else { format!("name part {} of {}: Left/Right", name_page + 1, name_pages) }); }
             if widgets_shown < widget_lines.len() { notes.push(format!("{} widget line(s) not shown", widget_lines.len() - widgets_shown)); }
             if !notes.is_empty() { at(2, 4, &cut(&notes.join(" | "), across), SOFT, GROUND); }
             let mut row = 5;
@@ -595,16 +607,12 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
                     at(2, row, "Enter starts", GOOD, GROUND);
                 }
                 row += caption as u32;
-                for (n, line) in name.iter().enumerate().take(name_rows) {
-                    if n + 1 == name_rows && name.len() > name_rows {
-                        // The selected list row already shows the beginning. Keep the name's ending distinguishable too.
-                        let skip = p.name.chars().count().saturating_sub(across.saturating_sub(2));
-                        at(2, row, &format!("..{}", p.name.chars().skip(skip).collect::<String>()), TEXT, GROUND);
-                    } else {
-                        at(2, row, line, TEXT, GROUND);
-                    }
+                for line in name.iter().skip(name_page * name_rows).take(name_rows) {
+                    at(2, row, line, TEXT, GROUND);
                     row += 1;
                 }
+                // The last part may be shorter: its rows stay the name's, so that what follows does not move.
+                row += (name_rows - name.iter().skip(name_page * name_rows).take(name_rows).count()) as u32;
                 if facts {
                     // Where the row is too short for the usual words, the digest gets the room: as many of
                     // its first sixteen digits as fit, then "..".
@@ -631,9 +639,10 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
             // On a display too narrow for the whole line, the keys that open the list of keys and that
             // stop the machine are the ones kept.
             at(2, rows - 2, if across >= 47 { "Up/Down choose   Enter open   F1 keys   F10 off" } else { "Enter open  F1 keys  F10 off" }, TEXT, GROUND);
-            return;
+            return name_pages;
         }
     };
+    let _ = name_page;
     let (w, h) = (display.width, display.height);
     let field = ui::Field::of(w, h);
     field.paint();
@@ -695,6 +704,7 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
         dock(programs, shortcuts, place, w, h, last_refusal);
         corners(start, w, h, &[("F1", "keys")]);
     }
+    1
 }
 
 /// The settings: how the desktop looks, and which widgets are on it. Nothing here changes by one key from
