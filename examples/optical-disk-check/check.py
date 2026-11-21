@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Exercise a published PCP OS optical image with a writable, disposable IDE disk.
 
-Requires Python 3, qemu-system-x86_64 with SeaBIOS, and tesseract.
+Requires Python 3, qemu-system-x86_64 with SeaBIOS.
 The only disk this program writes is a new ordinary file in a temporary directory.
 """
 import argparse
@@ -111,16 +111,36 @@ def wait_for(test, description, timeout):
     raise TimeoutError(description)
 
 
-def frame(monitor, directory, name, title, timeout):
+# Exact RGB regions from the kernel's 1024x768 framebuffer. The launcher approval
+# row also appears in the independently recorded Windows/macOS optical boots.
+VERIFIED = (180, 98, 642, 120, '100fc821e22cf5bda99d4f96cf1d4d442deb15cd3f3a2869cc30e5e7cc33971c')
+LAUNCHER_KEYS = (12, 714, 420, 744, '216cbff2e9413ccca07850193195f1f3e25391f775343c85f66f33dbb8c5f80b')
+REGISTER_KEYS = (12, 714, 420, 744, '123e5fedc122fb7016cce09b51260948f16476b2be1807fdf1d6993e489dbae8')
+
+
+def matches_frame(raw, regions):
+    header = b'P6\n1024 768\n255\n'
+    if not raw.startswith(header) or len(raw) != len(header) + 1024 * 768 * 3:
+        return False
+    pixels = memoryview(raw)[len(header):]
+    for left, top, right, bottom, expected in regions:
+        h = hashlib.sha256()
+        for y in range(top, bottom):
+            h.update(pixels[(1024 * y + left) * 3:(1024 * y + right) * 3])
+        if h.hexdigest() != expected:
+            return False
+    return True
+
+
+def frame(monitor, directory, name, timeout, register=False):
     capture = directory / (name + '.ppm')
+    regions = (REGISTER_KEYS,) if register else (VERIFIED, LAUNCHER_KEYS)
+
     def inspect():
         monitor.call('screendump', filename=str(capture))
-        ocr = subprocess.run(['tesseract', str(capture), 'stdout'], capture_output=True,
-                             check=True, text=True, timeout=10).stdout
-        return ocr if title.lower() in ocr.lower() else None
-    text = wait_for(inspect, f"waiting for {name} screen containing {title!r}", timeout)
-    (directory / (name + '.txt')).write_text(text)
-    return text
+        return matches_frame(capture.read_bytes(), regions)
+
+    wait_for(inspect, f'waiting for {name} framebuffer', timeout)
 
 
 def exercise(q, evidence, timeout, result):
@@ -130,26 +150,26 @@ def exercise(q, evidence, timeout, result):
         wait_for(lambda: serial.read_text(errors='replace').count(text) >= count, text, timeout)
 
     q.call('cont')
-    launcher = frame(q, evidence, 'launcher', 'FILES FROM THE LOADER', timeout)
-    if 'all 71 self-tests passed' not in launcher.lower():
-        raise ValueError(f'unexpected startup screen: {launcher}')
     sees(KERNEL + ' (measured; equal to the value the loader named)')
+    frame(q, evidence, 'launcher', timeout)
+    if sum(line.startswith('  pass ') for line in serial.read_text().splitlines()) != 71:
+        raise ValueError('expected 71 serial startup passes')
     result['at_launcher'] = q.disk_stats()
     q.key('ret')
     sees('SURFBIRD media ready')
     q.key('spc')
     sees('SURFBIRD media drained')
     sees('surf.elf ended DONE: exit 0')
-    frame(q, evidence, 'after-playback', 'FILES FROM THE LOADER', timeout)
+    frame(q, evidence, 'after-playback', timeout)
     q.key('ret')
     sees('SURFBIRD media ready', 2)
     q.key('ctrl', 'alt', 'delete')
     sees('surf.elf ended STOPPED')
-    frame(q, evidence, 'after-stop', 'FILES FROM THE LOADER', timeout)
+    frame(q, evidence, 'after-stop', timeout)
     q.key('r')
-    frame(q, evidence, 'register', 'Esc back', timeout)
+    frame(q, evidence, 'register', timeout, register=True)
     q.key('esc')
-    frame(q, evidence, 'returned', 'FILES FROM THE LOADER', timeout)
+    frame(q, evidence, 'returned', timeout)
     result['before_poweroff'] = q.disk_stats()
     q.key('p')
     sees("the kernel's register of its own start, verification and stop verifies and replays without a problem")

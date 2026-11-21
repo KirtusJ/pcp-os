@@ -39,10 +39,10 @@ jobs:
           ref: 7a02e35e9f5a692e2a1bc355450d763d42299e7f
           path: iso-tools
           persist-credentials: false
-      - name: Install the emulator and framebuffer reader
+      - name: Install the emulator and BIOS
         run: |
           sudo apt-get -qq update
-          sudo apt-get -qq install -y --no-install-recommends qemu-system-x86 seabios tesseract-ocr tesseract-ocr-eng
+          sudo apt-get -qq install -y --no-install-recommends qemu-system-x86 seabios
       - name: Build both images twice and verify their bytes
         id: build
         run: |

@@ -18,7 +18,7 @@ The candidate preserves the kernel, application, media and boot configuration. T
 
 ## Reproduce
 
-The [workflow](../../.github/workflows/optical-disk-check.yml) pins the published media, Limine binary release and pycdlib. It builds each image twice, checks both digests, then exercises normal playback, the kernel Stop key, register navigation and power-off on PC and Q35. Successful runs retain the experimental ISO and separate evidence. For a local run, use Linux with QEMU, SeaBIOS, Tesseract English, Python 3 and the same pycdlib revision. From the repository root, supply paths to the published ISO, the pinned loader checkout and a new output directory.
+The [workflow](../../.github/workflows/optical-disk-check.yml) pins the published media, Limine binary release and pycdlib. It builds each image twice, checks both digests, then exercises normal playback, the kernel Stop key, register navigation and power-off on PC and Q35. Successful runs retain the experimental ISO and separate evidence. For a local run, use Linux with QEMU, SeaBIOS, Python 3 and the same pycdlib revision. From the repository root, supply paths to the published ISO, the pinned loader checkout and a new output directory.
 
 ```sh
 python3 examples/optical-disk-check/build.py PCP-OS.iso /path/to/limine images
@@ -27,5 +27,7 @@ python3 examples/optical-disk-check/check.py images/old-loader-control.iso old-r
 python3 examples/optical-disk-check/check.py images/no-write-candidate.iso candidate-results \
   --sha256 0d2672e284d1bf0d09c3869285e657d3769c7933d83f132ce9dc89a77f07abf8
 ```
+
+The framebuffer check compares the released 1024×768 verified-launcher row and keyboard footer, then the distinct register footer. Their pixel digests matched across the three images on both machines.
 
 The experiment covers a virtual IDE-compatible disk and BIOS optical boot. UEFI, Secure Boot, USB media, physical controllers, durable user files and recovery after interrupted writes require separate qualification. The native launcher describes its application store as lasting until power-off.
