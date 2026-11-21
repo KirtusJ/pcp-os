@@ -1,0 +1,64 @@
+xorriso 1.5.6 : RockRidge filesystem manipulator, libburnia project.
+
+Copying of file objects from ISO image to disk filesystem is: Enabled
+xorriso : NOTE : Loading ISO image tree from LBA 0
+xorriso : UPDATE :      12 nodes read in 1 seconds
+xorriso : NOTE : Detected El-Torito boot information which currently is set to be discarded
+Drive current: -indev '/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/wdist/PCP-OS.iso'
+Media current: stdio file, overwriteable
+Media status : is written , is appendable
+Boot record  : El Torito
+Media summary: 1 session, 908 data blocks, 1816k data, 17.7g free
+Volume id    : 'PCP_OS'
+xorriso : UPDATE :      12 files restored (1750.4k) in 1 seconds = 1.3xD
+Extracted from ISO image: file '/'='/tmp/tmpplamazyc/original'
+xorriso 1.5.6 : RockRidge filesystem manipulator, libburnia project.
+
+xorriso : NOTE : Loading ISO image tree from LBA 0
+xorriso : UPDATE :      12 nodes read in 1 seconds
+xorriso : NOTE : Detected El-Torito boot information which currently is set to be discarded
+Drive current: -indev '/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/wdist/PCP-OS.iso'
+Media current: stdio file, overwriteable
+Media status : is written , is appendable
+Boot record  : El Torito
+Media summary: 1 session, 908 data blocks, 1816k data, 17.7g free
+Volume id    : 'PCP_OS'
+Drive current: -outdev '/tmp/tmpplamazyc/default.iso'
+Media current: stdio file, overwriteable
+Media status : is blank
+Media summary: 0 sessions, 0 data blocks, 0 data, 17.7g free
+xorriso : NOTE : Replayed 8 boot related commands
+xorriso : UPDATE :       1 files added in 1 seconds
+Added to ISO image: file '/kernel.elf32'='/home/user/pcp-os/PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32'
+xorriso : UPDATE :       1 files added in 1 seconds
+Added to ISO image: file '/limine.conf'='/tmp/tmpplamazyc/limine.conf'
+xorriso : NOTE : Copying to System Area: 1 bytes from file '/dev/zero'
+xorriso : UPDATE : Writing:       1216s  100.0%   fifo   0%  buf  50%
+ISO image produced: 1051 sectors
+Written to medium : 1216 sectors at LBA 32
+Writing to '/tmp/tmpplamazyc/default.iso' completed successfully.
+
+xorriso : NOTE : Re-assessing -outdev '/tmp/tmpplamazyc/default.iso'
+xorriso : NOTE : Loading ISO image tree from LBA 0
+xorriso : UPDATE :      12 nodes read in 1 seconds
+xorriso : NOTE : Detected El-Torito boot information which currently is set to be replaced by new boot image
+Drive current: -dev '/tmp/tmpplamazyc/default.iso'
+Media current: stdio file, overwriteable
+Media status : is written , is appendable
+Boot record  : El Torito
+Media summary: 1 session, 1051 data blocks, 2102k data, 17.6g free
+Volume id    : 'PCP_OS'
+xorriso 1.5.6 : RockRidge filesystem manipulator, libburnia project.
+
+Copying of file objects from ISO image to disk filesystem is: Enabled
+xorriso : NOTE : Loading ISO image tree from LBA 0
+xorriso : UPDATE :      12 nodes read in 1 seconds
+xorriso : NOTE : Detected El-Torito boot information which currently is set to be discarded
+Drive current: -indev '/tmp/tmpplamazyc/default.iso'
+Media current: stdio file, overwriteable
+Media status : is written , is appendable
+Boot record  : El Torito
+Media summary: 1 session, 1051 data blocks, 2102k data, 17.6g free
+Volume id    : 'PCP_OS'
+xorriso : UPDATE :      12 files restored (2041.0k) in 1 seconds = 1.5xD
+Extracted from ISO image: file '/'='/tmp/tmpplamazyc/rebuilt'
