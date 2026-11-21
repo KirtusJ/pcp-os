@@ -24,6 +24,9 @@ def check_capture(path):
         ("extra heading text", 1, len(rows[1]), "", " pending"),
         ("extra sync text", 2, len(rows[2]), "", " pending"),
         ("second file", 5, name_col, "", "other.queue  1 KiB"),
+        ("extra file above list", 3, name_col, "", "other.queue  1 KiB"),
+        ("extra file beside footer", len(rows) - 2, len(rows[-2]), "", "  other.queue  1 KiB"),
+        ("extra file below footer", len(rows) - 1, name_col, "", "other.queue  1 KiB"),
     ]
     for label, line, column, old, new in controls:
         changed = render["replace_text"](original, line, column, old, new, shapes)

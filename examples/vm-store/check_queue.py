@@ -45,11 +45,13 @@ def check_frame(frame, status):
 
 def saved_queue_visible(rows):
     """Match the Files view of this fixture's one saved queue."""
-    return (len(rows) >= 7
+    # The single-page view has four occupied rows, including its Esc footer.
+    occupied = [i for i, row in enumerate(rows) if row.strip()]
+    return (occupied == [1, 2, 4, len(rows) - 2]
             and rows[1].strip() == "FILES: showing 1 to 1 of 1, 3 KiB"
             and rows[2].strip() == "VM files | saved when an app syncs"
             and rows[4].split() == ["parrots.queue", "3", "KiB"]
-            and not any(row.strip() for row in rows[5:-2]))
+            and rows[-2].strip() == "Esc back")
 
 
 def check_journal(image):
