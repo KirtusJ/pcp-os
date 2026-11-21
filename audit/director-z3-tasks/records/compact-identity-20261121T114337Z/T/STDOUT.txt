@@ -1,0 +1,20 @@
+72 port writes in the source, 72 reviewed, 0 problem(s)
+  "kernel_measurement": "45ee8fe29ffd1b30e2bd7ac660ddaf593ace3695bbcba589801e555610bade37",
+  "iso_bytes": 2586624,
+  "iso_sha256": "6d96c0ebfedcb4d1e74af27bd1b0975cfa551d3c0d462ff473f9819f415466f2"
+}
+pc   ordinary            passed
+pc   instruction-counted passed
+q35  ordinary            passed
+q35  instruction-counted passed
+q35-counted/launcher.ppm: original accepted; rejected erased suffix, forged console-only policy, surplus grant, malformed size
+  "kernel_measurement": "45ee8fe29ffd1b30e2bd7ac660ddaf593ace3695bbcba589801e555610bade37",
+  "iso_bytes": 2641920,
+  "iso_sha256": "b85029027e53058d3e774856a73f690f24031902afbb8c8be4823e7ac415cd90"
+}
+pc   ordinary            passed
+pc   instruction-counted passed
+q35  ordinary            passed
+q35  instruction-counted passed
+save Disk save cold morning
+restore Queue restored cold morning

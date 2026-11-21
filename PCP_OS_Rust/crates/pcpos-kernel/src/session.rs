@@ -218,7 +218,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     let graphic = display.width >= 1280 && display.height >= 720 && ui::scale() == 1;
     // How many places the desktop has for the way to all the programs and what is pinned. Every place
     // can be reached and is drawn; a pin for which there is no place is refused, and said to be.
-    let room = if graphic { foot_room(display.width) } else { (ui::grid().1.saturating_sub(10)).max(2) as usize };
+    let room = if graphic { foot_room(display.width) } else { compact_room(&programs) };
     arch::interrupts_on();
     dev::keys_forget();
     loop {
@@ -532,25 +532,33 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
                 at(3, row, &if i == 0 { String::from("Programs") } else { cut(&format!("PINNED {}", programs[shortcuts[i - 1]].name), 42) }, TEXT, ground);
                 row += 1;
             }
-            // Which program Enter will start, in full: a row has room for only so much of a name.
+            // Which program Enter will start, in full: a row has room for only so much of a name. The rows
+            // down to the keys are kept for it (see `compact_room`); nothing below is drawn over the keys.
+            let floor = rows.saturating_sub(4);
             if let Some(p) = place.checked_sub(1).and_then(|at| shortcuts.get(at)).map(|i| &programs[*i]) {
                 let (cols, _) = ui::grid();
                 row += 1;
                 at(2, row, "Enter starts", GOOD, GROUND);
-                for line in wrapped(&p.name, (cols as usize).saturating_sub(4)) {
+                let name = wrapped(&p.name, (cols as usize).saturating_sub(4));
+                // With only two places kept and a name of very many rows, the name gives way and says so.
+                let fits = (floor.saturating_sub(row + 1)).max(1) as usize;
+                for (n, line) in name.iter().enumerate().take(fits) {
                     row += 1;
-                    at(2, row, &line, TEXT, GROUND);
+                    at(2, row, &if n + 1 == fits && name.len() > fits { cut(&format!("{}...", line), line.chars().count()) } else { line.clone() }, TEXT, GROUND);
                 }
                 row += 1;
                 at(2, row, &format!("{}   SHA-256 {}...", size_text(p.image.len()), &p.digest[..16]), SOFT, GROUND);
                 row += 1;
             }
             for (time, name, outcome, _) in recent.iter() {
-                at(2, row + 1, &format!("{} {} {}", time, outcome, name), SOFT, GROUND);
+                if row + 1 <= floor { at(2, row + 1, &format!("{} {} {}", time, outcome, name), SOFT, GROUND); }
                 row += 1;
             }
-            if widgets[1] { at(2, row + 2, &format!("memory {} MiB, {} MiB free", pool * 4 / 1024, free * 4 / 1024), SOFT, GROUND); row += 1; }
-            if widgets[2] { at(2, row + 3, files_line, SOFT, GROUND); }
+            if widgets[1] {
+                if row + 2 <= floor { at(2, row + 2, &format!("memory {} MiB, {} MiB free", pool * 4 / 1024, free * 4 / 1024), SOFT, GROUND); }
+                row += 1;
+            }
+            if widgets[2] && row + 3 <= floor { at(2, row + 3, files_line, SOFT, GROUND); }
             at(2, rows - 2, "Up/Down choose   Enter open   F1 keys   F10 off", TEXT, GROUND);
             return;
         }
@@ -836,7 +844,12 @@ fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message:
         }
     }
     if !message.is_empty() {
-        at(2, rows - 4, message.lines().next().unwrap_or(""), ui::AMBER, GROUND);
+        // The message has the two rows above the keys. What does not fit on them ends in "..".
+        let across = (cols as usize).saturating_sub(4).max(1);
+        let lines = wrapped(message.lines().next().unwrap_or(""), across);
+        for (n, line) in lines.iter().enumerate().take(2) {
+            at(2, rows - 4 + n as u32, &if n == 1 && lines.len() > 2 { cut(&format!("{}...", line), line.chars().count()) } else { line.clone() }, ui::AMBER, GROUND);
+        }
     }
     let keys = if programs.is_empty() || start.failed != 0 {
         "D details   R register   P off"
@@ -864,6 +877,17 @@ fn wait_chord() -> (u8, bool, bool) {
             None => arch::wait_for_interrupt(),
         }
     }
+}
+
+/// How many places the small-display desktop has. Its rows are: five of heading, one for each place, then
+/// for the chosen pin a blank row, 'Enter starts', its name on as many rows as the longest name of any
+/// program needs, and its size and digest; then a blank row and the keys. Every place it admits leaves
+/// room for all of that, so the chosen pin's identity is never drawn over.
+fn compact_room(programs: &[Entry]) -> usize {
+    let (cols, rows) = ui::grid();
+    let across = (cols as usize).saturating_sub(4).max(1);
+    let longest = programs.iter().map(|p| (p.name.chars().count() + across - 1) / across).max().unwrap_or(1).max(1);
+    (rows as usize).saturating_sub(11 + longest).max(2)
 }
 
 /// How many places the foot of the desktop has, in either form, for a display this wide: the way to all
