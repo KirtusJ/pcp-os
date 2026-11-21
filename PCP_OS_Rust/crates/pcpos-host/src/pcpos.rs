@@ -230,12 +230,35 @@ fn confined(root: &Path, given: &str, write: bool, create: bool) -> Result<Optio
     if !given.ends_with(".jsonl") {
         return Err("a register is named by a relative path that ends in .jsonl".to_string());
     }
-    confined_file(root, given, write, create, true)
+    confined_open(root, given, if write { Access::Append } else { Access::Read }, create, true)
+}
+
+/// A register-side file that is about to be shortened or written again from its start: `repair`, and the
+/// working file of shell observations. Opened to read and write, not to append: shortening a file needs the
+/// right to write anywhere in it, which an append handle does not carry on Windows. The confinement is the same.
+fn confined_rewrite(root: &Path, given: &str, create: bool) -> Result<Option<Handle>, String> {
+    if !given.ends_with(".jsonl") {
+        return Err("a register is named by a relative path that ends in .jsonl".to_string());
+    }
+    confined_open(root, given, Access::Rewrite, create, true)
+}
+
+/// What the opened handle may do. A register is only ever extended, so its handle appends.
+#[derive(Clone, Copy, PartialEq)]
+enum Access {
+    Read,
+    Append,
+    Rewrite,
 }
 
 /// The same confinement for any file under the root. `single_name`: refuse a file that has a second name
 /// (a register has exactly one; material to be read may be hard-linked by the tools that manage it).
 fn confined_file(root: &Path, given: &str, write: bool, create: bool, single_name: bool) -> Result<Option<Handle>, String> {
+    confined_open(root, given, if write { Access::Append } else { Access::Read }, create, single_name)
+}
+
+#[cfg_attr(not(unix), allow(unused_variables))] // single_name: a second name is counted only where the system reports the count
+fn confined_open(root: &Path, given: &str, access: Access, create: bool, single_name: bool) -> Result<Option<Handle>, String> {
     let rel = Path::new(given);
     if given.is_empty() || given.contains('\0') {
         return Err("a file is named by a relative path".to_string());
@@ -291,8 +314,14 @@ fn confined_file(root: &Path, given: &str, write: bool, create: bool, single_nam
     }
     let mut o = OpenOptions::new();
     o.read(true);
-    if write {
-        o.append(true);
+    match access {
+        Access::Read => {}
+        Access::Append => {
+            o.append(true);
+        }
+        Access::Rewrite => {
+            o.write(true);
+        }
     }
     if !exists {
         o.create_new(true); // fails if anything, a link included, appeared under this name meanwhile
@@ -2318,7 +2347,7 @@ fn hook(event: &str, input: &Value) -> Result<String, String> {
             let line = obj(vec![("ts", s(&now_utc())), ("tool_use_id", s(&clip(field("tool_use_id"), 200))), ("command", s(command)), ("exit", exit), ("timeout", Value::Bool(timeout)),
                                 ("stdout", s(&sha256_hex(out.as_bytes()))), ("stderr", s(&sha256_hex(err.as_bytes()))), ("output", s(form)), ("output_bytes", Value::Int((out.len() + err.len()) as i64)), ("at_event", Value::Int(at_event)),
                                 ("duration_ms", input.get("duration_ms").and_then(Value::as_int).map(Value::Int).unwrap_or(Value::Null))]).canonical_json();
-            if let Some(mut h) = confined(&se.root, &se.observed_tools(), true, true)? {
+            if let Some(mut h) = confined_rewrite(&se.root, &se.observed_tools(), true)? {
                 lock(&h, true)?;
                 // The newest observations only: this is a working file beside the record, not the record.
                 let old = read_all(&mut h)?;
@@ -2374,7 +2403,7 @@ fn at_terminal(path: &str, create: bool) -> Result<(PathBuf, String), String> {
 /// touched: the fragment is moved to a file beside the register and the register ends at its last whole event.
 fn repair(path: &str) -> Result<String, String> {
     let (root, name) = at_terminal(path, false)?;
-    let mut h = confined(&root, &name, true, false)?.ok_or(format!("there is no register at {path}"))?;
+    let mut h = confined_rewrite(&root, &name, false)?.ok_or(format!("there is no register at {path}"))?;
     lock(&h, true)?;
     let raw = read_all(&mut h)?;
     if raw.is_empty() || raw.ends_with(b"\n") {
