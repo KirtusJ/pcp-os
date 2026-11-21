@@ -1,0 +1,131 @@
+{
+  "source": "07702222e84990b5c716676ac67dcd8b47d2cbd2",
+  "evidence_commit": "d626ef740f41d7c91a34cf8aca9df2d958deb83b",
+  "archive_path": "evidence/desktop-display-311/B3-hosted-0770222.tar.xz",
+  "archive_sha256": "676ce35a2d90025a44e54264362abd86ed2ac31ad2a4c6b830bd79298f033aff",
+  "files": [
+    {
+      "case": "hosted/files-1024x768-31-1",
+      "geometry": "1024x768",
+      "scale": 1,
+      "files_reached": 31,
+      "home_and_restored_sha256": "9735277d4bfae2280b2a1109a2b1abd38067121b91e2f1511c1c79307ef8a20f"
+    },
+    {
+      "case": "hosted/files-1280x720-31-1",
+      "geometry": "1280x720",
+      "scale": 1,
+      "files_reached": 31,
+      "home_and_restored_sha256": "dd7ce4eed90f1a9ef6b4f04c99c908be63854aa1377520e8f44de43aac43fa08"
+    },
+    {
+      "case": "hosted/files-1280x960-31-2",
+      "geometry": "1280x960",
+      "scale": 2,
+      "files_reached": 31,
+      "home_and_restored_sha256": "2f551f5e05cd094b5d9c70b50f9537dc5e7511bd3052cafe2c1036199bb1d75b"
+    },
+    {
+      "case": "hosted/files-320x200-0-1",
+      "geometry": "320x200",
+      "scale": 1,
+      "files_reached": 0,
+      "home_and_restored_sha256": "1124c88bb93f07cc3ac20648875922c529f78cd971dab6cf995507385fe9b9e1"
+    },
+    {
+      "case": "hosted/files-320x200-1-1",
+      "geometry": "320x200",
+      "scale": 1,
+      "files_reached": 1,
+      "home_and_restored_sha256": "456a055cdd2b42c323690b14c815dfa498460cb9a908c657c11c68d8ed5f06b7"
+    },
+    {
+      "case": "hosted/files-320x200-3-1",
+      "geometry": "320x200",
+      "scale": 1,
+      "files_reached": 3,
+      "home_and_restored_sha256": "b0e51ef2155cda8244b939af238c4c16ce0a5d1e1557978edf21beb9c28165f7"
+    },
+    {
+      "case": "hosted/files-320x200-31-1",
+      "geometry": "320x200",
+      "scale": 1,
+      "files_reached": 31,
+      "home_and_restored_sha256": "138b48971c4889bc3c24f515383dc032a1dbb92cd3df4baebe1905d3b26be7c6"
+    },
+    {
+      "case": "hosted/files-800x600-23-1",
+      "geometry": "800x600",
+      "scale": 1,
+      "files_reached": 23,
+      "home_and_restored_sha256": "d4b57d68d990f134d79426bd93306bcc5cdf6f987560a6219d667369993cb95c"
+    }
+  ],
+  "queue_sessions": [
+    {
+      "case": "seven320",
+      "exit_zero_short_programs": 3,
+      "frame_sha256": "d0d3d748d9b49ba398eec14183dd3bf0c23775a59d0e5d73601e04c96c72f3bc",
+      "frame_rows": [
+        "??",
+        "???? PCP OS | DESKTOP",
+        "???",
+        "Verified at start: all 71 self",
+        "Places 3 to 3 of 8",
+        "PINNED program-02.elf",
+        "program-02.elf",
+        "53 KiB sha 46f4bbd5e4d754a..",
+        "Enter open  F1 keys  F10 off",
+        "5 widget line(s) not shown"
+      ]
+    },
+    {
+      "case": "seven640",
+      "exit_zero_short_programs": 3,
+      "frame_sha256": "013bddb6f2e581a27461f3b28770c071e957f31865bf0d05c9ac695e6ee0d3d0",
+      "frame_rows": [
+        "??",
+        "???? PCP OS | DESKTOP",
+        "???",
+        "Verified at start: all 71 self-tests passed.",
+        "Places 1 to 5 of 8",
+        "Programs",
+        "PINNED aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaAzz..",
+        "PINNED program-02.elf",
+        "PINNED aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaBzz..",
+        "PINNED program-04.elf",
+        "",
+        "Enter starts",
+        "program-02.elf",
+        "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+        "program-02.elf ended DONE: exit 0 after 0 s.",
+        "",
+        "14:46:28 DONE program-02.elf",
+        "14:46:29 DONE program-02.elf",
+        "14:46:30 DONE program-02.elf",
+        "memory 234 MiB, 234 MiB free",
+        "Session files | cleared at power-off",
+        "",
+        "Up/Down choose   Enter open   F1 keys   F10 off",
+        ""
+      ]
+    },
+    {
+      "case": "fourteen320",
+      "exit_zero_short_programs": 3,
+      "frame_sha256": "19aa57f96f3e7f530a403af3481f033e7c0f41c704d207e8f3128af88750d96d",
+      "frame_rows": [
+        "??",
+        "???? PCP OS | DESKTOP",
+        "???",
+        "Verified at start: all 71 self",
+        "Places 14 to 14 of 15",
+        "PINNED program-02.elf",
+        "program-02.elf",
+        "53 KiB sha 46f4bbd5e4d754a..",
+        "Enter open  F1 keys  F10 off",
+        "5 widget line(s) not shown"
+      ]
+    }
+  ]
+}
