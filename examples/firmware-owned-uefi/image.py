@@ -1,4 +1,4 @@
-"""Build an optical EFI test application containing one measured full-heap kernel and three pinned files."""
+"""Build the OVMF optical or removable-media fixture with its full-heap kernel and three pinned files."""
 import hashlib
 from pathlib import Path
 import re
@@ -60,7 +60,7 @@ def geometry(elf):
     return entry, end, flat, heap[0], segments
 
 
-def make(iso, elf, measure, work, source):
+def make(iso, elf, measure, work, source, *, usb_vm=False, details=False):
     if digest(iso) != PUBLIC_ISO:
         raise ValueError("Unexpected demo source ISO")
     entry, top, flat, heap, segments = geometry(elf)
@@ -83,31 +83,40 @@ def make(iso, elf, measure, work, source):
         names.append((symbol, filename))
         top = round_page(top + size)
     definitions.update(INFO_BASE=top, INFO_SIZE=32 * 1024, ARENA_END=top + 32 * 1024 + 16 * 1024)
+    # The original optical register check reads 32 numbered rows at 1024×768.
+    command = f"image={pin}" + (" desktop=1024x768" if details else "")
     (work / "image.h").write_text("".join(f"#define {k} {v}ULL\n" for k, v in definitions.items())
-                                  + f'#define GRANT "image={pin}"\n')
+                                  + f'#define GRANT "{command}"\n')
     (work / "payload.S").write_text('.section .rodata\n' + ''.join(
         f'.global {s}_bytes\n{s}_bytes:\n.incbin "{file}"\n' for s, file in names) + '.section .note.GNU-stack,"",@progbits\n')
 
     def run(*cmd):
         subprocess.run(cmd, cwd=work, check=True)
     run("gcc", "-Wall", "-Wextra", "-Werror", "-DEFI_FUNCTION_WRAPPER", "-fpic", "-fshort-wchar", "-fno-stack-protector",
-        "-mno-red-zone", "-I/usr/include/efi", "-I/usr/include/efi/x86_64", "-I.", "-c", source / "loader.c", "-o", "loader.o")
+        "-mno-red-zone", *(["-DPCP_USB_VM"] if usb_vm else []), "-I/usr/include/efi", "-I/usr/include/efi/x86_64", "-I.", "-c", source / "loader.c", "-o", "loader.o")
     run("gcc", "-c", source / "handoff.S", "-o", "handoff.o")
     run("gcc", "-c", "payload.S", "-o", "payload.o")
     run("ld", "-nostdlib", "-znocombreloc", "-T", "/usr/lib/elf_x86_64_efi.lds", "-shared", "-Bsymbolic",
         "/usr/lib/crt0-efi-x86_64.o", "loader.o", "handoff.o", "payload.o", "-L/usr/lib", "-lefi", "-lgnuefi", "-o", "loader.so")
-    run("objcopy", "-j", ".text", "-j", ".sdata", "-j", ".data", "-j", ".dynamic", "-j", ".dynsym", "-j", ".rel",
+    run("objcopy", "-j", ".text", "-j", ".rodata", "-j", ".sdata", "-j", ".data", "-j", ".dynamic", "-j", ".dynsym", "-j", ".rel",
         "-j", ".rela", "-j", ".reloc", "--target=efi-app-x86_64", "loader.so", "BOOTX64.EFI")
-    cd = work / "cd"
-    cd.mkdir()
-    esp = cd / "efi.img"
+    efi = (work / "BOOTX64.EFI").read_bytes()
+    if any((work / name).read_bytes() not in efi for _, name in names):
+        raise ValueError("The EFI application did not retain every embedded payload")
+    esp = work / "usb.img" if usb_vm else work / "cd" / "efi.img"
+    esp.parent.mkdir(exist_ok=True)
     with esp.open("wb") as disk:
         disk.truncate(8 << 20)
     run("mkfs.vfat", esp)
     run("mmd", "-i", esp, "::/EFI", "::/EFI/BOOT")
     run("mcopy", "-i", esp, "BOOTX64.EFI", "::/EFI/BOOT/")
-    run("xorriso", "-as", "mkisofs", "-quiet", "-eltorito-alt-boot",
-        "-e", "efi.img", "-no-emul-boot", "-o", "owned.iso", cd)
-    return {"elf_sha256": digest(elf), "measurement": pin, "heap": heap, "segments": segments, "modules": modules,
-            "arena": [BASE, definitions["ARENA_END"]], "source_iso": PUBLIC_ISO, "efi_sha256": digest(work / "BOOTX64.EFI"),
-            "iso_sha256": digest(work / "owned.iso")}
+    if not usb_vm:
+        run("xorriso", "-as", "mkisofs", "-quiet", "-eltorito-alt-boot",
+            "-e", "efi.img", "-no-emul-boot", "-o", "owned.iso", esp.parent)
+    receipt = {"elf_sha256": digest(elf), "measurement": pin, "heap": heap, "segments": segments, "modules": modules,
+            "arena": [BASE, definitions["ARENA_END"]], "source_iso": PUBLIC_ISO, "efi_sha256": digest(work / "BOOTX64.EFI")}
+    if usb_vm:
+        receipt["usb_sha256"] = digest(esp)
+    else:
+        receipt["iso_sha256"] = digest(work / "owned.iso")
+    return receipt
