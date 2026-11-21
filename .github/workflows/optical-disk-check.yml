@@ -108,6 +108,15 @@ jobs:
           mkdir -p receipts
           python3 -IB examples/optical-disk-check/check.py images/no-write-candidate.iso receipts/tester \
             --timeout 65 --kernel "$KERNEL" --sha256 "$CANDIDATE_SHA" --tester-profile
+      - name: Exercise 512-byte and 4096-byte NVMe namespaces on Q35
+        if: "!cancelled() && steps.build.outcome == 'success' && matrix.kernel == 'keyboard-01'"
+        run: |
+          for sector in 512 4096; do
+            python3 -IB examples/optical-disk-check/check.py images/old-loader-control.iso "receipts/nvme-old-$sector" \
+              --kernel "$KERNEL" --sha256 "$CONTROL_SHA" --tester-profile --nvme-sector-size "$sector" --timeout 65 --expect-writeback
+            python3 -IB examples/optical-disk-check/check.py images/no-write-candidate.iso "receipts/nvme-candidate-$sector" \
+              --kernel "$KERNEL" --sha256 "$CANDIDATE_SHA" --tester-profile --nvme-sector-size "$sector" --timeout 65
+          done
       - name: Retain observations, including failed cases
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
