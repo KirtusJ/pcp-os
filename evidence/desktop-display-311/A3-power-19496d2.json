@@ -1,0 +1,181 @@
+{
+  "commit": "19496d2d5813eecd8f6279eec48152a3e4e49593",
+  "tree": "aee64af0e49771da4a06ba3b355847eeb6805934",
+  "iso_sha256": "6e51390bd7b93bb2faab0790b4724b0cd9e240b00b609d5e460e7bcd567bec61",
+  "workflow": "https://github.com/KirtusJ/pcp-os/actions/runs/44904394329",
+  "results": [
+    {
+      "source": "19496d2d5813eecd8f6279eec48152a3e4e49593",
+      "command": [
+        "/workspace/scratch/7c7df1723510/work/emulator/qemu-system-x86_64",
+        "-machine",
+        "pc",
+        "-accel",
+        "tcg",
+        "-cpu",
+        "qemu64",
+        "-m",
+        "256M",
+        "-vga",
+        "std",
+        "-nic",
+        "none",
+        "-display",
+        "none",
+        "-monitor",
+        "none",
+        "-qmp",
+        "stdio",
+        "-serial",
+        "file:/workspace/scratch/ffffe64c533f/a3-power194/320x200/serial.txt",
+        "-kernel",
+        "kernel.elf32",
+        "-append",
+        "desktop=320x200 image=4a14e987b02519a3ed9fd0aa954814c22d91ec3e1e0916e69a904cd398951e8b",
+        "-initrd",
+        "surf.elf"
+      ],
+      "mode": "320x200",
+      "visible": [
+        "The register is closed and ver",
+        "not saved by a program are los",
+        "Enter switch off    Esc go bac"
+      ],
+      "complete": [
+        false,
+        false,
+        false
+      ],
+      "expected": [
+        "The register is closed and verified first. Files of this session that were",
+        "not saved by a program are lost.",
+        "Enter switch off    Esc go back"
+      ],
+      "kernel_sha256": "b425b4e8bfee0d0a73aaca3e08bf729d8a4031176ae24e1e9aeac2032801d6fd",
+      "screen_sha256": "13c56f3502880db4b2fad32a5d662eec4f44fdf3da2801f18206996c3cb87432",
+      "unchanged_on_cancel": true,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "exit": 0,
+      "checks": 72,
+      "identical_to_hosted_frame": true
+    },
+    {
+      "source": "19496d2d5813eecd8f6279eec48152a3e4e49593",
+      "command": [
+        "/workspace/scratch/7c7df1723510/work/emulator/qemu-system-x86_64",
+        "-machine",
+        "pc",
+        "-accel",
+        "tcg",
+        "-cpu",
+        "qemu64",
+        "-m",
+        "256M",
+        "-vga",
+        "std",
+        "-nic",
+        "none",
+        "-display",
+        "none",
+        "-monitor",
+        "none",
+        "-qmp",
+        "stdio",
+        "-serial",
+        "file:/workspace/scratch/ffffe64c533f/a3-power194/640x480/serial.txt",
+        "-kernel",
+        "kernel.elf32",
+        "-append",
+        "desktop=640x480 image=4a14e987b02519a3ed9fd0aa954814c22d91ec3e1e0916e69a904cd398951e8b",
+        "-initrd",
+        "surf.elf"
+      ],
+      "mode": "640x480",
+      "visible": [
+        "The register is closed and verified first. Files of this sessi",
+        "not saved by a program are lost.",
+        "Enter switch off    Esc go back"
+      ],
+      "complete": [
+        false,
+        true,
+        true
+      ],
+      "expected": [
+        "The register is closed and verified first. Files of this session that were",
+        "not saved by a program are lost.",
+        "Enter switch off    Esc go back"
+      ],
+      "kernel_sha256": "b425b4e8bfee0d0a73aaca3e08bf729d8a4031176ae24e1e9aeac2032801d6fd",
+      "screen_sha256": "cbb5d3ac2b6eb46c9f9cf922edbd6fbf2d6c856a13f20e40d8eb7b81f9b8f960",
+      "unchanged_on_cancel": true,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "exit": 0,
+      "checks": 72,
+      "identical_to_hosted_frame": true
+    },
+    {
+      "source": "19496d2d5813eecd8f6279eec48152a3e4e49593",
+      "command": [
+        "/workspace/scratch/7c7df1723510/work/emulator/qemu-system-x86_64",
+        "-machine",
+        "pc",
+        "-accel",
+        "tcg",
+        "-cpu",
+        "qemu64",
+        "-m",
+        "256M",
+        "-vga",
+        "std",
+        "-nic",
+        "none",
+        "-display",
+        "none",
+        "-monitor",
+        "none",
+        "-qmp",
+        "stdio",
+        "-serial",
+        "file:/workspace/scratch/ffffe64c533f/a3-power194/800x600/serial.txt",
+        "-kernel",
+        "kernel.elf32",
+        "-append",
+        "desktop=800x600 image=4a14e987b02519a3ed9fd0aa954814c22d91ec3e1e0916e69a904cd398951e8b",
+        "-initrd",
+        "surf.elf"
+      ],
+      "mode": "800x600",
+      "visible": [
+        "The register is closed and verified first. Files of this session that were",
+        "not saved by a program are lost.",
+        "Enter switch off    Esc go back"
+      ],
+      "complete": [
+        true,
+        true,
+        true
+      ],
+      "expected": [
+        "The register is closed and verified first. Files of this session that were",
+        "not saved by a program are lost.",
+        "Enter switch off    Esc go back"
+      ],
+      "kernel_sha256": "b425b4e8bfee0d0a73aaca3e08bf729d8a4031176ae24e1e9aeac2032801d6fd",
+      "screen_sha256": "d8644632a11cc35c7733d7cdd65b1bba196eec080042c4f7ba597a19e4f91eca",
+      "unchanged_on_cancel": true,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "exit": 0,
+      "checks": 72
+    }
+  ]
+}
