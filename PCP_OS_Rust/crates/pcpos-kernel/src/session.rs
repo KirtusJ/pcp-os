@@ -34,6 +34,8 @@ pub struct Start<'a> {
     pub boot: &'a arch::BootInfo,
     pub display: Option<dev::Display>,
     pub keyboard: bool,
+    /// Why the self-tests that need replayed keys were not run, if they were not.
+    pub not_run: Option<&'static str>,
     pub sound: bool,
     pub passed: u32,
     pub failed: u32,
@@ -543,6 +545,11 @@ fn verification_view(start: &Start, rec: &Record) {
     lines.extend(lines_of(2, if ledger::verify(rec.ledger().bytes()).is_ok() { "The register's chain is intact." } else { "The register's chain does NOT verify." }, TEXT));
     lines.extend(lines_of(2, "", TEXT));
     lines.extend(lines_of(2, "F4 shows every event of the register.", SOFT));
+    // What was not tested is said beside what was. It is below the lines that have always been here.
+    if let Some(why) = start.not_run.filter(|_| start.failed == 0) {
+        lines.extend(lines_of(2, "", TEXT));
+        lines.extend(lines_of(2, &format!("Not run at start: the tests of keys, sleep and stopping a program, because {}.", why), ui::AMBER));
+    }
     // The whole head, which the register's own title cannot hold on every display. It is below the lines
     // that have always been here, which keep their rows.
     lines.extend(lines_of(2, "", TEXT));
