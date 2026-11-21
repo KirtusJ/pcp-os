@@ -1,0 +1,15 @@
+== control: this checker against the image built at c9a0aaf (one Enter flag); it must fail at the two-key step
+pc   ordinary            FAILED: [Errno 32] Broken pipe
+pc   instruction-counted FAILED: [Errno 32] Broken pipe
+q35  ordinary            FAILED: [Errno 32] Broken pipe
+q35  instruction-counted FAILED: [Errno 32] Broken pipe
+control exit=1
+== candidate
+  "kernel_measurement": "848633ab3612a04873eb2fbfb1b7123484bf35fff42291ad1abe0e0f24af581d",
+  "iso_bytes": 2578432,
+  "iso_sha256": "3b3ae41225b26c81b8b6567b09a82b8bf3e7563ddbc38e5924fa7b072b850970"
+}
+pc   ordinary            passed
+pc   instruction-counted passed
+q35  ordinary            passed
+q35  instruction-counted passed

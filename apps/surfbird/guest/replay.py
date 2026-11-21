@@ -257,8 +257,12 @@ def run_arm(args, work, arm, dns):
                             and not any("may use:" in row for row in rows)):
                         return "home"
 
+                feature = "guest-ethernet" if args.tcp else "game-link"
+                permissions = desktop["launcher_grants"](sound=True, command_line=cmd[cmd.index("-append") + 1],
+                                                        digest=digest, features=(feature,))
+
                 def selected(rows, frame):
-                    return desktop["selected_program"](rows, frame, "surf.elf")
+                    return desktop["selected_program"](rows, frame, "surf.elf", permissions, digest)
 
                 try:
                     wait("a program that cannot be admitted")

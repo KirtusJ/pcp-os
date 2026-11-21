@@ -7,6 +7,7 @@ on:
     paths:
       - 'examples/tester-cd/**'
       - 'examples/optical-disk-check/check.py'
+      - 'examples/optical-disk-check/check_compact_verification.py'
       - 'PCP_OS_Rust/crates/pcpos-kernel/**'
       - 'PCP_OS_Rust/crates/pcpos-core/**'
       - 'apps/surfbird/guest/**'
@@ -19,6 +20,7 @@ on:
     paths:
       - 'examples/tester-cd/**'
       - 'examples/optical-disk-check/check.py'
+      - 'examples/optical-disk-check/check_compact_verification.py'
       - 'PCP_OS_Rust/crates/pcpos-kernel/**'
       - 'PCP_OS_Rust/crates/pcpos-core/**'
       - 'apps/surfbird/guest/**'
@@ -75,6 +77,18 @@ jobs:
           cat "$RUNNER_TEMP/first/receipt.json"
       - name: Boot it on pc and q35, on both clocks
         run: python3 -B examples/tester-cd/check.py ${{ matrix.option }} "$RUNNER_TEMP/first" "$RUNNER_TEMP/evidence"
+      - name: Check compact Home, F5 verification and Esc on the CD kernel
+        if: matrix.option == ''
+        working-directory: ${{ runner.temp }}
+        run: |
+          xorriso -osirrox on -indev first/pcp-os-tester.iso -extract /kernel.elf32 compact-kernel.elf32
+          jq -er '.on_disc["kernel.elf32"].sha256 + "  compact-kernel.elf32"' first/receipt.json | sha256sum --check --strict -
+          for geometry in 800x600 1024x768; do
+            python3 -IB "$GITHUB_WORKSPACE/examples/optical-disk-check/check_compact_verification.py" \
+              compact-kernel.elf32 "evidence/compact-$geometry" --geometry "$geometry"
+          done
+      - name: Replay selected grants and RGB controls on the native captures
+        run: python3 -IB examples/tester-cd/check_launcher_grants.py "$RUNNER_TEMP/first/receipt.json" "$RUNNER_TEMP/evidence"
       - name: Check the source CD beside disposable IDE and NVMe disks
         if: matrix.option == ''
         run: |

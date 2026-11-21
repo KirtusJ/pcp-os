@@ -19,6 +19,9 @@ import time
 import uuid
 import zlib
 
+SCREEN = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'tester-cd/check.py'))
+launcher_grants = SCREEN['launcher_grants']
+
 PARTITION_GUID = uuid.UUID('32802589-a96c-4a24-8fa4-de349d70cb05')
 MARKER = b"PCP OS disk-preservation test. Keep this file across cold boots.\r\n"
 KERNELS = {
@@ -202,14 +205,21 @@ def frame(monitor, directory, name, timeout, register=False):
     wait_for(inspect, f'waiting for {name} framebuffer', timeout)
 
 
-def selected_program(rows, frame, program):
-    # Each graphical entry has its own grants directly below its filename.
-    for entry, grants in zip(rows, rows[1:]):
-        marker = entry.find('> ' + program + ' ')
-        if marker >= 0 and re.match(r'may use: [a-z]', grants[marker + 2:]):
-            return True
-
-    if not any('Enter open' in row for row in rows) or not any('Access:' in row for row in rows):
+def selected_program(rows, frame, program, permissions, digest=None):
+    if SCREEN['graphical_selection'](rows, program, permissions, digest):
+        return True
+    if len(rows) < 8 or 'Enter open' not in rows[-2]:
+        return False
+    if permissions == ('console only',):
+        base = 'console only'
+    elif 'sound' in permissions:
+        base = 'console, display, keyboard, files, store, sound'
+    else:
+        base = 'console, display, keyboard, files and store'
+    access = ['  Access: ' + base]
+    for optional in ('raw Ethernet frames', 'second serial port'):
+        access.append('  Access: ' + optional if optional in permissions else '')
+    if rows[-7:-4] != access:
         return False
     # In the compact layout the font reader reports the 3x20 teal strip as
     # an unknown glyph in column 2. Check its pixels on the named row.
@@ -229,12 +239,13 @@ def selected_program(rows, frame, program):
 
 class DesktopScreens:
     """Read the desktop kernel's framebuffer with its own font. Legacy CDs keep their recorded pixel checks."""
-    def __init__(self, monitor, directory, timeout):
-        reader = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'tester-cd/check.py'))
-        self.read = reader['read_screen']
-        self.glyphs = reader['kernel_glyphs']()
-        self.startup_checks = reader['STARTUP_CHECKS']
-        self.register_problems = reader['register_problems']
+    def __init__(self, monitor, directory, timeout, *, sound=True, app_digests=None, command_line=""):
+        self.permissions = launcher_grants(sound=sound, command_line=command_line)
+        self.app_digests = dict(app_digests or {})
+        self.read = SCREEN['read_screen']
+        self.glyphs = SCREEN['kernel_glyphs']()
+        self.verification_screen = SCREEN['verification_screen']
+        self.register_problems = SCREEN['register_problems']
         self.monitor, self.directory, self.timeout = monitor, directory, timeout
 
     def wait(self, name, predicate):
@@ -262,14 +273,13 @@ class DesktopScreens:
 
     def verification(self, prefix):
         self.monitor.key('f5')
-        sentence = f'Verified at start: all {self.startup_checks} self-tests passed.'
-        self.wait(prefix + '-verification', lambda rows: any(row.strip() == 'VERIFICATION' for row in rows)
-                  and any(sentence in row for row in rows) and any("The register's chain is intact." in row for row in rows))
+        self.wait(prefix + '-verification', self.verification_screen)
         self.monitor.key('esc')
         self.home(prefix + '-after-verification')
 
     def launcher(self, name, program):
-        return self.wait_frame(name, lambda rows, frame: selected_program(rows, frame, program))
+        return self.wait_frame(name, lambda rows, frame: selected_program(
+            rows, frame, program, self.permissions, self.app_digests.get(program)))
 
     def power_off_from_launcher(self, prefix, program):
         def question(rows):
@@ -285,7 +295,7 @@ class DesktopScreens:
         self.monitor.key('ret')
 
 
-def exercise(q, evidence, timeout, result, kernel):
+def exercise(q, evidence, timeout, result, kernel, iso):
     serial = evidence / 'serial.log'
 
     def sees(text, count=1):
@@ -303,8 +313,15 @@ def exercise(q, evidence, timeout, result, kernel):
         return 'legacy' if matches_frame(capture.read_bytes(), (VERIFIED, LAUNCHER_KEYS)) else None
 
     surface = wait_for(first_surface, 'waiting for the initial optical screen', timeout)
-    desktop = DesktopScreens(q, evidence, timeout) if surface == 'desktop' else None
-    if desktop:
+    desktop = None
+    if surface == 'desktop':
+        command = re.search(r'^command line: (.*)$', serial.read_text(), re.M)
+        if not command:
+            raise ValueError('missing optical boot command line')
+        builder = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'tester-cd/build.py'))
+        app = builder['read_back'](iso.read_bytes())['surf.elf']
+        desktop = DesktopScreens(q, evidence, timeout, command_line=command[1],
+                                 app_digests={'surf.elf': digest(app)})
         desktop.home('home')
         desktop.verification('home')
         q.key('spc')
@@ -393,7 +410,7 @@ def run(args, root, baseline, marker_offset, machine, control):
                 command = f'qemu-io sentinel "write -q -P 0x5a {marker_offset} {sector_bytes}"'
                 result['write_response'] = q.call('human-monitor-command', **{'command-line': command})
             else:
-                exercise(q, evidence, args.timeout, result, args.kernel)
+                exercise(q, evidence, args.timeout, result, args.kernel, args.iso)
             result['at_end'] = q.disk_stats()
             result['events'] = q.events
             q.call('quit')

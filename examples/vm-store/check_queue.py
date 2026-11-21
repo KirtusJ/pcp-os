@@ -104,7 +104,8 @@ def main(args):
                 monitor = Monitor(vm)
                 monitor.call("qmp_capabilities")
                 if boot == "restore":
-                    desktop = optical["DesktopScreens"](monitor, out, args.timeout)
+                    desktop = optical["DesktopScreens"](monitor, out, args.timeout, sound=False,
+                                                       app_digests={"queue.elf": digest((out / "queue.elf").read_bytes()).hex()})
                     desktop.home("restore-home")
                     desktop.verification("restore-home")
                     monitor.key("f3")

@@ -178,7 +178,9 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     say!("desktop: {}x{} at {}x UI scale", display.width, display.height, ui::scale());
     // Whether the desktop is drawn in full, or as the plain screens of a small display.
     let graphic = display.width >= 1280 && display.height >= 720 && ui::scale() == 1;
-    let room = foot_room(display.width);
+    // How many places the desktop has for the way to all the programs and what is pinned. Every place
+    // can be reached and is drawn; a pin for which there is no place is refused, and said to be.
+    let room = if graphic { foot_room(display.width) } else { (ui::grid().1.saturating_sub(10)).max(2) as usize };
     arch::interrupts_on();
     dev::keys_forget();
     loop {
@@ -240,7 +242,8 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
             }
             (Surface::Launcher, (0x19, false)) if ctrl && !programs.is_empty() => match shortcuts.iter().position(|p| *p == chosen) {
                 Some(at) => { shortcuts.remove(at); }
-                None => shortcuts.push(chosen),
+                None if shortcuts.len() + 1 < room => shortcuts.push(chosen),
+                None => message = format!("Not pinned: the desktop has room for {} pinned program(s) on this display. Take one out first.", room - 1),
             },
             (Surface::Launcher, (0x20, false)) if ctrl || letters => surface = Surface::Details,
             (Surface::Details, (0x20, false)) => surface = Surface::Launcher,
@@ -381,7 +384,7 @@ fn verification_view(start: &Start, rec: &Record) {
     let head = rec.ledger().head();
     at(2, 6, &format!("Register: {} events, head {}...", rec.ledger().len(), &head[..head.len().min(16)]), TEXT, GROUND);
     at(2, 7, if ledger::verify(rec.ledger().bytes()).is_ok() { "The register's chain is intact." } else { "The register's chain does NOT verify." }, TEXT, GROUND);
-    at(2, 9, "R shows every event of the register from the desktop.", SOFT, GROUND);
+    at(2, 9, "F4 shows every event of the register.", SOFT, GROUND);
     at(2, rows - 2, "Any key goes back", SOFT, GROUND);
     wait_key();
 }
@@ -640,33 +643,59 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
     let grants = if none { "console only" } else if start.sound { "display, keyboard, sound, loader files, store" } else { "display, keyboard, loader files, store" };
     let foot = h / 20 * 20 - 60;
     let _ = rec;
-    let mut y = 170;
-    let room = ((foot.saturating_sub(y + 120)) / 80).max(1) as usize;
-    let first = (chosen + 1).saturating_sub(room);
-    for (i, p) in programs.iter().enumerate().skip(first).take(room) {
-        let on_row = plate(left, y, list_width, 60, if i == chosen { PLATE_CHOSEN } else { PLATE }, if i == chosen { outline() } else { edge() }, i == chosen);
-        if i == chosen {
-            dev::display_fill(left, y + 8, 4, 44, AMBER);
-        }
-        // The row says, on the character grid: which is chosen, its name, its size and digest, and what it may use.
-        label(left + 20, y + 10, if i == chosen { ">" } else { " " }, AMBER, false, &on_row);
-        label(left + 40, y + 10, &p.name.chars().take(28).collect::<String>(), TEXT, false, &on_row);
-        let size = size_text(p.image.len());
-        let digest = format!("SHA-256 {}...", &p.digest[..16]);
-        label((left + list_width - 20 - label_width(&digest, false)) / 10 * 10, y + 10, &digest, SOFT, false, &on_row);
-        label((left + list_width - 60 - label_width(&digest, false) - label_width(&size, false)) / 10 * 10, y + 10, &size, SOFT, false, &on_row);
+    // What a program may use is never cut short and never drawn over: it takes as many lines as it needs,
+    // and that a program is pinned is said on a line of its own.
+    let across = (list_width / 10).saturating_sub(6) as usize;
+    let access_of = |p: &Entry| -> Vec<String> {
         #[allow(unused_mut)]
         let mut access = String::from(grants);
         #[cfg(feature = "guest-ethernet")]
         if !none && ethernet_grant(start.boot.exact_command_line(), &p.digest) { access.push_str(", raw Ethernet frames"); }
         #[cfg(feature = "game-link")]
         if !none && option(&start.boot.command_line, "link_image") == Some(p.digest.as_str()) { access.push_str(", second serial port"); }
-        label(left + 40, y + 30, &format!("may use: {}", access), SOFT, false, &on_row);
-        if shortcuts.contains(&i) {
-            let mark = "in the dock";
-            label((left + list_width - 20 - label_width(mark, false)) / 10 * 10, y + 30, mark, ui::GOOD, false, &on_row);
+        let _ = p;
+        let mut lines: Vec<String> = Vec::new();
+        let mut line = String::from("may use:");
+        for (n, part) in access.split(", ").enumerate() {
+            let piece = if n == 0 { format!(" {}", part) } else { format!(", {}", part) };
+            if line.chars().count() + piece.chars().count() > across && line != "may use:" {
+                lines.push(line + ",");
+                line = format!("         {}", part);
+            } else {
+                line.push_str(&piece);
+            }
         }
-        y += 80;
+        lines.push(line);
+        lines
+    };
+    let height_of = |i: usize, p: &Entry| 40 + 20 * (access_of(p).len() as u32 + shortcuts.contains(&i) as u32);
+    let tallest = programs.iter().enumerate().map(|(i, p)| height_of(i, p)).max().unwrap_or(60);
+    let mut y = 170;
+    let room = ((foot.saturating_sub(y + 120)) / (tallest + 20)).max(1) as usize;
+    let first = (chosen + 1).saturating_sub(room);
+    for (i, p) in programs.iter().enumerate().skip(first).take(room) {
+        let tall = height_of(i, p);
+        let on_row = plate(left, y, list_width, tall, if i == chosen { PLATE_CHOSEN } else { PLATE }, if i == chosen { outline() } else { edge() }, i == chosen);
+        if i == chosen {
+            dev::display_fill(left, y + 8, 4, tall - 16, AMBER);
+        }
+        // The row says, on the character grid: which is chosen, its name, its size and digest, and what it may use.
+        label(left + 20, y + 10, if i == chosen { ">" } else { " " }, AMBER, false, &on_row);
+        let size = size_text(p.image.len());
+        let digest = format!("SHA-256 {}...", &p.digest[..16]);
+        let size_at = (left + list_width - 60 - label_width(&digest, false) - label_width(&size, false)) / 10 * 10;
+        let name_room = (size_at.saturating_sub(left + 60) / 10).max(4) as usize;
+        label(left + 40, y + 10, &p.name.chars().take(name_room.min(28)).collect::<String>(), TEXT, false, &on_row);
+        label((left + list_width - 20 - label_width(&digest, false)) / 10 * 10, y + 10, &digest, SOFT, false, &on_row);
+        label(size_at, y + 10, &size, SOFT, false, &on_row);
+        let lines = access_of(p);
+        for (n, line) in lines.iter().enumerate() {
+            label(left + 40, y + 30 + n as u32 * 20, line, SOFT, false, &on_row);
+        }
+        if shortcuts.contains(&i) {
+            label(left + 40, y + 30 + lines.len() as u32 * 20, "pinned to the desktop", ui::GOOD, false, &on_row);
+        }
+        y += tall + 20;
     }
     if !message.is_empty() {
         let lines = message.lines().take(3).count() as u32;
@@ -769,8 +798,26 @@ fn power_prompt() -> bool {
     at(2, 5, "The register is closed and verified first. Files of this session that were", SOFT, GROUND);
     at(2, 6, "not saved by a program are lost.", SOFT, GROUND);
     at(2, rows - 2, "Enter switch off    Esc go back", TEXT, GROUND);
-    dev::keys_forget();
-    matches!(wait_key(), (0x1C, _))
+    // Only an Enter pressed in answer switches off. A key that is held repeats its press, and those repeats
+    // are not an answer, whichever Enter key they come from and whichever is let go first: a press counts
+    // only when both Enter keys (the main one and the number pad's) were up before it. Which are down is
+    // taken at the moment the waiting keys are forgotten and then followed from the events themselves, in
+    // their order. Any other key pressed goes back.
+    let (mut main, mut pad) = dev::keys_forget_enter();
+    loop {
+        match dev::key_take() {
+            Some(k) if k.code == 0x1C => {
+                let was_clear = !main && !pad;
+                if k.extended { pad = !k.released } else { main = !k.released }
+                if !k.released && was_clear {
+                    return true;
+                }
+            }
+            Some(k) if !k.released && k.code != 0x1D && k.code != 0x38 && k.code != 0x44 => return false,
+            Some(_) => {}
+            None => arch::wait_for_interrupt(),
+        }
+    }
 }
 
 fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8], String)], rec: &Record, chosen: usize, message: &str, stored: usize,
