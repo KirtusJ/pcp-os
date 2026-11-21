@@ -1,0 +1,4 @@
+  "kernel_measurement": "14a655a8574b04168e608a67c42d30a3ce77dd3d5b63be07118cb1997f7d40df",
+  "iso_bytes": 2641920,
+  "iso_sha256": "5de49df1d99fcefea1881e64de30708a51a97310e2b9148c850c961563d5669a"
+}

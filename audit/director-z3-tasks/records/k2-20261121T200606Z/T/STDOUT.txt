@@ -1,0 +1,10 @@
+  "kernel_measurement": "32c274fb26aec9c312b6dd92d8d26369cc1d89589fb4bc578b7b23ccc3a38148",
+  "iso_bytes": 2641920,
+  "iso_sha256": "e7b491a31dcc23732c934f46552ec964c3159dfa42888686db7076212e0d1034"
+}
+small screens: Settings at nine sizes, the list of programs at five and the screens of text at six, three of them the full desktop, passed; controls refused
+74 port writes in the source, 74 reviewed, 0 problem(s)
+  "kernel_measurement": "32c274fb26aec9c312b6dd92d8d26369cc1d89589fb4bc578b7b23ccc3a38148",
+  "iso_bytes": 2641920,
+  "iso_sha256": "0482cac31a4547858015752516cdcc19f26731778af02bd28284fc212ea8c763"
+}

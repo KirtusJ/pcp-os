@@ -1,0 +1,33 @@
+  "kernel_measurement": "40636d80b64157d697caf5db88c4bf76fb5992cd11ad1d336e099a2bf5d512e8",
+  "iso_bytes": 2641920,
+  "iso_sha256": "69d7d8d6aa6c7aafbc459259e0c3fa5822667c308f99847a233f3d5308eacc8b"
+}
+small screens: Settings at nine sizes, the list of programs at five and the screens of text at six, three of them the full desktop, passed; controls refused
+74 port writes in the source, 74 reviewed, 0 problem(s)
+  "kernel_measurement": "40636d80b64157d697caf5db88c4bf76fb5992cd11ad1d336e099a2bf5d512e8",
+  "iso_bytes": 2641920,
+  "iso_sha256": "69d7d8d6aa6c7aafbc459259e0c3fa5822667c308f99847a233f3d5308eacc8b"
+}
+640x480  {'first_pin_row_4': 'Places 1 to 12 of 15', 'last_pin_row_4': 'Places 4 to 15 of 15', 'controls_refused': ['another program named', 'the keys overwritten', 'the size and digest replaced by the keys'], 'widget_lines': ['memory 106 MiB, 106 MiB free', 'Session files | cleared at power-off'], 'exit_code': 0}
+320x200  {'first_pin_row_4': 'Places 2 to 2 of 15', 'last_pin_row_4': 'Places 15 to 15 of 15', 'exit_code': 0}
+refused-640x480 {'said': ['Not started: the program could not be admitted as a task', 'a-name-of-forty-characters-in-all-xxxx.elf could not be star', 'ted: the program could not be admitted as a task.'], 'exit_code': 0}
+aliases-320x200 {'parts': [['aaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'aaAzzzzzzzzzzzzzzzzzzzzzzzzz', 'zzzz.elf'], ['aaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'aaBzzzzzzzzzzzzzzzzzzzzzzzzz', 'zzzz.elf']], 'differ_in_part': [2], 'hidden_widgets_row': '2 widget line(s) not shown', 'exit_code': 0}
+ten-parts-320x200 {'row_4_first': '16/16 | name 1/10 <- ->', 'row_4_last': '16/16 | name 10/10 <- ->', 'joined_equals_name': True, 'exit_code': 0}
+w440     {'row_4': ['Place 2/3 | name 1/2 <- ->', 'Place 2/3 | name 2/2 <- ->'], 'joined_equals_name': True, 'exit_code': 0}
+passed
+pc   ordinary            passed
+pc   instruction-counted passed
+q35  ordinary            passed
+q35  instruction-counted passed
+q35-counted/launcher.ppm: original accepted; rejected erased suffix, forged console-only policy, surplus grant, malformed size
+  "kernel_measurement": "40636d80b64157d697caf5db88c4bf76fb5992cd11ad1d336e099a2bf5d512e8",
+  "iso_bytes": 2697216,
+  "iso_sha256": "7eae931fb25027d060be3e8cdfe5a6c69bbc007cd4fc124c530f3ad210c045d6"
+}
+pc   ordinary            passed
+pc   instruction-counted passed
+q35  ordinary            passed
+q35  instruction-counted passed
+save Disk save cold morning
+restore Queue restored cold morning
+exit 0
