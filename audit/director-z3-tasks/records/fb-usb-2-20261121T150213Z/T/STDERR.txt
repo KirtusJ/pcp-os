@@ -1,0 +1,52 @@
+xorriso 1.5.6 : RockRidge filesystem manipulator, libburnia project.
+
+Copying of file objects from ISO image to disk filesystem is: Enabled
+xorriso : NOTE : Loading ISO image tree from LBA 0
+xorriso : UPDATE :      12 nodes read in 1 seconds
+xorriso : NOTE : Detected El-Torito boot information which currently is set to be discarded
+Drive current: -indev '/home/user/pcp/PCP-OS.iso'
+Media current: stdio file, overwriteable
+Media status : is written , is appendable
+Boot record  : El Torito
+Media summary: 1 session, 908 data blocks, 1816k data, 30.0g free
+Volume id    : 'PCP_OS'
+xorriso : UPDATE :       1 files restored ( 65304b) in 1 seconds = 0.0xD
+Extracted from ISO image: file '/surf.elf'='/tmp/tmpauxpa_dw/surf.elf'
+xorriso 1.5.6 : RockRidge filesystem manipulator, libburnia project.
+
+Copying of file objects from ISO image to disk filesystem is: Enabled
+xorriso : NOTE : Loading ISO image tree from LBA 0
+xorriso : UPDATE :      12 nodes read in 1 seconds
+xorriso : NOTE : Detected El-Torito boot information which currently is set to be discarded
+Drive current: -indev '/home/user/pcp/PCP-OS.iso'
+Media current: stdio file, overwriteable
+Media status : is written , is appendable
+Boot record  : El Torito
+Media summary: 1 session, 908 data blocks, 1816k data, 30.0g free
+Volume id    : 'PCP_OS'
+xorriso : UPDATE :       1 files restored ( 108.4k) in 1 seconds = 0.1xD
+Extracted from ISO image: file '/clip.ppm'='/tmp/tmpauxpa_dw/clip.ppm'
+xorriso 1.5.6 : RockRidge filesystem manipulator, libburnia project.
+
+Copying of file objects from ISO image to disk filesystem is: Enabled
+xorriso : NOTE : Loading ISO image tree from LBA 0
+xorriso : UPDATE :      12 nodes read in 1 seconds
+xorriso : NOTE : Detected El-Torito boot information which currently is set to be discarded
+Drive current: -indev '/home/user/pcp/PCP-OS.iso'
+Media current: stdio file, overwriteable
+Media status : is written , is appendable
+Boot record  : El Torito
+Media summary: 1 session, 908 data blocks, 1816k data, 30.0g free
+Volume id    : 'PCP_OS'
+xorriso : UPDATE :       1 files restored ( 600.0k) in 1 seconds = 0.4xD
+Extracted from ISO image: file '/clip.wav'='/tmp/tmpauxpa_dw/clip.wav'
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/fbk/examples/firmware-owned-uefi/usb_trial.py", line 163, in <module>
+    main()
+    ~~~~^^
+  File "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/fbk/examples/firmware-owned-uefi/usb_trial.py", line 157, in main
+    trial(args.qemu, code, template, volume, image, out / "virtio-vga", 128, "virtio-vga")
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/fbk/examples/firmware-owned-uefi/usb_trial.py", line 88, in trial
+    raise ValueError('Esc from Verification did not restore the original Home frame')
+ValueError: Esc from Verification did not restore the original Home frame
