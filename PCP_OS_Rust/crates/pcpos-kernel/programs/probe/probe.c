@@ -25,6 +25,70 @@ static void check(const char *what, int ok)
         failures++;
 }
 
+static int read_note(const char *path)
+{
+    char bytes[4];
+    int fd = open(path, O_RDONLY);
+    if (fd < 0)
+        return 0;
+    int ok = read(fd, bytes, sizeof bytes) == sizeof bytes && memcmp(bytes, "note", sizeof bytes) == 0
+             && read(fd, bytes, 1) == 0;
+    close(fd);
+    return ok;
+}
+
+static void check_open_failures(void)
+{
+    const char *path = "open-check.txt";
+    const char *new_path = "new-open-check.txt";
+    int fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0600);
+    int created = fd >= 0 && write(fd, "note", 4) == 4;
+    if (fd >= 0)
+        close(fd);
+    check("exclusive create writes a new file", created && read_note(path));
+
+    fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_TRUNC, 0600);
+    int existed = fd == -1 && errno == EEXIST;
+    if (fd >= 0)
+        close(fd);
+    check("exclusive create preserves an existing file", existed && read_note(path));
+
+    fd = open(path, O_WRONLY | O_TRUNC);
+    int prepared = fd >= 0 && write(fd, "note", 4) == 4;
+    if (fd >= 0)
+        close(fd);
+
+    int held[64], count = 0;
+    while (count < 64) {
+        fd = open("/dev/null", O_RDONLY);
+        if (fd < 0)
+            break;
+        held[count++] = fd;
+    }
+    int full = fd == -1 && errno == EMFILE;
+    fd = open(path, O_WRONLY | O_TRUNC);
+    int truncate_refused = fd == -1 && errno == EMFILE;
+    if (fd >= 0)
+        close(fd);
+    fd = open(new_path, O_WRONLY | O_CREAT, 0600);
+    int create_refused = fd == -1 && errno == EMFILE;
+    if (fd >= 0)
+        close(fd);
+    while (count > 0)
+        close(held[--count]);
+
+    check("failed truncation leaves the original bytes", prepared && full && truncate_refused && read_note(path));
+    check("failed creation leaves the name absent",
+          full && create_refused && access(new_path, F_OK) == -1 && errno == ENOENT);
+    fd = open("after-close.txt", O_WRONLY | O_CREAT | O_EXCL, 0600);
+    check("a released descriptor permits a new exclusive create", fd >= 0);
+    if (fd >= 0)
+        close(fd);
+    unlink(path);
+    unlink(new_path);
+    unlink("after-close.txt");
+}
+
 int main(int argc, char **argv)
 {
     int granted = argc > 1 && strcmp(argv[1], "granted") == 0;
@@ -79,6 +143,7 @@ int main(int argc, char **argv)
     check("a file that is not there is not there", open("/no-such-file", O_RDONLY) == -1 && errno == ENOENT);
     int self = open("/probe.elf", O_RDONLY);
     if (granted) {
+        check_open_failures();
         unsigned char magic[4] = { 0 };
         check("a file from the loader can be read", self >= 0 && read(self, magic, 4) == 4 && magic[0] == 0x7f && magic[1] == 'E');
         errno = 0;

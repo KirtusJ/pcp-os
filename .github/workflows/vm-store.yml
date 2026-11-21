@@ -26,13 +26,28 @@ jobs:
       - name: Install the kernel and VM tools
         run: |
           sudo apt-get -qq update
-          sudo apt-get -qq install -y --no-install-recommends qemu-system-x86 seabios clang binutils lld
+          sudo apt-get -qq install -y --no-install-recommends qemu-system-x86 seabios clang binutils lld musl-tools
           rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --no-self-update -c rust-src -t x86_64-unknown-none
       - name: Build the opt-in kernel and run isolated cold boots
         run: |
           kernel=PCP_OS_Rust/crates/pcpos-kernel
           PCPOS_KERNEL_STAGE="$RUNNER_TEMP/build" PCPOS_KERNEL_FEATURES=vm-store sh "$kernel/run.sh" build
           python3 -B examples/vm-store/check.py "$kernel/target/pcpos-kernel.elf32" "$RUNNER_TEMP/boots"
+      - name: Run the granted file API probe
+        run: |
+          kernel="$GITHUB_WORKSPACE/PCP_OS_Rust/crates/pcpos-kernel"
+          cd "$RUNNER_TEMP/boots"
+          sh "$kernel/programs/probe/build.sh" "$PWD/probe.elf"
+          measurement=$(python3 "$kernel/tools/measure.py" kernel.elf)
+          status=0
+          qemu-system-x86_64 -machine pc -accel tcg -cpu max -m 256M -display none -vga std \
+            -nic none -monitor none -no-reboot -kernel kernel.elf -initrd "probe.elf granted" \
+            -append "auto=probe.elf then=off image=$measurement" -serial file:file-api.serial \
+            -device isa-debug-exit,iobase=0xf4,iosize=4 || status=$?
+          test "$status" = 33
+          grep -Fq "probe: 0 failure(s)" file-api.serial
+          grep -Fq "probe.elf ended DONE: exit 0" file-api.serial
+          test "$(grep -c '^ok  ' file-api.serial)" = 26
       - name: Save a queue entry from the keyboard and reopen it after power-off
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/queue-target
