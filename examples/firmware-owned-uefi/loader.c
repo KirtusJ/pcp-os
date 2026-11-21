@@ -68,6 +68,45 @@ static void copy_bytes(void *dest, const void *src, UINTN size) {
     UINT8 *d = dest; const UINT8 *s = src;
     while (size--) *d++ = *s++;
 }
+#ifdef PCP_USB_VM
+/* Multiboot 1 puts the direct-colour descriptor at byte 88 of the boot information. */
+struct __attribute__((packed)) mb_framebuffer {
+    UINT64 address;
+    UINT32 pitch, width, height;
+    UINT8 bits, type, red_pos, red_bits, green_pos, green_bits, blue_pos, blue_bits;
+};
+_Static_assert(sizeof(struct mb_framebuffer) == 28, "Multiboot framebuffer layout");
+_Static_assert(88 + sizeof(struct mb_framebuffer) <= sizeof(((struct boot_data *)0)->info),
+               "Multiboot framebuffer must fit the boot header");
+
+static void describe_console(EFI_SYSTEM_TABLE *system, struct boot_data *boot) {
+    EFI_GUID guid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
+    EFI_GRAPHICS_OUTPUT_PROTOCOL *gop = NULL;
+    EFI_STATUS status = uefi_call_wrapper(system->BootServices->HandleProtocol, 3,
+                                          system->ConsoleOutHandle, &guid, (void **)&gop);
+    if (EFI_ERROR(status) || !gop || !gop->Mode) return;
+    EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE *mode = gop->Mode;
+    EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *info = mode->Info;
+    if (!info || mode->SizeOfInfo < sizeof(*info)
+        || info->PixelFormat != PixelBlueGreenRedReserved8BitPerColor
+        || !info->HorizontalResolution || !info->VerticalResolution
+        || info->PixelsPerScanLine < info->HorizontalResolution
+        || info->PixelsPerScanLine > 0xffffffffU / 4) return;
+    UINT32 pitch = info->PixelsPerScanLine * 4;
+    UINT64 bytes = (UINT64)pitch * info->VerticalResolution;
+    if (!mode->FrameBufferBase || (mode->FrameBufferBase & 3)
+        || bytes > mode->FrameBufferSize || mode->FrameBufferBase > ~((UINT64)0) - bytes) return;
+    struct mb_framebuffer fb = {
+        mode->FrameBufferBase, pitch, info->HorizontalResolution, info->VerticalResolution,
+        32, 1, 16, 8, 8, 8, 0, 8
+    };
+    copy_bytes((UINT8 *)boot->info + 88, &fb, sizeof(fb));
+    boot->info[0] |= 1U << 12;
+    value("console_framebuffer", fb.address);
+    value("console_pitch", fb.pitch);
+}
+#endif
+
 static void set_module(struct boot_data *b, unsigned i, UINTN base, UINTN size,
                        const UINT8 *bytes, const char *name, UINTN name_size) {
     b->modules[i] = (struct module){base, base+size, (UINTN)b->names[i], 0};
@@ -178,6 +217,7 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
         word("content-refused\n"); halt();
     }
     word("content-verified\n");
+    describe_console(system, b);
 #else
     word("await-content-check\n");
     if (gate() != 'C') { word("content-refused\n"); halt(); }
