@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise a PCP OS optical image with a writable, disposable IDE disk.
+"""Exercise a PCP OS optical image with a writable, disposable IDE or NVMe disk.
 
 Requires Python 3, qemu-system-x86_64 with SeaBIOS.
 The only disk this program writes is a new ordinary file in a temporary directory.
@@ -14,15 +14,11 @@ import struct
 import subprocess
 import tempfile
 import time
+import uuid
+import zlib
 
-SECTOR = 512
-FIRST = 2048
-VOLUME = 16384
+PARTITION_GUID = uuid.UUID('32802589-a96c-4a24-8fa4-de349d70cb05')
 MARKER = b"PCP OS disk-preservation test. Keep this file across cold boots.\r\n"
-FAT_SECTORS = 64
-ROOT_SECTORS = 32
-DATA_SECTOR = 1 + 2 * FAT_SECTORS + ROOT_SECTORS
-BLOCK_OFFSET = (FIRST + DATA_SECTOR) * SECTOR
 KERNELS = {
     'published': '0232c02a8946d66216da0ac65953a246ce3d41d7a966ae31aa83c3335b3259e3',
     'keyboard-01': 'a9be6b1599bb10eead1344ae4a2ca53ec978074ae9aef1d30e8da10f04d044f3',
@@ -33,30 +29,81 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def make_disk():
-    """Build an MBR with a FAT16 primary partition containing KEEP.TXT."""
-    disk = bytearray(b'\xa5' * ((FIRST + VOLUME) * SECTOR))
-    disk[:FIRST * SECTOR] = bytes(FIRST * SECTOR)
-    struct.pack_into('<B3sB3sII', disk, 446, 0, b'\xfe\xff\xff', 6,
-                     b'\xfe\xff\xff', FIRST, VOLUME)
-    disk[510:512] = b'\x55\xaa'
-    start = FIRST * SECTOR
-    disk[start:start + DATA_SECTOR * SECTOR] = bytes(DATA_SECTOR * SECTOR)
+def write_fat16(disk, sector_bytes, first, volume_sectors, fat_sectors):
+    """Write the FAT16 volume and return the byte offset of KEEP.TXT."""
+    start = first * sector_bytes
+    root = start + (1 + 2 * fat_sectors) * sector_bytes
+    data = root + 512 * 32  # 512 directory entries
+    disk[start:data] = bytes(data - start)
     disk[start:start + 11] = b'\xeb\x3c\x90PCPTEST '
     struct.pack_into('<HBHBHHBHHHII', disk, start + 11,
-                     SECTOR, 1, 1, 2, 512, VOLUME, 0xf8, FAT_SECTORS, 63, 255, FIRST, 0)
-    struct.pack_into('<BBB I 11s 8s', disk, start + 36, 0x80, 0, 0x29,
+                     sector_bytes, 1, 1, 2, 512, volume_sectors, 0xf8, fat_sectors, 63, 255, first, 0)
+    struct.pack_into('<BBBI11s8s', disk, start + 36, 0x80, 0, 0x29,
                      0x42534431, b'PCP-DISK   ', b'FAT16   ')
     disk[start + 510:start + 512] = b'\x55\xaa'
-    for sector in (1, 1 + FAT_SECTORS):
-        struct.pack_into('<HHH', disk, start + sector * SECTOR, 0xfff8, 0xffff, 0xffff)
-    root = start + (1 + 2 * FAT_SECTORS) * SECTOR
+    for sector in (1, 1 + fat_sectors):
+        struct.pack_into('<HHH', disk, start + sector * sector_bytes, 0xfff8, 0xffff, 0xffff)
     disk[root:root + 11] = b'KEEP    TXT'
     disk[root + 11] = 0x20
     struct.pack_into('<HI', disk, root + 26, 2, len(MARKER))
-    data = start + DATA_SECTOR * SECTOR
     disk[data:data + len(MARKER)] = MARKER
-    return bytes(disk)
+    return data
+
+
+def make_disk():
+    """Build the original 512-byte MBR fixture."""
+    first, volume = 2048, 16384
+    disk = bytearray(b'\xa5' * ((first + volume) * 512))
+    disk[:first * 512] = bytes(first * 512)
+    struct.pack_into('<B3sB3sII', disk, 446, 0, b'\xfe\xff\xff', 6,
+                     b'\xfe\xff\xff', first, volume)
+    disk[510:512] = b'\x55\xaa'
+    marker = write_fat16(disk, 512, first, volume, 64)
+    return bytes(disk), marker
+
+
+def make_gpt_disk(sector_bytes):
+    """Place a FAT16 partition between independent primary and backup GPTs."""
+    first = 1048576 // sector_bytes
+    volume, fat = (16384, 64) if sector_bytes == 512 else (8192, 4)
+    end = first + volume  # exclusive partition end, in logical sectors
+    sectors = end + first
+    disk = bytearray(sectors * sector_bytes)
+    disk[first * sector_bytes:end * sector_bytes] = b'\xa5' * (volume * sector_bytes)
+    struct.pack_into('<B3sB3sII', disk, 446, 0, b'\x00\x02\x00', 0xee, b'\xff' * 3, 1, sectors - 1)
+    disk[510:512] = b'\x55\xaa'
+
+    entries = bytearray(128 * 128)
+    table_sectors = len(entries) // sector_bytes
+    basic_data = uuid.UUID('ebd0a0a2-b9e5-4433-87c0-68b6b72699c7').bytes_le
+    disk_guid = uuid.UUID('5f21da79-2bac-480a-829f-ba245a8a4529').bytes_le
+    struct.pack_into('<16s16sQQQ72s', entries, 0, basic_data, PARTITION_GUID.bytes_le,
+                     first, end - 1, 0, 'PCP disk check'.encode('utf-16-le'))
+    last = sectors - 1
+    for here, peer, table in ((1, last, 2), (last, 1, last - table_sectors)):
+        header = bytearray(92)
+        struct.pack_into('<8sIIIIQQQQ16sQIII', header, 0, b'EFI PART', 0x10000, len(header),
+                         0, 0, here, peer, 2 + table_sectors, last - table_sectors - 1,
+                         disk_guid, table, 128, 128, zlib.crc32(entries))
+        struct.pack_into('<I', header, 16, zlib.crc32(header))
+        disk[here * sector_bytes:here * sector_bytes + len(header)] = header
+        disk[table * sector_bytes:table * sector_bytes + len(entries)] = entries
+    marker = write_fat16(disk, sector_bytes, first, volume, fat)
+    return bytes(disk), marker
+
+
+def check_gpt_fixture(path, sector_bytes):
+    # partx reports start in 512-byte units even for a 4096-byte logical sector.
+    row = subprocess.check_output(['partx', '--show', '--noheadings', '--bytes',
+                                   '--sector-size', str(sector_bytes), '--output',
+                                   'START,SIZE,UUID', str(path)], text=True).split()
+    size = 8388608 if sector_bytes == 512 else 33554432
+    if row != ['2048', str(size), str(PARTITION_GUID)]:
+        raise ValueError(f'Unexpected partition from partx: {row}')
+    filesystem = subprocess.check_output(['blkid', '-p', '-O', '1048576', '-s', 'TYPE',
+                                          '-o', 'value', str(path)], text=True).strip()
+    if filesystem != 'vfat':
+        raise ValueError(f'Unexpected filesystem from blkid: {filesystem}')
 
 
 class Monitor:
@@ -182,12 +229,20 @@ def exercise(q, evidence, timeout, result, kernel):
         raise RuntimeError('QEMU did not observe guest-requested shutdown')
 
 
-def run(args, root, baseline, machine, control):
+def run(args, root, baseline, marker_offset, machine, control):
     case = machine + ('-write-control' if control else '-session')
     evidence = args.output / case
     evidence.mkdir()
     disk = root / (case + '.raw')
     disk.write_bytes(baseline)
+    sector_bytes = args.nvme_sector_size or 512
+    if args.nvme_sector_size:
+        check_gpt_fixture(disk, sector_bytes)
+        attachment_args = ['-drive', 'id=sentinel,if=none,format=raw,snapshot=off,file=' + str(disk),
+                           '-device', f'nvme,id=nvme0,serial=PCPTEST,drive=sentinel,'
+                                      f'logical_block_size={sector_bytes},physical_block_size={sector_bytes}']
+    else:
+        attachment_args = ['-drive', 'id=sentinel,if=ide,index=0,format=raw,snapshot=off,file=' + str(disk)]
     serial = evidence / 'serial.log'
     profile = (['-cpu', 'qemu64', '-m', '64M'] if args.tester_profile else
                ['-cpu', 'max', '-m', '256M', '-icount', 'shift=3,align=off,sleep=off'])
@@ -196,13 +251,13 @@ def run(args, root, baseline, machine, control):
            '-audiodev', 'none,id=snd',
            '-device', 'AC97,audiodev=snd', '-serial', 'file:' + str(serial),
            '-boot', 'order=d,strict=on', '-no-shutdown', '-S',
-           '-drive', 'id=sentinel,if=ide,index=0,format=raw,snapshot=off,file=' + str(disk),
+           *attachment_args,
            '-cdrom', str(args.iso), '-trace', 'enable=blk_co_pwritev',
            '-trace', 'enable=ide_sector_write']
     if args.firmware:
         cmd += ['-L', str(args.firmware)]
     result = {'case': case, 'iso_sha256': args.sha256, 'before_sha256': digest(baseline),
-              'qemu': args.qemu_version, 'argv': cmd}
+              'qemu': args.qemu_version, 'argv': cmd, 'logical_sector_bytes': sector_bytes}
     with (evidence / 'qemu.stderr').open('wb') as err:
         vm = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err)
         try:
@@ -214,7 +269,7 @@ def run(args, root, baseline, machine, control):
                 raise ValueError(f'unexpected disk attachment: {attachment}')
             result['before_cpu_start'] = q.disk_stats()
             if control:
-                command = f'qemu-io sentinel "write -q -P 0x5a {BLOCK_OFFSET} 512"'
+                command = f'qemu-io sentinel "write -q -P 0x5a {marker_offset} {sector_bytes}"'
                 result['write_response'] = q.call('human-monitor-command', **{'command-line': command})
             else:
                 exercise(q, evidence, args.timeout, result, KERNELS[args.kernel])
@@ -233,13 +288,13 @@ def run(args, root, baseline, machine, control):
     result['disk_preserved'] = actual == baseline
     if control:
         expected = bytearray(baseline)
-        expected[BLOCK_OFFSET:BLOCK_OFFSET + SECTOR] = b'\x5a' * SECTOR
+        expected[marker_offset:marker_offset + sector_bytes] = b'\x5a' * sector_bytes
         result['matched_expectation'] = actual == expected and actual != baseline
     else:
         # Require positive read activity as well as the expected writes on the named disk.
         end = result['at_end']
         no_writes = (0, 0, 0, 0, 0)
-        expected = (1, 512, 512, 0, 0) if args.expect_writeback else no_writes
+        expected = (1, sector_bytes, sector_bytes, 0, 0) if args.expect_writeback else no_writes
         fields = ('wr_operations', 'wr_bytes', 'wr_highest_offset',
                   'failed_wr_operations', 'invalid_wr_operations')
         def writes(stage):
@@ -263,6 +318,8 @@ def main():
     p.add_argument('--kernel', choices=KERNELS, default='published', help='expected measured kernel')
     p.add_argument('--tester-profile', action='store_true',
                    help='use qemu64, 64 MiB and the ordinary QEMU clock')
+    p.add_argument('--nvme-sector-size', choices=(512, 4096), type=int,
+                   help='attach a GPT/FAT16 NVMe disk to Q35; requires partx and blkid')
     p.add_argument('--qemu', default='qemu-system-x86_64')
     p.add_argument('--firmware', type=Path)
     p.add_argument('--timeout', type=float, default=35)
@@ -275,13 +332,14 @@ def main():
         p.error("ISO must be a regular file matching the expected SHA-256")
     args.output = args.output.resolve()
     args.output.mkdir()
-    baseline = make_disk()
+    baseline, marker_offset = make_gpt_disk(args.nvme_sector_size) if args.nvme_sector_size else make_disk()
+    machines = ('q35',) if args.nvme_sector_size else ('pc', 'q35')
     checks = []
     with tempfile.TemporaryDirectory(prefix='pcpos-disk-') as temp:
-        for machine in ('pc', 'q35'):
+        for machine in machines:
             for control in (True, False):
                 try:
-                    checks.append(run(args, Path(temp), baseline, machine, control))
+                    checks.append(run(args, Path(temp), baseline, marker_offset, machine, control))
                 except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
                     print(f"{machine} control={control}: {error}", flush=True)
                     checks.append(False)
