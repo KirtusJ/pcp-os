@@ -219,6 +219,9 @@ const O_NOFOLLOW: i32 = 0;
 const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 #[cfg(windows)]
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+/// Windows: needed to open a name for its attributes whatever kind of object it is (winbase.h).
+#[cfg(windows)]
+const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
 
 /// The largest file the server reads to record as an artifact.
 const MAX_ARTIFACT: u64 = 64 * 1024 * 1024;
@@ -263,7 +266,7 @@ fn confined_file(root: &Path, given: &str, write: bool, create: bool, single_nam
     confined_open(root, given, if write { Access::Append } else { Access::Read }, create, single_name)
 }
 
-#[cfg_attr(not(unix), allow(unused_variables))] // single_name: a second name is counted only where the system reports the count
+#[cfg_attr(not(any(unix, windows)), allow(unused_variables))] // single_name: a second name is counted only where the system reports the count
 fn confined_open(root: &Path, given: &str, access: Access, create: bool, single_name: bool) -> Result<Option<Handle>, String> {
     let rel = Path::new(given);
     if given.is_empty() || given.contains('\0') {
@@ -354,6 +357,26 @@ fn confined_open(root: &Path, given: &str, access: Access, create: bool, single_
         use std::os::windows::fs::MetadataExt;
         if m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
             return Err(format!("{given} is not a regular file; a link is not followed"));
+        }
+    }
+    #[cfg(windows)]
+    {
+        // The same two checks as on Unix, from the opened handle: one name only, and the name still refers
+        // to the object that was opened (the volume and the file's index on it are its identity).
+        // The index read here is the 64-bit one. On NTFS it identifies a file on its volume. On ReFS
+        // Microsoft does not guarantee it unique (the full identity there is 128 bits, FILE_ID_INFO), so on
+        // ReFS two different files could compare equal and this recheck is weaker than on NTFS or on Unix.
+        // It never refuses a file wrongly; it can only fail to notice a swap. See issue 65.
+        use std::os::windows::fs::OpenOptionsExt;
+        let opened = winapi_util::file::information(&file).map_err(|e| format!("{given}: {e}"))?;
+        if single_name && opened.number_of_links() != 1 {
+            return Err(format!("{given} has more than one name; a register has exactly one"));
+        }
+        // The name is opened a second time for its attributes alone, again without following a link.
+        let named = OpenOptions::new().access_mode(0).custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS).open(&leaf).map_err(|e| format!("{given}: {e}"))?;
+        let again = winapi_util::file::information(&named).map_err(|e| format!("{given}: {e}"))?;
+        if again.file_attributes() & u64::from(FILE_ATTRIBUTE_REPARSE_POINT) != 0 || again.volume_serial_number() != opened.volume_serial_number() || again.file_index() != opened.file_index() {
+            return Err(format!("{given} changed while it was being opened"));
         }
     }
     #[cfg(unix)]
