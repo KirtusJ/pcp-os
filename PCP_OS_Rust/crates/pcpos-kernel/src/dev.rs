@@ -16,6 +16,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(feature = "virtio-tx-probe")]
 pub mod virtio_tx;
+pub mod store_disk;
 
 fn in8(port: u16) -> u8 {
     // Safety: the callers name ports of devices this file drives; reading one has no effect on memory.

@@ -42,7 +42,7 @@ qemu-system-x86_64 -cpu max -m 256M -kernel target/pcpos-kernel.elf32 \
   -audiodev <your driver>,id=snd0 -device AC97,audiodev=snd0 -device adlib,audiodev=snd0
 ```
 
-Arrow keys move, Ctrl fires, Space opens, Shift runs, Alt strafes, Enter and Escape work the menus. Saved games are kept in memory until the kernel stops. The program draws at 640 by 400, twice the game's own resolution.
+Arrow keys move, Ctrl fires, Space opens, Shift runs, Alt strafes, Enter and Escape work the menus. This launcher keeps saved games in memory until the kernel stops. The program draws at 640 by 400, twice the game's own resolution.
 
 ## Checked how
 
@@ -71,10 +71,27 @@ Arrow keys move, Ctrl fires, Space opens, Shift runs, Alt strafes, Enter and Esc
 - **Nobody played it.** Keys were sent by a script and pictures compared by a script. How it feels, whether sound is pleasant, whether a key is ever missed by a person's hands: not measured.
 - **Sound was examined as numbers.** The captured file is checked for being non-silent where sound is expected and for underruns the kernel counted. Nobody listened.
 - **No mouse, no joystick, no network play.**
-- **Nothing is kept.** Saved games and anything else written live in memory and are gone at the stop. The game's settings are not saved at all (the port used does not write them).
+- **The default store is volatile.** The game sessions above use the in-memory store. The opt-in QEMU user disk described below needs an explicitly issued checkpoint.
+
 - **One program at a time has the screen.** There is no window system and no switching between running programs.
 - **The system-call subset is what two programs needed.** Another program may ask for a call that is not there.
 - **The kernel's own gaps.** No address randomisation, no signed image, nothing to compare its measurement with, no defence against attacks on speculative execution, one processor.
+
+## A user file across cold boots
+
+From the kernel directory, create a new dedicated image with `python tools/store_probe.py format user-store.raw`. The formatter uses exclusive creation. On QEMU's PC machine attach that image as `-drive if=ide,index=0,format=raw,file=user-store.raw` and add `store=ide0` to the kernel command line. The session reads its existing committed files before starting a program. An unmarked disk, an unreadable slot or the absence of a valid generation prevents that session from starting applications. Omitting the boot option retains the in-memory behavior.
+
+User programs use their existing store grant and Linux file calls. A successful `fsync(fd)` (syscall 74) on a stored file or the root directory checkpoints the shared namespace, including outstanding renames and unlinks. To replace a file, write the new bytes to a staging file, rename it over the destination, then sync the directory. A successful ordinary write or close alone leaves the change in memory. The kernel returns `EACCES` for a process without store write authority, `ENOSPC` for a snapshot exceeding 65,536 serialized bytes, and `EIO` for a device failure. A failure during the last flush can leave a complete new generation on disk even though the call reports an error.
+
+The 259-sector volume uses a read-only format marker and two slots. Each slot has 128 payload sectors and one commit sector. The kernel writes the inactive payload, waits for the first IDE flush, writes a header with its generation, byte length and SHA-256 digests, then waits for the second flush before acknowledging. Recovery selects the newest fully verified slot. A torn header or payload can fall back to its readable valid sibling. A transport error reading either slot fails the mount. The format assumes one attached writer and a device that honors successful cache flushes. Hashes detect damage; anyone able to replace the disk can roll it back. This driver targets the QEMU primary-master IDE interface and bounds every poll and sector address. [QEMU IDE implementation](https://github.com/qemu/qemu/blob/master/hw/ide/core.c)
+
+Build the kernel, then run:
+
+```sh
+python tools/store_probe.py test --kernel target/pcpos-kernel.elf32
+```
+
+The test uses QEMU, Clang and llvm-objcopy, builds its own unprivileged ELF probes, and boots separate emulator processes on a disposable disk. `--out NEW_DIRECTORY` retains the disk and serial logs. It checks creation, both forms of fsync, replacement with and without commitment, oversized and unauthorized requests, simulated crash cuts, fallback after damage, and refusal of an unmarked or unrecoverable disk. The crash cuts replay sectors and torn bytes from two genuine guest-generated snapshots.
 
 ## Building it twice
 
