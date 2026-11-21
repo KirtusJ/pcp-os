@@ -396,13 +396,18 @@ def text_trial(key, screen, passed, problems, results, mode, graphic=False):
                           ("the way to the events", r"F4 shows every event of the register\.")):
         if not any(re.search(pattern, page) for page in verification):
             found.append("T3: %s is whole on no page" % what)
-    register = "".join("".join(rows).replace(" ", "") for rows in pages("register", "f4", "REGISTER", "up"))
+    register_pages = pages("register", "f4", "REGISTER", "up")
+    register = "".join("".join(rows).replace(" ", "") for rows in register_pages)
     # The whole head must be on the screen unless the display holds the table (62 characters and the two
     # columns each side) but not the table's whole title; there the title must show every digit it has
     # room for and then "..". B3 found that an earlier form of this accepted a cut head anywhere.
     across = int(mode.split("x")[0]) // 10 - 4
     count = re.search(r"REGISTER:(\d+)events,(chain)?intact", register)
-    whole = re.search(r"head[0-9a-f]{64}", register)
+    # The head is read row by row: after "head", only rows that are nothing but hex digits continue it, so
+    # that a digit of the next row (an event's number) cannot stand in for one that is missing (B3).
+    whole = any(len(m[1] + m[2].replace("\n", "")) == 64
+                for rows in register_pages
+                for m in re.finditer(r"head ?([0-9a-f]*)\n((?:[0-9a-f]+\n)*)", "\n".join(row.strip() for row in rows) + "\n"))
     if not count:
         found.append("T4: the count is not in the register's title")
     else:
