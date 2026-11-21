@@ -287,7 +287,7 @@ fn dock(programs: &[Entry], pinned: &[usize], place: usize, w: u32, h: u32) {
             dev::display_fill(mx + bx, my + by, *bw, *bh, *colour);
         }
         let name: String = if i == 0 { String::from("Programs") } else { programs[pinned[i - 1]].name.chars().take(12).collect() };
-        label(x + 5 + (130 - label_width(&name, false)) / 20 * 10, y0 + 60, &name, TEXT, false, &on_item);
+        label(x + (140 - label_width(&name, false)) / 20 * 10, y0 + 60, &name, TEXT, false, &on_item);
     }
 }
 

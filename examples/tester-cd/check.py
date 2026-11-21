@@ -223,7 +223,7 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
 
         def corner_verified(rows):
             """The small word in the corner of every desktop surface when the kernel verified itself."""
-            return any(row.rstrip().endswith("verified") and "NOT VERIFIED" not in row for row in rows)
+            return any("verified" in row for row in rows) and not any("NOT VERIFIED" in row for row in rows)
 
         def home_visible(rows):
             """The desktop: its dock, whose first place is all the programs, and the corner word."""
