@@ -255,8 +255,9 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
             raise RuntimeError("the first desktop was not empty")
         # The programs are on a bar across the foot of the desktop by default, with the word on it; the
         # settings change it to the dock in the middle, where the word is in the corner on a row of its own, and back.
-        def one_row(view):
-            return any("Programs" in row and "verified" in row for row in view)
+        def one_row(view, pinned=None):
+            return any("Programs" in row and "verified" in row and (pinned is None or f" {pinned} " in row)
+                       for row in view)
         if not one_row(home):
             raise RuntimeError("the first desktop did not have the bar across its foot")
         def setting(view, mark, name):
@@ -329,7 +330,8 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
         # Esc goes back to the same desktop, and only Enter pressed at the question switches off.
         if queue_desk:
             key("esc")
-        before_letters = wait_screen("home-before-letters", home_visible)
+        # The bar draws the pinned Surfbird after Programs. Wait for that label before remembering the frame.
+        before_letters = wait_screen("home-before-letters", lambda view: home_visible(view) and one_row(view, pinned="surf.elf"))
         for letter in "prvwfskd":
             key(letter)
         time.sleep(1)
