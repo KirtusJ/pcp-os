@@ -142,6 +142,9 @@ def main():
     env = {**os.environ, "RUSTUP_TOOLCHAIN": TOOLCHAIN, "SOURCE_DATE_EPOCH": str(EPOCH), "TZ": "UTC", "LC_ALL": "C"}
 
     commit = run("git", "rev-parse", "HEAD", cwd=REPO).strip()
+    # The tree is the content itself: it is the same for any commit with these files, so it identifies the
+    # source even where the commit named above is one that a hosting service made for a test and later drops.
+    source_tree = run("git", "rev-parse", "HEAD^{tree}", cwd=REPO).strip()
     changed = run("git", "status", "--porcelain", "--untracked-files=no", cwd=REPO).strip()
     rustc = run("rustc", "-vV", env=env)
 
@@ -210,12 +213,12 @@ def main():
               "    module_path: boot():/clip.ppm\n    module_string: clip.ppm\n"
               "    module_path: boot():/clip.wav\n    module_string: clip.wav\n" % measurement).encode()
     readme = ("PCP OS tester CD | x86-64, legacy BIOS | built from source\n"
-              "Source: KirtusJ/pcp-os commit %s%s\n"
+              "Source: KirtusJ/pcp-os commit %s, tree %s%s\n"
               "Kernel features: default (no guest Ethernet). Running-image measurement: %s\n"
               "Boot it as a virtual CD with no disk attached. Enter starts the Surfbird demo, Space plays, Ctrl+Alt+Delete\n"
               "returns to the launcher, P powers off. Nothing is kept after power off.\n"
               "Loader: Limine v10.8.5 (limine.txt). Third-party notices: notices.txt. Rights: notice.md.\n"
-              % (commit, " with uncommitted changes" if changed else "", measurement)).encode()
+              % (commit, source_tree, " with uncommitted changes" if changed else "", measurement)).encode()
     files = {"kernel.elf32": kernel, "surf.elf": surf, "clip.ppm": (media / "clip.ppm").read_bytes(), "clip.wav": (media / "clip.wav").read_bytes(),
              "limine-bios.sys": loader["limine-bios.sys"], "limine-bios-cd.bin": loader["limine-bios-cd.bin"], "limine.txt": loader["LICENSE"],
              "limine.conf": config, "readme.txt": readme, "notices.txt": notices(crates),
@@ -248,7 +251,7 @@ def main():
     (out / "first.iso").rename(out / "pcp-os-tester.iso")
     shutil.rmtree(work)
 
-    receipt = {"format": "pcp-os-tester-cd/1", "source_commit": commit, "uncommitted_changes": bool(changed),
+    receipt = {"format": "pcp-os-tester-cd/1", "source_commit": commit, "source_tree": source_tree, "uncommitted_changes": bool(changed),
                "toolchain": TOOLCHAIN, "rustc": dict(line.split(": ", 1) for line in rustc.splitlines() if ": " in line),
                "kernel_features": "default", "guest_features": "local-media",
                "kernel_measurement": measurement, "iso_bytes": len(images[0]), "iso_sha256": sha(images[0]),
@@ -257,7 +260,7 @@ def main():
                "written_by_mastering": ["boot.cat", boot],
                "third_party_crates_compiled_in": ["%s %s" % key for key in sorted(crates)]}
     (out / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
-    print(json.dumps({k: receipt[k] for k in ("source_commit", "uncommitted_changes", "kernel_measurement", "iso_bytes", "iso_sha256")}, indent=2))
+    print(json.dumps({k: receipt[k] for k in ("source_commit", "source_tree", "uncommitted_changes", "kernel_measurement", "iso_bytes", "iso_sha256")}, indent=2))
 
 
 if __name__ == "__main__":
