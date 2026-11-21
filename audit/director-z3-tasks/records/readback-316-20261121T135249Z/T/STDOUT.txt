@@ -1,0 +1,4 @@
+926c888e01e2892d0378d7992f7224e7dbf5c868
+    Finished `release` profile [optimized] target(s) in 20.87s
+mkfs.fat 4.2 (2021-01-31)
+Positive control passed: 7 changed NVMe bytes; 124 changed VARS bytes
