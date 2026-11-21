@@ -1,0 +1,7 @@
+T        NOT AS EXPECTED exit=-15 timeout=False 660.27s files=2
+pcpos mcp: serving registers under /home/user/pcp-os/audit/director-z3-tasks as participant DirectorZ3 (person directing the work: KirtusJustus)
+RELEASED T52
+WRITTEN as event 109: TASK_RELEASED by DirectorZ3 (HOST)
+head c579c3c364f71434ba8665548aaf02a00e43e814a14d15d87e5aa5e8b4f95ec4
+previous head 5e02b94641304f666a23e5b43b73fc3ab75a4eb4be83cd1d4d1f7787eb25b3ac
+
