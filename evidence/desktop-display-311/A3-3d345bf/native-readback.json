@@ -1,0 +1,38 @@
+{
+  "source": "3d345bf68df5b64cf8345dfa6754c7d98046b01d",
+  "tree": "5f4d222650cc3c76293f632cfd70749313c06363",
+  "kernel_sha256": "1edc16adb14db4703d0764b0d29bf1122fc0705b85720c79834100e8e83775ee",
+  "kernel_measurement": "4775994a4c2e506ce9a421c156a98c868fde5df14d76ca8ba028f6269f8bc9ca",
+  "kernel_origin": "Unmodified git archive of this commit, locally built with the tracked run.sh build command. Compiler and build log included.",
+  "qemu": "QEMU emulator version 10.0.13 (Debian 1:10.0.13+ds-0+deb13u1)",
+  "command": "PCPOS_ADAPTER_CHECKOUT=\"$PWD/src\" python3 -u run_stdio.py \"$PWD/kernel.elf32\" \"$PWD/programs\" \"$PWD/data\" \"$PWD/full\"",
+  "suite_selection": "All tests. No quick argument; PCPOS_TESTS_ONLY unset. QMP stdio transport diff included.",
+  "start": "2026-11-21T12:21:51Z",
+  "end": "2026-11-21T12:31:02Z",
+  "exit": 1,
+  "groups_passed": 19,
+  "groups_total": 20,
+  "assertions_passed": 107,
+  "assertions_total": 108,
+  "failed_assertions": [
+    {
+      "group": "Doom at the speed of play: a recorded demo of 2134 game tics plays for 61 seconds by the clock",
+      "assertion": "it ended DONE, not by a fault",
+      "detail": "doom.elf ended FAILED: ended by the kernel: the processor refused an act of the program (exception 14, error 0x6, address 0xffffefeff8, instruction 0x800044d5db) after 62 s; 181838 system calls; 4289 "
+    }
+  ],
+  "native_results_sha256": "7750038f3f920bbcd7155fdb211865c7a0fcafc7b13a05759decf832d59cede7",
+  "separate_launcher_attempt": "Before the counted run, a QEMU installation exited while looking for efi-e1000.rom. Its guest serials were empty. The failed launcher log is retained.",
+  "pin_runs": {
+    "320x200": {
+      "selected_and_returned": 14,
+      "exit": 0,
+      "startup_and_shutdown_checks": 72
+    },
+    "640x480": {
+      "selected_and_returned": 14,
+      "exit": 0,
+      "startup_and_shutdown_checks": 72
+    }
+  }
+}

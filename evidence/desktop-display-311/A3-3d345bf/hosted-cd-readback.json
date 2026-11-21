@@ -1,0 +1,90 @@
+{
+  "source": "3d345bf68df5b64cf8345dfa6754c7d98046b01d",
+  "workflow": "https://github.com/KirtusJ/pcp-os/actions/runs/44903207380",
+  "evidence_artifact": "https://github.com/KirtusJ/pcp-os/actions/runs/44903207380/artifacts/14706654131",
+  "disc_artifact": "https://github.com/KirtusJ/pcp-os/actions/runs/44903207380/artifacts/14706634172",
+  "iso_sha256": "c2579cdb218e2bb66550ad9c10e2a34e1e637786dc285a427e0949661ecb184c",
+  "kernel_sha256": "fb1a0e5902e5a4dfe84c85f3e791cc98ac6aa2389ac24c7ddbd1d165d5951a7e",
+  "measurement": "a35fd7a12fda8c92c4dfeb1c819082f2fe1d0272dbdb575c8bd29a52f44a047c",
+  "hosted_result": {
+    "kernel_measurement": "a35fd7a12fda8c92c4dfeb1c819082f2fe1d0272dbdb575c8bd29a52f44a047c",
+    "programs": 14,
+    "results": {
+      "640x480": {
+        "first_pin_row_4": "Places 1 to 12 of 15",
+        "last_pin_row_4": "Places 4 to 15 of 15",
+        "controls_refused": [
+          "another program named",
+          "the keys overwritten",
+          "the size and digest replaced by the keys"
+        ],
+        "widget_lines": [
+          "memory 106 MiB, 106 MiB free",
+          "Session files | cleared at power-off"
+        ],
+        "exit_code": 0
+      },
+      "320x200": {
+        "first_pin_row_4": "Places 2 to 2 of 15",
+        "last_pin_row_4": "Places 15 to 15 of 15",
+        "exit_code": 0
+      }
+    },
+    "problems": [],
+    "passed": true
+  },
+  "independent_guests": {
+    "320x200": {
+      "63": {
+        "outcome": "refused",
+        "visible_name": "matching-prefix-matching-p..",
+        "visible_facts": "53 KiB   SHA-256 46f4bbd5e..",
+        "home_unchanged": true
+      },
+      "32": {
+        "outcome": "ran",
+        "visible_name": "matching-prefix-matching-p..",
+        "visible_facts": "53 KiB   SHA-256 46f4bbd5e..",
+        "home_unchanged": true
+      },
+      "33": {
+        "outcome": "refused",
+        "visible_name": "matching-prefix-matching-p..",
+        "visible_facts": "53 KiB   SHA-256 46f4bbd5e..",
+        "home_unchanged": true
+      },
+      "64": {
+        "outcome": "refused",
+        "visible_name": "matching-prefix-matching-p..",
+        "visible_facts": "53 KiB   SHA-256 46f4bbd5e..",
+        "home_unchanged": true
+      }
+    },
+    "640x480": {
+      "63": {
+        "outcome": "refused",
+        "visible_name": "matching-prefix-matching-prefix-matching-prefix-matching-pA.elf",
+        "visible_facts": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+        "home_unchanged": true
+      },
+      "32": {
+        "outcome": "ran",
+        "visible_name": "matching-prefix-matching-prB.elf",
+        "visible_facts": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+        "home_unchanged": true
+      },
+      "33": {
+        "outcome": "refused",
+        "visible_name": "matching-prefix-matching-preC.elf",
+        "visible_facts": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+        "home_unchanged": true
+      },
+      "64": {
+        "outcome": "refused",
+        "visible_name": "matching-prefix-matching-prefix-matching-prefix-matching-prD.elf",
+        "visible_facts": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+        "home_unchanged": true
+      }
+    }
+  }
+}
