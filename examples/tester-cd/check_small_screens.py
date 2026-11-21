@@ -10,8 +10,9 @@ This check takes the kernel and Surfbird out of a built tester CD, verifies the 
 receipt, and boots that kernel directly, with no disk and no network, with the same program under two
 names (alpha.elf and bravo.elf). The predicates below were fixed before the first run.
 
-Settings, at 320 by 200, 220, 240, 260 and 280 and, as the roomy control, at 640 by 480. With each of the
-five choices chosen in turn, on a frame of the guest:
+Settings, at 320 by 200, 220, 240, 260 and 280, at 640 by 240 and 260 (wide and short) and 320 by 480
+(narrow and tall), which are B3's crossed sizes, and, as the roomy control, at 640 by 480. With each of
+the five choices chosen in turn, on a frame of the guest:
  S1 each of the five choices is on a row of its own, as its state mark and its whole label and nothing else;
  S2 the last row that holds anything is the keys' line, whole, and it is none of those five rows;
  S3 exactly one row has the ground of a chosen row, and it is the row of the choice that is chosen;
@@ -302,7 +303,8 @@ def main():
     glyphs = CHECK["kernel_glyphs"]()
     problems, results = [], {}
     for mode, settings, programs in (("320x200", True, True), ("320x220", True, True), ("320x240", True, True), ("320x260", True, True),
-                                     ("320x280", True, False), ("640x480", True, True)):
+                                     ("320x280", True, False), ("640x240", True, False), ("640x260", True, False), ("320x480", True, False),
+                                     ("640x480", True, True)):
         roomy = mode == "640x480"
         results[mode] = {}
         try:
@@ -332,7 +334,7 @@ def main():
         print("FAILED", problem)
     if problems:
         sys.exit(1)
-    print("small screens: Settings at six sizes and the list of programs at five passed; controls refused")
+    print("small screens: Settings at nine sizes and the list of programs at five passed; controls refused")
 
 
 if __name__ == "__main__":
