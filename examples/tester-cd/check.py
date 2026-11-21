@@ -217,17 +217,20 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
                     return rows
             raise TimeoutError(name + " did not appear")
 
-        def launcher_visible(rows):
+        def startup_verified(rows):
             status = f"Verified at start: all {STARTUP_CHECKS} self-tests passed."
             return any(status in row for row in rows)
 
         def home_visible(rows):
             """The desktop: the status sentence and, on the same bar, the desktop's way to the programs and to its keys."""
-            return any(launcher_visible([row]) and "programs" in row and "keys" in row for row in rows)
+            return any(startup_verified([row]) and "programs" in row and "keys" in row for row in rows)
 
-        def launcher_list_visible(rows):
+        def launcher_list_visible(rows, selected_program="surf.elf"):
             """The launcher: the status sentence and a chosen program with what it may use."""
-            return launcher_visible(rows) and any("> surf.elf" in row for row in rows) and any("may use:" in row for row in rows)
+            return startup_verified(rows) and any(
+                f"> {selected_program} " in row and "may use:" in grants
+                for row, grants in zip(rows, rows[1:])
+            )
 
         def home_activity(rows):
             """The outcomes on the desktop's activity widget, oldest first."""
@@ -283,7 +286,7 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
             key("spc")
             wait_screen("launcher-before-queue", launcher_list_visible)
             exercise_queue(key, wait, screen, out)
-            wait_screen("launcher-after-queue", launcher_visible)
+            wait_screen("launcher-after-queue", lambda view: launcher_list_visible(view, "rdesk.elf"))
         key("p")
         wait("ALL SELF-TESTS PASS.")
         try:
