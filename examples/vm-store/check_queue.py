@@ -43,6 +43,20 @@ def check_frame(frame, status):
                 require(bits == expected, f"queue screen mismatch in {text!r} at character {i}")
 
 
+def saved_queue_visible(rows, frame):
+    """Match the Files view of this fixture's one saved queue."""
+    # read_screen has validated the P6 header and decoded the kernel's 10-pixel cells.
+    width = int(frame.split(b"\n", 2)[1].split()[0])
+    size_column = width // 10 - 14
+    file_row = "  parrots.queue".ljust(size_column) + "3 KiB"
+    occupied = [i for i, row in enumerate(rows) if row.strip()]
+    return (occupied == [1, 2, 4, len(rows) - 2]
+            and rows[1] == "  FILES: showing 1 to 1 of 1, 3 KiB"
+            and rows[2] == "  VM files | saved when an app syncs"
+            and rows[4] == file_row
+            and rows[-2] == "  Esc back")
+
+
 def check_journal(image):
     # After the first save in a fresh volume, slot 1 contains generation 2.
     start = 130 * 512
@@ -109,9 +123,7 @@ def main(args):
                     desktop.home("restore-home")
                     desktop.verification("restore-home")
                     monitor.key("f3")
-                    desktop.wait("restore-files", lambda rows: any("FILES: showing 1 to 1 of 1, 3 KiB" in row for row in rows)
-                                 and any("VM files | saved when an app syncs" in row for row in rows)
-                                 and any("parrots.queue" in row and "3 KiB" in row for row in rows))
+                    desktop.wait_frame("restore-files", saved_queue_visible)
                     monitor.key("esc")
                     desktop.home("restore-from-files")
                     monitor.key("spc")

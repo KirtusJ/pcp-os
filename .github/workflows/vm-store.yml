@@ -8,6 +8,7 @@ on:
       - 'PCP_OS_Rust/crates/pcpos-core/**'
       - 'examples/optical-disk-check/check.py'
       - 'examples/tester-cd/check.py'
+      - 'examples/tester-cd/check_launcher_grants.py'
       - 'store/apps/parrots-all-the-way-down/guest/**'
       - 'store/apps/parrots-all-the-way-down/core/**'
       - 'store/native/guest/**'
@@ -60,6 +61,7 @@ jobs:
           (cd store/apps/parrots-all-the-way-down/guest && cargo build --locked --release --target x86_64-unknown-none)
           python3 -B examples/vm-store/check_queue.py "$RUNNER_TEMP/boots/kernel.elf" \
             "$CARGO_TARGET_DIR/x86_64-unknown-none/release/rdesk" "$RUNNER_TEMP/queue"
+          python3 -B examples/vm-store/check_queue_files.py "$RUNNER_TEMP/queue/restore-files.ppm"
       - name: Compile the worker with VM storage enabled
         run: |
           PCPOS_KERNEL_STAGE="$RUNNER_TEMP/build" PCPOS_KERNEL_FEATURES="vm-store,virtio-worker-probe" \
