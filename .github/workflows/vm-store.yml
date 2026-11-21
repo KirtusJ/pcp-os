@@ -7,6 +7,7 @@ on:
       - 'PCP_OS_Rust/crates/pcpos-kernel/**'
       - 'PCP_OS_Rust/crates/pcpos-core/**'
       - 'examples/optical-disk-check/check.py'
+      - 'examples/tester-cd/check.py'
       - 'store/apps/parrots-all-the-way-down/guest/**'
       - 'store/apps/parrots-all-the-way-down/core/**'
       - 'store/native/guest/**'

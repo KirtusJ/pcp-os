@@ -25,8 +25,10 @@ as five rules (A3 and B3, check-in thread, 21 November 2026):
 5. Typing keys do nothing by themselves.
 
 The same care applies below the desktop: the kernel writes to a hardware port only where it has reason to
-know what is there. `PCP_OS_Rust/crates/pcpos-kernel/tests/port_writes.py` lists every port write and
-fails when one is not on the reviewed list beside it.
+know what is there. The Rust call inventory in `PCP_OS_Rust/crates/pcpos-kernel/tests/port_writes.py`
+compares the calls it recognizes with the reviewed list beside it, grouped by file, function and port
+expression. Check the conditions in the Rust source and review boot assembly separately. The list records
+the early serial diagnostic and the user-mode port test that is expected to fault in `boot.s`.
 
 ## Lanes
 

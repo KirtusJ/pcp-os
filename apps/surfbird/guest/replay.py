@@ -5,6 +5,7 @@ import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
+import runpy
 import secrets
 import shutil
 import socket
@@ -58,7 +59,7 @@ def hosted_check(binary, port, targets, tag):
                 browser.kill()
 
 
-def capture_frame(vm, work, name):
+def capture_frame(vm, work, name, read=raster):
     path = work / (name + ".ppm")
     vm.stdin.write(f"screendump {path.name}\n".encode())
     vm.stdin.flush()
@@ -66,7 +67,7 @@ def capture_frame(vm, work, name):
     while time.monotonic() < until:
         if path.exists():
             try:
-                return raster(path)
+                return read(path)
             except ValueError:
                 pass  # QEMU may still be writing the file.
         time.sleep(.04)
@@ -225,9 +226,50 @@ def run_arm(args, work, arm, dns):
                     vm.stdin.flush()
                     time.sleep(.15)
 
+                examples = Path(__file__).resolve().parents[3] / "examples"
+                text_reader = runpy.run_path(str(examples / "tester-cd/check.py"))
+                desktop = runpy.run_path(str(examples / "optical-disk-check/check.py"))
+                kernel_glyphs = text_reader["kernel_glyphs"]()
+
+                def menu(name, predicate):
+                    def read(path):
+                        frame = path.read_bytes()
+                        rows = text_reader["read_screen"](frame, kernel_glyphs)
+                        if not rows:
+                            raise ValueError("incomplete kernel screen")
+                        return predicate(rows, frame)
+
+                    def sample():
+                        # HMP writes asynchronously. Only accept bytes from this sample.
+                        (work / (name + ".ppm")).unlink(missing_ok=True)
+                        return capture_frame(vm, work, name, read)
+
+                    return desktop["wait_for"](sample, name, 20)
+
+                def first_surface(rows, frame):
+                    # The historical launcher starts the selected app with Enter
+                    # and explicitly advertises P power off in its footer.
+                    if (any("> surf.elf " in row for row in rows)
+                            and any("Enter start" in row and "P power off" in row for row in rows)):
+                        return "legacy"
+                    if (any("Programs" in row for row in rows)
+                            and any("verified" in row or "PCP OS | DESKTOP" in row for row in rows)
+                            and not any("may use:" in row for row in rows)):
+                        return "home"
+
+                feature = "guest-ethernet" if args.tcp else "game-link"
+                permissions = desktop["launcher_grants"](sound=True, command_line=cmd[cmd.index("-append") + 1],
+                                                        digest=digest, features=(feature,))
+
+                def selected(rows, frame):
+                    return desktop["selected_program"](rows, frame, "surf.elf", permissions, digest)
+
                 try:
                     wait("a program that cannot be admitted")
-                    time.sleep(.55)
+                    surface = menu("kernel-first", first_surface)
+                    if surface == "home":
+                        key("spc")
+                        menu("kernel-launcher", selected)
                     key("ret")
                     if scenario == "allowed":
                         wait("SURFBIRD ready")
@@ -448,8 +490,16 @@ def run_arm(args, work, arm, dns):
                         reason = "unsupported encoding" if scenario == "ambiguous" else "HTTP header syntax"
                         wait("SURFBIRD error " + reason)
                         expected = ["/harbour"]
-                    time.sleep(.35)
-                    key("p")
+                    if surface == "legacy":
+                        menu("kernel-returned", lambda rows, frame: first_surface(rows, frame) == "legacy")
+                        key("p")
+                    else:
+                        menu("kernel-returned", selected)
+                        key("f10")
+                        menu("kernel-power-question", lambda rows, frame:
+                             {"POWER OFF", "Switch PCP OS off?", "Enter switch off    Esc go back"}
+                             <= {row.strip() for row in rows})
+                        key("ret")
                     require(vm.wait(timeout=10) == 33, "Kernel did not power off normally")
                     require(requests == [(p, "fixture.test") for p in expected], requests)
                     frames = {"fragment": 7, "focus": 10, "history": 14, "order": 6, "allowed": 4 + 2*args.extra_visits}.get(scenario, 0)

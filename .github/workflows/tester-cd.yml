@@ -6,6 +6,8 @@ on:
   pull_request:
     paths:
       - 'examples/tester-cd/**'
+      - 'examples/optical-disk-check/check.py'
+      - 'examples/optical-disk-check/check_compact_verification.py'
       - 'PCP_OS_Rust/crates/pcpos-kernel/**'
       - 'PCP_OS_Rust/crates/pcpos-core/**'
       - 'apps/surfbird/guest/**'
@@ -17,6 +19,8 @@ on:
     branches: [master]
     paths:
       - 'examples/tester-cd/**'
+      - 'examples/optical-disk-check/check.py'
+      - 'examples/optical-disk-check/check_compact_verification.py'
       - 'PCP_OS_Rust/crates/pcpos-kernel/**'
       - 'PCP_OS_Rust/crates/pcpos-core/**'
       - 'apps/surfbird/guest/**'
@@ -73,6 +77,24 @@ jobs:
           cat "$RUNNER_TEMP/first/receipt.json"
       - name: Boot it on pc and q35, on both clocks
         run: python3 -B examples/tester-cd/check.py ${{ matrix.option }} "$RUNNER_TEMP/first" "$RUNNER_TEMP/evidence"
+      - name: Check compact F5 on the CD at 800 by 600 and its measured kernel at 1024 by 768
+        if: matrix.option == ''
+        run: python3 -IB examples/optical-disk-check/check_compact_verification.py "$RUNNER_TEMP/first" "$RUNNER_TEMP/evidence/compact-f5"
+      - name: Replay selected grants and RGB controls on the native captures
+        run: python3 -IB examples/tester-cd/check_launcher_grants.py "$RUNNER_TEMP/first/receipt.json" "$RUNNER_TEMP/evidence"
+      - name: Check the source CD beside disposable IDE and NVMe disks
+        if: matrix.option == ''
+        run: |
+          cd "$RUNNER_TEMP/first"
+          checker="$GITHUB_WORKSPACE/examples/optical-disk-check/check.py"
+          sha=$(jq -er .iso_sha256 receipt.json)
+          kernel=$(jq -er .kernel_measurement receipt.json)
+          evidence="$RUNNER_TEMP/evidence"
+          python3 -IB "$checker" pcp-os-tester.iso "$evidence/disk-ide" --tester-profile --sha256 "$sha" --kernel "$kernel"
+          for sector in 512 4096; do
+            python3 -IB "$checker" pcp-os-tester.iso "$evidence/disk-nvme-$sector" --tester-profile \
+              --sha256 "$sha" --kernel "$kernel" --nvme-sector-size "$sector"
+          done
       - name: Keep the receipt and the evidence, including a failed case
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

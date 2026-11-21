@@ -17,7 +17,8 @@ from create import create
 ROOT = Path(__file__).resolve().parents[2]
 APP = ROOT / "store/apps/parrots-all-the-way-down/guest"
 LABEL = "cold morning"
-Monitor = runpy.run_path(str(ROOT / "examples/optical-disk-check/check.py"))["Monitor"]
+optical = runpy.run_path(str(ROOT / "examples/optical-disk-check/check.py"))
+Monitor = optical["Monitor"]
 
 
 def check_frame(frame, status):
@@ -88,10 +89,12 @@ def main(args):
     for boot, status in (("save", "Disk save"), ("restore", "Queue restored")):
         serial = out / (boot + ".serial")
         picture = out / (boot + ".ppm")
+        # Keep the unattended save path; cold-reopen through the desktop used by testers.
+        entry = "auto=queue.elf then=off " if boot == "save" else ""
         cmd = qemu + ["-machine", "pc", "-accel", "tcg", "-cpu", "max", "-m", "256M", "-smp", "1",
                       "-nic", "none", "-display", "none", "-vga", "std", "-qmp", "stdio", "-monitor", "none",
                       "-no-reboot", "-kernel", "kernel.elf", "-initrd", "queue.elf", "-append",
-                      f"auto=queue.elf then=off store=ide0 store_id={identity} image={measure}",
+                      f"{entry}store=ide0 store_id={identity} image={measure}",
                       "-serial", "file:" + serial.name, "-drive", "if=none,id=store,format=raw,file=volume/data.raw",
                       "-device", "ide-hd,drive=store,bus=ide.0,unit=0,serial=PCP-VM-STORE",
                       "-device", "isa-debug-exit,iobase=0xf4,iosize=4"]
@@ -100,6 +103,20 @@ def main(args):
             try:
                 monitor = Monitor(vm)
                 monitor.call("qmp_capabilities")
+                if boot == "restore":
+                    desktop = optical["DesktopScreens"](monitor, out, args.timeout, sound=False,
+                                                       app_digests={"queue.elf": digest((out / "queue.elf").read_bytes()).hex()})
+                    desktop.home("restore-home")
+                    desktop.verification("restore-home")
+                    monitor.key("f3")
+                    desktop.wait("restore-files", lambda rows: any("FILES: 1 file(s), 3 KiB" in row for row in rows)
+                                 and any("VM files | saved when an app syncs" in row for row in rows)
+                                 and any("parrots.queue" in row and "3 KiB" in row for row in rows))
+                    monitor.key("esc")
+                    desktop.home("restore-from-files")
+                    monitor.key("spc")
+                    desktop.launcher("restore-launcher", "queue.elf")
+                    monitor.key("ret")
                 wait_for(vm, serial, "PARROTS READY", args.timeout)
                 if boot == "save":
                     wait_for(vm, serial, "state=NONE store=New queue", args.timeout)
@@ -110,6 +127,9 @@ def main(args):
                 monitor.call("screendump", filename=str(picture))
                 check_frame(picture.read_bytes(), status)
                 monitor.key("esc")
+                if boot == "restore":
+                    desktop.launcher("restore-after-app", "queue.elf")
+                    desktop.power_off_from_launcher("restore-power", "queue.elf")
                 require(vm.wait(timeout=args.timeout) == 33, boot + " failed to shut down")
             finally:
                 if vm.poll() is None:
@@ -120,6 +140,7 @@ def main(args):
         log = serial.read_text(errors="replace")
         require(measure + " (measured; equal to the value the loader named)" in log, "wrong kernel")
         require("queue.elf ended DONE: exit 0" in log, "queue did not finish")
+        require("ALL SELF-TESTS PASS." in log, boot + " did not complete the kernel shutdown checks")
         image = disk.read_bytes()
         check_journal(image)
         if saved_image is None:
