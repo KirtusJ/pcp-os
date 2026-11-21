@@ -259,7 +259,7 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
         def setting(view, mark, name):
             return any("SETTINGS" in row for row in view) and any(mark + "   " + name in row for row in view)
         for step, (down, bar, dock, same_row) in enumerate([("down", "( )", "(o)", False), ("up", "(o)", "( )", True)]):
-            key("s")
+            key("f2")
             wait_screen(f"settings-{step}", lambda view: any("SETTINGS" in row for row in view))
             key(down)
             key("ret")
@@ -267,21 +267,31 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
             key("esc")
             wait_screen(f"home-form-{step}", lambda view: home_visible(view) and one_row(view) == same_row)
         # The corner says one word; V says the whole of it, in the sentence every kernel screen has used.
-        key("v")
+        key("f5")
         wait_screen("verification", startup_verified)
         key("esc")
         wait_screen("home-again", home_visible)
         # The person turns on the activity widget, then opens the launcher and places a shortcut.
-        key("w")
-        wait_screen("widgets", lambda view: any("WIDGETS ON THE DESKTOP" in row for row in view))
+        key("f2")
+        wait_screen("widgets", lambda view: any("Widgets on the desktop" in row for row in view))
+        key("down")
+        key("down")
         key("ret")
+        wait_screen("widget-on", lambda view: any("[on]  Recent activity" in row for row in view))
         key("esc")
         wait_screen("home-with-widget", lambda view: home_visible(view) and any("RECENT ACTIVITY" in row for row in view) and not home_activity(view))
         key("ret")
         listed = wait_screen("launcher", launcher_list_visible)
         if home_visible(listed):
             raise RuntimeError("the launcher was also recognised as the desktop")
+        # A letter alone pins nothing; Ctrl with P does.
         key("s")
+        key("p")
+        time.sleep(1)
+        screen("launcher-letters")
+        if any("in the dock" in row for row in read_screen((out / "launcher-letters.ppm").read_bytes(), glyphs) or []):
+            raise RuntimeError("a letter alone pinned a program")
+        key("ctrl", "p")
         wait_screen("launcher-with-shortcut", lambda view: launcher_list_visible(view) and any("in the dock" in row for row in view))
         key("ret")
         wait("SURFBIRD media ready")
@@ -292,7 +302,7 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
         wait("SURFBIRD media ready", 2)
         key("ctrl", "alt", "delete")
         wait("surf.elf ended STOPPED")
-        key("r")
+        key("f4")
         rows = wait_screen("register", lambda view: not register_problems(view))
         (out / "register.txt").write_text("\n".join(rows) + "\n")
         result["register_problems"] = register_problems(rows)
@@ -303,7 +313,7 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
         key("esc")
         after = wait_screen("home-after-run", lambda view: home_visible(view) and not launcher_list_visible(view))
         result["home_activity"] = home_activity(after)
-        key("r")
+        key("f4")
         wait_screen("reopened-register", lambda view: view == rows)
         key("esc")
         wait_screen("home-before-poweroff", lambda view: home_visible(view) and any("surf.elf" in row for row in view))
@@ -312,12 +322,29 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
             wait_screen("launcher-before-queue", launcher_list_visible)
             exercise_queue(key, wait, screen, out)
             wait_screen("launcher-after-queue", lambda view: launcher_list_visible(view, "rdesk.elf"))
-        key("p")
+        # Nothing stops the machine at one press. Letters do nothing on the desktop, P among them; F10 asks,
+        # Esc goes back to the same desktop, and only Enter pressed at the question switches off.
+        if queue_desk:
+            key("esc")
+        before_letters = wait_screen("home-before-letters", home_visible)
+        for letter in "prvwfskd":
+            key(letter)
+        time.sleep(1)
+        wait_screen("home-after-letters", lambda view: view == before_letters)
+        key("f10")
+        wait_screen("power-question", lambda view: any("POWER OFF" in row for row in view) and any("Enter switch off    Esc go back" in row for row in view))
+        key("esc")
+        wait_screen("home-after-refusal", lambda view: view == before_letters)
+        if "ALL SELF-TESTS PASS." in (out / "serial.txt").read_text(errors="replace"):
+            raise RuntimeError("the kernel began to stop before the question was answered")
+        key("f10")
+        wait_screen("power-question-again", lambda view: any("POWER OFF" in row for row in view))
+        key("ret")
         wait("ALL SELF-TESTS PASS.")
         try:
             result["exit_code"] = guest.wait(timeout=40)
         except subprocess.TimeoutExpired:
-            raise RuntimeError("the guest did not power off after P")
+            raise RuntimeError("the guest did not power off after F10 and Enter")
         while not any(e.get("event") == "SHUTDOWN" for e in events):
             line = stream.readline()
             if not line:

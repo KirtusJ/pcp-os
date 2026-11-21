@@ -778,7 +778,9 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     say!("keyboard: {}", if keyboard { "a PS/2 controller answered" } else { "no controller" });
     let sound = dev::sound_init(&bus);
     say!("sound: {}", if sound { "an AC'97 device, 48000 pairs of 16-bit samples a second" } else { "no device this kernel drives" });
-    let music = dev::fm_init();
+    // The FM synthesiser is looked for only under an emulator. Looking means writing to its usual ports
+    // before knowing that anything is there, and on hardware what answers at those ports is not known.
+    let music = arch::emulated() && dev::fm_init();
     say!("music: {}", if music { "an FM synthesiser of the AdLib kind answered at its usual ports" } else { "no FM synthesiser" });
     if display.is_some() {
         // With device memory mapped the kernel's map is read back once more: what was added is the display's
@@ -862,6 +864,12 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
         say!("ALL SELF-TESTS PASS. Guest Ethernet support is compiled in. Access requires a matching image grant and a supported NIC.");
     } else {
         say!("{} SELF-TEST(S) FAILED", failed);
+    }
+    // On hardware this kernel has no way to switch the machine off, and says so instead of leaving the
+    // person to wonder whether it is still working.
+    if !arch::emulated() && dev::display().is_some() {
+        ui::at(2, 4, "PCP OS has stopped. Nothing is running and nothing more will be written.", ui::TEXT, ui::GROUND);
+        ui::at(2, 5, "This kernel cannot switch the computer off. Hold its power button until it goes dark.", ui::TEXT, ui::GROUND);
     }
     arch::stop(failed == 0)
 }

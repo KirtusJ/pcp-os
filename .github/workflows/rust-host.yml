@@ -52,6 +52,9 @@ jobs:
         run: |
           cargo run --locked --release --bin pcpos-vectors -- vectors
           git diff --exit-code -- vectors
+      - name: Require every port write in the kernel to be on the reviewed list
+        if: runner.os == 'Linux'
+        run: python3 crates/pcpos-kernel/tests/port_writes.py
       - name: Run the workspace tests
         run: cargo test --locked --release --workspace
       - name: List the instruments in the built program

@@ -280,6 +280,8 @@ pub struct Key {
     pub code: u8,
     pub extended: bool,
     pub released: bool,
+    /// Whether a Ctrl key was held when this key was pressed or released.
+    pub ctrl: bool,
 }
 
 struct Keyboard {
@@ -296,7 +298,7 @@ struct Keyboard {
     pub dropped: u64,
 }
 
-static KEYBOARD: arch::Single<Keyboard> = arch::Single::new(Keyboard { present: false, events: [Key { code: 0, extended: false, released: false }; 256], head: 0, count: 0,
+static KEYBOARD: arch::Single<Keyboard> = arch::Single::new(Keyboard { present: false, events: [Key { code: 0, extended: false, released: false, ctrl: false }; 256], head: 0, count: 0,
                                                                          extended: false, skip: 0, ctrl: false, alt: false, dropped: 0 });
 /// Set when the person presses Ctrl, Alt and Delete together: the kernel's own key, which no program can take.
 static STOP: AtomicBool = AtomicBool::new(false);
@@ -363,7 +365,7 @@ fn keyboard_byte(k: &mut Keyboard, byte: u8) {
         0xE1 => k.skip = 2, // the Pause key sends a sequence of its own, which is passed over
         0xFA | 0xFE | 0xEE | 0x00 | 0xFF => {} // acknowledgements and errors from the keyboard, not keys
         _ => {
-            let key = Key { code: byte & 0x7F, extended: k.extended, released: byte & 0x80 != 0 };
+            let mut key = Key { code: byte & 0x7F, extended: k.extended, released: byte & 0x80 != 0, ctrl: false };
             k.extended = false;
             match key.code {
                 0x1D => k.ctrl = !key.released,
@@ -371,6 +373,7 @@ fn keyboard_byte(k: &mut Keyboard, byte: u8) {
                 0x53 if !key.released && k.ctrl && k.alt => STOP.store(true, Ordering::SeqCst),
                 _ => {}
             }
+            key.ctrl = k.ctrl;
             if k.count == k.events.len() {
                 k.head = (k.head + 1) % k.events.len(); // the oldest is lost
                 k.count -= 1;
