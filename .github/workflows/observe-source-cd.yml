@@ -1,0 +1,16 @@
+name: Check the first source-to-CD artifact
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/desktop-source-cd.yml'
+      - '.github/workflows/observe-source-cd.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  observe:
+    uses: ./.github/workflows/desktop-source-cd.yml
+    with:
+      run_id: '44856685648'
+      iso_sha256: 160b2d5057ae435dbdce48c47697e0a269c175333a60ab977968cda77a881409
+      kernel_measurement: 82b96a61b5e949caa63abb9e262f0c7e135de443c8a8576344687aa84f2d6cde
