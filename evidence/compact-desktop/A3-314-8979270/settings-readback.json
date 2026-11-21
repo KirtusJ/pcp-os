@@ -1,0 +1,737 @@
+{
+  "source": "89792700243ad5dd4efde3091993984845087e2c",
+  "tree": "baf61afb8d2f69949fc43dbd8d4a6c6b51525a69",
+  "kernel_sha256": "04a3605da671436b9649d1207f5c18ab5e354f497d30cfe5f79831039b640f5e",
+  "profiles": {
+    "320x200": {
+      "choices": {
+        "bar": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            103,
+            46,
+            136
+          ],
+          "label": "A bar across the screen",
+          "selected_before": [
+            "( )   A bar across the screen"
+          ],
+          "selected_after": [
+            "(o)   A bar across the screen"
+          ],
+          "escape_hint": false,
+          "state_shown": true
+        },
+        "dock": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            103,
+            46,
+            136
+          ],
+          "label": "A dock in the middle",
+          "selected_before": [
+            "( )   A dock in the middle"
+          ],
+          "selected_after": [
+            "(o)   A dock in the middle"
+          ],
+          "escape_hint": false,
+          "state_shown": true
+        },
+        "recent": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            183,
+            56,
+            196
+          ],
+          "label": "Recent activity",
+          "selected_before": [
+            "[  ]  Recent activity"
+          ],
+          "selected_after": [
+            "[on]  Recent activity"
+          ],
+          "escape_hint": false,
+          "state_shown": true,
+          "home_pixels": 1061,
+          "new_home_rows": [
+            "1 widget line(s) not shown"
+          ]
+        },
+        "machine": {
+          "changed_pixels": 0,
+          "bounds": null,
+          "label": "This machine",
+          "selected_before": [],
+          "selected_after": [],
+          "escape_hint": false,
+          "state_shown": false,
+          "home_pixels": 1061,
+          "new_home_rows": [
+            "1 widget line(s) not shown"
+          ]
+        },
+        "session": {
+          "changed_pixels": 0,
+          "bounds": null,
+          "label": "Session",
+          "selected_before": [],
+          "selected_after": [],
+          "escape_hint": false,
+          "state_shown": false,
+          "home_pixels": 1061,
+          "new_home_rows": [
+            "1 widget line(s) not shown"
+          ]
+        }
+      },
+      "checks": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      }
+    },
+    "320x220": {
+      "choices": {
+        "bar": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            103,
+            46,
+            136
+          ],
+          "label": "A bar across the screen",
+          "selected_before": [
+            "( )   A bar across the screen"
+          ],
+          "selected_after": [
+            "(o)   A bar across the screen"
+          ],
+          "escape_hint": false,
+          "state_shown": true
+        },
+        "dock": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            103,
+            46,
+            136
+          ],
+          "label": "A dock in the middle",
+          "selected_before": [
+            "( )   A dock in the middle"
+          ],
+          "selected_after": [
+            "(o)   A dock in the middle"
+          ],
+          "escape_hint": false,
+          "state_shown": true
+        },
+        "recent": {
+          "changed_pixels": 0,
+          "bounds": null,
+          "label": "Recent activity",
+          "selected_before": [],
+          "selected_after": [],
+          "escape_hint": false,
+          "state_shown": false,
+          "home_pixels": 1061,
+          "new_home_rows": [
+            "1 widget line(s) not shown"
+          ]
+        },
+        "machine": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            203,
+            56,
+            216
+          ],
+          "label": "This machine",
+          "selected_before": [
+            "[  ]  This machine"
+          ],
+          "selected_after": [
+            "[on]  This machine"
+          ],
+          "escape_hint": false,
+          "state_shown": true,
+          "home_pixels": 1061,
+          "new_home_rows": [
+            "1 widget line(s) not shown"
+          ]
+        },
+        "session": {
+          "changed_pixels": 0,
+          "bounds": null,
+          "label": "Session",
+          "selected_before": [],
+          "selected_after": [],
+          "escape_hint": false,
+          "state_shown": false,
+          "home_pixels": 1061,
+          "new_home_rows": [
+            "1 widget line(s) not shown"
+          ]
+        }
+      },
+      "checks": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      }
+    },
+    "320x240": {
+      "choices": {
+        "bar": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            103,
+            46,
+            136
+          ],
+          "label": "A bar across the screen",
+          "selected_before": [
+            "( )   A bar across the screen"
+          ],
+          "selected_after": [
+            "(o)   A bar across the screen"
+          ],
+          "escape_hint": false,
+          "state_shown": true
+        },
+        "dock": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            103,
+            46,
+            136
+          ],
+          "label": "A dock in the middle",
+          "selected_before": [
+            "( )   A dock in the middle"
+          ],
+          "selected_after": [
+            "(o)   A dock in the middle"
+          ],
+          "escape_hint": false,
+          "state_shown": true
+        },
+        "recent": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            183,
+            56,
+            196
+          ],
+          "label": "Recent activity",
+          "selected_before": [
+            "[  ]  Recent activity"
+          ],
+          "selected_after": [
+            "[on]  Recent activity"
+          ],
+          "escape_hint": false,
+          "state_shown": true,
+          "home_pixels": 1061,
+          "new_home_rows": [
+            "1 widget line(s) not shown"
+          ]
+        },
+        "machine": {
+          "changed_pixels": 0,
+          "bounds": null,
+          "label": "This machine",
+          "selected_before": [],
+          "selected_after": [],
+          "escape_hint": false,
+          "state_shown": false,
+          "home_pixels": 1061,
+          "new_home_rows": [
+            "1 widget line(s) not shown"
+          ]
+        },
+        "session": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            223,
+            56,
+            236
+          ],
+          "label": "Session",
+          "selected_before": [
+            "[  ]  Session"
+          ],
+          "selected_after": [
+            "[on]  Session"
+          ],
+          "escape_hint": false,
+          "state_shown": true,
+          "home_pixels": 1061,
+          "new_home_rows": [
+            "1 widget line(s) not shown"
+          ]
+        }
+      },
+      "checks": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      }
+    },
+    "320x260": {
+      "choices": {
+        "bar": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            103,
+            46,
+            136
+          ],
+          "label": "A bar across the screen",
+          "selected_before": [
+            "( )   A bar across the screen"
+          ],
+          "selected_after": [
+            "(o)   A bar across the screen"
+          ],
+          "escape_hint": false,
+          "state_shown": true
+        },
+        "dock": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            103,
+            46,
+            136
+          ],
+          "label": "A dock in the middle",
+          "selected_before": [
+            "( )   A dock in the middle"
+          ],
+          "selected_after": [
+            "(o)   A dock in the middle"
+          ],
+          "escape_hint": false,
+          "state_shown": true
+        },
+        "recent": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            183,
+            56,
+            196
+          ],
+          "label": "Recent activity",
+          "selected_before": [
+            "[  ]  Recent activity"
+          ],
+          "selected_after": [
+            "[on]  Recent activity"
+          ],
+          "escape_hint": false,
+          "state_shown": true,
+          "home_pixels": 1009,
+          "new_home_rows": [
+            "15:54:32 DONE rdesk.elf"
+          ]
+        },
+        "machine": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            203,
+            56,
+            216
+          ],
+          "label": "This machine",
+          "selected_before": [
+            "[  ]  This machine"
+          ],
+          "selected_after": [
+            "[on]  This machine"
+          ],
+          "escape_hint": false,
+          "state_shown": true,
+          "home_pixels": 1244,
+          "new_home_rows": [
+            "memory 234 MiB, 234 MiB free"
+          ]
+        },
+        "session": {
+          "changed_pixels": 0,
+          "bounds": null,
+          "label": "Session",
+          "selected_before": [],
+          "selected_after": [],
+          "escape_hint": false,
+          "state_shown": false,
+          "home_pixels": 1029,
+          "new_home_rows": [
+            "Session files | cleared at.."
+          ]
+        }
+      },
+      "checks": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      }
+    },
+    "320x280": {
+      "choices": {
+        "bar": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            103,
+            46,
+            136
+          ],
+          "label": "A bar across the screen",
+          "selected_before": [
+            "( )   A bar across the screen"
+          ],
+          "selected_after": [
+            "(o)   A bar across the screen"
+          ],
+          "escape_hint": false,
+          "state_shown": true
+        },
+        "dock": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            103,
+            46,
+            136
+          ],
+          "label": "A dock in the middle",
+          "selected_before": [
+            "( )   A dock in the middle"
+          ],
+          "selected_after": [
+            "(o)   A dock in the middle"
+          ],
+          "escape_hint": false,
+          "state_shown": true
+        },
+        "recent": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            183,
+            56,
+            196
+          ],
+          "label": "Recent activity",
+          "selected_before": [
+            "[  ]  Recent activity"
+          ],
+          "selected_after": [
+            "[on]  Recent activity"
+          ],
+          "escape_hint": false,
+          "state_shown": true,
+          "home_pixels": 1009,
+          "new_home_rows": [
+            "15:54:32 DONE rdesk.elf"
+          ]
+        },
+        "machine": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            203,
+            56,
+            216
+          ],
+          "label": "This machine",
+          "selected_before": [
+            "[  ]  This machine"
+          ],
+          "selected_after": [
+            "[on]  This machine"
+          ],
+          "escape_hint": false,
+          "state_shown": true,
+          "home_pixels": 1244,
+          "new_home_rows": [
+            "memory 234 MiB, 234 MiB free"
+          ]
+        },
+        "session": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            223,
+            56,
+            236
+          ],
+          "label": "Session",
+          "selected_before": [
+            "[  ]  Session"
+          ],
+          "selected_after": [
+            "[on]  Session"
+          ],
+          "escape_hint": false,
+          "state_shown": true,
+          "home_pixels": 1029,
+          "new_home_rows": [
+            "Session files | cleared at.."
+          ]
+        }
+      },
+      "checks": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      }
+    },
+    "640x480": {
+      "choices": {
+        "bar": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            103,
+            46,
+            136
+          ],
+          "label": "A bar across the screen",
+          "selected_before": [
+            "( )   A bar across the screen"
+          ],
+          "selected_after": [
+            "(o)   A bar across the screen"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "dock": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            103,
+            46,
+            136
+          ],
+          "label": "A dock in the middle",
+          "selected_before": [
+            "( )   A dock in the middle"
+          ],
+          "selected_after": [
+            "(o)   A dock in the middle"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "recent": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            183,
+            56,
+            196
+          ],
+          "label": "Recent activity",
+          "selected_before": [
+            "[  ]  Recent activity"
+          ],
+          "selected_after": [
+            "[on]  Recent activity"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1009,
+          "new_home_rows": [
+            "15:54:32 DONE rdesk.elf"
+          ]
+        },
+        "machine": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            203,
+            56,
+            216
+          ],
+          "label": "This machine",
+          "selected_before": [
+            "[  ]  This machine"
+          ],
+          "selected_after": [
+            "[on]  This machine"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1244,
+          "new_home_rows": [
+            "memory 234 MiB, 234 MiB free"
+          ]
+        },
+        "session": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            223,
+            56,
+            236
+          ],
+          "label": "Session",
+          "selected_before": [
+            "[  ]  Session"
+          ],
+          "selected_after": [
+            "[on]  Session"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1429,
+          "new_home_rows": [
+            "Session files | cleared at power-off"
+          ]
+        }
+      },
+      "checks": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      }
+    },
+    "800x600": {
+      "choices": {
+        "bar": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            103,
+            46,
+            136
+          ],
+          "label": "A bar across the screen",
+          "selected_before": [
+            "( )   A bar across the screen"
+          ],
+          "selected_after": [
+            "(o)   A bar across the screen"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "dock": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            103,
+            46,
+            136
+          ],
+          "label": "A dock in the middle",
+          "selected_before": [
+            "( )   A dock in the middle"
+          ],
+          "selected_after": [
+            "(o)   A dock in the middle"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "recent": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            183,
+            56,
+            196
+          ],
+          "label": "Recent activity",
+          "selected_before": [
+            "[  ]  Recent activity"
+          ],
+          "selected_after": [
+            "[on]  Recent activity"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1001,
+          "new_home_rows": [
+            "15:54:31 DONE rdesk.elf"
+          ]
+        },
+        "machine": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            203,
+            56,
+            216
+          ],
+          "label": "This machine",
+          "selected_before": [
+            "[  ]  This machine"
+          ],
+          "selected_after": [
+            "[on]  This machine"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1244,
+          "new_home_rows": [
+            "memory 234 MiB, 234 MiB free"
+          ]
+        },
+        "session": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            223,
+            56,
+            236
+          ],
+          "label": "Session",
+          "selected_before": [
+            "[  ]  Session"
+          ],
+          "selected_after": [
+            "[on]  Session"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1429,
+          "new_home_rows": [
+            "Session files | cleared at power-off"
+          ]
+        }
+      },
+      "checks": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      }
+    }
+  }
+}
