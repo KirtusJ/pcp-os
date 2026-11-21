@@ -50,6 +50,8 @@ python3 examples/optical-disk-check/check.py images/no-write-candidate.iso candi
   --sha256 0d2672e284d1bf0d09c3869285e657d3769c7933d83f132ce9dc89a77f07abf8
 ```
 
+For a source-built BIOS CD with the same launcher and local media, pass the expected kernel measurement from its build manifest as `--kernel`. You can also compute it from the independently built kernel with `python3 PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py /path/to/kernel.elf32`. The checker compares this value with the measurement reported during boot. The separate `--sha256` argument pins the entire ISO.
+
 The framebuffer check compares the released 1024×768 verified-launcher row and keyboard footer, then the distinct register footer. The probe also requires the measured kernel for the selected input. To reproduce the combined candidate checks, extract the pinned keyboard-01 ISO, build from it and pass `--kernel keyboard-01` and the appropriate image digest to the checker. Add `--tester-profile` to exercise the ordinary clock.
 
 The keyboard-01 job also compares the remastered old loader with the combined tester ISO on Q35 using writable NVMe namespaces with 512-byte and 4,096-byte logical sectors. Both use a GPT with primary and backup headers and a FAT16 partition. Linux `partx` reads the partition bounds and GUID, and `blkid` identifies the filesystem before each run. The old-loader control must write one complete logical sector at LBA zero. The combined ISO must read the disk, issue zero writes and preserve all bytes. For a local run, add `--nvme-sector-size 512` or `--nvme-sector-size 4096` to the keyboard-01 checker command with `--tester-profile`.
