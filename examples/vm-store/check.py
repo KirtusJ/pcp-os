@@ -77,17 +77,18 @@ def test(args):
     receipts = []
     mount = f"store=ide0 store_id={identity}"
 
-    def boot(label, action, *, options=mount, role=True, interrupt=False, refuse=False):
+    def boot(label, action, *, options=mount, role=True, interrupt=False, refuse=False, volume="volume"):
         guest = f"action{action}.elf"
         serial = out / (label + ".serial")
-        before = disk.read_bytes()
+        attached = out / volume / "data.raw"
+        before = attached.read_bytes()
         drive = "ide-hd,drive=store,bus=ide.0,unit=0" + (",serial=PCP-VM-STORE" if role else "")
         cmd = qemu + ["-machine", "pc", "-accel", "tcg", "-cpu", "max", "-m", "256M",
                       "-nic", "none", "-display", "none", "-vga", "std" if interrupt else "none",
                       "-monitor", "none", "-no-reboot", "-icount", "shift=4,align=off,sleep=off",
                       "-kernel", "kernel.elf", "-initrd", guest, "-append",
                       f"auto={guest} then={'menu' if interrupt else 'off'} {options} image={measured}",
-                      "-drive", "if=none,id=store,format=raw,file=volume/data.raw", "-device", drive,
+                      "-drive", f"if=none,id=store,format=raw,file={volume}/data.raw", "-device", drive,
                       "-serial", "file:" + serial.name, "-device", "isa-debug-exit,iobase=0xf4,iosize=4"]
         with (out / (label + ".stderr")).open("wb") as err:
             vm = subprocess.Popen(cmd, cwd=out, stdout=subprocess.DEVNULL, stderr=err)
@@ -117,8 +118,8 @@ def test(args):
         else:
             require((status != 33 if interrupt else status == 33) and "STORE PROBE OK" in log
                     and guest + " ended DONE" in log, label + " failed")
-        after = disk.read_bytes()
-        receipts.append(dict(case=label, exit=status, before=digest(before).hex(),
+        after = attached.read_bytes()
+        receipts.append(dict(case=label, volume=volume, exit=status, before=digest(before).hex(),
                              after=digest(after).hex()))
         print(label, flush=True)
         return after
@@ -136,6 +137,12 @@ def test(args):
     require(boot("capacity", 7) == new, "full checkpoint changed disk")
     require(boot("no-store-grant", 6, options=mount + " grant=none") == new, "denied save changed disk")
     require(boot("volatile", 8, options="") == new, "volatile guest changed disk")
+    other_id = create(out / "other-volume")
+    other = (out / "other-volume/data.raw").read_bytes()
+    require(other_id != identity, "test requires two distinct volume IDs")
+    require(boot("wrong-volume", 4, volume="other-volume", refuse=True) == other,
+            "attaching a different valid disk modified it")
+    require(disk.read_bytes() == new, "intended volume changed while disconnected")
     require(boot("missing-role", 4, role=False, refuse=True) == new, "missing-role disk changed")
     require(boot("missing-id", 4, options="store=ide0", refuse=True) == new, "incomplete request wrote")
     disk.write_bytes(new + bytes(512))
