@@ -58,6 +58,44 @@ mod ethernet;
 #[cfg(feature = "guest-ethernet")]
 use ethernet::ethernet_grant;
 
+/// Text made to fit `room` characters. Text that does not fit is never cut in silence: its last two places
+/// become "..", so that a person sees that there is more than is shown.
+fn cut(text: &str, room: usize) -> String {
+    if text.chars().count() <= room {
+        text.into()
+    } else {
+        let mut out: String = text.chars().take(room.saturating_sub(2)).collect();
+        out.push_str("..");
+        out
+    }
+}
+
+/// A long name on as many lines as it needs, none longer than `across`. Nothing is left out.
+fn wrapped(text: &str, across: usize) -> Vec<String> {
+    let all: Vec<char> = text.chars().collect();
+    all.chunks(across.max(1)).map(|c| c.iter().collect()).collect()
+}
+
+/// The whole of what the chosen pinned program is, on a plate that ends just above `bottom`: its name in
+/// full, its size and the beginning of its digest. A label in the bar or the dock has room for twelve
+/// characters, and two programs can agree in those; this is what says which one Enter will start.
+fn chosen_pin(p: &Entry, x: u32, bottom: u32, w: u32) {
+    use ui::{label, GOOD, SOFT, TEXT};
+    let across = ((w.saturating_sub(80)) / 10).min(72) as usize;
+    let name = wrapped(&p.name, across);
+    let facts = format!("{}   SHA-256 {}...", size_text(p.image.len()), &p.digest[..16]);
+    let widest = name.iter().map(|l| l.chars().count()).max().unwrap_or(0).max(facts.chars().count()).max(18) as u32;
+    let (wide, tall) = (widest * 10 + 40, 80 + 20 * name.len() as u32);
+    let x = (x.min(w.saturating_sub(wide + 20))) / 10 * 10;
+    let y = (bottom.saturating_sub(tall + 10)) / 20 * 20;
+    let on = plate(x, y, wide, tall, PLATE, outline(), false);
+    label(x + 20, y + 20, "Enter starts", GOOD, false, &on);
+    for (n, line) in name.iter().enumerate() {
+        label(x + 20, y + 40 + n as u32 * 20, line, TEXT, false, &on);
+    }
+    label(x + 20, y + 40 + name.len() as u32 * 20, &facts, SOFT, false, &on);
+}
+
 fn size_text(bytes: usize) -> String {
     if bytes >= 10 << 20 {
         format!("{} MiB", bytes >> 20)
@@ -336,8 +374,11 @@ fn whole_bar(start: &Start, programs: &[Entry], pinned: &[usize], place: usize, 
         for (bx, by, bw, bh, colour) in bars {
             dev::display_fill(mx + bx, my + by, *bw, *bh, *colour);
         }
-        let name: String = if i == 0 { String::from("Programs") } else { programs[pinned[i - 1]].name.chars().take(12).collect() };
+        let name: String = if i == 0 { String::from("Programs") } else { cut(&programs[pinned[i - 1]].name, 12) };
         label(x + 50, row, &name, TEXT, false, &on_item);
+    }
+    if place > 0 && place < (1 + pinned.len()).min(room) {
+        chosen_pin(&programs[pinned[place - 1]], 10 + place as u32 * 190, y0, w);
     }
 }
 
@@ -364,8 +405,11 @@ fn dock(programs: &[Entry], pinned: &[usize], place: usize, w: u32, h: u32) {
         for (bx, by, bw, bh, colour) in bars {
             dev::display_fill(mx + bx, my + by, *bw, *bh, *colour);
         }
-        let name: String = if i == 0 { String::from("Programs") } else { programs[pinned[i - 1]].name.chars().take(12).collect() };
+        let name: String = if i == 0 { String::from("Programs") } else { cut(&programs[pinned[i - 1]].name, 12) };
         label(x + (140 - label_width(&name, false)) / 20 * 10, y0 + 60, &name, TEXT, false, &on_item);
+    }
+    if place > 0 && place < shown {
+        chosen_pin(&programs[pinned[place - 1]], x0 + 10 + place as u32 * 140, y0, w);
     }
 }
 
@@ -485,7 +529,20 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
             for i in 0..=shortcuts.len() {
                 let ground = if i == place { ui::PANEL } else { GROUND };
                 ui::fill(2 * ui::CELL_W, row * ui::CELL_H, 44 * ui::CELL_W, ui::CELL_H, ground);
-                at(3, row, &if i == 0 { String::from("Programs") } else { format!("PINNED {}", programs[shortcuts[i - 1]].name) }, TEXT, ground);
+                at(3, row, &if i == 0 { String::from("Programs") } else { cut(&format!("PINNED {}", programs[shortcuts[i - 1]].name), 42) }, TEXT, ground);
+                row += 1;
+            }
+            // Which program Enter will start, in full: a row has room for only so much of a name.
+            if let Some(p) = place.checked_sub(1).and_then(|at| shortcuts.get(at)).map(|i| &programs[*i]) {
+                let (cols, _) = ui::grid();
+                row += 1;
+                at(2, row, "Enter starts", GOOD, GROUND);
+                for line in wrapped(&p.name, (cols as usize).saturating_sub(4)) {
+                    row += 1;
+                    at(2, row, &line, TEXT, GROUND);
+                }
+                row += 1;
+                at(2, row, &format!("{}   SHA-256 {}...", size_text(p.image.len()), &p.digest[..16]), SOFT, GROUND);
                 row += 1;
             }
             for (time, name, outcome, _) in recent.iter() {
@@ -519,7 +576,7 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
             let x = label(x + 20, line, outcome, if outcome == "DONE" { GOOD } else { AMBER }, false, &on_card);
             let x = label(x + 20, line, name, TEXT, false, &on_card);
             let room = ((left + wide).saturating_sub(x + 40) / 10) as usize;
-            label(x + 20, line, &note.chars().take(room).collect::<String>(), SOFT, false, &on_card);
+            label(x + 20, line, &cut(&note, room), SOFT, false, &on_card);
         }
         y += 160;
     }
@@ -595,25 +652,50 @@ fn settings_view(whole_bar: &mut bool, widgets: &mut [bool; 3]) {
     }
 }
 
-/// The files programs have written, by name and size. Esc or Enter goes back.
+/// The files programs have written, by name and size. Every one can be reached: Up and Down move the list
+/// by a line, Page Up and Page Down by a screenful, and the heading says which are shown of how many. A
+/// name too long for its line is on as many lines as it needs. Esc or Enter goes back.
 fn files_view(store: &crate::regular::Files, mounted: bool) {
     use ui::{at, GROUND, SOFT, TEXT};
     let (cols, rows) = ui::grid();
-    ui::clear(GROUND);
+    let across = (cols as usize).saturating_sub(20).max(8);
+    // Each file as the lines it takes: its name, wrapped, with its size on the first.
+    let mut lines: Vec<(String, String)> = Vec::new();
+    let mut begins: Vec<usize> = Vec::new();
+    for (name, bytes) in store.iter() {
+        begins.push(lines.len());
+        for (n, part) in wrapped(name, across).into_iter().enumerate() {
+            lines.push((part, if n == 0 { size_text(bytes.len()) } else { String::new() }));
+        }
+    }
     let total: usize = store.iter().map(|f| f.1.len()).sum();
-    at(2, 1, &format!("FILES: {} file(s), {}", store.len(), size_text(total)), ui::TEAL, GROUND);
-    at(2, 2, if mounted { "VM files | saved when an app syncs" } else { "Session files | cleared at power-off" }, SOFT, GROUND);
-    if store.len() == 0 {
-        at(2, 4, "No program has written a file.", SOFT, GROUND);
-    }
-    for (n, (name, bytes)) in store.iter().take(rows.saturating_sub(8) as usize).enumerate() {
-        at(2, 4 + n as u32, &name.chars().take(cols as usize - 20).collect::<String>(), TEXT, GROUND);
-        at(cols.saturating_sub(14), 4 + n as u32, &size_text(bytes.len()), SOFT, GROUND);
-    }
-    at(2, rows - 2, "Esc back", SOFT, GROUND);
+    let page = rows.saturating_sub(8).max(1) as usize;
+    let last_top = lines.len().saturating_sub(page);
+    let mut top = 0usize;
     loop {
+        ui::clear(GROUND);
+        // The files of which at least the first line is on the screen.
+        let shown: Vec<usize> = begins.iter().enumerate().filter(|(_, b)| **b >= top && **b < top + page).map(|(i, _)| i).collect();
+        let heading = match (shown.first(), shown.last()) {
+            (Some(a), Some(b)) => format!("FILES: showing {} to {} of {}, {}", a + 1, b + 1, store.len(), size_text(total)),
+            _ => format!("FILES: {} file(s), {}", store.len(), size_text(total)),
+        };
+        at(2, 1, &heading, ui::TEAL, GROUND);
+        at(2, 2, if mounted { "VM files | saved when an app syncs" } else { "Session files | cleared at power-off" }, SOFT, GROUND);
+        if store.len() == 0 {
+            at(2, 4, "No program has written a file.", SOFT, GROUND);
+        }
+        for (n, (part, size)) in lines.iter().skip(top).take(page).enumerate() {
+            at(2, 4 + n as u32, part, TEXT, GROUND);
+            at(cols.saturating_sub(14), 4 + n as u32, size, SOFT, GROUND);
+        }
+        at(2, rows - 2, if last_top > 0 { "Up/Down, Page Up/Page Down move    Esc back" } else { "Esc back" }, SOFT, GROUND);
         match wait_key() {
             (0x01, _) | (0x1C, _) => return,
+            (0x48, _) if top > 0 => top -= 1,
+            (0x50, _) if top < last_top => top += 1,
+            (0x49, _) => top = top.saturating_sub(page),
+            (0x51, _) => top = (top + page).min(last_top),
             _ => {}
         }
     }
@@ -685,7 +767,7 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
         let digest = format!("SHA-256 {}...", &p.digest[..16]);
         let size_at = (left + list_width - 60 - label_width(&digest, false) - label_width(&size, false)) / 10 * 10;
         let name_room = (size_at.saturating_sub(left + 60) / 10).max(4) as usize;
-        label(left + 40, y + 10, &p.name.chars().take(name_room.min(28)).collect::<String>(), TEXT, false, &on_row);
+        label(left + 40, y + 10, &cut(&p.name, name_room.min(28)), TEXT, false, &on_row);
         label((left + list_width - 20 - label_width(&digest, false)) / 10 * 10, y + 10, &digest, SOFT, false, &on_row);
         label(size_at, y + 10, &size, SOFT, false, &on_row);
         let lines = access_of(p);
@@ -701,7 +783,7 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
         let lines = message.lines().take(3).count() as u32;
         let on_message = plate(left, y + 10, list_width, 20 + lines * 20, PLATE, edge(), false);
         for (i, line) in message.lines().take(3).enumerate() {
-            label(left + 20, y + 20 + i as u32 * 20, &line.chars().take((list_width / 10 - 4) as usize).collect::<String>(), AMBER, false, &on_message);
+            label(left + 20, y + 20 + i as u32 * 20, &cut(line, (list_width / 10 - 4) as usize), AMBER, false, &on_message);
         }
     }
 
@@ -732,7 +814,7 @@ fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message:
         let bg = if i == chosen { PANEL } else { GROUND };
         ui::fill(2 * ui::CELL_W, row * ui::CELL_H, width * ui::CELL_W, ui::CELL_H, bg);
         if i == chosen { ui::fill(2 * ui::CELL_W, row * ui::CELL_H, 3, ui::CELL_H, ui::TEAL); }
-        at(3, row, &p.name.chars().take(width.saturating_sub(2) as usize).collect::<String>(), TEXT, bg);
+        at(3, row, &cut(&p.name, width.saturating_sub(2) as usize), TEXT, bg);
     }
     if let Some(_entry) = programs.get(chosen).filter(|_| start.failed == 0) {
         let none = option(&start.boot.command_line, "grant") == Some("none");
