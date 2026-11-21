@@ -1,0 +1,36 @@
+name: Storage target preflight source-only fixture
+
+on:
+  push:
+    branches:
+      - master
+      - session-b/virtio-gpt-target-preflight-source-20261116
+    paths:
+      - os-docs/boot-storage-acceptance/**
+      - .github/workflows/storage-target-preflight.yml
+  pull_request:
+    paths:
+      - os-docs/boot-storage-acceptance/**
+      - .github/workflows/storage-target-preflight.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-only-model:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out test sources (no write credentials retained)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Python standard-library consistency tests only
+        run: |
+          set -eu
+          python3 --version
+          python3 -m unittest discover -s os-docs/boot-storage-acceptance -p 'test_*.py' -v
+      - name: Source fingerprints for read-back
+        run: |
+          sha256sum os-docs/boot-storage-acceptance/target_preflight.py os-docs/boot-storage-acceptance/test_target_preflight.py os-docs/boot-storage-acceptance/gpt_metadata.py os-docs/boot-storage-acceptance/test_gpt_metadata.py
