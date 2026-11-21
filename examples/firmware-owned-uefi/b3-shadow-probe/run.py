@@ -17,7 +17,7 @@ WORK = Path(os.environ["RUNNER_TEMP"]) / "display-shadow"
 CAPTURES = WORK / "captures"
 APP = ROOT / "guest-checkout"
 PIN = "745e8831cb25090ce478fcf246dcf6c8a65ec7b2"
-KERNEL = "4d0a0bf60d2350bb6f9249e3fe94e7ac7d481061"
+KERNEL = "7f2e9008b3365722a4fdcf87b3c78b06d5af3fff"
 REPO = "https://github.com/KirtusJ/pcp-os.git"
 RAW = "https://raw.githubusercontent.com/KirtusJ/pcp-os/"
 
@@ -88,6 +88,10 @@ def main():
         }
 ''' + before + r'''
         if base >= 0 && shadow {
+            match ioctl(fd, 0x5003, 1) {
+                -22 => log(b"B3 nonzero shadow page returned EINVAL\n"),
+                _ => log(b"B3 nonzero shadow page did not return EINVAL\n"),
+            }
             match call(9, 0, bytes, 3, 1, fd as usize, 0) {
                 -22 => log(b"B3 repeated shadow mapping returned EINVAL\n"),
                 _ => log(b"B3 repeated shadow mapping did not return EINVAL\n"),
@@ -126,7 +130,7 @@ def main():
              ("edge","1024x768","ramfb"), ("app","800x600","ramfb"), ("app","800x600","bochs"),
              ("app","1280x720","bochs"), ("app","1920x1080","bochs"), ("app","2560x1440","bochs")]
     for name, size, driver in cases:
-        if os.environ.get("B3_BOUNDARY_ONLY", "1") == "1" and (name != "edge" or size != "800x600"):
+        if os.environ.get("B3_BOUNDARY_ONLY", "0") == "1" and (name != "edge" or size != "800x600"):
             continue
         folder = WORK / f"{name}-{size}-{driver}"
         script = "boot_current.py" if name == "app" else "boot_edge.py"
@@ -151,6 +155,7 @@ def main():
                     record["complete_patterns"] = 2
                     record["lifecycle"] = [line for line in serial.splitlines() if line.startswith("B3 ")]
                     print(json.dumps(record["lifecycle"]), flush=True)
+                    assert "B3 nonzero shadow page returned EINVAL" in serial
                     assert "B3 repeated shadow mapping returned EINVAL" in serial
                     assert "B3 opt-in shadow; early present returned EINVAL" in serial
                 else:
