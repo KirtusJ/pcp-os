@@ -104,8 +104,25 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     }
     let (y, mo, d, h, mi, s) = arch::clock();
     let mut world = World { files: files.iter().map(|f| (f.0.clone(), f.1)).collect(), store: Vec::new(),
+        #[cfg(feature = "vm-store")] volume: None,
                             epoch_at_start: epoch(y, mo, d, h, mi, s).saturating_sub(arch::ticks() / arch::TICKS_PER_SECOND), unanswered: Vec::new() };
     let line = start.boot.command_line.as_str();
+    #[cfg(feature = "vm-store")]
+    if !safe {
+        match crate::store::from_command_line(start.boot.exact_command_line()) {
+            Ok(Some((volume, files))) => {
+                say!("VM checkpoint store mounted: {} file(s)", files.len());
+                world.store = files;
+                world.volume = Some(volume);
+            }
+            Ok(None) => {}
+            Err(()) => {
+                say!("requested VM checkpoint store could not be mounted; no program started");
+                *failed += 1;
+                return tasks;
+            }
+        }
+    }
     let mut message = String::new();
     if safe {
         say!("the kernel did not verify itself ({} self-test(s) failed): it is in SAFE and starts no program", start.failed);
@@ -141,7 +158,8 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     arch::interrupts_on();
     dev::keys_forget();
     loop {
-        draw_menu(start, &programs, &files, rec, chosen, &message, world.store.len());
+        draw_menu(start, &programs, &files, rec, chosen, &message, world.store.len(),
+                  #[cfg(feature = "vm-store")] world.volume.is_some());
         let key = wait_key();
         match key {
             (0x48, _) if chosen > 0 => chosen -= 1,
@@ -177,7 +195,8 @@ fn wait_key() -> (u8, bool) {
     }
 }
 
-fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8], String)], rec: &Record, chosen: usize, message: &str, stored: usize) {
+fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8], String)], rec: &Record, chosen: usize, message: &str, stored: usize,
+             #[cfg(feature = "vm-store")] mounted: bool) {
     use ui::{at, GROUND, PANEL, SOFT, TEXT};
     ui::clear(GROUND);
     let (cols, rows) = ui::grid();
@@ -241,7 +260,10 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
     if let Some(d) = start.display {
         at(4, row, &format!("display: {}, {} page(s); keyboard: PS/2; sound: {}", if d.kind == dev::DisplayKind::Bochs { "Bochs interface, any mode" } else { "mode set by the loader" }, d.pages, if start.sound { "present" } else { "none" }), SOFT, GROUND);
         row += 1;
-        at(4, row, &format!("store: {} file(s) written by programs, kept until power off", stored), SOFT, GROUND);
+        let retention = "kept until power off";
+        #[cfg(feature = "vm-store")]
+        let retention = if mounted { "saved to VM disk on fsync" } else { retention };
+        at(4, row, &format!("store: {} file(s) written by programs, {}", stored, retention), SOFT, GROUND);
     }
     row += 2;
     if !message.is_empty() {

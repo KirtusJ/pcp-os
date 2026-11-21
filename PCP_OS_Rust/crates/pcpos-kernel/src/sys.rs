@@ -19,6 +19,8 @@ use pcpos_core::cap::{CapSpace, Rights};
 
 const EPERM: i64 = 1;
 const ENOENT: i64 = 2;
+#[cfg(feature = "vm-store")]
+const EIO: i64 = 5;
 const EBADF: i64 = 9;
 const EAGAIN: i64 = 11;
 const ENOMEM: i64 = 12;
@@ -815,6 +817,22 @@ pub fn call(t: &mut Table, i: usize, frame: &Frame) -> Outcome {
             },
             None => err(EBADF),
         }),
+        #[cfg(feature = "vm-store")]
+        74 => {
+            let Some(volume) = world.volume.as_mut() else { return ret(err(ENOSYS)); };
+            match file(p, a[0]) {
+                None => return ret(err(EBADF)),
+                Some(open) if !matches!(open.node, Node::Stored(_) | Node::Directory) =>
+                    return ret(err(EINVAL)),
+                _ => {}
+            }
+            if !p.holds(caps, Object::Store, Rights::APPEND) { return ret(err(EACCES)); }
+            ret(match volume.commit(&world.store) {
+                Ok(()) => 0,
+                Err(crate::store::Failure::Full) => err(ENOSPC),
+                Err(crate::store::Failure::Io) => err(EIO),
+            })
+        }
         79 => ret(if a[1] >= 2 && put(p, a[0], b"/\0") { 2 } else { err(EINVAL) }),
         82 => {
             // rename: of a file in the store.

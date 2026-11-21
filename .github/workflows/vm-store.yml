@@ -1,0 +1,39 @@
+name: VM file persistence
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'examples/vm-store/**'
+      - 'PCP_OS_Rust/crates/pcpos-kernel/**'
+      - 'PCP_OS_Rust/crates/pcpos-core/**'
+      - '.github/workflows/vm-store.yml'
+permissions:
+  contents: read
+jobs:
+  cold-boots:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      RUSTUP_TOOLCHAIN: 1.97.0
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install the kernel and VM tools
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y --no-install-recommends qemu-system-x86 seabios clang binutils lld
+          rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --no-self-update -c rust-src -t x86_64-unknown-none
+      - name: Build the opt-in kernel and run isolated cold boots
+        run: |
+          kernel=PCP_OS_Rust/crates/pcpos-kernel
+          PCPOS_KERNEL_STAGE="$RUNNER_TEMP/build" PCPOS_KERNEL_FEATURES=vm-store sh "$kernel/run.sh" build
+          python3 -B examples/vm-store/check.py "$kernel/target/pcpos-kernel.elf32" "$RUNNER_TEMP/boots"
+      - name: Preserve the disk, guest programs, kernel, and serial evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: vm-store-cold-boots
+          path: ${{ runner.temp }}/boots
+          if-no-files-found: warn
+          retention-days: 14
