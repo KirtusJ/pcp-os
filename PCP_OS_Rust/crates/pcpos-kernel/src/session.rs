@@ -1000,7 +1000,9 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
     label(left, 60, "Programs", ui::edition().text, true, &over_field);
     let on_note = plate(left, 110, list_width, 40, PLATE, edge(), false);
     label(left + 20, 120, if safe { "SAFE: verification failed. Programs are disabled." } else if programs.is_empty() { "The loader handed over no program." }
-                               else { "Choose one to start. Each runs with only what it is granted." }, if safe { BAD } else { SOFT }, false, &on_note);
+                               // At 1280 across the plate holds fifty-six characters, four fewer than the longer wording.
+                               else if list_width >= 640 { "Choose one to start. Each runs with only what it is granted." }
+                               else { "Choose one. Each runs with only what it is granted." }, if safe { BAD } else { SOFT }, false, &on_note);
     let none = option(&start.boot.command_line, "grant") == Some("none");
     let grants = if none { "console only" } else if start.sound { "display, keyboard, sound, loader files, store" } else { "display, keyboard, loader files, store" };
     let foot = h / 20 * 20 - 60;

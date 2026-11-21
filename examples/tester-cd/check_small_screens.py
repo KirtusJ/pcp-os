@@ -51,6 +51,13 @@ below are the texts of those frames, each with its rows joined by single spaces.
     ("Esc back", "Esc go back" or "Any key goes back", whole), and Esc gives a desktop whose rows equal
     those before it was opened.
 
+The sizes most displays have, 1280 by 720, 1920 by 1080 and 2560 by 1440 (owner, 21 November 2026), where
+the desktop is the full one: T1 to T5 and T7 as above with the full desktop's keys, and in place of T6:
+ G1 the last three rows of the desktop hold "Programs", "F1 keys" and "verified";
+ G2 in the programs, one row ends with the sentence "Choose one[ to start]. Each runs with only what it
+    is granted." and ends inside its plate; a row says what the chosen program may use; Esc gives the
+    desktop as it was.
+
 The check proves its own reading on a good frame of each kind (for the text screens: the warning with
 "not" taken out, and a key's explanation with its last word taken out): for Settings, the keys' line written over
 a widget's row, and a state mark changed; for the list, the verification row emptied, and the chosen row
@@ -159,7 +166,9 @@ def boot(qemu, kernel, folder, measurement, mode, out, glyphs, timeout):
     out.mkdir(parents=True)
     serial, sock = out / "serial.txt", out / "qmp.sock"
     cmd = [qemu, "-machine", "pc", "-accel", "tcg", "-cpu", "qemu64", "-m", "128M", "-kernel", str(kernel),
-           "-initrd", ",".join(PROGRAMS), "-append", "image=%s desktop=%s" % (measurement, mode), "-vga", "std", "-nic", "none",
+           "-initrd", ",".join(PROGRAMS), "-append", "image=%s desktop=%s" % (measurement, mode),
+           # Two pictures of 2560 by 1440 need more than the sixteen mebibytes the standard adapter has.
+           *(["-vga", "none", "-device", "VGA,vgamem_mb=64"] if int(mode.split("x")[0]) >= 1280 else ["-vga", "std"]), "-nic", "none",
            "-display", "none", "-monitor", "none", "-qmp", "unix:%s,server=on,wait=off" % sock, "-serial", "file:%s" % serial, "-no-reboot"]
     guest = subprocess.Popen(cmd, cwd=folder, stdout=subprocess.DEVNULL, stderr=(out / "qemu-stderr.txt").open("wb"))
     try:
@@ -341,10 +350,15 @@ def kernel_keys(name):
     return re.findall(r'\("([^"]+)", "([^"]+)"\)', block)
 
 
-def text_trial(key, screen, passed, problems, results, mode):
+def text_trial(key, screen, passed, problems, results, mode, graphic=False):
     home, _ = screen("text-home", lambda rows, frame: any("Programs" in row for row in rows))
     found = []
-    if not re.match(r"^  Verified(?: at start)?: all %d(?: self-tests(?: passed\.)?)?$" % passed, home[3]):
+    if graphic:
+        # The full desktop: its foot holds the way to the programs, the keys and the verdict, and nothing else is placed.
+        foot = joined(home[-3:])
+        if not all(word in foot for word in ("Programs", "F1 keys", "verified")):
+            found.append("G1: the foot of the desktop reads %r" % foot)
+    elif not re.match(r"^  Verified(?: at start)?: all %d(?: self-tests(?: passed\.)?)?$" % passed, home[3]):
         found.append("T6: the desktop's row 3 reads %r" % home[3])
 
     def pages(name, press, title, move="down"):
@@ -370,7 +384,7 @@ def text_trial(key, screen, passed, problems, results, mode):
 
     power = pages("power", "f10", "POWER OFF")
     found += power_problems(power[0])
-    keys = kernel_keys("SMALL_HOME_KEYS")
+    keys = kernel_keys("HOME_KEYS" if graphic else "SMALL_HOME_KEYS")
     help_pages = pages("keys", "f1", "KEYS ON THE DESKTOP")
     found += keys_problems(help_pages, keys)
     verification = [joined(rows) for rows in pages("verification", "f5", "VERIFICATION")]
@@ -382,6 +396,22 @@ def text_trial(key, screen, passed, problems, results, mode):
     register = "".join("".join(rows).replace(" ", "") for rows in pages("register", "f4", "REGISTER", "up"))
     if not re.search(r"REGISTER:\d+events,(chain)?intact", register) or not re.search(r"head[0-9a-f]{64}", register):
         found.append("T4: the count or the whole head of the chain is not on the register's pages")
+    if graphic:
+        # The programs: the sentence above the list is whole and ends inside its plate, whose width is the
+        # kernel's own (47 hundredths of the display, at most 1100, from a left edge of one two-hundredth).
+        width = int(mode.split("x")[0])
+        edge = (width // 200 * 10 + min(width * 47 // 100, 1100) // 10 * 10) // 10
+        key("ret")
+        programs, _ = screen("programs", lambda rows, frame: any("> " + PROGRAMS[0] in row for row in rows))
+        note = [row for row in programs if "Each runs with only what it is granted." in row]
+        if len(note) != 1 or not re.search(r"Choose one( to start)?\. Each runs with only what it is granted\.$", note[0]) or len(note[0]) > edge - 1:
+            found.append("G2: the sentence above the programs reads %r and its plate ends at column %d" % (note, edge))
+        if not any("may use: " in row for row in programs):
+            found.append("G2: the chosen program's grants are not shown")
+        key("esc")
+        back, _ = screen("programs-left", lambda rows, frame: any("Programs" in row for row in rows))
+        if back != home:
+            found.append("G2: Esc from the programs did not give the desktop as it was")
     key("f3")
     files, _ = screen("files", lambda rows, frame: any("FILES" in row for row in rows))
     if joined(files[2:4]) != "Session files | cleared at power-off":
@@ -423,7 +453,8 @@ def main():
     for mode, settings, programs, text in (("320x200", True, True, True), ("320x220", True, True, False), ("320x240", True, True, False),
                                            ("320x260", True, True, False), ("320x280", True, False, False), ("640x240", True, False, False),
                                            ("640x260", True, False, False), ("320x480", True, False, False), ("640x480", True, True, True),
-                                           ("800x600", False, False, True)):
+                                           ("800x600", False, False, True), ("1280x720", False, False, True), ("1920x1080", False, False, True),
+                                           ("2560x1440", False, False, True)):
         roomy = mode == "640x480"
         results[mode] = {}
         try:
@@ -433,7 +464,7 @@ def main():
             continue
         try:
             if text:
-                text_trial(key, screen, passed, problems, results[mode], mode)
+                text_trial(key, screen, passed, problems, results[mode], mode, graphic=int(mode.split("x")[0]) >= 1280)
             if settings:
                 # Settings is roomy from fourteen rows and forty-one columns; 320 across is never roomy.
                 settings_trial(key, screen, roomy, problems, results[mode], mode)
@@ -455,7 +486,7 @@ def main():
         print("FAILED", problem)
     if problems:
         sys.exit(1)
-    print("small screens: Settings at nine sizes, the list of programs at five and the screens of text at three passed; controls refused")
+    print("small screens: Settings at nine sizes, the list of programs at five and the screens of text at six, three of them the full desktop, passed; controls refused")
 
 
 if __name__ == "__main__":
