@@ -83,6 +83,9 @@ jobs:
       - name: Fill the small-display desktop with fourteen pins at 640 by 480 and 320 by 200
         if: matrix.option == ''
         run: python3 -IB examples/tester-cd/check_compact_pins.py "$RUNNER_TEMP/first" "$RUNNER_TEMP/evidence/compact-pins"
+      - name: Settings and the small list of programs at small and crossed sizes
+        if: matrix.option == ''
+        run: python3 -IB examples/tester-cd/check_small_screens.py "$RUNNER_TEMP/first" "$RUNNER_TEMP/evidence/small-screens"
       - name: Replay selected grants and RGB controls on the native captures
         run: python3 -IB examples/tester-cd/check_launcher_grants.py "$RUNNER_TEMP/first/receipt.json" "$RUNNER_TEMP/evidence"
       - name: Check the source CD beside disposable IDE and NVMe disks

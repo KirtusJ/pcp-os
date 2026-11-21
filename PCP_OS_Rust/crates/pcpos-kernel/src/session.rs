@@ -76,6 +76,48 @@ fn wrapped(text: &str, across: usize) -> Vec<String> {
     all.chunks(across.max(1)).map(|c| c.iter().collect()).collect()
 }
 
+/// A sentence on as many lines as it needs, broken between words, none longer than `across`. A word
+/// longer than a line is broken where the line ends. Nothing is left out.
+fn wrapped_words(text: &str, across: usize) -> Vec<String> {
+    let across = across.max(1);
+    let mut lines: Vec<String> = Vec::new();
+    let mut line = String::new();
+    for word in text.split(' ').filter(|w| !w.is_empty()) {
+        let have = line.chars().count();
+        if have != 0 && have + 1 + word.chars().count() <= across {
+            line.push(' ');
+            line.push_str(word);
+            continue;
+        }
+        if have != 0 {
+            lines.push(core::mem::take(&mut line));
+        }
+        let mut parts = wrapped(word, across);
+        line = parts.pop().unwrap_or_default();
+        lines.append(&mut parts);
+    }
+    if !line.is_empty() {
+        lines.push(line);
+    }
+    lines
+}
+
+/// The sentence about verification that every surface carries, in the longest wording that fits `room`
+/// characters; the last wording is cut with ".." if even it does not fit. Whether it passed is never the
+/// part that is lost: it comes first.
+fn verified_sentence(start: &Start, room: usize) -> String {
+    let all = start.passed + start.failed;
+    let wordings = if start.failed != 0 {
+        [format!("NOT VERIFIED: {} of {} self-tests failed.", start.failed, all), format!("NOT VERIFIED: {} of {} failed", start.failed, all),
+         format!("NOT VERIFIED: {} failed", start.failed)]
+    } else {
+        [format!("Verified at start: all {} self-tests passed.", start.passed), format!("Verified: all {} self-tests", start.passed),
+         format!("Verified: all {}", start.passed)]
+    };
+    let last = cut(&wordings[2], room);
+    wordings.into_iter().find(|w| w.chars().count() <= room).unwrap_or(last)
+}
+
 /// The whole of what the chosen pinned program is, on a plate that ends just above `bottom`: its name in
 /// full, its size and the beginning of its digest. A label in the bar or the dock has room for twelve
 /// characters, and two programs can agree in those; this is what says which one Enter will start.
@@ -743,29 +785,58 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
 /// the desktop; a person comes here, chooses, and sees what is chosen. They last for this session.
 fn settings_view(whole_bar: &mut bool, widgets: &mut [bool; 3]) {
     use ui::{at, GROUND, PANEL, SOFT, TEXT};
-    let (_, rows) = ui::grid();
+    let (cols, rows) = ui::grid();
     let forms = ["A bar across the screen", "A dock in the middle"];
+    // Where there is room the screen is set out with space around its parts: eleven rows and the keys two
+    // from the bottom, which takes fourteen rows, and the keys' line takes forty-one columns. On a smaller
+    // display every choice still has a row of its own that nothing else is drawn on, and its state on it:
+    // the title on the first row, the keys on the last, and between them the two headings and the five
+    // choices, moved so that the chosen one is among them if they cannot all be there.
+    let roomy = rows >= 14 && cols >= 41;
+    let width = cols.saturating_sub(2).min(46);
+    // (heading, or which choice it is)
+    let items: [(Option<&str>, usize); 7] = [(Some(if roomy { "Programs at the foot of the desktop" } else { "Foot of the desktop" }), 0), (None, 0), (None, 1),
+        (Some(if roomy { "Widgets on the desktop" } else { "Widgets" }), 0), (None, 2), (None, 3), (None, 4)];
     let mut at_row = 0usize;
     loop {
         ui::clear(GROUND);
-        at(2, 1, "SETTINGS", ui::TEAL, GROUND);
-        at(2, 2, "They last for this session.", SOFT, GROUND);
-        at(2, 4, "Programs at the foot of the desktop", TEXT, GROUND);
-        for (i, name) in forms.iter().enumerate() {
-            let ground = if i == at_row { PANEL } else { GROUND };
-            let on = (i == 0) == *whole_bar;
-            ui::fill(ui::CELL_W, (5 + i as u32) * ui::CELL_H, 46 * ui::CELL_W, ui::CELL_H, ground);
-            at(2, 5 + i as u32, if on { "(o)" } else { "( )" }, if on { ui::GOOD } else { SOFT }, ground);
-            at(8, 5 + i as u32, name, TEXT, ground);
+        let (first_row, room) = if roomy {
+            at(2, 1, "SETTINGS", ui::TEAL, GROUND);
+            at(2, 2, "They last for this session.", SOFT, GROUND);
+            at(2, rows - 2, "Up/Down choose    Enter set    Esc back", SOFT, GROUND);
+            (4u32, items.len())
+        } else {
+            at(2, 0, "SETTINGS (this session)", ui::TEAL, GROUND);
+            at(2, rows - 1, "Up/Down  Enter set  Esc back", SOFT, GROUND);
+            (1u32, (rows.saturating_sub(2) as usize).clamp(1, items.len()))
+        };
+        // The chosen choice is always among the rows shown, with its heading above it if there is room.
+        let chosen_item = items.iter().position(|(heading, i)| heading.is_none() && *i == at_row).unwrap_or(1);
+        let top = if room >= items.len() { 0 } else { (chosen_item + 1).saturating_sub(room).min(items.len() - room) };
+        let mut row = first_row;
+        for (n, (heading, i)) in items.iter().enumerate().skip(top).take(room) {
+            // The roomy screen leaves a row empty above its second heading.
+            if roomy && n == 3 {
+                row += 1;
+            }
+            match heading {
+                Some(words) => { at(2, row, words, TEXT, GROUND); }
+                None => {
+                    let ground = if *i == at_row { PANEL } else { GROUND };
+                    ui::fill(ui::CELL_W, row * ui::CELL_H, width * ui::CELL_W, ui::CELL_H, ground);
+                    if *i < 2 {
+                        let on = (*i == 0) == *whole_bar;
+                        at(2, row, if on { "(o)" } else { "( )" }, if on { ui::GOOD } else { SOFT }, ground);
+                        at(8, row, forms[*i], TEXT, ground);
+                    } else {
+                        let on = widgets[*i - 2];
+                        at(2, row, if on { "[on]" } else { "[  ]" }, if on { ui::GOOD } else { SOFT }, ground);
+                        at(8, row, WIDGETS[*i - 2], TEXT, ground);
+                    }
+                }
+            }
+            row += 1;
         }
-        at(2, 8, "Widgets on the desktop", TEXT, GROUND);
-        for (i, name) in WIDGETS.iter().enumerate() {
-            let ground = if i + 2 == at_row { PANEL } else { GROUND };
-            ui::fill(ui::CELL_W, (9 + i as u32) * ui::CELL_H, 46 * ui::CELL_W, ui::CELL_H, ground);
-            at(2, 9 + i as u32, if widgets[i] { "[on]" } else { "[  ]" }, if widgets[i] { ui::GOOD } else { SOFT }, ground);
-            at(8, 9 + i as u32, name, TEXT, ground);
-        }
-        at(2, rows - 2, "Up/Down choose    Enter set    Esc back", SOFT, GROUND);
         match wait_key() {
             (0x48, _) if at_row > 0 => at_row -= 1,
             (0x50, _) if at_row + 1 < forms.len() + WIDGETS.len() => at_row += 1,
@@ -935,54 +1006,87 @@ fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message:
     use ui::{at, GROUND, PANEL, SOFT, TEXT};
     ui::clear(GROUND);
     let (cols, rows) = ui::grid();
-    ui::emblem(20, 16, 36, GROUND);
-    at(7, 1, "PCP OS", TEXT, GROUND);
-    // The same sentence about verification as on every other surface, whichever way it went.
-    if start.failed != 0 {
-        at(2, 3, &format!("NOT VERIFIED: {} of {} self-tests failed. Programs are disabled.", start.failed, start.passed + start.failed), ui::BAD, GROUND);
-    } else {
-        at(2, 3, &format!("Verified at start: all {} self-tests passed.", start.passed), ui::GOOD, GROUND);
+    let across = (cols as usize).saturating_sub(4).max(1);
+    // What the chosen program may use, said only when programs can be started.
+    let mut access: Vec<(String, u32)> = Vec::new();
+    if let Some(_entry) = programs.get(chosen).filter(|_| start.failed == 0) {
+        let none = option(&start.boot.command_line, "grant") == Some("none");
+        access.push((String::from(if none { "Access: console only" } else if start.sound {
+            "Access: console, display, keyboard, files, store, sound"
+        } else { "Access: console, display, keyboard, files and store" }), SOFT));
+        #[cfg(feature = "guest-ethernet")]
+        if !none && ethernet_grant(start.boot.exact_command_line(), &_entry.digest) {
+            access.push((String::from("Access: raw Ethernet frames"), ui::AMBER));
+        }
+        #[cfg(feature = "game-link")]
+        if !none && option(&start.boot.command_line, "link_image") == Some(_entry.digest.as_str()) {
+            access.push((String::from("Access: second serial port"), ui::AMBER));
+        }
     }
-    let visible = rows.saturating_sub(12).max(1) as usize;
+    let keys = if programs.is_empty() || start.failed != 0 {
+        "D details   R register   P off"
+    } else { "Up/Down choose   Enter open   D details   R register   P off" };
+    // The message has two rows. What does not fit on them ends in "..".
+    let said: Vec<String> = if message.is_empty() { Vec::new() } else {
+        let lines = wrapped(message.lines().next().unwrap_or(""), across);
+        lines.iter().enumerate().take(2).map(|(n, line)| if n == 1 && lines.len() > 2 { cut(&format!("{}...", line), line.chars().count()) } else { line.clone() }).collect()
+    };
+    // With thirteen rows and sixty-four columns the screen is set out with space around its parts, each
+    // at a row of its own. With fewer, the same things share the rows from the edges inward, so that none
+    // is drawn on another: the sentence about verification on the first row; the keys on the last, on two
+    // rows if one does not hold them; above the keys what the chosen program may use, on as many rows as
+    // it needs; above that the message; and every row between is the list, which always has one row and
+    // always holds the chosen program.
+    let (list_row, visible) = if rows >= 13 && cols >= 64 {
+        ui::emblem(20, 16, 36, GROUND);
+        at(7, 1, "PCP OS", TEXT, GROUND);
+        // The same sentence about verification as on every other surface, whichever way it went.
+        if start.failed != 0 {
+            at(2, 3, &format!("NOT VERIFIED: {} of {} self-tests failed. Programs are disabled.", start.failed, start.passed + start.failed), ui::BAD, GROUND);
+        } else {
+            at(2, 3, &format!("Verified at start: all {} self-tests passed.", start.passed), ui::GOOD, GROUND);
+        }
+        for (n, (line, colour)) in access.iter().enumerate() {
+            at(2, rows - 7 + n as u32, line, *colour, GROUND);
+        }
+        for (n, line) in said.iter().enumerate() {
+            at(2, rows - 4 + n as u32, line, ui::AMBER, GROUND);
+        }
+        at(2, rows - 2, keys, TEXT, GROUND);
+        (5u32, rows.saturating_sub(12).max(1) as usize)
+    } else {
+        at(2, 0, &verified_sentence(start, across), if start.failed != 0 { ui::BAD } else { ui::GOOD }, GROUND);
+        let key_lines: Vec<String> = if keys.len() <= across { alloc::vec![String::from(keys)] } else if programs.is_empty() || start.failed != 0 {
+            alloc::vec![String::from("D details  R register  P off")]
+        } else {
+            alloc::vec![String::from("Up/Down choose   Enter open"), String::from("D details  R register  P off")]
+        };
+        let mut below: Vec<(String, u32)> = said.iter().map(|line| (line.clone(), ui::AMBER)).collect();
+        for (line, colour) in &access {
+            below.extend(wrapped_words(line, across).into_iter().map(|part| (part, *colour)));
+        }
+        below.extend(key_lines.into_iter().map(|line| (line, TEXT)));
+        // The list keeps one row whatever else there is; then the keys are kept, then what comes above them.
+        let room = (rows as usize).saturating_sub(2);
+        let skip = below.len().saturating_sub(room);
+        let first = rows as usize - (below.len() - skip);
+        for (n, (line, colour)) in below.iter().skip(skip).enumerate() {
+            at(2, (first + n) as u32, &cut(line, across), *colour, GROUND);
+        }
+        (1u32, first.saturating_sub(1).max(1))
+    };
     let first = (chosen + 1).saturating_sub(visible);
     if programs.is_empty() {
-        at(2, 5, "No programs loaded", SOFT, GROUND);
+        at(2, list_row, "No programs loaded", SOFT, GROUND);
     }
     for (i, p) in programs.iter().enumerate().skip(first).take(visible) {
-        let row = 5 + (i - first) as u32;
+        let row = list_row + (i - first) as u32;
         let width = cols.saturating_sub(4).min(44);
         let bg = if i == chosen { PANEL } else { GROUND };
         ui::fill(2 * ui::CELL_W, row * ui::CELL_H, width * ui::CELL_W, ui::CELL_H, bg);
         if i == chosen { ui::fill(2 * ui::CELL_W, row * ui::CELL_H, 3, ui::CELL_H, ui::TEAL); }
         at(3, row, &cut(&p.name, width.saturating_sub(2) as usize), TEXT, bg);
     }
-    if let Some(_entry) = programs.get(chosen).filter(|_| start.failed == 0) {
-        let none = option(&start.boot.command_line, "grant") == Some("none");
-        let access = if none { "Access: console only" } else if start.sound {
-            "Access: console, display, keyboard, files, store, sound"
-        } else { "Access: console, display, keyboard, files and store" };
-        at(2, rows - 7, access, SOFT, GROUND);
-        #[cfg(feature = "guest-ethernet")]
-        if !none && ethernet_grant(start.boot.exact_command_line(), &_entry.digest) {
-            at(2, rows - 6, "Access: raw Ethernet frames", ui::AMBER, GROUND);
-        }
-        #[cfg(feature = "game-link")]
-        if !none && option(&start.boot.command_line, "link_image") == Some(_entry.digest.as_str()) {
-            at(2, rows - 5, "Access: second serial port", ui::AMBER, GROUND);
-        }
-    }
-    if !message.is_empty() {
-        // The message has the two rows above the keys. What does not fit on them ends in "..".
-        let across = (cols as usize).saturating_sub(4).max(1);
-        let lines = wrapped(message.lines().next().unwrap_or(""), across);
-        for (n, line) in lines.iter().enumerate().take(2) {
-            at(2, rows - 4 + n as u32, &if n == 1 && lines.len() > 2 { cut(&format!("{}...", line), line.chars().count()) } else { line.clone() }, ui::AMBER, GROUND);
-        }
-    }
-    let keys = if programs.is_empty() || start.failed != 0 {
-        "D details   R register   P off"
-    } else { "Up/Down choose   Enter open   D details   R register   P off" };
-    at(2, rows - 2, keys, TEXT, GROUND);
 }
 
 /// The next key pressed: (its number, whether it is of the second group). Releases are passed over.
