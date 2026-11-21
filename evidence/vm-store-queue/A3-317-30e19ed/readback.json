@@ -1,0 +1,328 @@
+{
+  "head": "30e19ededc133b873bc22454bcb875098d77cac4",
+  "tree": "1111bcf98786124c31076fbaffada8ff975ee57b",
+  "base": "8a7611c6ee0200c111638da92c468f16bdc1bbd4",
+  "ci": {
+    "source": "30e19ededc133b873bc22454bcb875098d77cac4",
+    "run": 44917736180,
+    "job": 136886860289,
+    "conclusion": "success",
+    "steps": [
+      {
+        "name": "Set up job",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+        "conclusion": "success"
+      },
+      {
+        "name": "Install the kernel and VM tools",
+        "conclusion": "success"
+      },
+      {
+        "name": "Check open file lifetimes and the shared byte limit",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build the opt-in kernel and run isolated cold boots",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run the granted file API probe",
+        "conclusion": "success"
+      },
+      {
+        "name": "Save a queue entry from the keyboard and reopen it after power-off",
+        "conclusion": "success"
+      },
+      {
+        "name": "Compile the worker with VM storage enabled",
+        "conclusion": "success"
+      },
+      {
+        "name": "Preserve the disk, guest programs, kernel, and serial evidence",
+        "conclusion": "success"
+      },
+      {
+        "name": "Preserve the two queue screens, journals, binaries and serial logs",
+        "conclusion": "success"
+      },
+      {
+        "name": "Post Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+        "conclusion": "success"
+      },
+      {
+        "name": "Complete job",
+        "conclusion": "success"
+      }
+    ],
+    "artifact": {
+      "name": "vm-store-queue",
+      "id": 14712008309,
+      "digest": "sha256:41b2d00d94e8929390b740768dac8e882112eabb6487bd55ef160076824e50d6",
+      "bytes": 727279
+    }
+  },
+  "local": {
+    "kernel_sha256": "116ccd7d6f1fe54a827ac5be0d458d5ffc9e81e5c42321fc43f2e29752a28d65",
+    "queue_sha256": "b7467790402a4d6b4cc14052f50f89268a835a8104afc899618c7dab23a7c694",
+    "kernel_measurement": "c99b256e5df82600ff063be98d4a119328da26e4fe26fbb1612518d6d2e7761b",
+    "boots": [
+      {
+        "boot": "save",
+        "status": "Disk save",
+        "pass_lines": 72,
+        "disk_sha256": "8023e5a43e9ca01bd7acbddd5471cb915959069d0a8ad727dc59b25ac4dee8fc",
+        "serial_sha256": "f94afd4055c3ca2dd0ae6150858f3b1bbfbe16644099680d303b917c2908431f",
+        "app_frame_sha256": "1a6d27d1b957c3cc9b7e4414849d81fe9f9184fb68d2f75b095b48b35fd94ee7"
+      },
+      {
+        "boot": "restore",
+        "status": "Queue restored",
+        "pass_lines": 72,
+        "disk_sha256": "8023e5a43e9ca01bd7acbddd5471cb915959069d0a8ad727dc59b25ac4dee8fc",
+        "serial_sha256": "7662cfbea85fcd60fd320704385abbbf587cd1bb94831fa7aa9f22e2ccb06f2b",
+        "app_frame_sha256": "3afb26f758b6f649c8709dad12437be432ef64596053e852b3ec4fcaec21bfe4"
+      }
+    ],
+    "files_frame_sha256": "9a37550d0f3dda5547e562cf1234be70535be0443df273b9f537f7256a41fed1",
+    "save_restore_disk_equal": true
+  },
+  "hosted": {
+    "kernel_sha256": "116ccd7d6f1fe54a827ac5be0d458d5ffc9e81e5c42321fc43f2e29752a28d65",
+    "queue_sha256": "b7467790402a4d6b4cc14052f50f89268a835a8104afc899618c7dab23a7c694",
+    "kernel_measurement": "c99b256e5df82600ff063be98d4a119328da26e4fe26fbb1612518d6d2e7761b",
+    "boots": [
+      {
+        "boot": "save",
+        "status": "Disk save",
+        "pass_lines": 72,
+        "disk_sha256": "99c39042318653d66475772261f66e97151c454be84506d1a2e2a48d27abbf39",
+        "serial_sha256": "4779fab64a79da49c8af6e589c0c8640952354189b79a0bec06670347d8c81a8",
+        "app_frame_sha256": "1a6d27d1b957c3cc9b7e4414849d81fe9f9184fb68d2f75b095b48b35fd94ee7"
+      },
+      {
+        "boot": "restore",
+        "status": "Queue restored",
+        "pass_lines": 72,
+        "disk_sha256": "99c39042318653d66475772261f66e97151c454be84506d1a2e2a48d27abbf39",
+        "serial_sha256": "c90e4b826e0f3b23b1b0b9bffbe357a503aaeb5b8207f74a697d8dcf0f420da3",
+        "app_frame_sha256": "3afb26f758b6f649c8709dad12437be432ef64596053e852b3ec4fcaec21bfe4"
+      }
+    ],
+    "files_frame_sha256": "9a37550d0f3dda5547e562cf1234be70535be0443df273b9f537f7256a41fed1",
+    "save_restore_disk_equal": true
+  },
+  "native_name_controls": [
+    {
+      "stored_name": " parrots.queue",
+      "display": "1920x1080",
+      "first_name_column": 3,
+      "size_column": 178,
+      "display_matched": false,
+      "journal_verdict": "wrong stored filename",
+      "files_frame_sha256": "6fa1cb60345f61a09ebfe0fe9e0cb0964887b115a96fcd7072c8e8beded2f4aa",
+      "source_disk_sha256": "8023e5a43e9ca01bd7acbddd5471cb915959069d0a8ad727dc59b25ac4dee8fc",
+      "fixture_disk_sha256": "b7403890318a44d20fe8f31f9ef10056c926aa0f56f5b17a089969696a0d4422",
+      "pass_lines": 72,
+      "qemu_exit": 33
+    },
+    {
+      "stored_name": "parrots.queue ",
+      "display": "1920x1080",
+      "first_name_column": 2,
+      "size_column": 178,
+      "display_matched": true,
+      "journal_verdict": "wrong stored filename",
+      "files_frame_sha256": "9a37550d0f3dda5547e562cf1234be70535be0443df273b9f537f7256a41fed1",
+      "source_disk_sha256": "8023e5a43e9ca01bd7acbddd5471cb915959069d0a8ad727dc59b25ac4dee8fc",
+      "fixture_disk_sha256": "9013cd89f9d1874fdd785ff9c294e78225b9ee8d0f9f95fc8b392dba9c11e763",
+      "pass_lines": 72,
+      "qemu_exit": 33
+    },
+    {
+      "stored_name": "parrots.queue",
+      "display": "1280x720",
+      "first_name_column": 2,
+      "size_column": 114,
+      "display_matched": true,
+      "journal_verdict": "accepted",
+      "files_frame_sha256": "f5916781a743e67c5f5628311ea2c0e7fce197694e58b51fc6f954415dd05550",
+      "source_disk_sha256": "8023e5a43e9ca01bd7acbddd5471cb915959069d0a8ad727dc59b25ac4dee8fc",
+      "fixture_disk_sha256": "8023e5a43e9ca01bd7acbddd5471cb915959069d0a8ad727dc59b25ac4dee8fc",
+      "pass_lines": 72,
+      "qemu_exit": 33
+    }
+  ],
+  "original_and_altered": {
+    "revisions_in_order": [
+      "8a7611c6ee0200c111638da92c468f16bdc1bbd4",
+      "28f466b69ece3f51324dc0eb1603cae21c23a94c",
+      "49e64582d022ea30b2fd9de8409e48ab6ef469a2",
+      "30e19ededc133b873bc22454bcb875098d77cac4"
+    ],
+    "original_sha256": "9a37550d0f3dda5547e562cf1234be70535be0443df273b9f537f7256a41fed1",
+    "original_accepted": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "controls": [
+      {
+        "label": "different-file",
+        "row": 4,
+        "column": 2,
+        "decoded": "  parrots.queue-old                                                                                                                                                               3 KiB",
+        "sha256": "55f26cbcd7d7169306c0986e173341053c372876c06d4faea17b785b1af1e624",
+        "accepted": [
+          true,
+          false,
+          false,
+          false
+        ]
+      },
+      {
+        "label": "different-size",
+        "row": 4,
+        "column": 178,
+        "decoded": "  parrots.queue                                                                                                                                                                   13 KiB",
+        "sha256": "a86c470591a3f8b1a5ca3858c3e43fe4c50ade7183c499abc214f6f599e20477",
+        "accepted": [
+          true,
+          false,
+          false,
+          false
+        ]
+      },
+      {
+        "label": "extra-heading",
+        "row": 1,
+        "column": 35,
+        "decoded": "  FILES: showing 1 to 1 of 1, 3 KiB pending",
+        "sha256": "eb8871f2082263c8c8fa04c96ac7730f097629ef4e74df555dbb527984b04d22",
+        "accepted": [
+          true,
+          false,
+          false,
+          false
+        ]
+      },
+      {
+        "label": "extra-sync",
+        "row": 2,
+        "column": 36,
+        "decoded": "  VM files | saved when an app syncs pending",
+        "sha256": "42f958c1410f16fbb8c7313fbaf24b2a777c178e78424fd64dda2d7c88e74303",
+        "accepted": [
+          true,
+          false,
+          false,
+          false
+        ]
+      },
+      {
+        "label": "extra-entry",
+        "row": 5,
+        "column": 2,
+        "decoded": "  other.queue  1 KiB",
+        "sha256": "0b40591e5f54561ad3fbfe3a924094e919bf7753d7b1df4312bf9e496fa84eab",
+        "accepted": [
+          true,
+          false,
+          false,
+          false
+        ]
+      },
+      {
+        "label": "above-list",
+        "row": 3,
+        "column": 2,
+        "decoded": "  other.queue  1 KiB",
+        "sha256": "dae5e57c96c5379d4167e34adfc0d003eafd2819e5e726da3a0b0b6a5b3a14a7",
+        "accepted": [
+          true,
+          true,
+          false,
+          false
+        ]
+      },
+      {
+        "label": "beside-footer",
+        "row": 52,
+        "column": 10,
+        "decoded": "  Esc back  other.queue  1 KiB",
+        "sha256": "fd3dde1504a86a47c9db3f8bd842554554537ca6b6da2fec9654714124511a30",
+        "accepted": [
+          true,
+          true,
+          false,
+          false
+        ]
+      },
+      {
+        "label": "below-footer",
+        "row": 53,
+        "column": 2,
+        "decoded": "  other.queue  1 KiB",
+        "sha256": "b6a0fb3e5b8f38ac5193553da02f9fd3b97956eb28c483fef2dee671c9c340f1",
+        "accepted": [
+          true,
+          true,
+          false,
+          false
+        ]
+      },
+      {
+        "label": "leading-space",
+        "row": 4,
+        "column": 2,
+        "decoded": "   parrots.queue                                                                                                                                                                  3 KiB",
+        "sha256": "c52686b6bd334af67535decf4ba8a06897c2807059f50c7fb3f46e38be6245b2",
+        "accepted": [
+          true,
+          true,
+          true,
+          false
+        ]
+      },
+      {
+        "label": "misplaced-size",
+        "row": 4,
+        "column": 177,
+        "decoded": "  parrots.queue                                                                                                                                                                  3 KiB",
+        "sha256": "9a51f5c4ea3d5a0e0072eed4f1893864329ec6b06b82a0219c7e7c047af120d0",
+        "accepted": [
+          true,
+          true,
+          true,
+          false
+        ]
+      },
+      {
+        "label": "split-size",
+        "row": 4,
+        "column": 178,
+        "decoded": "  parrots.queue                                                                                                                                                                   3  KiB",
+        "sha256": "c0ecc6ee97b713933c488ea2cd2fb96adef3f6093327688f3929ab84a235fcaf",
+        "accepted": [
+          false,
+          true,
+          true,
+          false
+        ]
+      }
+    ]
+  },
+  "altered_frames_accepted_by_revision": [
+    10,
+    6,
+    3,
+    0
+  ],
+  "commands": [
+    "python3 -B examples/vm-store/check_queue.py KERNEL.ELF QUEUE.ELF OUT",
+    "python3 -B examples/vm-store/check_queue_files.py OUT/restore-files.ppm"
+  ]
+}
