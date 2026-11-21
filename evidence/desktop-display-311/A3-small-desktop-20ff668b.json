@@ -1,0 +1,231 @@
+{
+  "tested_commit": "20ff668b27a885cbc60be01c02484873f4d067ba",
+  "tested_tree": "31423ab5b6c133aef6a594358233fe7b16bb591d",
+  "iso_sha256": "88c042eb557b4955a0ee93659058a8c9d2dddfa2308933ed776d967f2f944c91",
+  "kernel_measurement": "92526e4c9611cbc70b16546489cf3125fdcc4bc350e658e7ad86c9d4c100681b",
+  "kernel_sha256": "a6391a0a03b4fea3fd19a318ec8587dbd3e98b67d8bc4c38918c71f67d637431",
+  "artifact_sources": {
+    "cd.zip": {
+      "sha256": "8a960bcafbd047faa03c4e1e56b21622f1c25c4251e192ec6070cc1af20d82af",
+      "url": "https://github.com/KirtusJ/pcp-os/actions/runs/44906589959/artifacts/14707959504"
+    },
+    "ci.zip": {
+      "sha256": "1915b7b8dc629bedff31b9035a9938ea13894e93eadddb4c6786c8b9b214325c",
+      "url": "https://github.com/KirtusJ/pcp-os/actions/runs/44906589959/artifacts/14707944651"
+    }
+  },
+  "observations": {
+    "320x200": {
+      "exit": 0,
+      "checks": 72,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "home_restored": true,
+      "settings_images": {
+        "selection-2": "00f6c163244ba8953a6f8348f502da512f55f1dcfc5d48d766a000fb35c0cde8",
+        "selection-3": "0c5931c74f596de943a3db03d6352c3344422ed7ca3a0739c7f76a95f61860e6",
+        "toggled-3": "0c5931c74f596de943a3db03d6352c3344422ed7ca3a0739c7f76a95f61860e6",
+        "selection-4": "0c5931c74f596de943a3db03d6352c3344422ed7ca3a0739c7f76a95f61860e6",
+        "toggled-4": "0c5931c74f596de943a3db03d6352c3344422ed7ca3a0739c7f76a95f61860e6"
+      },
+      "home_with_widgets": [
+        "??",
+        "???? PCP OS | DESKTOP",
+        "???",
+        "Verified at start: all 71 self",
+        "2 widget line(s) not shown",
+        "Programs",
+        "Enter open  F1 keys  F10 off"
+      ],
+      "settings_rows": [
+        "SETTINGS",
+        "They last for this session.",
+        "Programs at the foot of the de",
+        "(o)   A bar across the screen",
+        "( )   A dock in the middle",
+        "Up/Down choose    Enter set",
+        "[  ]  Recent activity"
+      ],
+      "power_text": [
+        "POWER OFF",
+        "Switch PCP OS off?",
+        "The register is closed and ver",
+        "not saved by a program are los",
+        "Enter switch off    Esc go bac"
+      ],
+      "keys": [
+        "KEYS ON THE DESKTOP",
+        "Left/Right        choose among",
+        "Enter             open what is",
+        "Space             open all the",
+        "Del               take the cho",
+        "F1                this list",
+        "Any key goes back settings: ho",
+        "F3                the files pr"
+      ],
+      "verification": [
+        "VERIFICATION",
+        "Verified at start: all 71 self",
+        "kernel 0.3.1 | x86-64",
+        "Register: 42 events, head dc82",
+        "The register's chain is intact",
+        "Any key goes back",
+        "F4 shows every event of the re"
+      ],
+      "register_heading": [
+        "THE KERNEL'S REGISTER: 42 even",
+        "seq  time                  act"
+      ],
+      "power_matches_hosted_frame": true
+    },
+    "640x480": {
+      "exit": 0,
+      "checks": 72,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "home_restored": true,
+      "settings_images": {
+        "selection-2": "cd294c4e11b8d04ef046439a89b22b4971f7d17a77ad17cc33e416ee4a13044a",
+        "selection-3": "9e8274494b60e247b68aff478074162c94652ffdfbac99ee2e2dcb33d5c5cf3e",
+        "toggled-3": "e56e22beb0db675424641bd14ac66ba928359167f4fb68343499cbf4c056dd31",
+        "selection-4": "3bfadea0bab9d934d7f5cf06cb4a55f0c1f451e9eb5c559903dd045bcfc1db34",
+        "toggled-4": "4e1eb5632fe55d26c4e547c7192c9ac082c8042a228493e393d1c4b196288f20"
+      },
+      "home_with_widgets": [
+        "??",
+        "???? PCP OS | DESKTOP",
+        "???",
+        "Verified at start: all 71 self-tests passed.",
+        "Programs",
+        "memory 234 MiB, 234 MiB free",
+        "Session files | cleared at power-off",
+        "Up/Down choose   Enter open   F1 keys   F10 off"
+      ],
+      "settings_rows": [
+        "SETTINGS",
+        "They last for this session.",
+        "Programs at the foot of the desktop",
+        "(o)   A bar across the screen",
+        "( )   A dock in the middle",
+        "Widgets on the desktop",
+        "[  ]  Recent activity",
+        "[on]  This machine",
+        "[on]  Session",
+        "Up/Down choose    Enter set    Esc back"
+      ],
+      "power_text": [
+        "POWER OFF",
+        "Switch PCP OS off?",
+        "The register is closed and verified first. Files of this sessi",
+        "not saved by a program are lost.",
+        "Enter switch off    Esc go back"
+      ],
+      "keys": [
+        "KEYS ON THE DESKTOP",
+        "Left/Right        choose among the programs at the foot of the",
+        "Enter             open what is chosen: all the programs, or a",
+        "Space             open all the programs",
+        "Del               take the chosen program out of the foot of t",
+        "F1                this list",
+        "F2                settings: how the desktop looks, and its wid",
+        "F3                the files programs have written",
+        "F4                the register",
+        "F5                verification, in full",
+        "F10               power off, after asking",
+        "Ctrl+Alt+Delete   stops a running program; no program can take",
+        "Any key goes back"
+      ],
+      "verification": [
+        "VERIFICATION",
+        "Verified at start: all 71 self-tests passed.",
+        "kernel 0.3.1 | x86-64",
+        "Register: 42 events, head cdc04e37a368a3c4...",
+        "The register's chain is intact.",
+        "F4 shows every event of the register.",
+        "Any key goes back"
+      ],
+      "register_heading": [
+        "THE KERNEL'S REGISTER: 42 events, chain intact, head cdc04e37a",
+        "seq  time                  actor     kind                 what"
+      ],
+      "power_matches_hosted_frame": true
+    },
+    "800x600": {
+      "exit": 0,
+      "checks": 72,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "home_restored": true,
+      "settings_images": {
+        "selection-2": "4fd46a2877ba51d5b3382154f679d480a521714cb9d7ce0c8a469f83fb808d4a",
+        "selection-3": "3932866141ae62a6edee7607547caad4f8319ac342b0e24849aefb03a3054a16",
+        "toggled-3": "fde9f9e455919e641f8d6a9ba5421d3468cfede70fe3632b5271927d172fb7c4",
+        "selection-4": "7270973d0b8525d25f1419ed3f2bc3014386d7c00b0f9e4abe5d898f79c5b798",
+        "toggled-4": "6ffaf4996856c0c5f9ba50cae21ad88952c7f81d218a78b6892519e0adf54646"
+      },
+      "home_with_widgets": [
+        "??",
+        "???? PCP OS | DESKTOP",
+        "???",
+        "Verified at start: all 71 self-tests passed.",
+        "Programs",
+        "memory 234 MiB, 234 MiB free",
+        "Session files | cleared at power-off",
+        "Up/Down choose   Enter open   F1 keys   F10 off"
+      ],
+      "settings_rows": [
+        "SETTINGS",
+        "They last for this session.",
+        "Programs at the foot of the desktop",
+        "(o)   A bar across the screen",
+        "( )   A dock in the middle",
+        "Widgets on the desktop",
+        "[  ]  Recent activity",
+        "[on]  This machine",
+        "[on]  Session",
+        "Up/Down choose    Enter set    Esc back"
+      ],
+      "power_text": [
+        "POWER OFF",
+        "Switch PCP OS off?",
+        "The register is closed and verified first. Files of this session that were",
+        "not saved by a program are lost.",
+        "Enter switch off    Esc go back"
+      ],
+      "keys": [
+        "KEYS ON THE DESKTOP",
+        "Left/Right        choose among the programs at the foot of the desktop",
+        "Enter             open what is chosen: all the programs, or a pinned program",
+        "Space             open all the programs",
+        "Del               take the chosen program out of the foot of the desktop",
+        "F1                this list",
+        "F2                settings: how the desktop looks, and its widgets",
+        "F3                the files programs have written",
+        "F4                the register",
+        "F5                verification, in full",
+        "F10               power off, after asking",
+        "Ctrl+Alt+Delete   stops a running program; no program can take that key",
+        "Any key goes back"
+      ],
+      "verification": [
+        "VERIFICATION",
+        "Verified at start: all 71 self-tests passed.",
+        "kernel 0.3.1 | x86-64",
+        "Register: 42 events, head 6041cff8bb7d9b7c...",
+        "The register's chain is intact.",
+        "F4 shows every event of the register.",
+        "Any key goes back"
+      ],
+      "register_heading": [
+        "THE KERNEL'S REGISTER: 42 events, chain intact, head 6041cff8bb7d9b7c21b0e3fff",
+        "seq  time                  actor     kind                 what"
+      ]
+    }
+  }
+}
