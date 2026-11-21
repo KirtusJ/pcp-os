@@ -1,0 +1,247 @@
+{
+  "source": "15917575b9e205e9042da2840492751945f32fff",
+  "reference_patch_blob": "2b22004fbe3bc87cdc98bc55eb32a78c701cd0c3",
+  "hosted_kernel": "c42a6e6f823b0a27606cfc83e0ab1760cf1f5d2f0a8527ed07bab0805fc22cfa",
+  "comparison_kernel": "9b615a18edce4f19336329741acf49edd7a5272b1265802cb182a87d30aad695",
+  "cases": [
+    {
+      "build": "published",
+      "mode": "320x200",
+      "place": "17/17",
+      "filename_bytes": 253,
+      "pages": 10,
+      "complete_directions": false,
+      "first_status": "Place 17/17 | name 1/10 <-..",
+      "last_status": "Place 17/17 | name 10/10 <..",
+      "counts": [
+        "",
+        "1 widget line(s) not shown",
+        "2 widget line(s) not shown"
+      ],
+      "normal_exit": true,
+      "guest_failed_checks": 1
+    },
+    {
+      "build": "published",
+      "mode": "432x200",
+      "place": "3/3",
+      "filename_bytes": 64,
+      "pages": 2,
+      "complete_directions": true,
+      "first_status": "Place 3/3 | name 1/2 <- ->",
+      "last_status": "Place 3/3 | name 2/2 <- ->",
+      "counts": [
+        "",
+        "1 widget line(s) not shown",
+        "2 widget line(s) not shown"
+      ],
+      "normal_exit": true,
+      "guest_failed_checks": 0
+    },
+    {
+      "build": "published",
+      "mode": "440x200",
+      "place": "3/3",
+      "filename_bytes": 64,
+      "pages": 2,
+      "complete_directions": false,
+      "first_status": "Places 3 to 3 of 3 | name part 1 of 2:..",
+      "last_status": "Places 3 to 3 of 3 | name part 2 of 2:..",
+      "counts": [
+        "",
+        "1 widget line(s) not shown",
+        "2 widget line(s) not shown"
+      ],
+      "normal_exit": true,
+      "guest_failed_checks": 0
+    },
+    {
+      "build": "published",
+      "mode": "480x200",
+      "place": "17/17",
+      "filename_bytes": 64,
+      "pages": 2,
+      "complete_directions": false,
+      "first_status": "Places 17 to 17 of 17 | name part 1 of 2: ..",
+      "last_status": "Places 17 to 17 of 17 | name part 2 of 2: ..",
+      "counts": [
+        "",
+        "1 widget line(s) not shown",
+        "2 widget line(s) not shown"
+      ],
+      "normal_exit": true,
+      "guest_failed_checks": 0
+    },
+    {
+      "build": "published",
+      "mode": "528x200",
+      "place": "3/3",
+      "filename_bytes": 64,
+      "pages": 2,
+      "complete_directions": false,
+      "first_status": "Places 3 to 3 of 3 | name part 1 of 2: Left/Ri..",
+      "last_status": "Places 3 to 3 of 3 | name part 2 of 2: Left/Ri..",
+      "counts": [
+        "",
+        "1 widget line(s) not shown",
+        "2 widget line(s) not shown"
+      ],
+      "normal_exit": true,
+      "guest_failed_checks": 0
+    },
+    {
+      "build": "published",
+      "mode": "536x200",
+      "place": "3/3",
+      "filename_bytes": 64,
+      "pages": 2,
+      "complete_directions": true,
+      "first_status": "Places 3 to 3 of 3 | name part 1 of 2: Left/Right",
+      "last_status": "Places 3 to 3 of 3 | name part 2 of 2: Left/Right",
+      "counts": [
+        "",
+        "1 widget line(s) not shown",
+        "2 widget line(s) not shown"
+      ],
+      "normal_exit": true,
+      "guest_failed_checks": 0
+    },
+    {
+      "build": "published",
+      "mode": "552x200",
+      "place": "17/17",
+      "filename_bytes": 64,
+      "pages": 2,
+      "complete_directions": false,
+      "first_status": "Places 17 to 17 of 17 | name part 1 of 2: Left/Ri..",
+      "last_status": "Places 17 to 17 of 17 | name part 2 of 2: Left/Ri..",
+      "counts": [
+        "",
+        "1 widget line(s) not shown",
+        "2 widget line(s) not shown"
+      ],
+      "normal_exit": true,
+      "guest_failed_checks": 0
+    },
+    {
+      "build": "published",
+      "mode": "560x200",
+      "place": "17/17",
+      "filename_bytes": 64,
+      "pages": 2,
+      "complete_directions": true,
+      "first_status": "Places 17 to 17 of 17 | name part 1 of 2: Left/Right",
+      "last_status": "Places 17 to 17 of 17 | name part 2 of 2: Left/Right",
+      "counts": [
+        "",
+        "1 widget line(s) not shown",
+        "2 widget line(s) not shown"
+      ],
+      "normal_exit": true,
+      "guest_failed_checks": 0
+    },
+    {
+      "build": "published",
+      "mode": "640x200",
+      "place": "17/17",
+      "filename_bytes": 64,
+      "pages": 2,
+      "complete_directions": true,
+      "first_status": "Places 17 to 17 of 17 | name part 1 of 2: Left/Right",
+      "last_status": "Places 17 to 17 of 17 | name part 2 of 2: Left/Right",
+      "counts": [
+        "",
+        "1 widget line(s) not shown",
+        "2 widget line(s) not shown"
+      ],
+      "normal_exit": true,
+      "guest_failed_checks": 0
+    },
+    {
+      "build": "published",
+      "mode": "640x200",
+      "place": "3/3",
+      "filename_bytes": 64,
+      "pages": 2,
+      "complete_directions": true,
+      "first_status": "Places 3 to 3 of 3 | name part 1 of 2: Left/Right",
+      "last_status": "Places 3 to 3 of 3 | name part 2 of 2: Left/Right",
+      "counts": [
+        "",
+        "1 widget line(s) not shown",
+        "2 widget line(s) not shown"
+      ],
+      "normal_exit": true,
+      "guest_failed_checks": 0
+    },
+    {
+      "build": "reference",
+      "mode": "320x200",
+      "place": "17/17",
+      "filename_bytes": 252,
+      "pages": 9,
+      "complete_directions": true,
+      "first_status": "Place 17/17 | name 1/9 <- ->",
+      "last_status": "Place 17/17 | name 9/9 <- ->",
+      "counts": [
+        "",
+        "1 widget line(s) not shown",
+        "2 widget line(s) not shown"
+      ],
+      "normal_exit": true,
+      "guest_failed_checks": 1
+    },
+    {
+      "build": "reference",
+      "mode": "320x200",
+      "place": "17/17",
+      "filename_bytes": 253,
+      "pages": 10,
+      "complete_directions": true,
+      "first_status": "Place 17/17|name 1/10 <- ->",
+      "last_status": "Place 17/17|name 10/10 <- ->",
+      "counts": [
+        "",
+        "1 widget line(s) not shown",
+        "2 widget line(s) not shown"
+      ],
+      "normal_exit": true,
+      "guest_failed_checks": 1
+    },
+    {
+      "build": "reference",
+      "mode": "320x200",
+      "place": "17/17",
+      "filename_bytes": 255,
+      "pages": 10,
+      "complete_directions": true,
+      "first_status": "Place 17/17|name 1/10 <- ->",
+      "last_status": "Place 17/17|name 10/10 <- ->",
+      "counts": [
+        "",
+        "1 widget line(s) not shown",
+        "2 widget line(s) not shown"
+      ],
+      "normal_exit": true,
+      "guest_failed_checks": 1
+    },
+    {
+      "build": "reference",
+      "mode": "440x200",
+      "place": "3/3",
+      "filename_bytes": 64,
+      "pages": 2,
+      "complete_directions": false,
+      "first_status": "Places 3 to 3 of 3 | name part 1 of 2:..",
+      "last_status": "Places 3 to 3 of 3 | name part 2 of 2:..",
+      "counts": [
+        "",
+        "1 widget line(s) not shown",
+        "2 widget line(s) not shown"
+      ],
+      "normal_exit": true,
+      "guest_failed_checks": 0
+    }
+  ],
+  "scope": "QEMU emulated compact Home, 200 pixels high, English labels and the specified widths. The reference build is a local comparison; it is not a nominated head."
+}
