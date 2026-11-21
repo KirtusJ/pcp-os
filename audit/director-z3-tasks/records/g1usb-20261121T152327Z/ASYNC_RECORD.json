@@ -1,0 +1,32 @@
+{
+ "tool": "async_run.py",
+ "plan": "plan.json",
+ "plan_sha256": "3943d2b73899f27c99d7c4f3144abf941d9879d6ba2cf9e1010d3ddca9328a63",
+ "width": 1,
+ "tasks": [
+  {
+   "id": "T",
+   "argv": [
+    "bash",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/job_g1.sh"
+   ],
+   "exit": 0,
+   "expect_exit": 0,
+   "timed_out": false,
+   "seconds": 61.5,
+   "ended_as_expected": true,
+   "copied_in": [],
+   "files": {
+    "STDERR.txt": {
+     "sha256": "3b1ab120f35a3a132b9934957d6609590d339b335883b1c827df934de55c53c9",
+     "bytes": 2178
+    },
+    "STDOUT.txt": {
+     "sha256": "8611b3aab3f164f1486bd4ee4ec4b5690045d15e4fc88c0708b71a6e672350a3",
+     "bytes": 132
+    }
+   }
+  }
+ ],
+ "all_ended_as_expected": true
+}

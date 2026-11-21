@@ -1,0 +1,42 @@
+xorriso 1.5.6 : RockRidge filesystem manipulator, libburnia project.
+
+Copying of file objects from ISO image to disk filesystem is: Enabled
+xorriso : NOTE : Loading ISO image tree from LBA 0
+xorriso : UPDATE :      12 nodes read in 1 seconds
+xorriso : NOTE : Detected El-Torito boot information which currently is set to be discarded
+Drive current: -indev '/home/user/pcp/PCP-OS.iso'
+Media current: stdio file, overwriteable
+Media status : is written , is appendable
+Boot record  : El Torito
+Media summary: 1 session, 908 data blocks, 1816k data, 26.8g free
+Volume id    : 'PCP_OS'
+xorriso : UPDATE :       1 files restored ( 65304b) in 1 seconds = 0.0xD
+Extracted from ISO image: file '/surf.elf'='/tmp/tmpt36scmez/surf.elf'
+xorriso 1.5.6 : RockRidge filesystem manipulator, libburnia project.
+
+Copying of file objects from ISO image to disk filesystem is: Enabled
+xorriso : NOTE : Loading ISO image tree from LBA 0
+xorriso : UPDATE :      12 nodes read in 1 seconds
+xorriso : NOTE : Detected El-Torito boot information which currently is set to be discarded
+Drive current: -indev '/home/user/pcp/PCP-OS.iso'
+Media current: stdio file, overwriteable
+Media status : is written , is appendable
+Boot record  : El Torito
+Media summary: 1 session, 908 data blocks, 1816k data, 26.8g free
+Volume id    : 'PCP_OS'
+xorriso : UPDATE :       1 files restored ( 108.4k) in 1 seconds = 0.1xD
+Extracted from ISO image: file '/clip.ppm'='/tmp/tmpt36scmez/clip.ppm'
+xorriso 1.5.6 : RockRidge filesystem manipulator, libburnia project.
+
+Copying of file objects from ISO image to disk filesystem is: Enabled
+xorriso : NOTE : Loading ISO image tree from LBA 0
+xorriso : UPDATE :      12 nodes read in 1 seconds
+xorriso : NOTE : Detected El-Torito boot information which currently is set to be discarded
+Drive current: -indev '/home/user/pcp/PCP-OS.iso'
+Media current: stdio file, overwriteable
+Media status : is written , is appendable
+Boot record  : El Torito
+Media summary: 1 session, 908 data blocks, 1816k data, 26.8g free
+Volume id    : 'PCP_OS'
+xorriso : UPDATE :       1 files restored ( 600.0k) in 1 seconds = 0.4xD
+Extracted from ISO image: file '/clip.wav'='/tmp/tmpt36scmez/clip.wav'
