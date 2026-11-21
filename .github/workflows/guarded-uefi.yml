@@ -1,0 +1,47 @@
+name: Guarded UEFI kernel experiment
+on:
+  pull_request:
+    paths:
+      - 'PCP_OS_Rust/crates/pcpos-kernel/**'
+      - 'examples/guarded-uefi/**'
+      - '.github/workflows/guarded-uefi.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  firmware:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      OMP_THREAD_LIMIT: '1'
+      PCPOS_KERNEL_FEATURES: uefi-demo-heap
+      RUSTUP_TOOLCHAIN: 1.100.0
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: KirtusJ/pcp
+          ref: b15e346cd9cdae483ebe1dad477e189bfa25464a
+          path: distribution
+          persist-credentials: false
+      - name: Install firmware, boot tools and compiler
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends lld ovmf qemu-system-x86 grub-common grub-efi-amd64-bin xorriso mtools dosfstools tesseract-ocr
+          rustup toolchain install 1.100.0 --profile minimal --component rust-src
+      - name: Check the frame selector and build the demo kernel
+        run: |
+          rustc --edition=2021 --test examples/guarded-uefi/test_frame_map.rs -o "$RUNNER_TEMP/frame-map-tests"
+          "$RUNNER_TEMP/frame-map-tests"
+          bash PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+      - name: Check the released ELF and guard the experimental handoff
+        run: python3 examples/guarded-uefi/trial.py distribution PCP_OS_Rust/crates/pcpos-kernel "$RUNNER_TEMP/guarded-uefi"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: guarded-uefi-boot
+          path: ${{ runner.temp }}/guarded-uefi
+          if-no-files-found: warn
+          retention-days: 14
