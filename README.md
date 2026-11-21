@@ -80,7 +80,7 @@ cd PCP_OS_Rust
 cargo run --locked --release --bin pcpos -- instrument list
 ```
 
-For build targets, tests, register verification and the kernel's QEMU requirements, see the [Rust workspace README](PCP_OS_Rust/README.md). The host is built and tested on Linux, macOS and Windows on every change; on Windows one file check is weaker on ReFS volumes than on NTFS. [Platform status](PCP_OS_Rust/README.md#host-platforms) Rust is the reference implementation for host security and built-in instruments. [Rust primacy policy](RUST_PRIMACY.md)
+For build targets, tests, register verification and the kernel's QEMU requirements, see the [Rust workspace README](PCP_OS_Rust/README.md). The host is built and tested on Linux, macOS and Windows for changes to the Rust workspace or its host workflow; on Windows one file check is weaker on ReFS volumes than on NTFS. [Platform status](PCP_OS_Rust/README.md#host-platforms) Rust is the reference implementation for host security and built-in instruments. [Rust primacy policy](RUST_PRIMACY.md)
 
 ## Repository guide
 
