@@ -34,12 +34,18 @@ Predicates, fixed before the first run.
 
  H8 the serial record and visible skipped-test paragraph agree with the fixture. The compact stopped
     screen may omit that paragraph for space. If it is shown, the complete reason must agree.
+ H9 every stopped screen is whole sentences of the kernel's and nothing else: the title, then at most one
+    each of the verdict, the skipped-tests paragraph, a keyboard reason and "Nothing is running and nothing
+    more will be written.", in that order, then what the person must do. A part of a sentence is refused
+    (Director 2 found that H8 took a paragraph cut to "Not", "Not ru", "the six tests that press" or "there
+    is no keyboard" on a small screen for one left out). Proved on made-up rows before any guest is started.
 
 Usage: check_stopped_screen.py <default kernel.elf32> <no-key-replay-demo kernel.elf32> <new evidence folder>
                                [--busy <kernel.elf32>] [--silent <kernel.elf32>]
 """
 import argparse
 import json
+import re
 from pathlib import Path
 import runpy
 import socket
@@ -76,8 +82,21 @@ SIX_KEYS = "the six tests that press keys, because "
 WHY = SIX_KEYS + NO_REPLAY + "."
 
 
+NOTHING = "Nothing is running and nothing more will be written."
+
+
 def text_of(rows):
     return " ".join(" ".join(rows).split())
+
+
+def whole_problems(rows):
+    """H9: the screen is whole sentences the kernel has, in the kernel's order, and nothing else."""
+    one_of = lambda texts: "(?:%s)" % "|".join(re.escape(text) for text in texts)
+    verdict = r"(?:Verified: all \d+ self-tests it ran passed\.|NOT VERIFIED: \d+ of \d+ self-tests failed\.)"
+    skipped = re.escape("Not run: " + SIX_KEYS) + one_of(reason for reason in KEYBOARD_FOR_SKIP if reason) + r"\."
+    reason = one_of(reason for reason in REASONS.values() if reason)
+    whole = "%s(?: %s)?(?: %s)?(?: %s)?(?: %s)? %s" % (re.escape(STOPPED), verdict, skipped, reason, re.escape(NOTHING), re.escape(POWER))
+    return [] if re.fullmatch(whole, text_of(rows)) else ["the screen is not whole sentences of the kernel's in their order"]
 
 
 def skip_problems(serial, rows, expected, *, f5=False, compact=False):
@@ -90,6 +109,8 @@ def skip_problems(serial, rows, expected, *, f5=False, compact=False):
     if reasons != ([expected] if expected is not None else []):
         return ["serial skipped-test records %r disagree with the fixture %r" % (reasons, expected)]
     text = text_of(rows)
+    if not f5 and whole_problems(rows):
+        return whole_problems(rows)
     heading = "Not run at start:" if f5 else "Not run:"
     # A smaller stopped screen can sacrifice the entire skipped-tests paragraph. A visible one must
     # still be complete. F5 and roomier stopped screens carry it whenever the serial record does.
@@ -129,7 +150,7 @@ def stopped_problems(rows, keyboard, passed=None, outcome=None):
                 problems.append("the keyboard reasons shown are %r; this boot's serial log calls for %r" % (shown, wanted))
     if any("?" in row for row in rows):
         problems.append("a cell is no character of the kernel's font")
-    return problems
+    return problems + whole_problems(rows)
 
 
 class Guest:
@@ -225,6 +246,18 @@ def main():
         if bool(stopped_problems(rows, keyboard, 66, outcome)) != must_refuse:
             problems.append("control: %s was %s" % (what, "accepted" if must_refuse else "refused"))
     results["reason_controls"] = sorted(controls)
+    # The controls for H9, on made-up rows: a small screen with one row to spare and part of the paragraph in it.
+    record = "keyboard: no controller\n" + SKIP_RECORD + NO_CONTROLLER + "\n"
+    paragraph = "Not run: " + SIX_KEYS + NO_CONTROLLER + "."
+    parts = {"nothing": (None, False), "the whole paragraph": (paragraph, False)}
+    parts.update({cut: (cut, True) for cut in ("Not", "Not ru", "Not r", "Not run:", "the six tests that press", "there is no keyboard", paragraph[:-1])})
+    for what, (extra, must_refuse) in parts.items():
+        rows = good[:2] + (["  " + extra] if extra else []) + good[2:]
+        refused = bool(skip_problems(record, rows, NO_CONTROLLER, compact=True)) and bool(stopped_problems(rows, False, 66, "no controller"))
+        accepted = not skip_problems(record, rows, NO_CONTROLLER, compact=True) and not stopped_problems(rows, False, 66, "no controller")
+        if not (refused if must_refuse else accepted):
+            problems.append("control: a small screen with %s of the skipped-tests paragraph was %s" % (what, "accepted" if must_refuse else "refused"))
+    results["paragraph_controls"] = sorted(parts)
 
     def trial(name, kernel, mode, machine, steps, expected_skip=None):
         guest = None

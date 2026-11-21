@@ -16,6 +16,10 @@ STOP = runpy.run_path(str(Path(__file__).with_name("check_stopped_screen.py")))
 # Within each group every boot reports 66 passes, but each has a different keyboard outcome.
 GROUPS = (("nokbd-320", "busy-320", "silent-320"), ("noreplay-800", "busy-800", "silent-800"))
 OTHER = ("nokbd-1080", "kbd-800")
+# What each boot's fixture says of the tests that press keys (H8), by the start of its folder's name.
+SKIPPED = {"nokbd": STOP["NO_CONTROLLER"], "busy": STOP["SETUP_REFUSED"], "silent": STOP["NO_ACK"],
+           "noreplay": STOP["NO_REPLAY"], "kbd": None}
+CUTS = ("Not", "Not ru", "Not r", "the six tests that press", "there is no keyboard")
 
 
 class CapturedBoot(STOP["Guest"]):
@@ -32,6 +36,33 @@ class CapturedBoot(STOP["Guest"]):
     def problems(self, rows):
         return STOP["stopped_problems"](rows, self.keyboard_outcome != "no controller",
                                         self.passes, self.keyboard_outcome)
+
+    def skipped(self, rows):
+        """H8 and H9 alone, with this boot's own serial record."""
+        name = self.out.name
+        return STOP["skip_problems"](self.serial.read_text(), rows, SKIPPED[name.split("-")[0]], compact=name.endswith("-320"))
+
+
+def rows_changed(boot, start, end, glyphs, words=None):
+    """Clear the text rows from `start` to `end`; then, if given, draw `words` on the first of them in the
+    kernel's own font, in the colours of the frame's title."""
+    magic, dimensions, depth, pixels = boot.frame.split(b"\n", 3)
+    width = int(dimensions.split()[0])
+    stride, changed = width * 3, bytearray(pixels)
+    for offset in range(start * 20 * stride, end * 20 * stride, stride):
+        changed[offset:offset + stride] = pixels[offset:offset + 3] * width
+    if words:
+        title = next(i for i, row in enumerate(boot.rows) if row.strip())
+        cell = [pixels[at:at + 3] for y in range(20) for x in range(10) for at in (((title * 20 + y) * width + 20 + x) * 3,)]
+        ground = max(set(cell), key=cell.count)
+        ink = next(pixel for pixel in cell if pixel != ground)
+        shapes = {character: shape for shape, character in glyphs.items()}
+        for column, character in enumerate(words, 2):
+            for at, lit in enumerate(shapes[character]):
+                if lit:
+                    offset = ((start * 20 + at // 10) * width + column * 10 + at % 10) * 3
+                    changed[offset:offset + 3] = ink
+    return b"\n".join((magic, dimensions, depth, changed))
 
 
 def reason_rows(rows, reason):
@@ -93,6 +124,37 @@ def main():
     for name, boot in boots.items():
         check("original", name, name, boot.frame, boot.rows, False)
 
+    def check_paragraph(case, name, frame, wanted, adverse):
+        """`wanted` is what the edited frame must read as, so that the edit is known to be the one meant."""
+        boot = boots[name]
+        rows = STOP["PINS"]["read"](frame, glyphs)
+        if STOP["text_of"](rows) != wanted:
+            raise ValueError(f"{name}: {case} did not make the frame meant: {STOP['text_of'](rows)!r}")
+        found = boot.skipped(rows)
+        checks.append({"case": case, "serial_from": name, "frame_from": name,
+                       "frame_sha256": hashlib.sha256(frame).hexdigest(), "problems": found})
+        if bool(found) != adverse:
+            failures.append(f"{case}: {name}: {found}")
+
+    for name, boot in boots.items():
+        check_paragraph("original, skipped tests", name, boot.frame, STOP["text_of"](boot.rows), False)
+    # A small screen that shows part of the skipped-tests paragraph where its keyboard reason was.
+    for name in GROUPS[0]:
+        boot = boots[name]
+        start, end = reason_rows(boot.rows, boot.reason)
+        before, after = (STOP["text_of"](part) for part in (boot.rows[:start], boot.rows[end:]))
+        for cut in CUTS:
+            check_paragraph("part of the paragraph: " + cut, name, rows_changed(boot, start, end, glyphs, cut),
+                            " ".join((before, cut, after)), True)
+    # The roomy screen that shows the paragraph on two rows, with either row or both cleared.
+    boot = boots["noreplay-800"]
+    start, end = reason_rows(boot.rows, "Not run: " + STOP["WHY"])
+    if end - start != 2:
+        raise ValueError("the paragraph is not on two rows at 800 by 600")
+    for case, first, last in (("first row", start, start + 1), ("second row", start + 1, end), ("both rows", start, end)):
+        wanted = STOP["text_of"](boot.rows[:first] + boot.rows[last:])
+        check_paragraph("paragraph cleared: " + case, "noreplay-800", rows_changed(boot, first, last, glyphs), wanted, True)
+
     for group in GROUPS:
         peers = [boots[name] for name in group]
         if (len({boot.passes for boot in peers}) != 1 or len({boot.keyboard_outcome for boot in peers}) != len(group)
@@ -132,7 +194,7 @@ def main():
     (args.evidence / "capture-controls.json").write_text(json.dumps(report, indent=2) + "\n")
     if failures:
         raise SystemExit("\n".join(failures))
-    print(f"stopped captures: {len(boots)} originals accepted; {len(checks) - len(boots)} adverse pairs or edits rejected")
+    print(f"stopped captures: {2 * len(boots)} readings of {len(boots)} originals accepted; {len(checks) - 2 * len(boots)} adverse pairs or edits rejected")
 
 
 if __name__ == "__main__":
