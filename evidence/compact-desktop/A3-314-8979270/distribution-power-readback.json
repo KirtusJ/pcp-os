@@ -1,0 +1,50 @@
+{
+  "checker_commit": "2abeead177d616582db7029561df2e10c95381eb",
+  "os_commit": "89792700243ad5dd4efde3091993984845087e2c",
+  "source": "audit/public-live-cd/desktop_screens.py",
+  "checker_sha256": "d7f91215c7242510eb084b643df7c85f3c1d3678b4cc1210e7d6fb7ef0c5f16f",
+  "cases": {
+    "320x200": {
+      "accepted": false,
+      "screen_sha256": "13c56f3502880db4b2fad32a5d662eec4f44fdf3da2801f18206996c3cb87432",
+      "warning_complete": false,
+      "recorded_words": "POWER OFF Switch PCP OS off? The register is closed and ver not saved by a program are los Enter switch off    Esc go bac"
+    },
+    "320x220": {
+      "accepted": false,
+      "screen_sha256": "ba1353ec20ae1d8f99bafa4c5ad16e4c9b2ae9bfcae50ec133bbc78325fdf20a",
+      "warning_complete": false,
+      "recorded_words": "POWER OFF Switch PCP OS off? The register is closed and ver not saved by a program are los Enter switch off    Esc go bac"
+    },
+    "320x240": {
+      "accepted": false,
+      "screen_sha256": "636b04415a94f44a25dd927644cfda0987614a1487c9a80e355d8b2a5d580660",
+      "warning_complete": false,
+      "recorded_words": "POWER OFF Switch PCP OS off? The register is closed and ver not saved by a program are los Enter switch off    Esc go bac"
+    },
+    "320x260": {
+      "accepted": false,
+      "screen_sha256": "42ba8ec3c5d39dacb2ae6a99b418be98f6d3edeb2e567f360b7fa4c0bf9e7283",
+      "warning_complete": false,
+      "recorded_words": "POWER OFF Switch PCP OS off? The register is closed and ver not saved by a program are los Enter switch off    Esc go bac"
+    },
+    "320x280": {
+      "accepted": false,
+      "screen_sha256": "37e92df9400470cc0cc9f578a5f1b4baa0385289b851db1f8879499f14f9a9b5",
+      "warning_complete": false,
+      "recorded_words": "POWER OFF Switch PCP OS off? The register is closed and ver not saved by a program are los Enter switch off    Esc go bac"
+    },
+    "640x480": {
+      "accepted": true,
+      "screen_sha256": "cbb5d3ac2b6eb46c9f9cf922edbd6fbf2d6c856a13f20e40d8eb7b81f9b8f960",
+      "warning_complete": false,
+      "recorded_words": "POWER OFF Switch PCP OS off? The register is closed and verified first. Files of this sessi not saved by a program are lost. Enter switch off    Esc go back"
+    },
+    "800x600": {
+      "accepted": true,
+      "screen_sha256": "d8644632a11cc35c7733d7cdd65b1bba196eec080042c4f7ba597a19e4f91eca",
+      "warning_complete": true,
+      "recorded_words": "POWER OFF Switch PCP OS off? The register is closed and verified first. Files of this session that were not saved by a program are lost. Enter switch off    Esc go back"
+    }
+  }
+}
