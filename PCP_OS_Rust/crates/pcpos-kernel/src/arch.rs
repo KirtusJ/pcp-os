@@ -1635,23 +1635,32 @@ impl Space {
         }
     }
 
-    /// Give the program one page of mapped device memory: readable and writable, never executable. The
-    /// space does not own it and does not return it to the pool.
-    pub fn map_device(&mut self, addr: usize, phys: usize) -> bool {
-        if addr % 4096 != 0 || phys % 4096 != 0 || !in_device(phys) {
+    /// Give the program whole pages of mapped device memory, one after another from `addr`: readable and
+    /// writable, never executable. Every byte of every page must be memory of one device that the kernel
+    /// itself may write, and every page of the program's must be free; if not, nothing is mapped. The
+    /// space does not own the pages and does not return them to the pool.
+    pub fn map_device(&mut self, addr: usize, phys: usize, pages: usize) -> bool {
+        let count = DEVICES.with(|d| d.1);
+        let granted = DEVICE_BYTES.with(|b| b[..count].iter().any(|&bytes| framebuffer::grant(bytes, phys, pages)));
+        if addr % 4096 != 0 || !granted {
             return false;
         }
-        match self.slot(addr, true) {
-            // Safety: as `map`.
-            Some(e) => unsafe {
-                if *e & P != 0 {
-                    return false;
-                }
-                *e = phys as u64 | P | U | W | NX | NOT_OWNED;
-                true
-            },
-            None => false,
+        // First every slot is found, which makes any tables it needs, and seen to be free.
+        for n in 0..pages {
+            match self.slot(addr + n * 4096, true) {
+                // Safety: the slot is a leaf entry of this space's own tables.
+                Some(e) if unsafe { *e } & P == 0 => {}
+                _ => return false,
+            }
         }
+        for n in 0..pages {
+            match self.slot(addr + n * 4096, true) {
+                // Safety: as above; the pass before found this slot and found it free.
+                Some(e) => unsafe { *e = (phys + n * 4096) as u64 | P | U | W | NX | NOT_OWNED },
+                None => return false,
+            }
+        }
+        true
     }
 
     /// Take a page away from the program. Returns the frame if the space owned it, for the caller to give back to the pool.

@@ -5,7 +5,7 @@
 //! map and the bytes that may be written, or with the reason for refusing.
 //!
 //! The rules (directors' check-in, 21 November 2026; boundaries set by B3 from measured boots):
-//! - 32 bits a pixel, a pitch that holds the width, a size that does not wrap, all of it at or above one
+//! - 32 bits a pixel, a pitch that holds the width and is a multiple of four, a size that does not wrap, all of it at or above one
 //!   mebibyte and below four gibibytes, which is as far as the kernel's tables reach.
 //! - No page of it may touch a range the kernel uses: its image, the loader's files, the frame memory.
 //! - No page of it may be memory the loader's map calls usable.
@@ -74,6 +74,10 @@ pub fn decide(address: u64, pitch: u32, width: u32, height: u32, bits: u8, map: 
     if (pitch as u64) < width as u64 * 4 {
         return Err("its pitch is shorter than its width");
     }
+    // Every row is written as 32-bit words, so every row must begin on one.
+    if pitch % 4 != 0 {
+        return Err("its pitch is not a multiple of four");
+    }
     let length = pitch as u64 * height as u64;
     let end = match address.checked_add(length) {
         Some(end) => end,
@@ -133,4 +137,15 @@ pub fn decide(address: u64, pitch: u32, width: u32, height: u32, bits: u8, map: 
         }
     }
     Ok(Window { pages: (first as usize, last as usize), bytes: (address as usize, end as usize) })
+}
+
+/// Whether a program may be given `pages` whole pages of a device beginning at `phys`, when `bytes` is
+/// the [start, end) the kernel may write there. Every byte of every page must be inside it: a picture
+/// that ends partway through a page does not make the rest of that page the program's.
+pub fn grant(bytes: (usize, usize), phys: usize, pages: usize) -> bool {
+    let end = match pages.checked_mul(PAGE as usize).and_then(|n| phys.checked_add(n)) {
+        Some(end) => end,
+        None => return false,
+    };
+    pages != 0 && phys % PAGE as usize == 0 && phys >= bytes.0 && end <= bytes.1
 }

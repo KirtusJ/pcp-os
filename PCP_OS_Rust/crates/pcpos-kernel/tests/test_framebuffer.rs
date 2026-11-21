@@ -2,7 +2,7 @@
 //!   rustc --edition=2021 --test tests/test_framebuffer.rs -o /tmp/test-framebuffer && /tmp/test-framebuffer
 #[path = "../src/arch/framebuffer.rs"]
 mod framebuffer;
-use framebuffer::{decide, Window};
+use framebuffer::{decide, grant, Window};
 
 fn entry(base: u64, length: u64, kind: u32) -> Vec<u8> {
     let mut e = Vec::new();
@@ -79,6 +79,7 @@ fn malformed_descriptions_are_refused() {
     let ok = |a, p, w, h, b| decide(a, p, w, h, b, Some(&m), None, &KERNEL);
     assert_eq!(ok(0x8000_0000, 5120, 1280, 800, 24), Err("it is not 32 bits a pixel"));
     assert_eq!(ok(0x8000_0000, 5116, 1280, 800, 32), Err("its pitch is shorter than its width"));
+    assert_eq!(ok(0x8000_0000, 5122, 1280, 800, 32), Err("its pitch is not a multiple of four"));
     assert_eq!(ok(0x8000_0000, 1200, 300, 200, 32), Err("it is smaller than 320 by 200"));
     assert_eq!(ok(0x8000_0002, 5120, 1280, 800, 32), Err("its address is not a multiple of four"));
     assert_eq!(ok(0x000a_0000, 1280, 320, 200, 32), Err("it lies in the first mebibyte"));
@@ -112,4 +113,30 @@ fn without_a_map_only_memory_above_what_was_reported_is_accepted() {
     // With neither a map nor a size, the old floor of one gibibyte stands.
     assert!(decide(0x4000_0000, 3200, 800, 600, 32, None, None, &KERNEL).is_ok());
     assert!(decide(0x3000_0000, 3200, 800, 600, 32, None, None, &KERNEL).is_err());
+}
+
+#[test]
+fn a_program_is_granted_only_pages_that_lie_wholly_inside_the_picture() {
+    // The measured RAMFB picture at 128 MiB: 800 by 600, 1,920,000 bytes from 0x6ab2000, which is 468
+    // whole pages and three quarters of another.
+    let bytes = (0x06ab_2000, 0x06ab_2000 + 1_920_000);
+    assert!(grant(bytes, bytes.0, 468));
+    assert!(grant(bytes, bytes.0, 1));
+    assert!(grant(bytes, bytes.0 + 467 * 4096, 1));
+    // The page the picture ends in, alone or as the last of a request, is not granted.
+    assert!(!grant(bytes, bytes.0, 469));
+    assert!(!grant(bytes, bytes.0 + 468 * 4096, 1));
+    // Nor is the page before it, anything unaligned, nothing at all, or a size that wraps.
+    assert!(!grant(bytes, bytes.0 - 4096, 1));
+    assert!(!grant(bytes, bytes.0 + 4, 1));
+    assert!(!grant(bytes, bytes.0, 0));
+    assert!(!grant(bytes, bytes.0, usize::MAX / 4096 + 1));
+    assert!(!grant(bytes, usize::MAX & !4095, 2));
+    // A picture that does not begin on a page: the page it begins in is not granted, the next whole one is.
+    let odd = (0x8000_0100, 0x8000_0100 + 3 * 4096);
+    assert!(!grant(odd, 0x8000_0000, 1));
+    assert!(grant(odd, 0x8000_1000, 2));
+    assert!(!grant(odd, 0x8000_1000, 3));
+    // A picture that fills whole pages is granted whole.
+    assert!(grant((0x8000_0000, 0x8000_0000 + 4_096_000), 0x8000_0000, 1000));
 }
