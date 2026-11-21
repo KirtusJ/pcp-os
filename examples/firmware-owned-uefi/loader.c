@@ -71,10 +71,14 @@ static void allocation_refusal(EFI_SYSTEM_TABLE *system) {
         !EFI_ERROR(uefi_call_wrapper(in->Reset, 2, in, FALSE))) {
         BOOLEAN redraw = TRUE;
         for (;;) {
-            if (redraw && EFI_ERROR(refusal_message(out, confirm
-                    ? L"Switch off? Enter switches off. Esc cancels.\r\n"
-                    : L"Press F10 to request power off.\r\n"))) break;
-            redraw = FALSE;
+            if (redraw) {
+                if (EFI_ERROR(refusal_message(out, confirm
+                        ? L"Switch off? Enter switches off. Esc cancels.\r\n"
+                        : L"Press F10 to request power off.\r\n"))) break;
+                /* Discard input queued before the question was visible. */
+                if (confirm && EFI_ERROR(uefi_call_wrapper(in->Reset, 2, in, FALSE))) break;
+                redraw = FALSE;
+            }
             UINTN index;
             EFI_INPUT_KEY key;
             if (EFI_ERROR(uefi_call_wrapper(bs->WaitForEvent, 3, 1, &in->WaitForKey, &index))) break;

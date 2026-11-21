@@ -35,4 +35,28 @@ ACTIONS = {
 }
 
 def matches(frame, action):
-    return line_shapes(frame)[:4] == [*COMMON, ACTIONS[action]]
+    return line_shapes(frame) == [*COMMON, ACTIONS[action]]
+
+
+def with_extra_action(frame, opposite):
+    """Copy the opposite screen's last inked text line into blank rows below this prompt."""
+    magic, size, depth, original = frame.split(b'\n', 3)
+    other_magic, other_size, other_depth, other = opposite.split(b'\n', 3)
+    if (other_magic, other_size, other_depth) != (magic, size, depth):
+        raise ValueError('the two native captures must have equal dimensions')
+    width, height = map(int, size.split())
+    stride = width * 3
+    def inked(pixels):
+        blank = pixels[:3] * width
+        return [y for y in range(height) if pixels[y*stride:(y+1)*stride] != blank]
+    rows = inked(other)
+    top = bottom = rows[-1]
+    while top-1 in rows:
+        top -= 1
+    start = inked(original)[-1] + 3
+    if start + bottom-top+1 > height:
+        raise ValueError('no blank space below the original action')
+    pixels = bytearray(original)
+    line = other[top*stride:(bottom+1)*stride]
+    pixels[start*stride:start*stride+len(line)] = line
+    return b'\n'.join((magic, size, depth, pixels))

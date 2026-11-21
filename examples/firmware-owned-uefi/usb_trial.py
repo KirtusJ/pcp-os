@@ -11,7 +11,7 @@ import time
 
 from image import digest, make
 from usb_observer import capture, compare, create
-from refusal_screen import matches as matches_refusal
+from refusal_screen import matches as matches_refusal, with_extra_action
 
 HERE = Path(__file__).resolve().parent
 OPTICAL = runpy.run_path(str(HERE.parent / 'optical-disk-check/check.py'))
@@ -188,6 +188,12 @@ def allocation_refusal_trial(qemu, code, template, volume, image, out):
             for name in ('ret', 'f10'):
                 key(name)
             screen('confirm-again', confirm, 2)
+            for name, prompt, opposite in (('refused', first, 'confirm'), ('confirm', confirm, 'refused'),
+                                           ('cancelled', first, 'confirm-again'), ('confirm-again', confirm, 'cancelled')):
+                frame = (out / (name + '.ppm')).read_bytes()
+                other = (out / (opposite + '.ppm')).read_bytes()
+                if matches_refusal(with_extra_action(frame, other), prompt):
+                    raise ValueError('refusal reader accepted both power actions on ' + name)
             key('ret')
             OPTICAL['wait_for'](lambda: call('query-status')['status'] == 'shutdown', 'confirmed power off', 30)
             after = capture(call, out, 'shutdown')
