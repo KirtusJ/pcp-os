@@ -1,5 +1,6 @@
 """Exercise the firmware-owned optical handoff in disposable Q35 guests."""
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -24,7 +25,32 @@ def wait_for(test, label, guest, seconds=120):
     raise TimeoutError(label)
 
 
-def observe(work, out, ram, mode, image, font):
+def verify_loaded_memory(image, elf, work, rpc):
+    """Read back each PT_LOAD, including its zero-filled tail, and each module."""
+    from image import MEMBERS
+    raw = elf.read_bytes()
+    results = {}
+    capture = work / "loaded-memory.tmp"
+
+    def verify(label, start, size, expected_digest):
+        rpc("pmemsave", val=start, size=size, filename=str(capture))
+        actual = digest(capture)
+        capture.unlink()
+        if actual != expected_digest:
+            raise ValueError(f"Physical memory content differs for {label}")
+        results[label] = {"start": start, "bytes": size, "sha256": actual}
+
+    for index, (start, mem_size, offset, file_size, _) in enumerate(image["segments"]):
+        expected = hashlib.sha256(raw[offset:offset + file_size])
+        expected.update(bytes(mem_size - file_size))
+        verify(f"PT_LOAD_{index}", start, mem_size, expected.hexdigest())
+    for name, _, expected in MEMBERS:
+        start, end = image["modules"][name]
+        verify(name, start, end - start, expected)
+    return results
+
+
+def observe(work, out, ram, mode, image, kernel):
     out.mkdir()
     trace = out / "firmware.txt"
     serial = out / "serial.txt"
@@ -43,7 +69,8 @@ def observe(work, out, ram, mode, image, font):
            "-cdrom", str(work / "owned.iso"), "-icount", "shift=3,align=off,sleep=off", "-no-reboot"]
     (out / "qemu-command.json").write_text(json.dumps(cmd, indent=2) + "\n")
     report = {"ram_mib": ram, "mode": mode, "ovmf_sha256": digest(code), "iso_sha256": image["iso_sha256"]}
-    def log(p): return p.read_text(errors="replace") if p.exists() else ""
+    def log(path):
+        return path.read_text(errors="replace") if path.exists() else ""
     with (out / "qemu.stderr").open("wb") as stderr, subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stderr=stderr) as guest:
         try:
             wait_for(lambda: "await-host\n" in log(trace), "initial firmware map", guest)
@@ -89,6 +116,13 @@ def observe(work, out, ram, mode, image, font):
                             raise ValueError("The occupied-range control did not refuse before loading")
                         report["refused_before_write"] = True
                     else:
+                        wait_for(lambda: "await-content-check" in log(trace), "EFI copy", guest)
+                        report["loaded_memory"] = verify_loaded_memory(
+                            image, kernel / "target/pcpos-kernel.elf32", work, rpc)
+                        report["nvs_after_copy"] = nvs()
+                        if report["nvs_after_copy"] != report["nvs_before_allocation"]:
+                            raise ValueError("NVS changed before ExitBootServices")
+                        keys.sendall(b"C")
                         wait_for(lambda: "leaves no memory behind" in log(serial) or "it is in SAFE" in log(serial),
                                  "kernel startup", guest)
                         report["nvs_at_launcher"] = nvs()
@@ -114,7 +148,7 @@ def observe(work, out, ram, mode, image, font):
                                     if guest.poll() is None:
                                         guest.terminate()
                             report["nvs_after_stop"] = later.result()
-                        check_register(font, out)
+                        check_register(kernel / "src/font.rs", out)
                         records = log(trace)
                         actual = [int(s, 16) for s in re.findall(r"^exit_status=(\w+)$", records, re.M)]
                         expected = [(1 << 63) | 2, 0] if mode == "R" else [0]
@@ -177,15 +211,8 @@ if __name__ == "__main__":
     from check_register import check_register
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
-        desc = make(
-            distro /
-            "PCP-OS.iso",
-            kernel /
-            "target/pcpos-kernel.elf32",
-            kernel /
-            "tools/measure.py",
-            work,
-            Path(__file__).resolve().parent)
+        desc = make(distro / "PCP-OS.iso", kernel / "target/pcpos-kernel.elf32",
+                    kernel / "tools/measure.py", work, Path(__file__).resolve().parent)
         (out / "image.json").write_text(json.dumps(desc, indent=2) + "\n")
         for ram, gate in ((128, "X"), (128, "G"), (256, "R")):
-            observe(work, out / f"{ram}-{gate}", ram, gate, desc, kernel / "src/font.rs")
+            observe(work, out / f"{ram}-{gate}", ram, gate, desc, kernel)

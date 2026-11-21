@@ -140,6 +140,8 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     b->info[4]=(UINTN)b->command;
     b->info[5]=3; b->info[6]=(UINTN)b->modules;
     b->info[12]=(UINTN)b->map;
+    word("await-content-check\n");
+    if (gate() != 'C') { word("content-refused\n"); halt(); }
     for (unsigned attempt=0; attempt<3; ++attempt) {
         s=read_map(bs,&key,&stride,&count);
         if (EFI_ERROR(s) || !translate(stride,count,b->map,0)) { word("final-map-refused\n"); halt(); }
