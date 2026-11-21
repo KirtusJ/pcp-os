@@ -923,8 +923,9 @@ fn settings_view(whole_bar: &mut bool, widgets: &mut [bool; 3]) {
         match wait_key() {
             (0x48, _) if at_row > 0 => at_row -= 1,
             (0x50, _) if at_row + 1 < forms.len() + WIDGETS.len() => at_row += 1,
-            (0x1C, _) if at_row < 2 => *whole_bar = at_row == 0,
-            (0x1C, _) => widgets[at_row - 2] = !widgets[at_row - 2],
+            // Choosing the form that is already chosen changes nothing, and so draws nothing (B3's measurement).
+            (0x1C, _) if at_row < 2 && *whole_bar != (at_row == 0) => *whole_bar = at_row == 0,
+            (0x1C, _) if at_row >= 2 => widgets[at_row - 2] = !widgets[at_row - 2],
             (0x01, _) => return,
             _ => draw = false,
         }
