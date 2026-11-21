@@ -1130,7 +1130,16 @@ fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message:
         at(7, 1, "PCP OS", TEXT, GROUND);
         // The same sentence about verification as on every other surface, whichever way it went.
         if start.failed != 0 {
-            at(2, 3, &format!("NOT VERIFIED: {} of {} self-tests failed. Programs are disabled.", start.failed, start.passed + start.failed), ui::BAD, GROUND);
+            // Both sentences on row 3 where they fit; where they do not (A3: at 640 across the last period
+            // was off the screen), the second has row 4, which is empty above the list.
+            let failed = format!("NOT VERIFIED: {} of {} self-tests failed.", start.failed, start.passed + start.failed);
+            let both = format!("{} Programs are disabled.", failed);
+            if both.len() <= across {
+                at(2, 3, &both, ui::BAD, GROUND);
+            } else {
+                at(2, 3, &failed, ui::BAD, GROUND);
+                at(2, 4, "Programs are disabled.", ui::BAD, GROUND);
+            }
         } else {
             at(2, 3, &format!("Verified at start: all {} self-tests passed.", start.passed), ui::GOOD, GROUND);
         }
