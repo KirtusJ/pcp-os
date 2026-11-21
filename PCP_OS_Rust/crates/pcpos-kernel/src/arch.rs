@@ -140,14 +140,16 @@ pub struct LoaderDisplay {
 }
 
 mod boot_text;
+mod frame_map;
 
 /// Everything the loader said, copied out of its own structures while they can still be read.
 #[derive(Clone, Debug, Default)]
 pub struct BootInfo {
     /// Memory below and above one mebibyte, in kibibytes.
     pub memory: Option<(u32, u32)>,
-    /// The usable memory that contains the kernel: where it ends (exclusive), from the loader's memory map.
-    pub usable_end: Option<usize>,
+    /// The complete Multiboot memory map. An advertised but unreadable map stays empty and yields no pool.
+    memory_map: Option<alloc::vec::Vec<u8>>,
+    incomplete_modules: bool,
     pub command_line: alloc::string::String,
     command_line_exact: bool,
     pub modules: alloc::vec::Vec<Module>,
@@ -188,9 +190,11 @@ pub fn boot_info(magic: u32, info: u32) -> BootInfo {
         }
         if flags & 8 != 0 {
             let (count, at) = (word(20) as usize, word(24) as usize);
+            out.incomplete_modules = count > 16 || (count > 0 && at == 0);
             for n in 0..count.min(16) {
                 let e = at + n * 16;
-                if e + 16 > LIMIT {
+                if at == 0 || e + 16 > LIMIT {
+                    out.incomplete_modules = true;
                     break;
                 }
                 let r = |o: usize| ((e + o) as *const u32).read_unaligned() as usize;
@@ -207,17 +211,13 @@ pub fn boot_info(magic: u32, info: u32) -> BootInfo {
         }
         if flags & 0x40 != 0 {
             let (len, at) = (word(44) as usize, word(48) as usize);
-            let mut o = 0;
-            while o + 24 <= len && at + o + 24 <= LIMIT {
-                let size = ((at + o) as *const u32).read_unaligned() as usize;
-                let base = ((at + o + 4) as *const u64).read_unaligned();
-                let length = ((at + o + 12) as *const u64).read_unaligned();
-                let kind = ((at + o + 20) as *const u32).read_unaligned();
-                if kind == 1 && base <= IMAGE_START as u64 && base + length > IMAGE_START as u64 {
-                    out.usable_end = Some((base + length).min(u32::MAX as u64) as usize);
-                }
-                o += size + 4;
-            }
+            let data = if at != 0 && at < LIMIT && len <= LIMIT - at && len <= frame_map::MAX_MAP_BYTES {
+                // The complete interval is inside the bootstrap identity mapping. Copy before protect replaces it.
+                core::slice::from_raw_parts(at as *const u8, len).to_vec()
+            } else {
+                alloc::vec::Vec::new()
+            };
+            out.memory_map = Some(data);
         }
         if flags & 0x1000 != 0 {
             let addr = ((info as usize + 88) as *const u64).read_unaligned();
@@ -266,7 +266,10 @@ pub fn protection_registers() -> (u64, u64, u64) {
     (cr0, cr4, ((hi as u64) << 32) | lo as u64)
 }
 
+#[cfg(not(feature = "uefi-demo-heap"))]
 const HEAP_SIZE: usize = 16 * 1024 * 1024;
+#[cfg(feature = "uefi-demo-heap")]
+const HEAP_SIZE: usize = 4 * 1024 * 1024;
 
 #[repr(align(4096))]
 struct HeapArea(core::cell::UnsafeCell<[u8; HEAP_SIZE]>);
@@ -419,12 +422,24 @@ pub fn protect(boot: &mut BootInfo) -> (usize, usize) {
             top = top.max((m.end + 4095) & !4095);
         }
     }
-    // Usable memory ends where the loader's map says the region holding the kernel ends. Without a map, the
-    // size it reported is used less 2 MiB, because firmware keeps tables of its own at the top of memory.
-    let ram_end = boot.usable_end.unwrap_or_else(|| boot.memory.map(|(_, upper)| (IMAGE_START + upper as usize * 1024).saturating_sub(MIB2)).unwrap_or(0));
-    let pool_start = (top + MIB2 - 1) & !(MIB2 - 1);
-    let pool_end = ram_end.min(1 << 30) & !(MIB2 - 1);
-    let (pool_start, pool_end) = if pool_end > pool_start { (pool_start, pool_end) } else { (0, 0) };
+    // Even a module that cannot be mapped read-only may occupy RAM the loader still describes as usable.
+    const LIMIT: usize = 1 << 30;
+    for m in &boot.modules {
+        if m.start < LIMIT && m.start < m.end {
+            top = top.max(m.end.min(LIMIT));
+        }
+    }
+    let (pool_start, pool_end) = if boot.incomplete_modules || boot.modules.iter().any(|m| m.end < m.start) {
+        (0, 0)
+    } else if let Some(map) = &boot.memory_map {
+        frame_map::pool(map, top)
+    } else {
+        // A loader which supplied only the legacy contiguous size retains the previous 2 MiB margin.
+        let ram_end = boot.memory.map(|(_, upper)| (IMAGE_START + upper as usize * 1024).saturating_sub(MIB2)).unwrap_or(0);
+        let first = top.div_ceil(MIB2) * MIB2;
+        let last = ram_end.min(LIMIT) / MIB2 * MIB2;
+        if first < last { (first, last) } else { (0, 0) }
+    };
     // Safety: TABLES is static, page-aligned storage used for nothing else; the new mapping is an identity
     // map in which every address the kernel is using stays valid (code stays executable, the stack and all
     // data stay writable) when CR3 is replaced. MODULES is written here once, before interrupts are on.
