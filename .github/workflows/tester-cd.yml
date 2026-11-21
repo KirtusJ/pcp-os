@@ -86,29 +86,6 @@ jobs:
       - name: Settings and the small list of programs at small and crossed sizes
         if: matrix.option == ''
         run: python3 -IB examples/tester-cd/check_small_screens.py "$RUNNER_TEMP/first" "$RUNNER_TEMP/evidence/small-screens"
-      - name: A keyboard controller that does not replay keys
-        if: matrix.option == ''
-        env:
-          RUSTUP_TOOLCHAIN: 1.97.0
-        run: |
-          cd PCP_OS_Rust/crates/pcpos-kernel
-          PCPOS_KERNEL_STAGE="$RUNNER_TEMP/default-kernel" sh run.sh build
-          cp target/pcpos-kernel.elf32 "$RUNNER_TEMP/default.elf32"
-          python3 -IB tests/no_serial.py "$RUNNER_TEMP/default.elf32"
-          PCPOS_KERNEL_STAGE="$RUNNER_TEMP/no-replay-kernel" PCPOS_KERNEL_FEATURES=no-key-replay-demo sh run.sh build
-          cp target/pcpos-kernel.elf32 "$RUNNER_TEMP/no-replay.elf32"
-          PCPOS_KERNEL_STAGE="$RUNNER_TEMP/lost-key-kernel" PCPOS_KERNEL_FEATURES=lost-key-demo sh run.sh build
-          python3 -IB tests/replay_probe.py "$RUNNER_TEMP/default.elf32" "$RUNNER_TEMP/no-replay.elf32" --lost-keys target/pcpos-kernel.elf32
-          for feature in keyboard-busy-demo keyboard-silent-demo; do
-            PCPOS_KERNEL_STAGE="$RUNNER_TEMP/$feature" PCPOS_KERNEL_FEATURES=$feature sh run.sh build
-            cp target/pcpos-kernel.elf32 "$RUNNER_TEMP/$feature.elf32"
-          done
-          cd "$GITHUB_WORKSPACE"
-          python3 -IB examples/tester-cd/check_stopped_screen.py "$RUNNER_TEMP/default.elf32" "$RUNNER_TEMP/no-replay.elf32" "$RUNNER_TEMP/evidence/stopped-screen" \
-            --busy "$RUNNER_TEMP/keyboard-busy-demo.elf32" --silent "$RUNNER_TEMP/keyboard-silent-demo.elf32"
-      - name: Check swapped stopped screens and altered reason pixels
-        if: matrix.option == ''
-        run: python3 -IB examples/tester-cd/check_stopped_captures.py "$RUNNER_TEMP/evidence/stopped-screen"
       - name: Replay selected grants and RGB controls on the native captures
         run: python3 -IB examples/tester-cd/check_launcher_grants.py "$RUNNER_TEMP/first/receipt.json" "$RUNNER_TEMP/evidence"
       - name: Check the source CD beside disposable IDE and NVMe disks
@@ -139,4 +116,49 @@ jobs:
         with:
           name: unpublished-tester-cd${{ matrix.suffix }}
           path: ${{ runner.temp }}/first/pcp-os-tester.iso
+          retention-days: 14
+
+  # The keyboard and stopped-screen checks build five kernels of their own and read nothing from the CD,
+  # so they run beside it: together they had brought the CD job to 28 of its 30 minutes.
+  keyboard-and-stopped-screen:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install the build and emulator tools
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y --no-install-recommends qemu-system-x86 seabios lld
+          rustup toolchain install 1.97.0 --profile minimal --no-self-update -c rust-src -t x86_64-unknown-none
+      - name: A keyboard controller that does not replay keys
+        env:
+          RUSTUP_TOOLCHAIN: 1.97.0
+        run: |
+          cd PCP_OS_Rust/crates/pcpos-kernel
+          PCPOS_KERNEL_STAGE="$RUNNER_TEMP/default-kernel" sh run.sh build
+          cp target/pcpos-kernel.elf32 "$RUNNER_TEMP/default.elf32"
+          python3 -IB tests/no_serial.py "$RUNNER_TEMP/default.elf32"
+          PCPOS_KERNEL_STAGE="$RUNNER_TEMP/no-replay-kernel" PCPOS_KERNEL_FEATURES=no-key-replay-demo sh run.sh build
+          cp target/pcpos-kernel.elf32 "$RUNNER_TEMP/no-replay.elf32"
+          PCPOS_KERNEL_STAGE="$RUNNER_TEMP/lost-key-kernel" PCPOS_KERNEL_FEATURES=lost-key-demo sh run.sh build
+          python3 -IB tests/replay_probe.py "$RUNNER_TEMP/default.elf32" "$RUNNER_TEMP/no-replay.elf32" --lost-keys target/pcpos-kernel.elf32
+          for feature in keyboard-busy-demo keyboard-silent-demo; do
+            PCPOS_KERNEL_STAGE="$RUNNER_TEMP/$feature" PCPOS_KERNEL_FEATURES=$feature sh run.sh build
+            cp target/pcpos-kernel.elf32 "$RUNNER_TEMP/$feature.elf32"
+          done
+          cd "$GITHUB_WORKSPACE"
+          python3 -IB examples/tester-cd/check_stopped_screen.py "$RUNNER_TEMP/default.elf32" "$RUNNER_TEMP/no-replay.elf32" "$RUNNER_TEMP/evidence/stopped-screen" \
+            --busy "$RUNNER_TEMP/keyboard-busy-demo.elf32" --silent "$RUNNER_TEMP/keyboard-silent-demo.elf32"
+      - name: Check swapped stopped screens and altered reason pixels
+        run: python3 -IB examples/tester-cd/check_stopped_captures.py "$RUNNER_TEMP/evidence/stopped-screen"
+      - name: Keep the evidence, including a failed case
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: keyboard-and-stopped-screen-evidence
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: warn
           retention-days: 14
