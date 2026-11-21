@@ -60,6 +60,7 @@ jobs:
           if result.returncode != 33 or "ALL SELF-TESTS PASS." not in log or digest + " (measured; equal" not in log:
               raise SystemExit("Default BIOS regression failed")
           PY
+          python3 examples/guarded-uefi/default_optical.py distribution "$kernel" "$RUNNER_TEMP/default-optical"
           cp "$RUNNER_TEMP/uefi-demo.elf32" "$kernel/target/pcpos-kernel.elf32"
       - name: Check the released ELF and guard the experimental handoff
         run: python3 examples/guarded-uefi/trial.py distribution PCP_OS_Rust/crates/pcpos-kernel "$RUNNER_TEMP/guarded-uefi"
@@ -70,5 +71,6 @@ jobs:
           path: |
             ${{ runner.temp }}/guarded-uefi
             ${{ runner.temp }}/default-bios.txt
+            ${{ runner.temp }}/default-optical
           if-no-files-found: warn
           retention-days: 14
