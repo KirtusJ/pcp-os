@@ -1,0 +1,1435 @@
+{
+  "source": "95508fa4f8ebed03a7a798a717f9996c9b3cba05",
+  "tree": "68636542e5c2427838cd7d343bb27040690baded",
+  "kernel_sha256": "9b7b923c7bf0e4d2b5770ca0944f9f152e0c7ccf6bc6a4fe855e4b0e1d7f28d6",
+  "profiles": {
+    "320x200": {
+      "choices": {
+        "bar": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            43,
+            46,
+            76
+          ],
+          "label": "A bar across the screen",
+          "selected_before": [
+            "( )   A bar across the screen"
+          ],
+          "selected_after": [
+            "(o)   A bar across the screen"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "dock": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            43,
+            46,
+            76
+          ],
+          "label": "A dock in the middle",
+          "selected_before": [
+            "( )   A dock in the middle"
+          ],
+          "selected_after": [
+            "(o)   A dock in the middle"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "recent": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            103,
+            56,
+            116
+          ],
+          "label": "Recent activity",
+          "selected_before": [
+            "[  ]  Recent activity"
+          ],
+          "selected_after": [
+            "[on]  Recent activity"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1061,
+          "new_home_rows": [
+            "1 widget line(s) not shown"
+          ]
+        },
+        "machine": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            123,
+            56,
+            136
+          ],
+          "label": "This machine",
+          "selected_before": [
+            "[  ]  This machine"
+          ],
+          "selected_after": [
+            "[on]  This machine"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1061,
+          "new_home_rows": [
+            "1 widget line(s) not shown"
+          ]
+        },
+        "session": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            143,
+            56,
+            156
+          ],
+          "label": "Session",
+          "selected_before": [
+            "[  ]  Session"
+          ],
+          "selected_after": [
+            "[on]  Session"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1061,
+          "new_home_rows": [
+            "1 widget line(s) not shown"
+          ]
+        }
+      },
+      "checks": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "programs": {
+        "first": "alpha.elf",
+        "second": "bravo.elf",
+        "launched": "bravo.elf",
+        "verdict": "Verified: all 71 self-tests",
+        "grants": "console, display, keyboard, files and store"
+      }
+    },
+    "320x220": {
+      "choices": {
+        "bar": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            43,
+            46,
+            76
+          ],
+          "label": "A bar across the screen",
+          "selected_before": [
+            "( )   A bar across the screen"
+          ],
+          "selected_after": [
+            "(o)   A bar across the screen"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "dock": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            43,
+            46,
+            76
+          ],
+          "label": "A dock in the middle",
+          "selected_before": [
+            "( )   A dock in the middle"
+          ],
+          "selected_after": [
+            "(o)   A dock in the middle"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "recent": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            103,
+            56,
+            116
+          ],
+          "label": "Recent activity",
+          "selected_before": [
+            "[  ]  Recent activity"
+          ],
+          "selected_after": [
+            "[on]  Recent activity"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1061,
+          "new_home_rows": [
+            "1 widget line(s) not shown"
+          ]
+        },
+        "machine": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            123,
+            56,
+            136
+          ],
+          "label": "This machine",
+          "selected_before": [
+            "[  ]  This machine"
+          ],
+          "selected_after": [
+            "[on]  This machine"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1061,
+          "new_home_rows": [
+            "1 widget line(s) not shown"
+          ]
+        },
+        "session": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            143,
+            56,
+            156
+          ],
+          "label": "Session",
+          "selected_before": [
+            "[  ]  Session"
+          ],
+          "selected_after": [
+            "[on]  Session"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1061,
+          "new_home_rows": [
+            "1 widget line(s) not shown"
+          ]
+        }
+      },
+      "checks": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "programs": {
+        "first": "alpha.elf",
+        "second": "bravo.elf",
+        "launched": "bravo.elf",
+        "verdict": "Verified: all 71 self-tests",
+        "grants": "console, display, keyboard, files and store"
+      }
+    },
+    "320x240": {
+      "choices": {
+        "bar": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            43,
+            46,
+            76
+          ],
+          "label": "A bar across the screen",
+          "selected_before": [
+            "( )   A bar across the screen"
+          ],
+          "selected_after": [
+            "(o)   A bar across the screen"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "dock": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            43,
+            46,
+            76
+          ],
+          "label": "A dock in the middle",
+          "selected_before": [
+            "( )   A dock in the middle"
+          ],
+          "selected_after": [
+            "(o)   A dock in the middle"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "recent": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            103,
+            56,
+            116
+          ],
+          "label": "Recent activity",
+          "selected_before": [
+            "[  ]  Recent activity"
+          ],
+          "selected_after": [
+            "[on]  Recent activity"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1061,
+          "new_home_rows": [
+            "1 widget line(s) not shown"
+          ]
+        },
+        "machine": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            123,
+            56,
+            136
+          ],
+          "label": "This machine",
+          "selected_before": [
+            "[  ]  This machine"
+          ],
+          "selected_after": [
+            "[on]  This machine"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1061,
+          "new_home_rows": [
+            "1 widget line(s) not shown"
+          ]
+        },
+        "session": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            143,
+            56,
+            156
+          ],
+          "label": "Session",
+          "selected_before": [
+            "[  ]  Session"
+          ],
+          "selected_after": [
+            "[on]  Session"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1061,
+          "new_home_rows": [
+            "1 widget line(s) not shown"
+          ]
+        }
+      },
+      "checks": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "programs": {
+        "first": "alpha.elf",
+        "second": "bravo.elf",
+        "launched": "bravo.elf",
+        "verdict": "Verified: all 71 self-tests",
+        "grants": "console, display, keyboard, files and store"
+      }
+    },
+    "320x260": {
+      "choices": {
+        "bar": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            43,
+            46,
+            76
+          ],
+          "label": "A bar across the screen",
+          "selected_before": [
+            "( )   A bar across the screen"
+          ],
+          "selected_after": [
+            "(o)   A bar across the screen"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "dock": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            43,
+            46,
+            76
+          ],
+          "label": "A dock in the middle",
+          "selected_before": [
+            "( )   A dock in the middle"
+          ],
+          "selected_after": [
+            "(o)   A dock in the middle"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "recent": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            103,
+            56,
+            116
+          ],
+          "label": "Recent activity",
+          "selected_before": [
+            "[  ]  Recent activity"
+          ],
+          "selected_after": [
+            "[on]  Recent activity"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1031,
+          "new_home_rows": [
+            "16:26:18 DONE bravo.elf"
+          ]
+        },
+        "machine": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            123,
+            56,
+            136
+          ],
+          "label": "This machine",
+          "selected_before": [
+            "[  ]  This machine"
+          ],
+          "selected_after": [
+            "[on]  This machine"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1244,
+          "new_home_rows": [
+            "memory 234 MiB, 234 MiB free"
+          ]
+        },
+        "session": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            143,
+            56,
+            156
+          ],
+          "label": "Session",
+          "selected_before": [
+            "[  ]  Session"
+          ],
+          "selected_after": [
+            "[on]  Session"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1029,
+          "new_home_rows": [
+            "Session files | cleared at.."
+          ]
+        }
+      },
+      "checks": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "programs": {
+        "first": "alpha.elf",
+        "second": "bravo.elf",
+        "launched": "bravo.elf",
+        "verdict": "Verified: all 71 self-tests",
+        "grants": "console, display, keyboard, files and store"
+      }
+    },
+    "320x280": {
+      "choices": {
+        "bar": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            43,
+            46,
+            76
+          ],
+          "label": "A bar across the screen",
+          "selected_before": [
+            "( )   A bar across the screen"
+          ],
+          "selected_after": [
+            "(o)   A bar across the screen"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "dock": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            43,
+            46,
+            76
+          ],
+          "label": "A dock in the middle",
+          "selected_before": [
+            "( )   A dock in the middle"
+          ],
+          "selected_after": [
+            "(o)   A dock in the middle"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "recent": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            103,
+            56,
+            116
+          ],
+          "label": "Recent activity",
+          "selected_before": [
+            "[  ]  Recent activity"
+          ],
+          "selected_after": [
+            "[on]  Recent activity"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1026,
+          "new_home_rows": [
+            "16:26:34 DONE bravo.elf"
+          ]
+        },
+        "machine": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            123,
+            56,
+            136
+          ],
+          "label": "This machine",
+          "selected_before": [
+            "[  ]  This machine"
+          ],
+          "selected_after": [
+            "[on]  This machine"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1244,
+          "new_home_rows": [
+            "memory 234 MiB, 234 MiB free"
+          ]
+        },
+        "session": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            143,
+            56,
+            156
+          ],
+          "label": "Session",
+          "selected_before": [
+            "[  ]  Session"
+          ],
+          "selected_after": [
+            "[on]  Session"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1029,
+          "new_home_rows": [
+            "Session files | cleared at.."
+          ]
+        }
+      },
+      "checks": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "programs": {
+        "first": "alpha.elf",
+        "second": "bravo.elf",
+        "launched": "bravo.elf",
+        "verdict": "Verified: all 71 self-tests",
+        "grants": "console, display, keyboard, files and store"
+      }
+    },
+    "320x480": {
+      "choices": {
+        "bar": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            43,
+            46,
+            76
+          ],
+          "label": "A bar across the screen",
+          "selected_before": [
+            "( )   A bar across the screen"
+          ],
+          "selected_after": [
+            "(o)   A bar across the screen"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "dock": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            43,
+            46,
+            76
+          ],
+          "label": "A dock in the middle",
+          "selected_before": [
+            "( )   A dock in the middle"
+          ],
+          "selected_after": [
+            "(o)   A dock in the middle"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "recent": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            103,
+            56,
+            116
+          ],
+          "label": "Recent activity",
+          "selected_before": [
+            "[  ]  Recent activity"
+          ],
+          "selected_after": [
+            "[on]  Recent activity"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1026,
+          "new_home_rows": [
+            "16:26:34 DONE bravo.elf"
+          ]
+        },
+        "machine": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            123,
+            56,
+            136
+          ],
+          "label": "This machine",
+          "selected_before": [
+            "[  ]  This machine"
+          ],
+          "selected_after": [
+            "[on]  This machine"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1244,
+          "new_home_rows": [
+            "memory 234 MiB, 234 MiB free"
+          ]
+        },
+        "session": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            143,
+            56,
+            156
+          ],
+          "label": "Session",
+          "selected_before": [
+            "[  ]  Session"
+          ],
+          "selected_after": [
+            "[on]  Session"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1029,
+          "new_home_rows": [
+            "Session files | cleared at.."
+          ]
+        }
+      },
+      "checks": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "programs": {
+        "first": "alpha.elf",
+        "second": "bravo.elf",
+        "launched": "bravo.elf",
+        "verdict": "Verified: all 71 self-tests",
+        "grants": "console, display, keyboard, files and store"
+      }
+    },
+    "640x220": {
+      "choices": {
+        "bar": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            43,
+            46,
+            76
+          ],
+          "label": "A bar across the screen",
+          "selected_before": [
+            "( )   A bar across the screen"
+          ],
+          "selected_after": [
+            "(o)   A bar across the screen"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "dock": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            43,
+            46,
+            76
+          ],
+          "label": "A dock in the middle",
+          "selected_before": [
+            "( )   A dock in the middle"
+          ],
+          "selected_after": [
+            "(o)   A dock in the middle"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "recent": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            103,
+            56,
+            116
+          ],
+          "label": "Recent activity",
+          "selected_before": [
+            "[  ]  Recent activity"
+          ],
+          "selected_after": [
+            "[on]  Recent activity"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1061,
+          "new_home_rows": [
+            "1 widget line(s) not shown"
+          ]
+        },
+        "machine": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            123,
+            56,
+            136
+          ],
+          "label": "This machine",
+          "selected_before": [
+            "[  ]  This machine"
+          ],
+          "selected_after": [
+            "[on]  This machine"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1061,
+          "new_home_rows": [
+            "1 widget line(s) not shown"
+          ]
+        },
+        "session": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            143,
+            56,
+            156
+          ],
+          "label": "Session",
+          "selected_before": [
+            "[  ]  Session"
+          ],
+          "selected_after": [
+            "[on]  Session"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1061,
+          "new_home_rows": [
+            "1 widget line(s) not shown"
+          ]
+        }
+      },
+      "checks": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "programs": {
+        "first": "alpha.elf",
+        "second": "bravo.elf",
+        "launched": "bravo.elf",
+        "verdict": "Verified at start: all 71 self-tests passed.",
+        "grants": "console, display, keyboard, files and store"
+      }
+    },
+    "640x240": {
+      "choices": {
+        "bar": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            43,
+            46,
+            76
+          ],
+          "label": "A bar across the screen",
+          "selected_before": [
+            "( )   A bar across the screen"
+          ],
+          "selected_after": [
+            "(o)   A bar across the screen"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "dock": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            43,
+            46,
+            76
+          ],
+          "label": "A dock in the middle",
+          "selected_before": [
+            "( )   A dock in the middle"
+          ],
+          "selected_after": [
+            "(o)   A dock in the middle"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "recent": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            103,
+            56,
+            116
+          ],
+          "label": "Recent activity",
+          "selected_before": [
+            "[  ]  Recent activity"
+          ],
+          "selected_after": [
+            "[on]  Recent activity"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1034,
+          "new_home_rows": [
+            "16:26:02 DONE bravo.elf"
+          ]
+        },
+        "machine": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            123,
+            56,
+            136
+          ],
+          "label": "This machine",
+          "selected_before": [
+            "[  ]  This machine"
+          ],
+          "selected_after": [
+            "[on]  This machine"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1244,
+          "new_home_rows": [
+            "memory 234 MiB, 234 MiB free"
+          ]
+        },
+        "session": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            143,
+            56,
+            156
+          ],
+          "label": "Session",
+          "selected_before": [
+            "[  ]  Session"
+          ],
+          "selected_after": [
+            "[on]  Session"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1429,
+          "new_home_rows": [
+            "Session files | cleared at power-off"
+          ]
+        }
+      },
+      "checks": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "programs": {
+        "first": "alpha.elf",
+        "second": "bravo.elf",
+        "launched": "bravo.elf",
+        "verdict": "Verified at start: all 71 self-tests passed.",
+        "grants": "console, display, keyboard, files and store"
+      }
+    },
+    "640x260": {
+      "choices": {
+        "bar": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            43,
+            46,
+            76
+          ],
+          "label": "A bar across the screen",
+          "selected_before": [
+            "( )   A bar across the screen"
+          ],
+          "selected_after": [
+            "(o)   A bar across the screen"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "dock": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            43,
+            46,
+            76
+          ],
+          "label": "A dock in the middle",
+          "selected_before": [
+            "( )   A dock in the middle"
+          ],
+          "selected_after": [
+            "(o)   A dock in the middle"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "recent": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            103,
+            56,
+            116
+          ],
+          "label": "Recent activity",
+          "selected_before": [
+            "[  ]  Recent activity"
+          ],
+          "selected_after": [
+            "[on]  Recent activity"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1031,
+          "new_home_rows": [
+            "16:26:18 DONE bravo.elf"
+          ]
+        },
+        "machine": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            123,
+            56,
+            136
+          ],
+          "label": "This machine",
+          "selected_before": [
+            "[  ]  This machine"
+          ],
+          "selected_after": [
+            "[on]  This machine"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1244,
+          "new_home_rows": [
+            "memory 234 MiB, 234 MiB free"
+          ]
+        },
+        "session": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            143,
+            56,
+            156
+          ],
+          "label": "Session",
+          "selected_before": [
+            "[  ]  Session"
+          ],
+          "selected_after": [
+            "[on]  Session"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1429,
+          "new_home_rows": [
+            "Session files | cleared at power-off"
+          ]
+        }
+      },
+      "checks": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "programs": {
+        "first": "alpha.elf",
+        "second": "bravo.elf",
+        "launched": "bravo.elf",
+        "verdict": "Verified at start: all 71 self-tests passed.",
+        "grants": "console, display, keyboard, files and store"
+      }
+    },
+    "640x280": {
+      "choices": {
+        "bar": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            103,
+            46,
+            136
+          ],
+          "label": "A bar across the screen",
+          "selected_before": [
+            "( )   A bar across the screen"
+          ],
+          "selected_after": [
+            "(o)   A bar across the screen"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "dock": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            103,
+            46,
+            136
+          ],
+          "label": "A dock in the middle",
+          "selected_before": [
+            "( )   A dock in the middle"
+          ],
+          "selected_after": [
+            "(o)   A dock in the middle"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "recent": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            183,
+            56,
+            196
+          ],
+          "label": "Recent activity",
+          "selected_before": [
+            "[  ]  Recent activity"
+          ],
+          "selected_after": [
+            "[on]  Recent activity"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1022,
+          "new_home_rows": [
+            "16:26:35 DONE bravo.elf"
+          ]
+        },
+        "machine": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            203,
+            56,
+            216
+          ],
+          "label": "This machine",
+          "selected_before": [
+            "[  ]  This machine"
+          ],
+          "selected_after": [
+            "[on]  This machine"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1244,
+          "new_home_rows": [
+            "memory 234 MiB, 234 MiB free"
+          ]
+        },
+        "session": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            223,
+            56,
+            236
+          ],
+          "label": "Session",
+          "selected_before": [
+            "[  ]  Session"
+          ],
+          "selected_after": [
+            "[on]  Session"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1429,
+          "new_home_rows": [
+            "Session files | cleared at power-off"
+          ]
+        }
+      },
+      "checks": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "programs": {
+        "first": "alpha.elf",
+        "second": "bravo.elf",
+        "launched": "bravo.elf",
+        "verdict": "Verified at start: all 71 self-tests passed.",
+        "grants": "console, display, keyboard, files and store"
+      }
+    },
+    "640x480": {
+      "choices": {
+        "bar": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            103,
+            46,
+            136
+          ],
+          "label": "A bar across the screen",
+          "selected_before": [
+            "( )   A bar across the screen"
+          ],
+          "selected_after": [
+            "(o)   A bar across the screen"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "dock": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            103,
+            46,
+            136
+          ],
+          "label": "A dock in the middle",
+          "selected_before": [
+            "( )   A dock in the middle"
+          ],
+          "selected_after": [
+            "(o)   A dock in the middle"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "recent": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            183,
+            56,
+            196
+          ],
+          "label": "Recent activity",
+          "selected_before": [
+            "[  ]  Recent activity"
+          ],
+          "selected_after": [
+            "[on]  Recent activity"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1034,
+          "new_home_rows": [
+            "16:26:02 DONE bravo.elf"
+          ]
+        },
+        "machine": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            203,
+            56,
+            216
+          ],
+          "label": "This machine",
+          "selected_before": [
+            "[  ]  This machine"
+          ],
+          "selected_after": [
+            "[on]  This machine"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1244,
+          "new_home_rows": [
+            "memory 234 MiB, 234 MiB free"
+          ]
+        },
+        "session": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            223,
+            56,
+            236
+          ],
+          "label": "Session",
+          "selected_before": [
+            "[  ]  Session"
+          ],
+          "selected_after": [
+            "[on]  Session"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1429,
+          "new_home_rows": [
+            "Session files | cleared at power-off"
+          ]
+        }
+      },
+      "checks": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "programs": {
+        "first": "alpha.elf",
+        "second": "bravo.elf",
+        "launched": "bravo.elf",
+        "verdict": "Verified at start: all 71 self-tests passed.",
+        "grants": "console, display, keyboard, files and store"
+      }
+    },
+    "800x600": {
+      "choices": {
+        "bar": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            103,
+            46,
+            136
+          ],
+          "label": "A bar across the screen",
+          "selected_before": [
+            "( )   A bar across the screen"
+          ],
+          "selected_after": [
+            "(o)   A bar across the screen"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "dock": {
+          "changed_pixels": 254,
+          "bounds": [
+            23,
+            103,
+            46,
+            136
+          ],
+          "label": "A dock in the middle",
+          "selected_before": [
+            "( )   A dock in the middle"
+          ],
+          "selected_after": [
+            "(o)   A dock in the middle"
+          ],
+          "escape_hint": true,
+          "state_shown": true
+        },
+        "recent": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            183,
+            56,
+            196
+          ],
+          "label": "Recent activity",
+          "selected_before": [
+            "[  ]  Recent activity"
+          ],
+          "selected_after": [
+            "[on]  Recent activity"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1021,
+          "new_home_rows": [
+            "16:26:19 DONE bravo.elf"
+          ]
+        },
+        "machine": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            203,
+            56,
+            216
+          ],
+          "label": "This machine",
+          "selected_before": [
+            "[  ]  This machine"
+          ],
+          "selected_after": [
+            "[on]  This machine"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1244,
+          "new_home_rows": [
+            "memory 234 MiB, 234 MiB free"
+          ]
+        },
+        "session": {
+          "changed_pixels": 196,
+          "bounds": [
+            23,
+            223,
+            56,
+            236
+          ],
+          "label": "Session",
+          "selected_before": [
+            "[  ]  Session"
+          ],
+          "selected_after": [
+            "[on]  Session"
+          ],
+          "escape_hint": true,
+          "state_shown": true,
+          "home_pixels": 1429,
+          "new_home_rows": [
+            "Session files | cleared at power-off"
+          ]
+        }
+      },
+      "checks": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "programs": {
+        "first": "alpha.elf",
+        "second": "bravo.elf",
+        "launched": "bravo.elf",
+        "verdict": "Verified at start: all 71 self-tests passed.",
+        "grants": "console, display, keyboard, files and store"
+      }
+    }
+  }
+}

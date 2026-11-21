@@ -1,0 +1,35 @@
+{
+  "752x480": {
+    "accepted": false,
+    "sha256": "f2a6bbc420291ec83a8a830aa5c52bf4940bc93e52407b92757b3e021acc3f4b",
+    "visible_rows": [
+      "POWER OFF",
+      "Switch PCP OS off?",
+      "The register is closed and verified first. Files of this session that wer",
+      "not saved by a program are lost.",
+      "Enter switch off    Esc go back"
+    ]
+  },
+  "760x480": {
+    "accepted": true,
+    "sha256": "0fc3f9a6d66d9fff035553713c90f46cee13c71cb0e4ef9c8173f0a2362e7aa4",
+    "visible_rows": [
+      "POWER OFF",
+      "Switch PCP OS off?",
+      "The register is closed and verified first. Files of this session that were",
+      "not saved by a program are lost.",
+      "Enter switch off    Esc go back"
+    ]
+  },
+  "760x460": {
+    "accepted": true,
+    "sha256": "a0b335160d99e1b62d3cbd009f8f2090c4b4cd73404422d4eac982dfbf6b5477",
+    "visible_rows": [
+      "POWER OFF",
+      "Switch PCP OS off?",
+      "The register is closed and verified first. Files of this session that were",
+      "not saved by a program are lost.",
+      "Enter switch off    Esc go back"
+    ]
+  }
+}
