@@ -214,6 +214,12 @@ const O_NOFOLLOW: i32 = 0x0100;
 #[cfg(all(unix, not(any(target_os = "linux", target_os = "macos", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))))]
 const O_NOFOLLOW: i32 = 0;
 
+/// Windows: open the reparse point itself, and the attribute that marks one (winnt.h).
+#[cfg(windows)]
+const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+#[cfg(windows)]
+const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+
 /// The largest file the server reads to record as an artifact.
 const MAX_ARTIFACT: u64 = 64 * 1024 * 1024;
 
@@ -331,10 +337,24 @@ fn confined_open(root: &Path, given: &str, access: Access, create: bool, single_
         use std::os::unix::fs::OpenOptionsExt;
         o.custom_flags(O_NOFOLLOW);
     }
+    #[cfg(windows)]
+    {
+        // The counterpart of O_NOFOLLOW: a name that has become a link (a reparse point) is opened as the
+        // link itself and not as what it points to, and is then refused below.
+        use std::os::windows::fs::OpenOptionsExt;
+        o.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    }
     let file = o.open(&leaf).map_err(|e| format!("cannot open {given}: {e}"))?;
     let m = file.metadata().map_err(|e| format!("{given}: {e}"))?;
     if !m.is_file() {
         return Err(format!("{given} is not a regular file"));
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return Err(format!("{given} is not a regular file; a link is not followed"));
+        }
     }
     #[cfg(unix)]
     {
