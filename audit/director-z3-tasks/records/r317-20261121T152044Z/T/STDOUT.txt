@@ -1,0 +1,16 @@
+warning: `pcpos-kernel` (bin "pcpos-kernel") generated 10 warnings (run `cargo fix --bin "pcpos-kernel" -p pcpos-kernel` to apply 3 suggestions)
+    Finished `release` profile [optimized] target(s) in 24.22s
+    Finished `release` profile [optimized] target(s) in 8.15s
+save Disk save cold morning
+restore Queue restored cold morning
+rejected wrong filename at row 4, column 2: 'parrots.queue-old'
+rejected wrong file size at row 4, column 178: '13 KiB'
+rejected extra heading text at row 1, column 35: ' pending'
+rejected extra sync text at row 2, column 36: ' pending'
+rejected second file at row 5, column 2: 'other.queue  1 KiB'
+rejected extra file above list at row 3, column 2: 'other.queue  1 KiB'
+rejected extra file beside footer at row 52, column 10: '  other.queue  1 KiB'
+rejected extra file below footer at row 53, column 2: 'other.queue  1 KiB'
+rejected leading space in filename at row 4, column 2: ' parrots.queue'
+rejected size one column left at row 4, column 177: '3 KiB '
+rejected extra space in size at row 4, column 178: '3  KiB'
