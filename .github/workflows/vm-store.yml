@@ -6,6 +6,10 @@ on:
       - 'examples/vm-store/**'
       - 'PCP_OS_Rust/crates/pcpos-kernel/**'
       - 'PCP_OS_Rust/crates/pcpos-core/**'
+      - 'examples/optical-disk-check/check.py'
+      - 'store/apps/parrots-all-the-way-down/guest/**'
+      - 'store/apps/parrots-all-the-way-down/core/**'
+      - 'store/native/guest/**'
       - '.github/workflows/vm-store.yml'
 permissions:
   contents: read
@@ -29,11 +33,26 @@ jobs:
           kernel=PCP_OS_Rust/crates/pcpos-kernel
           PCPOS_KERNEL_STAGE="$RUNNER_TEMP/build" PCPOS_KERNEL_FEATURES=vm-store sh "$kernel/run.sh" build
           python3 -B examples/vm-store/check.py "$kernel/target/pcpos-kernel.elf32" "$RUNNER_TEMP/boots"
+      - name: Save a queue entry from the keyboard and reopen it after power-off
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/queue-target
+        run: |
+          (cd store/apps/parrots-all-the-way-down/guest && cargo build --locked --release --target x86_64-unknown-none)
+          python3 -B examples/vm-store/check_queue.py "$RUNNER_TEMP/boots/kernel.elf" \
+            "$CARGO_TARGET_DIR/x86_64-unknown-none/release/rdesk" "$RUNNER_TEMP/queue"
       - name: Preserve the disk, guest programs, kernel, and serial evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: vm-store-cold-boots
           path: ${{ runner.temp }}/boots
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Preserve the two queue screens, journals, binaries and serial logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: vm-store-queue
+          path: ${{ runner.temp }}/queue
           if-no-files-found: warn
           retention-days: 14
