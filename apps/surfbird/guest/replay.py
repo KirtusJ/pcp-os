@@ -229,12 +229,12 @@ def run_arm(args, work, arm, dns):
                 examples = Path(__file__).resolve().parents[3] / "examples"
                 text_reader = runpy.run_path(str(examples / "tester-cd/check.py"))
                 desktop = runpy.run_path(str(examples / "optical-disk-check/check.py"))
-                glyphs = text_reader["kernel_glyphs"]()
+                kernel_glyphs = text_reader["kernel_glyphs"]()
 
                 def menu(name, predicate):
                     def read(path):
                         frame = path.read_bytes()
-                        rows = text_reader["read_screen"](frame, glyphs)
+                        rows = text_reader["read_screen"](frame, kernel_glyphs)
                         if not rows:
                             raise ValueError("incomplete kernel screen")
                         return predicate(rows, frame)
