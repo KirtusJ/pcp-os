@@ -171,11 +171,15 @@ def main():
     work.mkdir(parents=True)
     marker.write_text("made by examples/tester-cd/build.py\n")
 
-    # The kernel, by its own build script: default features.
-    stage = work / "kernel"
-    run("sh", KERNEL / "run.sh", "build", env={**env, "PCPOS_KERNEL_STAGE": str(stage), "PCPOS_KERNEL_FEATURES": ""})
-    kernel = (KERNEL / "target" / "pcpos-kernel.elf32").read_bytes()
-    measurement = run(sys.executable, KERNEL / "tools" / "measure.py", KERNEL / "target" / "pcpos-kernel.elf32").split()[-1]
+    # The kernel, by its own build script, default features. The script leaves its result beside itself, so
+    # it is run from a private copy of the Rust workspace under the locked folder: nothing is written into
+    # the checkout, and two builds with different staging folders cannot hand each other a kernel.
+    rust = work / "source" / "PCP_OS_Rust"
+    shutil.copytree(REPO / "PCP_OS_Rust", rust, ignore=shutil.ignore_patterns("target", "programs", "guard_cases.jsonl", "__pycache__"))
+    private = rust / "crates" / "pcpos-kernel"
+    run("sh", private / "run.sh", "build", env={**env, "PCPOS_KERNEL_STAGE": str(work / "kernel"), "PCPOS_KERNEL_FEATURES": ""})
+    kernel = (private / "target" / "pcpos-kernel.elf32").read_bytes()
+    measurement = run(sys.executable, private / "tools" / "measure.py", private / "target" / "pcpos-kernel.elf32").split()[-1]
     if len(measurement) != 64:
         sys.exit("unexpected output from measure.py")
 
