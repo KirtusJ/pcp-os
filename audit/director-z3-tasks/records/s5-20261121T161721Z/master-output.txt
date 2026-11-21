@@ -1,0 +1,202 @@
+FAILED 320x200 settings choice 0: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x200 settings choice 0: S1: 'Session' is not on exactly one row of its own
+FAILED 320x200 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 320x200 settings choice 0: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x200 settings choice 0: S1: 'Session' is not on exactly one row of its own
+FAILED 320x200 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 320x200 settings choice 1: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x200 settings choice 1: S1: 'Session' is not on exactly one row of its own
+FAILED 320x200 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 320x200 settings choice 1: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x200 settings choice 1: S1: 'Session' is not on exactly one row of its own
+FAILED 320x200 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 320x200 settings choice 2: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x200 settings choice 2: S1: 'Session' is not on exactly one row of its own
+FAILED 320x200 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 320x200 settings choice 2: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x200 settings choice 2: S1: 'Session' is not on exactly one row of its own
+FAILED 320x200 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 320x200 settings choice 3: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x200 settings choice 3: S1: 'Session' is not on exactly one row of its own
+FAILED 320x200 settings choice 3: S2: the last row is not the keys' line alone
+FAILED 320x200 settings choice 3: S3: chosen rows [], expected the row of 'This machine' []
+FAILED 320x200 settings choice 3: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x200 settings choice 3: S1: 'Session' is not on exactly one row of its own
+FAILED 320x200 settings choice 3: S2: the last row is not the keys' line alone
+FAILED 320x200 settings choice 3: S3: chosen rows [], expected the row of 'This machine' []
+FAILED 320x200 settings choice 4: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x200 settings choice 4: S1: 'Session' is not on exactly one row of its own
+FAILED 320x200 settings choice 4: S2: the last row is not the keys' line alone
+FAILED 320x200 settings choice 4: S3: chosen rows [], expected the row of 'Session' []
+FAILED 320x200 settings choice 4: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x200 settings choice 4: S1: 'Session' is not on exactly one row of its own
+FAILED 320x200 settings choice 4: S2: the last row is not the keys' line alone
+FAILED 320x200 settings choice 4: S3: chosen rows [], expected the row of 'Session' []
+FAILED 320x200: no good Settings frame to make the controls from
+FAILED 320x200 programs with alpha.elf chosen: P1: the verification sentence is on 0 rows
+FAILED 320x200 programs with alpha.elf chosen: P3: no Access row, or the keys are not whole on the last rows
+FAILED 320x200 programs with alpha.elf chosen: P4: two of the rows are the same row
+FAILED 320x200 programs with bravo.elf chosen: P1: the verification sentence is on 0 rows
+FAILED 320x200 programs with bravo.elf chosen: P3: no Access row, or the keys are not whole on the last rows
+FAILED 320x200 programs with bravo.elf chosen: P4: two of the rows are the same row
+FAILED 320x200 control accepted: the verification row emptied
+FAILED 320x220 settings choice 0: S1: 'Recent activity' is not on exactly one row of its own
+FAILED 320x220 settings choice 0: S1: 'Session' is not on exactly one row of its own
+FAILED 320x220 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 320x220 settings choice 0: S1: 'Recent activity' is not on exactly one row of its own
+FAILED 320x220 settings choice 0: S1: 'Session' is not on exactly one row of its own
+FAILED 320x220 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 320x220 settings choice 1: S1: 'Recent activity' is not on exactly one row of its own
+FAILED 320x220 settings choice 1: S1: 'Session' is not on exactly one row of its own
+FAILED 320x220 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 320x220 settings choice 1: S1: 'Recent activity' is not on exactly one row of its own
+FAILED 320x220 settings choice 1: S1: 'Session' is not on exactly one row of its own
+FAILED 320x220 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 320x220 settings choice 2: S1: 'Recent activity' is not on exactly one row of its own
+FAILED 320x220 settings choice 2: S1: 'Session' is not on exactly one row of its own
+FAILED 320x220 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 320x220 settings choice 2: S3: chosen rows [], expected the row of 'Recent activity' []
+FAILED 320x220 settings choice 2: S1: 'Recent activity' is not on exactly one row of its own
+FAILED 320x220 settings choice 2: S1: 'Session' is not on exactly one row of its own
+FAILED 320x220 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 320x220 settings choice 2: S3: chosen rows [], expected the row of 'Recent activity' []
+FAILED 320x220 settings choice 3: S1: 'Recent activity' is not on exactly one row of its own
+FAILED 320x220 settings choice 3: S1: 'Session' is not on exactly one row of its own
+FAILED 320x220 settings choice 3: S2: the last row is not the keys' line alone
+FAILED 320x220 settings choice 3: S1: 'Recent activity' is not on exactly one row of its own
+FAILED 320x220 settings choice 3: S1: 'Session' is not on exactly one row of its own
+FAILED 320x220 settings choice 3: S2: the last row is not the keys' line alone
+FAILED 320x220 settings choice 4: S1: 'Recent activity' is not on exactly one row of its own
+FAILED 320x220 settings choice 4: S1: 'Session' is not on exactly one row of its own
+FAILED 320x220 settings choice 4: S2: the last row is not the keys' line alone
+FAILED 320x220 settings choice 4: S3: chosen rows [], expected the row of 'Session' []
+FAILED 320x220 settings choice 4: S1: 'Recent activity' is not on exactly one row of its own
+FAILED 320x220 settings choice 4: S1: 'Session' is not on exactly one row of its own
+FAILED 320x220 settings choice 4: S2: the last row is not the keys' line alone
+FAILED 320x220 settings choice 4: S3: chosen rows [], expected the row of 'Session' []
+FAILED 320x220: no good Settings frame to make the controls from
+FAILED 320x220 programs with alpha.elf chosen: P3: no Access row, or the keys are not whole on the last rows
+FAILED 320x220 programs with alpha.elf chosen: P4: two of the rows are the same row
+FAILED 320x220 programs with bravo.elf chosen: P3: no Access row, or the keys are not whole on the last rows
+FAILED 320x220 programs with bravo.elf chosen: P4: two of the rows are the same row
+FAILED 320x240 settings choice 0: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x240 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 320x240 settings choice 0: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x240 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 320x240 settings choice 1: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x240 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 320x240 settings choice 1: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x240 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 320x240 settings choice 2: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x240 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 320x240 settings choice 2: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x240 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 320x240 settings choice 3: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x240 settings choice 3: S2: the last row is not the keys' line alone
+FAILED 320x240 settings choice 3: S3: chosen rows [], expected the row of 'This machine' []
+FAILED 320x240 settings choice 3: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x240 settings choice 3: S2: the last row is not the keys' line alone
+FAILED 320x240 settings choice 3: S3: chosen rows [], expected the row of 'This machine' []
+FAILED 320x240 settings choice 4: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x240 settings choice 4: S2: the last row is not the keys' line alone
+FAILED 320x240 settings choice 4: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x240 settings choice 4: S2: the last row is not the keys' line alone
+FAILED 320x240 programs with alpha.elf chosen: P2: chosen rows [] read [], expected 'alpha.elf'
+FAILED 320x240 programs with alpha.elf chosen: P3: no Access row, or the keys are not whole on the last rows
+FAILED 320x240 programs with alpha.elf chosen: P4: two of the rows are the same row
+FAILED 320x240 programs with bravo.elf chosen: P2: chosen rows [] read [], expected 'bravo.elf'
+FAILED 320x240 programs with bravo.elf chosen: P3: no Access row, or the keys are not whole on the last rows
+FAILED 320x240 programs with bravo.elf chosen: P4: two of the rows are the same row
+FAILED 320x240 control accepted: the chosen row emptied
+FAILED 320x260 settings choice 0: S1: 'Session' is not on exactly one row of its own
+FAILED 320x260 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 320x260 settings choice 0: S1: 'Session' is not on exactly one row of its own
+FAILED 320x260 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 320x260 settings choice 1: S1: 'Session' is not on exactly one row of its own
+FAILED 320x260 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 320x260 settings choice 1: S1: 'Session' is not on exactly one row of its own
+FAILED 320x260 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 320x260 settings choice 2: S1: 'Session' is not on exactly one row of its own
+FAILED 320x260 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 320x260 settings choice 2: S1: 'Session' is not on exactly one row of its own
+FAILED 320x260 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 320x260 settings choice 3: S1: 'Session' is not on exactly one row of its own
+FAILED 320x260 settings choice 3: S2: the last row is not the keys' line alone
+FAILED 320x260 settings choice 3: S1: 'Session' is not on exactly one row of its own
+FAILED 320x260 settings choice 3: S2: the last row is not the keys' line alone
+FAILED 320x260 settings choice 4: S1: 'Session' is not on exactly one row of its own
+FAILED 320x260 settings choice 4: S2: the last row is not the keys' line alone
+FAILED 320x260 settings choice 4: S3: chosen rows [], expected the row of 'Session' []
+FAILED 320x260 settings choice 4: S1: 'Session' is not on exactly one row of its own
+FAILED 320x260 settings choice 4: S2: the last row is not the keys' line alone
+FAILED 320x260 settings choice 4: S3: chosen rows [], expected the row of 'Session' []
+FAILED 320x260: no good Settings frame to make the controls from
+FAILED 320x260 programs with alpha.elf chosen: P3: no Access row, or the keys are not whole on the last rows
+FAILED 320x260 programs with alpha.elf chosen: P4: two of the rows are the same row
+FAILED 320x260 programs with bravo.elf chosen: P3: no Access row, or the keys are not whole on the last rows
+FAILED 320x260 programs with bravo.elf chosen: P4: two of the rows are the same row
+FAILED 320x280 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 320x280 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 320x280 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 320x280 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 320x280 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 320x280 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 320x280 settings choice 3: S2: the last row is not the keys' line alone
+FAILED 320x280 settings choice 3: S2: the last row is not the keys' line alone
+FAILED 320x280 settings choice 4: S2: the last row is not the keys' line alone
+FAILED 320x280 settings choice 4: S2: the last row is not the keys' line alone
+FAILED 640x240 settings choice 0: S1: 'This machine' is not on exactly one row of its own
+FAILED 640x240 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 640x240 settings choice 0: S1: 'This machine' is not on exactly one row of its own
+FAILED 640x240 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 640x240 settings choice 1: S1: 'This machine' is not on exactly one row of its own
+FAILED 640x240 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 640x240 settings choice 1: S1: 'This machine' is not on exactly one row of its own
+FAILED 640x240 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 640x240 settings choice 2: S1: 'This machine' is not on exactly one row of its own
+FAILED 640x240 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 640x240 settings choice 2: S1: 'This machine' is not on exactly one row of its own
+FAILED 640x240 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 640x240 settings choice 3: S1: 'This machine' is not on exactly one row of its own
+FAILED 640x240 settings choice 3: S2: the last row is not the keys' line alone
+FAILED 640x240 settings choice 3: S3: chosen rows [], expected the row of 'This machine' []
+FAILED 640x240 settings choice 3: S1: 'This machine' is not on exactly one row of its own
+FAILED 640x240 settings choice 3: S2: the last row is not the keys' line alone
+FAILED 640x240 settings choice 3: S3: chosen rows [], expected the row of 'This machine' []
+FAILED 640x240 settings choice 4: S1: 'This machine' is not on exactly one row of its own
+FAILED 640x240 settings choice 4: S2: the last row is not the keys' line alone
+FAILED 640x240 settings choice 4: S1: 'This machine' is not on exactly one row of its own
+FAILED 640x240 settings choice 4: S2: the last row is not the keys' line alone
+FAILED 640x260 settings choice 0: S1: 'Session' is not on exactly one row of its own
+FAILED 640x260 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 640x260 settings choice 0: S1: 'Session' is not on exactly one row of its own
+FAILED 640x260 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 640x260 settings choice 1: S1: 'Session' is not on exactly one row of its own
+FAILED 640x260 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 640x260 settings choice 1: S1: 'Session' is not on exactly one row of its own
+FAILED 640x260 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 640x260 settings choice 2: S1: 'Session' is not on exactly one row of its own
+FAILED 640x260 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 640x260 settings choice 2: S1: 'Session' is not on exactly one row of its own
+FAILED 640x260 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 640x260 settings choice 3: S1: 'Session' is not on exactly one row of its own
+FAILED 640x260 settings choice 3: S2: the last row is not the keys' line alone
+FAILED 640x260 settings choice 3: S1: 'Session' is not on exactly one row of its own
+FAILED 640x260 settings choice 3: S2: the last row is not the keys' line alone
+FAILED 640x260 settings choice 4: S1: 'Session' is not on exactly one row of its own
+FAILED 640x260 settings choice 4: S2: the last row is not the keys' line alone
+FAILED 640x260 settings choice 4: S3: chosen rows [], expected the row of 'Session' []
+FAILED 640x260 settings choice 4: S1: 'Session' is not on exactly one row of its own
+FAILED 640x260 settings choice 4: S2: the last row is not the keys' line alone
+FAILED 640x260 settings choice 4: S3: chosen rows [], expected the row of 'Session' []
+FAILED 640x260: no good Settings frame to make the controls from
+FAILED 320x480 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 320x480 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 320x480 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 320x480 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 320x480 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 320x480 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 320x480 settings choice 3: S2: the last row is not the keys' line alone
+FAILED 320x480 settings choice 3: S2: the last row is not the keys' line alone
+FAILED 320x480 settings choice 4: S2: the last row is not the keys' line alone
+FAILED 320x480 settings choice 4: S2: the last row is not the keys' line alone

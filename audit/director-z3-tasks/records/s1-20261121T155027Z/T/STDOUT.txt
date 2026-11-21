@@ -1,0 +1,176 @@
+  "kernel_measurement": "4e5eb892f24bdac16870f1141d8a1975cfe376a8d20c3fd0fce768e1c8cddd37",
+  "iso_bytes": 2617344,
+  "iso_sha256": "41b38d3afbbe4cafca4a5b0111938761d2710b866b978240e1c24f013b14c2d3"
+}
+FAILED 320x200 settings choice 0: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x200 settings choice 0: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x200 settings choice 0: S3: chosen rows [2], expected the row of 'A bar across the screen' []
+FAILED 320x200 settings choice 0: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x200 settings choice 0: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x200 settings choice 0: S3: chosen rows [2], expected the row of 'A bar across the screen' []
+FAILED 320x200 settings choice 0: S4: states read {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]'}, expected {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]', 'A bar across the screen': '(o)', 'A dock in the middle': '( )'}
+FAILED 320x200 settings choice 0: S4: the frame did not change although the state changed
+FAILED 320x200 settings choice 1: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x200 settings choice 1: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x200 settings choice 1: S3: chosen rows [3], expected the row of 'A dock in the middle' []
+FAILED 320x200 settings choice 1: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x200 settings choice 1: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x200 settings choice 1: S3: chosen rows [3], expected the row of 'A dock in the middle' []
+FAILED 320x200 settings choice 1: S4: states read {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]'}, expected {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]', 'A bar across the screen': '( )', 'A dock in the middle': '(o)'}
+FAILED 320x200 settings choice 2: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x200 settings choice 2: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x200 settings choice 2: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x200 settings choice 2: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x200 settings choice 3: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x200 settings choice 3: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x200 settings choice 3: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x200 settings choice 3: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x200 settings choice 4: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x200 settings choice 4: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x200 settings choice 4: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x200 settings choice 4: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x200 programs with alpha.elf chosen: P2: chosen rows [1] read ['?alpha.elf'], expected 'alpha.elf'
+FAILED 320x200 programs with bravo.elf chosen: P2: chosen rows [2] read ['?bravo.elf'], expected 'bravo.elf'
+FAILED 320x220 settings choice 0: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x220 settings choice 0: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x220 settings choice 0: S3: chosen rows [2], expected the row of 'A bar across the screen' []
+FAILED 320x220 settings choice 0: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x220 settings choice 0: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x220 settings choice 0: S3: chosen rows [2], expected the row of 'A bar across the screen' []
+FAILED 320x220 settings choice 0: S4: states read {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]'}, expected {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]', 'A bar across the screen': '(o)', 'A dock in the middle': '( )'}
+FAILED 320x220 settings choice 0: S4: the frame did not change although the state changed
+FAILED 320x220 settings choice 1: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x220 settings choice 1: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x220 settings choice 1: S3: chosen rows [3], expected the row of 'A dock in the middle' []
+FAILED 320x220 settings choice 1: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x220 settings choice 1: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x220 settings choice 1: S3: chosen rows [3], expected the row of 'A dock in the middle' []
+FAILED 320x220 settings choice 1: S4: states read {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]'}, expected {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]', 'A bar across the screen': '( )', 'A dock in the middle': '(o)'}
+FAILED 320x220 settings choice 2: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x220 settings choice 2: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x220 settings choice 2: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x220 settings choice 2: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x220 settings choice 3: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x220 settings choice 3: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x220 settings choice 3: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x220 settings choice 3: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x220 settings choice 4: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x220 settings choice 4: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x220 settings choice 4: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x220 settings choice 4: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x220 programs with alpha.elf chosen: P2: chosen rows [1] read ['?alpha.elf'], expected 'alpha.elf'
+FAILED 320x220 programs with bravo.elf chosen: P2: chosen rows [2] read ['?bravo.elf'], expected 'bravo.elf'
+FAILED 320x240 settings choice 0: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x240 settings choice 0: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x240 settings choice 0: S3: chosen rows [2], expected the row of 'A bar across the screen' []
+FAILED 320x240 settings choice 0: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x240 settings choice 0: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x240 settings choice 0: S3: chosen rows [2], expected the row of 'A bar across the screen' []
+FAILED 320x240 settings choice 0: S4: states read {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]'}, expected {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]', 'A bar across the screen': '(o)', 'A dock in the middle': '( )'}
+FAILED 320x240 settings choice 0: S4: the frame did not change although the state changed
+FAILED 320x240 settings choice 1: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x240 settings choice 1: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x240 settings choice 1: S3: chosen rows [3], expected the row of 'A dock in the middle' []
+FAILED 320x240 settings choice 1: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x240 settings choice 1: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x240 settings choice 1: S3: chosen rows [3], expected the row of 'A dock in the middle' []
+FAILED 320x240 settings choice 1: S4: states read {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]'}, expected {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]', 'A bar across the screen': '( )', 'A dock in the middle': '(o)'}
+FAILED 320x240 settings choice 2: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x240 settings choice 2: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x240 settings choice 2: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x240 settings choice 2: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x240 settings choice 3: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x240 settings choice 3: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x240 settings choice 3: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x240 settings choice 3: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x240 settings choice 4: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x240 settings choice 4: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x240 settings choice 4: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x240 settings choice 4: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x240 programs with alpha.elf chosen: P2: chosen rows [1] read ['?alpha.elf'], expected 'alpha.elf'
+FAILED 320x240 programs with bravo.elf chosen: P2: chosen rows [2] read ['?bravo.elf'], expected 'bravo.elf'
+FAILED 320x260 settings choice 0: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x260 settings choice 0: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x260 settings choice 0: S3: chosen rows [2], expected the row of 'A bar across the screen' []
+FAILED 320x260 settings choice 0: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x260 settings choice 0: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x260 settings choice 0: S3: chosen rows [2], expected the row of 'A bar across the screen' []
+FAILED 320x260 settings choice 0: S4: states read {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]'}, expected {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]', 'A bar across the screen': '(o)', 'A dock in the middle': '( )'}
+FAILED 320x260 settings choice 0: S4: the frame did not change although the state changed
+FAILED 320x260 settings choice 1: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x260 settings choice 1: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x260 settings choice 1: S3: chosen rows [3], expected the row of 'A dock in the middle' []
+FAILED 320x260 settings choice 1: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x260 settings choice 1: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x260 settings choice 1: S3: chosen rows [3], expected the row of 'A dock in the middle' []
+FAILED 320x260 settings choice 1: S4: states read {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]'}, expected {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]', 'A bar across the screen': '( )', 'A dock in the middle': '(o)'}
+FAILED 320x260 settings choice 2: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x260 settings choice 2: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x260 settings choice 2: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x260 settings choice 2: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x260 settings choice 3: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x260 settings choice 3: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x260 settings choice 3: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x260 settings choice 3: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x260 settings choice 4: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x260 settings choice 4: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x260 settings choice 4: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x260 settings choice 4: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x260 programs with alpha.elf chosen: P2: chosen rows [1] read ['?alpha.elf'], expected 'alpha.elf'
+FAILED 320x260 programs with bravo.elf chosen: P2: chosen rows [2] read ['?bravo.elf'], expected 'bravo.elf'
+FAILED 320x280 settings choice 0: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x280 settings choice 0: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x280 settings choice 0: S3: chosen rows [2], expected the row of 'A bar across the screen' []
+FAILED 320x280 settings choice 0: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x280 settings choice 0: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x280 settings choice 0: S3: chosen rows [2], expected the row of 'A bar across the screen' []
+FAILED 320x280 settings choice 0: S4: states read {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]'}, expected {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]', 'A bar across the screen': '(o)', 'A dock in the middle': '( )'}
+FAILED 320x280 settings choice 0: S4: the frame did not change although the state changed
+FAILED 320x280 settings choice 1: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x280 settings choice 1: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x280 settings choice 1: S3: chosen rows [3], expected the row of 'A dock in the middle' []
+FAILED 320x280 settings choice 1: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x280 settings choice 1: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x280 settings choice 1: S3: chosen rows [3], expected the row of 'A dock in the middle' []
+FAILED 320x280 settings choice 1: S4: states read {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]'}, expected {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]', 'A bar across the screen': '( )', 'A dock in the middle': '(o)'}
+FAILED 320x280 settings choice 2: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x280 settings choice 2: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x280 settings choice 2: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x280 settings choice 2: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x280 settings choice 3: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x280 settings choice 3: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x280 settings choice 3: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x280 settings choice 3: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x280 settings choice 4: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x280 settings choice 4: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 320x280 settings choice 4: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 320x280 settings choice 4: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 640x480 settings choice 0: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 640x480 settings choice 0: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 640x480 settings choice 0: S3: chosen rows [5], expected the row of 'A bar across the screen' []
+FAILED 640x480 settings choice 0: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 640x480 settings choice 0: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 640x480 settings choice 0: S3: chosen rows [5], expected the row of 'A bar across the screen' []
+FAILED 640x480 settings choice 0: S4: states read {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]'}, expected {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]', 'A bar across the screen': '(o)', 'A dock in the middle': '( )'}
+FAILED 640x480 settings choice 0: S4: the frame did not change although the state changed
+FAILED 640x480 settings choice 1: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 640x480 settings choice 1: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 640x480 settings choice 1: S3: chosen rows [6], expected the row of 'A dock in the middle' []
+FAILED 640x480 settings choice 1: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 640x480 settings choice 1: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 640x480 settings choice 1: S3: chosen rows [6], expected the row of 'A dock in the middle' []
+FAILED 640x480 settings choice 1: S4: states read {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]'}, expected {'Recent activity': '[  ]', 'This machine': '[  ]', 'Session': '[  ]', 'A bar across the screen': '( )', 'A dock in the middle': '(o)'}
+FAILED 640x480 settings choice 2: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 640x480 settings choice 2: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 640x480 settings choice 2: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 640x480 settings choice 2: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 640x480 settings choice 3: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 640x480 settings choice 3: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 640x480 settings choice 3: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 640x480 settings choice 3: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 640x480 settings choice 4: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 640x480 settings choice 4: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 640x480 settings choice 4: S1: 'A bar across the screen' is not on exactly one row of its own
+FAILED 640x480 settings choice 4: S1: 'A dock in the middle' is not on exactly one row of its own
+FAILED 640x480 programs with alpha.elf chosen: P2: chosen rows [5] read ['?alpha.elf'], expected 'alpha.elf'
+FAILED 640x480 programs with bravo.elf chosen: P2: chosen rows [6] read ['?bravo.elf'], expected 'bravo.elf'

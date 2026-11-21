@@ -1,0 +1,76 @@
+  "kernel_measurement": "bfbbce39f28876a377d1580d80b7a651acde9b67dfc68eae0f22000966ac8156",
+  "iso_bytes": 2605056,
+  "iso_sha256": "37a692f52e881aeaf42edbf065581f5bde36c2312e6132c0fb9310ffdfad7534"
+}
+FAILED 320x200 settings choice 0: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x200 settings choice 0: S1: 'Session' is not on exactly one row of its own
+FAILED 320x200 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 320x200 settings choice 0: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x200 settings choice 0: S1: 'Session' is not on exactly one row of its own
+FAILED 320x200 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 320x200 settings choice 1: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x200 settings choice 1: S1: 'Session' is not on exactly one row of its own
+FAILED 320x200 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 320x200 settings choice 1: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x200 settings choice 1: S1: 'Session' is not on exactly one row of its own
+FAILED 320x200 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 320x200 settings choice 2: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x200 settings choice 2: S1: 'Session' is not on exactly one row of its own
+FAILED 320x200 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 320x200 settings choice 2: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x200 settings choice 2: S1: 'Session' is not on exactly one row of its own
+FAILED 320x200 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 320x200: KeyError: 'This machine'
+FAILED 320x220 settings choice 0: S1: 'Recent activity' is not on exactly one row of its own
+FAILED 320x220 settings choice 0: S1: 'Session' is not on exactly one row of its own
+FAILED 320x220 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 320x220 settings choice 0: S1: 'Recent activity' is not on exactly one row of its own
+FAILED 320x220 settings choice 0: S1: 'Session' is not on exactly one row of its own
+FAILED 320x220 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 320x220 settings choice 1: S1: 'Recent activity' is not on exactly one row of its own
+FAILED 320x220 settings choice 1: S1: 'Session' is not on exactly one row of its own
+FAILED 320x220 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 320x220 settings choice 1: S1: 'Recent activity' is not on exactly one row of its own
+FAILED 320x220 settings choice 1: S1: 'Session' is not on exactly one row of its own
+FAILED 320x220 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 320x220: KeyError: 'Recent activity'
+FAILED 320x240 settings choice 0: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x240 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 320x240 settings choice 0: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x240 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 320x240 settings choice 1: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x240 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 320x240 settings choice 1: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x240 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 320x240 settings choice 2: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x240 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 320x240 settings choice 2: S1: 'This machine' is not on exactly one row of its own
+FAILED 320x240 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 320x240: KeyError: 'This machine'
+FAILED 320x260 settings choice 0: S1: 'Session' is not on exactly one row of its own
+FAILED 320x260 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 320x260 settings choice 0: S1: 'Session' is not on exactly one row of its own
+FAILED 320x260 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 320x260 settings choice 1: S1: 'Session' is not on exactly one row of its own
+FAILED 320x260 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 320x260 settings choice 1: S1: 'Session' is not on exactly one row of its own
+FAILED 320x260 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 320x260 settings choice 2: S1: 'Session' is not on exactly one row of its own
+FAILED 320x260 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 320x260 settings choice 2: S1: 'Session' is not on exactly one row of its own
+FAILED 320x260 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 320x260 settings choice 3: S1: 'Session' is not on exactly one row of its own
+FAILED 320x260 settings choice 3: S2: the last row is not the keys' line alone
+FAILED 320x260 settings choice 3: S1: 'Session' is not on exactly one row of its own
+FAILED 320x260 settings choice 3: S2: the last row is not the keys' line alone
+FAILED 320x260: KeyError: 'Session'
+FAILED 320x280 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 320x280 settings choice 0: S2: the last row is not the keys' line alone
+FAILED 320x280 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 320x280 settings choice 1: S2: the last row is not the keys' line alone
+FAILED 320x280 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 320x280 settings choice 2: S2: the last row is not the keys' line alone
+FAILED 320x280 settings choice 3: S2: the last row is not the keys' line alone
+FAILED 320x280 settings choice 3: S2: the last row is not the keys' line alone
+FAILED 320x280 settings choice 4: S2: the last row is not the keys' line alone
+FAILED 320x280 settings choice 4: S2: the last row is not the keys' line alone

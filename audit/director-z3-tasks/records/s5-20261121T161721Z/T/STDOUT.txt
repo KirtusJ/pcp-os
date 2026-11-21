@@ -1,0 +1,3 @@
+small screens: Settings at nine sizes and the list of programs at five passed; controls refused
+fix exit 0
+master exit 1

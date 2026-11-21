@@ -68,3 +68,17 @@
 {"actor":"DirectorZ3","auth":"HOST","body":{"id":"T31"},"kind":"TASK_RELEASED","prev":"109aa171cc1bf23d4d84b6340eff274407c802c583b69e5f53a0840805ce5aa2","seq":67,"ts":"2026-11-21T15:37:12Z"}
 {"actor":"DirectorZ3","auth":"HOST","body":{"depth":0,"id":"T32","label":"g3usb","parent":null},"kind":"TASK_ADMITTED","prev":"e4a7933e044d4eb0e8883bc12584e1186fccbf983c0a42009f34057392ea2e8c","seq":68,"ts":"2026-11-21T15:37:47Z"}
 {"actor":"DirectorZ3","auth":"HOST","body":{"id":"T32"},"kind":"TASK_RELEASED","prev":"77cdf06e82636bd34ce2e0d23ad96c455a2ab50f5193045aba2127aae9c5d3a2","seq":69,"ts":"2026-11-21T15:38:51Z"}
+{"actor":"DirectorZ3","auth":"HOST","body":{"depth":0,"id":"T33","label":"r319","parent":null},"kind":"TASK_ADMITTED","prev":"1c5d37376a19d710eb4db7058879beed507095a311b8dadcd7f7226594fafc79","seq":70,"ts":"2026-11-21T15:44:42Z"}
+{"actor":"DirectorZ3","auth":"HOST","body":{"id":"T33"},"kind":"TASK_RELEASED","prev":"7b585fe067737b4b409b6deb79ef6cd0041d7d004a814adda678647127bb184c","seq":71,"ts":"2026-11-21T15:45:52Z"}
+{"actor":"DirectorZ3","auth":"HOST","body":{"depth":0,"id":"T34","label":"s1","parent":null},"kind":"TASK_ADMITTED","prev":"df705518342047ebfd4faf46f96aeae0043b6ca28bf42cb3e98a0e3be704993e","seq":72,"ts":"2026-11-21T15:50:27Z"}
+{"actor":"DirectorZ3","auth":"HOST","body":{"id":"T34"},"kind":"TASK_RELEASED","prev":"7644a883dcbf6f1ba735fb3952179cbecd56a216d07f7ac33a1ec5e17473ea29","seq":73,"ts":"2026-11-21T15:55:08Z"}
+{"actor":"DirectorZ3","auth":"HOST","body":{"depth":0,"id":"T35","label":"s2","parent":null},"kind":"TASK_ADMITTED","prev":"1f4205d8e3a7c1331e7822ddb44d95e8b39727c780c4aedc856b0f039f061fde","seq":74,"ts":"2026-11-21T15:55:30Z"}
+{"actor":"DirectorZ3","auth":"HOST","body":{"id":"T35"},"kind":"TASK_RELEASED","prev":"d2a69490b625d7dd7357cdeec274c9c74d564fbd7fe96342fee9f27a02d66ff1","seq":75,"ts":"2026-11-21T16:00:10Z"}
+{"actor":"DirectorZ3","auth":"HOST","body":{"depth":0,"id":"T36","label":"neg","parent":null},"kind":"TASK_ADMITTED","prev":"988dc0d1aadaadc8684cc7bf193cf404914ee6c5bdce8f6a278d094a0807bf9f","seq":76,"ts":"2026-11-21T16:00:26Z"}
+{"actor":"DirectorZ3","auth":"HOST","body":{"depth":0,"id":"T37","label":"s3reg","parent":null},"kind":"TASK_ADMITTED","prev":"b9d72a1a3f97e5884bb15d4a38a1c342c42845dc2e73ddbaf259f7dfb590ba7a","seq":77,"ts":"2026-11-21T16:00:26Z"}
+{"actor":"DirectorZ3","auth":"HOST","body":{"id":"T37"},"kind":"TASK_RELEASED","prev":"ceba9001948d0e3ce305503d0e219503ce991f0f9a0d45d661c609a36eb45240","seq":78,"ts":"2026-11-21T16:00:26Z"}
+{"actor":"DirectorZ3","auth":"HOST","body":{"id":"T36"},"kind":"TASK_RELEASED","prev":"a0ee7f1007d90594e3c823a539fc94009f698ecf82d1e4b80dfd0e25bb3f3fa0","seq":79,"ts":"2026-11-21T16:03:17Z"}
+{"actor":"DirectorZ3","auth":"HOST","body":{"depth":0,"id":"T38","label":"s4reg","parent":null},"kind":"TASK_ADMITTED","prev":"f95cf723a009ab71938a13c9e50d1eae9c9a6b735212f35157d4b5e33a31ef1e","seq":80,"ts":"2026-11-21T16:03:43Z"}
+{"actor":"DirectorZ3","auth":"HOST","body":{"id":"T38"},"kind":"TASK_RELEASED","prev":"4a171823a8eca2b22d5a021e454d5591619d7e037700f126989136b8c78b4035","seq":81,"ts":"2026-11-21T16:17:14Z"}
+{"actor":"DirectorZ3","auth":"HOST","body":{"depth":0,"id":"T39","label":"s5","parent":null},"kind":"TASK_ADMITTED","prev":"d93f8c1c694ed0a9716d0727c0ccd4a19581e75ee6a0789b712cd678e1b7d74e","seq":82,"ts":"2026-11-21T16:17:21Z"}
+{"actor":"DirectorZ3","auth":"HOST","body":{"id":"T39"},"kind":"TASK_RELEASED","prev":"2b823f428bad3addf076c2e0e36078e8f42d33c46be28e5c23bde18d71ac86c8","seq":83,"ts":"2026-11-21T16:29:41Z"}

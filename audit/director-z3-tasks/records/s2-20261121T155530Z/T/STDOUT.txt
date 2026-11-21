@@ -1,0 +1,5 @@
+  "kernel_measurement": "4e5eb892f24bdac16870f1141d8a1975cfe376a8d20c3fd0fce768e1c8cddd37",
+  "iso_bytes": 2617344,
+  "iso_sha256": "41b38d3afbbe4cafca4a5b0111938761d2710b866b978240e1c24f013b14c2d3"
+}
+small screens: Settings at six sizes and the list of programs at five passed; controls refused
