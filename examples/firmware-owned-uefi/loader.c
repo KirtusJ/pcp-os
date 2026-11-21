@@ -4,6 +4,11 @@
 #include <efilib.h>
 #include "image.h"
 
+#ifndef EFI_MEMORY_RO
+/* UEFI table 7.6. Some GNU-EFI releases omit this attribute. */
+#define EFI_MEMORY_RO 0x0000000000020000ULL
+#endif
+
 #define PAGE 4096ULL
 #define MAX_DESCRIPTORS 512
 #define MAP_CAPACITY (MAX_DESCRIPTORS * 128)
@@ -143,9 +148,16 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
         for (UINTN i=0;i<count;++i) {
             word("range=");hex(b->map[i].base);byte(',');hex(b->map[i].length);byte(',');hex(b->map[i].type);byte('\n');
         }
-        /* R calls ExitBootServices with a deliberately invalid key once. No
-         * firmware services other than the final map/exit pair follow it. */
-        s=uefi_call_wrapper(bs->ExitBootServices,2,image,mode=='R' && attempt==0 ? key+1 : key);
+        /* Make the already obtained key stale once. The page remains allocated.
+         * The subsequent retry must report a fresh map before the transfer. */
+        if (mode == 'R' && attempt == 0) {
+            EFI_PHYSICAL_ADDRESS extra = 0;
+            s = uefi_call_wrapper(bs->AllocatePages, 4, AllocateAnyPages, EfiLoaderData, 1, &extra);
+            value("stale_control_status", s);
+            if (EFI_ERROR(s)) { word("control-refused\n"); halt(); }
+            value("stale_control_page", extra);
+        }
+        s=uefi_call_wrapper(bs->ExitBootServices,2,image,key);
         value("exit_status",s);
         if (!EFI_ERROR(s)) { word("owned-handoff\n"); transfer((UINTN)b,KERNEL_ENTRY,ARENA_END); }
         if (s!=EFI_INVALID_PARAMETER) break;

@@ -109,6 +109,14 @@ def observe(work, out, ram, mode, image, font):
                         section=records.rsplit("map_descriptors=",1)[1]
                         descriptors=[tuple(int(x,16) for x in row) for row in re.findall(r"^range=(\w+),(\w+),(\w+)$",section,re.M)]
                         if len(descriptors)!=int(section.splitlines()[0],16):raise ValueError("Incomplete final map")
+                        if mode == "R":
+                            extra = re.search(r"^stale_control_page=(\w+)$", records, re.M)
+                            if not extra or "stale_control_status=0000000000000000" not in records:
+                                raise ValueError("The stale-key control did not allocate its page")
+                            page = int(extra[1],16)
+                            if not any(t==2 and a<=page and page+4096<=a+n for a,n,t in descriptors):
+                                raise ValueError("Refreshed map did not retain the stale-key control page")
+                            report["stale_control_page"] = page
                         covered=sum(max(0,min(hi,a+n)-max(lo,a)) for a,n,t in descriptors if t==1)
                         if (hi<=lo or lo<image["arena"][1] or hi-lo!=int(p[1])*4096 or covered!=hi-lo
                                 or any(t!=1 and a<hi and a+n>lo for a,n,t in descriptors)):
