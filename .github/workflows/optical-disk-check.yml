@@ -9,6 +9,26 @@ permissions:
   contents: read
 jobs:
   disk:
+    name: BIOS disk checks (${{ matrix.kernel }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kernel: published
+            input_sha: 93ed3b599ad7be0e1e88a64813b1f2b5299d51507df2edca691aaf6189d10d15
+            control_sha: d1699ce2a9facc8e905e00bc4e14b3cca1569f0b9d25a3609c9663a33a6e196f
+            candidate_sha: 0d2672e284d1bf0d09c3869285e657d3769c7933d83f132ce9dc89a77f07abf8
+            artifact_suffix: ''
+          - kernel: keyboard-01
+            input_sha: 09e61116cc295f45a91061253d3913301ef867d790ee08678bd0fb25c1a0a00d
+            control_sha: 0e07977299d61d8d09044970f9825077ff6bf807a41af3911e5cb9c7662b879f
+            candidate_sha: 5264e891b70a37d66541393e1fc0b135fd301b8e2097022e9b698aacdc5b3d8d
+            artifact_suffix: '-keyboard-01'
+    env:
+      KERNEL: ${{ matrix.kernel }}
+      INPUT_SHA: ${{ matrix.input_sha }}
+      CONTROL_SHA: ${{ matrix.control_sha }}
+      CANDIDATE_SHA: ${{ matrix.candidate_sha }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -16,13 +36,15 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - name: Read the published ISO
+      - name: Read the pinned PCP optical media
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: KirtusJ/pcp
           ref: 983fc4a45dbbada52b507dd0e413b9f7d3ca0c9d
           path: input-cd
-          sparse-checkout: PCP-OS.iso
+          sparse-checkout: |
+            /PCP-OS.iso
+            /audit/public-live-cd/candidates/keyboard-01/keyboard-01.zip
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - name: Read Limine 10.8.5 BIOS files and license
@@ -43,41 +65,58 @@ jobs:
         run: |
           sudo apt-get -qq update
           sudo apt-get -qq install -y --no-install-recommends qemu-system-x86 seabios
+      - name: Select and verify the input
+        run: |
+          if [ "$KERNEL" = keyboard-01 ]; then
+            archive=input-cd/audit/public-live-cd/candidates/keyboard-01/keyboard-01.zip
+            echo "995b4cb4af06163c92cf82150d61598e577dafbe70500b263718478b846c8de4  $archive" | sha256sum -c -
+            unzip -tq "$archive"
+            unzip -p "$archive" candidate.iso > input.iso
+          else
+            cp input-cd/PCP-OS.iso input.iso
+          fi
+          echo "$INPUT_SHA  input.iso" | sha256sum -c -
       - name: Build both images twice and verify their bytes
         id: build
         run: |
           export PYTHONPATH="$PWD/iso-tools"
-          python3 -B examples/optical-disk-check/build.py input-cd/PCP-OS.iso upstream-loader images
-          python3 -B examples/optical-disk-check/build.py input-cd/PCP-OS.iso upstream-loader repeat
+          python3 -B examples/optical-disk-check/build.py input.iso upstream-loader images
+          python3 -B examples/optical-disk-check/build.py input.iso upstream-loader repeat
           cmp images/old-loader-control.iso repeat/old-loader-control.iso
           cmp images/no-write-candidate.iso repeat/no-write-candidate.iso
-      - name: Test shipped image on PC and Q35
+      - name: Test original input on PC and Q35
         if: "!cancelled() && steps.build.outcome == 'success'"
         run: |
           mkdir -p receipts
-          python3 -IB examples/optical-disk-check/check.py input-cd/PCP-OS.iso receipts/shipped \
-            --timeout 65 --sha256 93ed3b599ad7be0e1e88a64813b1f2b5299d51507df2edca691aaf6189d10d15 --expect-writeback
+          python3 -IB examples/optical-disk-check/check.py input.iso receipts/shipped \
+            --timeout 65 --kernel "$KERNEL" --sha256 "$INPUT_SHA" --expect-writeback
       - name: Test old image on PC and Q35
         if: "!cancelled() && steps.build.outcome == 'success'"
         run: |
           mkdir -p receipts
           python3 -IB examples/optical-disk-check/check.py images/old-loader-control.iso receipts/old \
-            --timeout 65 --sha256 d1699ce2a9facc8e905e00bc4e14b3cca1569f0b9d25a3609c9663a33a6e196f --expect-writeback
+            --timeout 65 --kernel "$KERNEL" --sha256 "$CONTROL_SHA" --expect-writeback
       - name: Test candidate image on PC and Q35
         if: "!cancelled() && steps.build.outcome == 'success'"
         run: |
           mkdir -p receipts
           python3 -IB examples/optical-disk-check/check.py images/no-write-candidate.iso receipts/candidate \
-            --timeout 65 --sha256 0d2672e284d1bf0d09c3869285e657d3769c7933d83f132ce9dc89a77f07abf8
+            --timeout 65 --kernel "$KERNEL" --sha256 "$CANDIDATE_SHA"
+      - name: Test combined image with the ordinary clock and 64 MiB
+        if: "!cancelled() && steps.build.outcome == 'success' && matrix.kernel == 'keyboard-01'"
+        run: |
+          mkdir -p receipts
+          python3 -IB examples/optical-disk-check/check.py images/no-write-candidate.iso receipts/tester \
+            --timeout 65 --kernel "$KERNEL" --sha256 "$CANDIDATE_SHA" --tester-profile
       - name: Retain observations, including failed cases
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: optical-disk-evidence
+          name: optical-disk-evidence${{ matrix.artifact_suffix }}
           path: receipts
           if-no-files-found: warn
       - name: Retain the tested experimental ISO
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: experimental-bios-optical-candidate
+          name: experimental-bios-optical-candidate${{ matrix.artifact_suffix }}
           path: images/no-write-candidate.iso

@@ -16,9 +16,31 @@ These observations cover the BIOS optical boot path under Linux, QEMU 10.0.13 TC
 
 The candidate preserves the kernel, application, media and boot configuration. The builder updates the BIOS loader, license and loader attribution and generates a new optical catalog. It rereads the contents and checks both loader inputs. The initial unpadded 10.8.5 image stopped while loading the application module. Both comparison images include 300 KiB of trailing optical padding. The successful and failed layouts establish a packaging constraint for this experiment. The precise failing read in the unpadded loader remains unknown.
 
+## Try the combined BIOS candidate in a disposable VM
+
+The artifact `experimental-bios-optical-candidate-keyboard-01` contains the keyboard-01 kernel with the Limine 10.8.5 BIOS loader. Download it from a successful **Optical boot with a disposable disk** workflow run and extract `no-write-candidate.iso`. Verify the extracted ISO against this table before booting.
+
+| keyboard-01 image | SHA-256 | Guest writes on PC / Q35 with a 512-byte logical sector |
+| --- | --- | --- |
+| Original keyboard-01 ISO | `09e61116cc295f45a91061253d3913301ef867d790ee08678bd0fb25c1a0a00d` | 1 / 1 |
+| Same kernel, remastered with original loader | `0e07977299d61d8d09044970f9825077ff6bf807a41af3911e5cb9c7662b879f` | 1 / 1 |
+| Combined tester ISO | `5264e891b70a37d66541393e1fc0b135fd301b8e2097022e9b698aacdc5b3d8d` | 0 / 0 |
+
+The combined image preserves every application and media payload from keyboard-01. Its measured kernel is `a9be6b1599bb10eead1344ae4a2ca53ec978074ae9aef1d30e8da10f04d044f3`. The builder normalizes the keyboard image’s primary ISO identifiers and retains the original Rock Ridge filenames. The original source and remastered control both require one successful write to LBA zero in the disk test.
+
+For a first session, create a fresh x86-64 SeaBIOS VM with only the ISO attached. This QEMU command uses a single CPU, 64 MiB of RAM, the ordinary clock and a silent audio backend. Where QEMU is installed under a different executable name, use its x86-64 system emulator.
+
+```sh
+qemu-system-x86_64 -machine pc -accel tcg -cpu qemu64 -m 64M -smp 1 -nic none \
+  -audiodev none,id=snd -device AC97,audiodev=snd \
+  -boot order=d,strict=on -cdrom no-write-candidate.iso
+```
+
+Wait for the verified launcher and 71 startup passes. Press Enter and then Space to play the demo through completion. Launch it again and use Ctrl+Alt+Delete in the guest to stop it. R opens the register, Esc returns to the launcher, and P powers off. The application store lasts for this boot. Use virtual optical media for this test. Physical installation and recovery remain unqualified.
+
 ## Reproduce
 
-The [workflow](../../.github/workflows/optical-disk-check.yml) pins the published media, Limine binary release and pycdlib. It builds each image twice, checks both digests, then exercises normal playback, the kernel Stop key, register navigation and power-off on PC and Q35. Successful runs retain the experimental ISO and separate evidence. For a local run, use Linux with QEMU, SeaBIOS, Python 3 and the same pycdlib revision. From the repository root, supply paths to the published ISO, the pinned loader checkout and a new output directory.
+The [workflow](../../.github/workflows/optical-disk-check.yml) pins the published media, Limine binary release and pycdlib. For each pinned input it builds the control and candidate twice, checks their digests, then exercises normal playback, the kernel Stop key, register navigation and power-off on PC and Q35. Both run with an instruction-counted CPU, 256 MiB RAM and the QEMU max CPU model. The combined candidate also runs with the 64 MiB configuration above and a disposable test disk. Successful runs retain the experimental ISO and separate evidence. For a local run, use Linux with QEMU, SeaBIOS, Python 3 and the same pycdlib revision. From the repository root, supply paths to the published ISO, the pinned loader checkout and a new output directory.
 
 ```sh
 python3 examples/optical-disk-check/build.py PCP-OS.iso /path/to/limine images
@@ -28,6 +50,6 @@ python3 examples/optical-disk-check/check.py images/no-write-candidate.iso candi
   --sha256 0d2672e284d1bf0d09c3869285e657d3769c7933d83f132ce9dc89a77f07abf8
 ```
 
-The framebuffer check compares the released 1024×768 verified-launcher row and keyboard footer, then the distinct register footer. Their pixel digests matched across the three images on both machines.
+The framebuffer check compares the released 1024×768 verified-launcher row and keyboard footer, then the distinct register footer. The probe also requires the measured kernel for the selected input. To reproduce the combined candidate checks, extract the pinned keyboard-01 ISO, build from it and pass `--kernel keyboard-01` and the appropriate image digest to the checker. Add `--tester-profile` to exercise the ordinary clock.
 
 The experiment covers a virtual IDE-compatible disk and BIOS optical boot. UEFI, Secure Boot, USB media, physical controllers, durable user files and recovery after interrupted writes require separate qualification. The native launcher describes its application store as lasting until power-off.

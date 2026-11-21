@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build two local BIOS CD experiments from the same published optical image."""
+"""Build two local BIOS CD experiments from one pinned PCP OS optical image."""
 import argparse
 import hashlib
 import io
@@ -12,6 +12,7 @@ import pycdlib
 
 
 ORIGINAL = '93ed3b599ad7be0e1e88a64813b1f2b5299d51507df2edca691aaf6189d10d15'
+KEYBOARD_01 = '09e61116cc295f45a91061253d3913301ef867d790ee08678bd0fb25c1a0a00d'
 # Limine 10.8.5 binary release, 7a9013f305de0bea1f6310e76e7baba30499fef0
 LOADER = {
     'limine-bios.sys': '34dd9fb6e706d78e920f9e3a403addcab66647ebe78d282d6c11eb6f1ffa5788',
@@ -82,9 +83,16 @@ def main():
     parser.add_argument('upstream', type=Path, help='pinned Limine binary release directory')
     parser.add_argument('output', type=Path, help='new directory')
     args = parser.parse_args()
-    if not args.iso.is_file() or digest(args.iso.read_bytes()) != ORIGINAL:
+    source_digest = digest(args.iso.read_bytes()) if args.iso.is_file() else None
+    if source_digest not in (ORIGINAL, KEYBOARD_01):
         parser.error('wrong input ISO')
     files = read_root(args.iso)
+    label = b'Experimental BIOS disk-write test candidate.'
+    if source_digest == KEYBOARD_01:
+        # The keyboard CD uses relaxed primary ISO identifiers. Keep its Rock Ridge names.
+        files = {name: (primary.upper().replace('-', '_'), data)
+                 for name, (primary, data) in files.items()}
+        label = b'Experimental BIOS keyboard and disk-write test candidate.'
     replacements = {}
     for name, expected in LOADER.items():
         data = (args.upstream / name).read_bytes()
@@ -95,7 +103,7 @@ def main():
     if readme.count(b'Loader: Limine v9.2.3.') != 1:
         parser.error('unexpected loader attribution')
     replacements['readme.txt'] = readme.replace(b'Loader: Limine v9.2.3.',
-        b'Experimental BIOS disk-write test candidate. Loader: Limine v10.8.5.')
+        label + b' Loader: Limine v10.8.5.')
     args.output.mkdir()
     os.environ['TZ'] = 'UTC'
     time.tzset()
