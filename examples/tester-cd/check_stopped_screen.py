@@ -90,14 +90,23 @@ def skip_problems(serial, rows, expected, *, f5=False, compact=False):
     if reasons != ([expected] if expected is not None else []):
         return ["serial skipped-test records %r disagree with the fixture %r" % (reasons, expected)]
     text = text_of(rows)
-    heading = "Not run at start:" if f5 else "Not run:"
-    # A smaller stopped screen can sacrifice the entire skipped-tests paragraph. A visible one must
-    # still be complete. F5 and roomier stopped screens carry it whenever the serial record does.
-    if compact and not f5 and "Not run" not in text and SIX_KEYS not in text and not any(why + "." in text for why in reasons):
-        return []
+    if not f5:
+        # Read the whole stopped screen. Even a single stray glyph can be the surviving end of
+        # a clipped notice; searching for heading or body fragments cannot prove total omission.
+        passed = sum(line.startswith("  pass ") for line in lines)
+        verdict = "Verified: all %d self-tests it ran passed." % passed
+        keyboard = REASONS[outcomes[0]]
+        notice = "Not run: " + SIX_KEYS + expected + "." if expected else ""
+        notices = ("", notice) if compact and notice else (notice,)
+        for shown in notices:
+            for status in ("", "Nothing is running and nothing more will be written."):
+                parts = (STOPPED, verdict, shown, keyboard, status, POWER)
+                if text == " ".join(part for part in parts if part):
+                    return []
+        return ["the stopped screen differs from its complete sentences for this boot"]
     if text.count("Not run") != len(reasons) or text.count(SIX_KEYS) != len(reasons):
         return ["wrong number of visible skipped-test explanations for serial %r" % reasons]
-    if reasons and (heading + " " + SIX_KEYS + reasons[0] + ".") not in text:
+    if reasons and ("Not run at start: " + SIX_KEYS + reasons[0] + ".") not in text:
         return ["the visible skipped-test explanation differs from the same boot's serial record"]
     return []
 
