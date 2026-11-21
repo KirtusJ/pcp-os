@@ -1,0 +1,112 @@
+{
+  "commit": "3d345bf68df5b64cf8345dfa6754c7d98046b01d",
+  "tree": "5f4d222650cc3c76293f632cfd70749313c06363",
+  "kernel_build": "Local unmodified sources from git archive of this commit",
+  "kernel_sha256": "1edc16adb14db4703d0764b0d29bf1122fc0705b85720c79834100e8e83775ee",
+  "kernel_measurement": "4775994a4c2e506ce9a421c156a98c868fde5df14d76ca8ba028f6269f8bc9ca",
+  "compact": {
+    "compact": {
+      "63": {
+        "name": "matching-prefix-matching-prefix-matching-prefix-matching-pA.elf",
+        "visible_name": "matching-prefix-matching-prefix-matching-prefix-matching-pA.elf",
+        "visible_facts": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+        "outcome": "refused",
+        "home_before_and_after_sha256": "7ef1ac5aff6919ccf8983ba13ca1d78059ce8e3b1c662b4b633cbda917b04576"
+      },
+      "32": {
+        "name": "matching-prefix-matching-prB.elf",
+        "visible_name": "matching-prefix-matching-prB.elf",
+        "visible_facts": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+        "outcome": "ran",
+        "home_before_and_after_sha256": "00d7e173c76cc3d623e3c37f3d8e9afd7405d16619e9d0851ebfaa524e2d36ed"
+      },
+      "33": {
+        "name": "matching-prefix-matching-preC.elf",
+        "visible_name": "matching-prefix-matching-preC.elf",
+        "visible_facts": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+        "outcome": "refused",
+        "home_before_and_after_sha256": "585753a7c4375f54e87512363e654a25915fcfa0de02b002a06b2c660895ec7e"
+      },
+      "64": {
+        "name": "matching-prefix-matching-prefix-matching-prefix-matching-prD.elf",
+        "visible_name": "matching-prefix-matching-prefix-matching-prefix-matching-prD.elf",
+        "visible_facts": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+        "outcome": "refused",
+        "home_before_and_after_sha256": "9ce145d6cdce87c1a4dae52bfeb6fa227304121b8708f9b59b28355407d9894c"
+      }
+    },
+    "tiny": {
+      "63": {
+        "name": "matching-prefix-matching-prefix-matching-prefix-matching-pA.elf",
+        "visible_name": "matching-prefix-matching-p..",
+        "visible_facts": "53 KiB   SHA-256 46f4bbd5e..",
+        "outcome": "refused",
+        "home_before_and_after_sha256": "cac28692fa439403fec54d9d6466b2300d10513a504fda08c291f0c29bf52825"
+      },
+      "32": {
+        "name": "matching-prefix-matching-prB.elf",
+        "visible_name": "matching-prefix-matching-p..",
+        "visible_facts": "53 KiB   SHA-256 46f4bbd5e..",
+        "outcome": "ran",
+        "home_before_and_after_sha256": "56b5c63b4f74bed2c60a98cedbce9f323c944160242991c56bae3ad0c3aa15fd"
+      },
+      "33": {
+        "name": "matching-prefix-matching-preC.elf",
+        "visible_name": "matching-prefix-matching-p..",
+        "visible_facts": "53 KiB   SHA-256 46f4bbd5e..",
+        "outcome": "refused",
+        "home_before_and_after_sha256": "db03a41b095d45e2b6c972d5a7482680feb3e2a32df8429ff22d8d4bc47f3a05"
+      },
+      "64": {
+        "name": "matching-prefix-matching-prefix-matching-prefix-matching-prD.elf",
+        "visible_name": "matching-prefix-matching-p..",
+        "visible_facts": "53 KiB   SHA-256 46f4bbd5e..",
+        "outcome": "refused",
+        "home_before_and_after_sha256": "25e5f11d7bb6fb94debf5840dc64b1f6a2c1836b1affdc3a054c87e6865cfdef"
+      }
+    }
+  },
+  "widgets": {
+    "status": "Places 1 to 5 of 8",
+    "recent_sessions": [
+      "12:21:11 DONE program-02.elf",
+      "12:21:12 DONE program-02.elf",
+      "12:21:13 DONE program-02.elf"
+    ],
+    "memory": "memory 234 MiB, 234 MiB free",
+    "files": "Session files | cleared at power-off",
+    "frame_sha256": "a67484cb5536074ca50b5023377b6f0aabcaae6bcc33b5bc72fe3ef09881bc9e"
+  },
+  "graphical": {
+    "bar-selected-0": {
+      "name": "sharedprefixA.elf",
+      "program_sha256": "d5a1fa4a74638577037dae9aa1ec458adcbd42cfe8d93986a6c9d0d274630fe4",
+      "frame_sha256": "c5cffd07cb54a015ea91cdadc73a61a47641750d86587facd2032e66161e29bb"
+    },
+    "dock-selected-0": {
+      "name": "sharedprefixA.elf",
+      "program_sha256": "d5a1fa4a74638577037dae9aa1ec458adcbd42cfe8d93986a6c9d0d274630fe4",
+      "frame_sha256": "937d414b151e27f903a6b06ea105c4da73db37e06b9e8003be7f8da7b55f610a"
+    },
+    "bar-selected-1": {
+      "name": "sharedprefixB.elf",
+      "program_sha256": "04b937ae3de040ad44d632c72fe92280c0b0ba080d60f1f78954c048d108b9c3",
+      "frame_sha256": "24d8da8d44f1f39e6f4c5e2b633384d9d6273b250c7d4086f4384a57ab72cd50"
+    },
+    "dock-selected-1": {
+      "name": "sharedprefixB.elf",
+      "program_sha256": "04b937ae3de040ad44d632c72fe92280c0b0ba080d60f1f78954c048d108b9c3",
+      "frame_sha256": "94fde8daab8a31563d3f822b122b30db686aba122afcba99c4b93664dbc3b524"
+    },
+    "bar-selected-2": {
+      "name": "shoredprefixC.elf",
+      "program_sha256": "9c1ae567d7f5dbf02b522605836b665f4b8470f0e44939e7d9a9fb5c0d40f3a4",
+      "frame_sha256": "02bace5b6e9a674f7d2ea75550cfa49f11f7b1e2b4659dad7e087ee3c6cee87e"
+    },
+    "dock-selected-2": {
+      "name": "shoredprefixC.elf",
+      "program_sha256": "9c1ae567d7f5dbf02b522605836b665f4b8470f0e44939e7d9a9fb5c0d40f3a4",
+      "frame_sha256": "83248132856b91ae16d2c6f499d71686824dafc742541886c783c09d76ea3e5b"
+    }
+  }
+}
