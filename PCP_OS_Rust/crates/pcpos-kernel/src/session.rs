@@ -924,14 +924,15 @@ fn register_view(rec: &Record) {
     let mut top = events.len().saturating_sub(per);
     loop {
         ui::clear(GROUND);
-        at(2, 1, &format!("THE KERNEL'S REGISTER: {} events, chain intact, head {}", events.len(), head), ui::TEAL, GROUND);
-        at(2, 2, "seq  time                  actor     kind                 what", SOFT, GROUND);
+        at(2, 1, &format!("THE KERNEL'S REGISTER: {} events, chain intact", events.len()), ui::TEAL, GROUND);
+        at(2, 2, &format!("HEAD {}", head), ui::TEAL, GROUND);
+        at(2, 3, "seq  time                  actor     kind                 what", SOFT, GROUND);
         for (n, e) in events.iter().skip(top).take(per).enumerate() {
             let field = |k: &str| e.get(k).and_then(Value::as_str).unwrap_or("").to_string();
             let body = e.get("body");
             let what = ["label", "event", "name", "id", "outcome", "note", "to"].iter().filter_map(|k| body.and_then(|b| b.get(k)).and_then(Value::as_str).map(|v| format!("{} {}", k, v))).collect::<Vec<_>>().join("; ");
             let line = format!("{:<4} {:<21} {:<9} {:<20} {}", e.get("seq").and_then(Value::as_int).unwrap_or(0), field("ts"), field("actor"), field("kind"), what);
-            at(2, 3 + n as u32, &line.chars().take(cols as usize - 4).collect::<String>(), TEXT, GROUND);
+            at(2, 4 + n as u32, &line.chars().take(cols as usize - 4).collect::<String>(), TEXT, GROUND);
         }
         at(2, rows - 2, "Up/Down scroll    Esc back", SOFT, GROUND);
         match wait_key() {
