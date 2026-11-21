@@ -1,0 +1,61 @@
+{
+  "commit": "9da817367f8a7493d333f88dc1bc12444f4ebb45",
+  "media_sha256": "e6472d55b4eb8a67fc290672d2a5f472cb1f402f8c2291e7c33d06697ee2ef0c",
+  "b3_archive_sha256": "493c78415cc0e2cba2c7bc89d31b5fe3a95f91e7b758b4e7ae6bca0e92f54433",
+  "app": "surf.elf",
+  "requested_mode": "640x360",
+  "mode_set_function_unchanged_from": "3cf7752",
+  "outcomes": {
+    "ramfb": {
+      "display": "display: Loader, 800x600, 1 page(s), 1876 KiB of its memory mapped at 0x6a3f000",
+      "media_ready": false,
+      "program_outcome": "surf.elf ended FAILED: exit 2 after 0 s; 15 system calls; 0 frames shown (0.0 a second); the processor idled 0% of the time; 0 ms of sound played, the device ran out of sound 0 time(s); 0 music register writes so far, the latest 0 ms late; 671 pages at the end, 0 of them the display's, 0 both writable and executable; 677 frames given back, 8687 free before and 8687 after; the store holds 0 file(s), 0 bytes",
+      "guest_shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "serial_sha256": "f6e82a14ce57e6122f7b400bd5487c37182b8d402f77b5b04f3801e275f7db15",
+      "captures": {
+        "power.ppm": "d8644632a11cc35c7733d7cdd65b1bba196eec080042c4f7ba597a19e4f91eca",
+        "home.ppm": "0007c7b0822f948281f89c18d49d6cfeb5760f6663cd6ac0593cb0fbd4385d6f",
+        "returned.ppm": "b82ea6395542cecfc0c65484e95508f6cd7e0d132c3a9f55ca2dd86700542d3e",
+        "after-launch.ppm": "b82ea6395542cecfc0c65484e95508f6cd7e0d132c3a9f55ca2dd86700542d3e",
+        "selected.ppm": "70d1eec6ea49482138c97a24d650f24a69f404db88aa783700310c2486b3af7d"
+      }
+    },
+    "virtio-vga": {
+      "display": "display: Loader, 1280x800, 1 page(s), 4000 KiB of its memory mapped at 0x80000000",
+      "media_ready": false,
+      "program_outcome": "surf.elf ended FAILED: exit 2 after 0 s; 15 system calls; 0 frames shown (0.0 a second); the processor idled 0% of the time; 0 ms of sound played, the device ran out of sound 0 time(s); 0 music register writes so far, the latest 0 ms late; 671 pages at the end, 0 of them the display's, 0 both writable and executable; 677 frames given back, 9199 free before and 9199 after; the store holds 0 file(s), 0 bytes",
+      "guest_shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "serial_sha256": "f1417ff433bb24c7a1c616be27d3552730ff94d155ca3d5ade1559b1736b7abe",
+      "captures": {
+        "power.ppm": "8936bfb580fc660d920381a259611a7f3ba77523757cf621c7393f0424930ea3",
+        "home.ppm": "72fe8f29a2709bf356eac7cf1ed4960cb2c677a92e1e2e97633ed426c4d10fc8",
+        "returned.ppm": "2a39919973f436507287e507aec7a47eede5555ac69581f4e25d75a22baaf101",
+        "after-launch.ppm": "2a39919973f436507287e507aec7a47eede5555ac69581f4e25d75a22baaf101",
+        "selected.ppm": "293f4259d35e641db6644706ec700622c2c6287ea80b42b32f72b40beceb4394"
+      }
+    },
+    "std": {
+      "display": "display: Bochs, 1920x1080, 2 page(s), 16384 KiB of its memory mapped at 0x80000000",
+      "media_ready": true,
+      "program_outcome": "surf.elf ended DONE: exit 0 after 3 s; 4874 system calls; 33 frames shown (9.6 a second); the processor idled 98% of the time; 3200 ms of sound played, the device ran out of sound 0 time(s); 0 music register writes so far, the latest 0 ms late; 1121 pages at the end, 450 of them the display's, 0 both writable and executable; 679 frames given back, 9199 free before and 9199 after; the store holds 0 file(s), 0 bytes",
+      "guest_shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "serial_sha256": "fe710686b15f89698705d0e8fc59f2e9efc4764495cb0f739cefe453c176a612",
+      "captures": {
+        "power.ppm": "d1b17a61aebaefe984d9e1a153631f67c8f1a86c11a9ccdc94f81ec55270e4b8",
+        "home.ppm": "9ed103015e66b97de216d76bd92de8e1e392b415cd46fe1054bebdce9c5e33fe",
+        "returned.ppm": "75dc7ce4877671421bae6c144fea7bbdad97823d692923be54e75229bb6259ab",
+        "after-launch.ppm": "d751aa707a3de6ae9f0381b15241bc435d6d01995cc1269539d0f73e20d9d765",
+        "selected.ppm": "ca89e8e081d7d227da08d5df8f943a1ec14bd74155f5b62ca70df2c1f3335ed9"
+      }
+    }
+  }
+}

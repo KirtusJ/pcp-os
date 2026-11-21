@@ -1,0 +1,33 @@
+{
+  "commit": "9da817367f8a7493d333f88dc1bc12444f4ebb45",
+  "tree": "78d31e626f87312162c1297787bad932aef46395",
+  "parent": "81b26748b435d6d5aa5a14c3d4fe45fb5e3093d8",
+  "changed_files": {
+    "PCP_OS_Rust/crates/pcpos-kernel/src/arch.rs": {
+      "git_blob": "5b5d82b84c263b036e9128ba487deb08925f8783",
+      "sha256": "bb64273cf8d4b80f1d3c0f108d9c43566a73978853ebed76bc47b1398136cd2c"
+    },
+    "PCP_OS_Rust/crates/pcpos-kernel/src/arch/framebuffer.rs": {
+      "git_blob": "c677ad8528264988b46df87200d19f3653e927e3",
+      "sha256": "eed0efe34615912393b48fe5297293d703e33eb3075664513dcb3360b29cc412"
+    },
+    "PCP_OS_Rust/crates/pcpos-kernel/src/sys.rs": {
+      "git_blob": "6f3645352bf2926d6cf6933011ca489c67ac0818",
+      "sha256": "a5da421c1842344bfa2ef43d3bbd2ded0b622c8bc7f82aff213332eeb3fc2e16"
+    },
+    "PCP_OS_Rust/crates/pcpos-kernel/tests/test_framebuffer.rs": {
+      "git_blob": "10dbc0649d3bac57342bc05afea317e325d78e8b",
+      "sha256": "f352de0102c15ee7c99623f0a9dcb25e1d94377b6c9ce51e8e82be0d5a4817dc"
+    }
+  },
+  "host_test_command": "rustc --edition=2021 --test src/PCP_OS_Rust/crates/pcpos-kernel/tests/test_framebuffer.rs -o test-framebuffer && ./test-framebuffer",
+  "host_test_sha256": "9c9496f2db2c6f92bf1ca8680822a121f3c83b27934d679ba43ed565613fa9b7",
+  "host_compiler": "rustc 1.100.0 (0ef1bc386 2026-11-09)",
+  "host_result": "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+  "observations": [
+    "The pitch must be a multiple of four before admission.",
+    "The grant helper checks that the entire nonempty aligned request fits one exact device byte interval, with checked size and end arithmetic.",
+    "The process mapping caller passes the entire request once. The first loop finds every available leaf slot before the second loop installs device entries. The first loop may allocate page-table storage.",
+    "Consequence: an application requesting all 469 pages of an 800x600, 3200-byte-stride RAMFB image cannot receive its partial last page."
+  ]
+}

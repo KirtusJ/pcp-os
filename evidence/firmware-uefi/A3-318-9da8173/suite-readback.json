@@ -1,0 +1,24 @@
+{
+  "source": "9da817367f8a7493d333f88dc1bc12444f4ebb45",
+  "tree": "78d31e626f87312162c1297787bad932aef46395",
+  "command": "env -u PCPOS_TESTS_ONLY PCPOS_ADAPTER_CHECKOUT=\"$PWD/src\" python3 -u run_stdio.py \"$PWD/kernel.elf32\" \"$PWD/programs\" \"$PWD/data\" \"$PWD/full\"",
+  "build": "sh src/PCP_OS_Rust/crates/pcpos-kernel/run.sh build",
+  "kernel_sha256": "f889acd6c195627859c3074801192b71f70f41a690baa4345ca66755ed338365",
+  "kernel_measurement": "1913ea5547bcd6c2894559a5d964fb7f44530d601e8d69e6317d2f5b59f5ead1",
+  "emulator": "QEMU emulator version 10.0.13 (Debian 1:10.0.13+ds-0+deb13u1)",
+  "start": "2026-11-21T15:35:00Z",
+  "end": "2026-11-21T15:44:29Z",
+  "exit": 1,
+  "groups_passed": 19,
+  "groups_total": 20,
+  "assertions_passed": 107,
+  "assertions_total": 108,
+  "failed_assertions": [
+    {
+      "group": "Doom at the speed of play: a recorded demo of 2134 game tics plays for 61 seconds by the clock",
+      "assertion": "it ended DONE, not by a fault",
+      "detail": "doom.elf ended FAILED: ended by the kernel: the processor refused an act of the program (exception 14, error 0x6, address 0xffffefeff8, instruction 0x800044d5db) after 62 s; 183853 system calls; 4299 "
+    }
+  ],
+  "raw_results_sha256": "33aec3bb19d04b30d86368192c4f83b95263d57f1af32c1866d28f5705fc303d"
+}

@@ -1,0 +1,115 @@
+{
+  "b3_evidence_sha256": "493c78415cc0e2cba2c7bc89d31b5fe3a95f91e7b758b4e7ae6bca0e92f54433",
+  "trials": {
+    "candidate/guests/ramfb-128": {
+      "pixels": [
+        800,
+        600
+      ],
+      "display": "display: Loader, 800x600, 1 page(s), 1876 KiB of its memory mapped at 0x6a3f000",
+      "width": 800,
+      "sound": true,
+      "serial_sha256": "fa2e0ee269399db44e517404373c02348a25fc2b56e36a81a3716f8ee0fa9e2d"
+    },
+    "candidate/guests/ramfb-256": {
+      "pixels": [
+        800,
+        600
+      ],
+      "display": "display: Loader, 800x600, 1 page(s), 1876 KiB of its memory mapped at 0xea3f000",
+      "width": 800,
+      "sound": true,
+      "serial_sha256": "fe3d3b8cac732b72e9ee2660ec38e48b010402f815b904cfcc756f787936db23"
+    },
+    "candidate/guests/std-128": {
+      "pixels": [
+        1920,
+        1080
+      ],
+      "display": "display: Bochs, 1920x1080, 2 page(s), 16384 KiB of its memory mapped at 0x80000000",
+      "width": 1920,
+      "sound": true,
+      "serial_sha256": "825cef37e268082189182c5cb19fa325904f600201c1e9bb0d12683389a7158d"
+    },
+    "candidate/guests/std-256": {
+      "pixels": [
+        1920,
+        1080
+      ],
+      "display": "display: Bochs, 1920x1080, 2 page(s), 16384 KiB of its memory mapped at 0x80000000",
+      "width": 1920,
+      "sound": true,
+      "serial_sha256": "316fa013b3d632a2dba8cdf7a9d33fee70ef4d3bc83b2f3615a5ceed9e8a71f6"
+    },
+    "candidate/guests/virtio-vga-128": {
+      "pixels": [
+        1280,
+        800
+      ],
+      "display": "display: Loader, 1280x800, 1 page(s), 4000 KiB of its memory mapped at 0x80000000",
+      "width": 1280,
+      "sound": true,
+      "serial_sha256": "fd553421bb72fea389e79495242e964331ae366a894e8f6b7dbc45570795a45b"
+    },
+    "candidate/profiles/128": {
+      "display": "display: Bochs, 1920x1080, 2 page(s), 16384 KiB of its memory mapped at 0x80000000",
+      "width": 1920,
+      "sound": true,
+      "serial_sha256": "f3ff537379dcdc15928040bf26f80cc53f7ce8317650828d52583f7aaf5a97ba"
+    },
+    "candidate/profiles/256": {
+      "display": "display: Bochs, 1920x1080, 2 page(s), 16384 KiB of its memory mapped at 0x80000000",
+      "width": 1920,
+      "sound": true,
+      "serial_sha256": "10eb79c8b70e1a5ac24d953ed868c9cfcfbec0f51017e8c417976ef86458b979"
+    },
+    "candidate/profiles/ramfb-128": {
+      "display": "display: Loader, 800x600, 1 page(s), 1876 KiB of its memory mapped at 0x6a3f000",
+      "width": 800,
+      "sound": true,
+      "serial_sha256": "a3d4c6646c9c215442d56c71398c6cdfed6d70771fe947efc735c789787fc2d1"
+    },
+    "candidate/profiles/ramfb-256": {
+      "display": "display: Loader, 800x600, 1 page(s), 1876 KiB of its memory mapped at 0xea3f000",
+      "width": 800,
+      "sound": true,
+      "serial_sha256": "41a67ae04ae02d9a822e53b9f32a705bcb5877d80427d37d4772254a688e6736"
+    },
+    "candidate/profiles/virtio-vga": {
+      "display": "display: Loader, 1280x800, 1 page(s), 4000 KiB of its memory mapped at 0x80000000",
+      "width": 1280,
+      "sound": true,
+      "serial_sha256": "4150026505f57c5debb9de36ece86f3db18d6a2f1eaffd1248b1ecba9bfafcbc"
+    },
+    "candidate/repeat-1/virtio-vga-128": {
+      "pixels": [
+        1280,
+        800
+      ],
+      "display": "display: Loader, 1280x800, 1 page(s), 4000 KiB of its memory mapped at 0x80000000",
+      "width": 1280,
+      "sound": true,
+      "serial_sha256": "c16f7bf3d3858e4d14612cb4896a6718680251658821d6fc27d9a062e1097af7"
+    },
+    "candidate/repeat-2/virtio-vga-128": {
+      "pixels": [
+        1280,
+        800
+      ],
+      "display": "display: Loader, 1280x800, 1 page(s), 4000 KiB of its memory mapped at 0x80000000",
+      "width": 1280,
+      "sound": true,
+      "serial_sha256": "43ed7b19d5acf8858d035d89fc3a40f2f25315d146d911eb34d3b093d5a5801d"
+    },
+    "candidate/repeat-3/virtio-vga-128": {
+      "pixels": [
+        1280,
+        800
+      ],
+      "display": "display: Loader, 1280x800, 1 page(s), 4000 KiB of its memory mapped at 0x80000000",
+      "width": 1280,
+      "sound": true,
+      "serial_sha256": "da8ee91a6c78561efd293b4b123e2f818e4f3dda9ff13fe997fb82c4383d5d34"
+    }
+  }
+}

@@ -1,0 +1,111 @@
+{
+  "source": "9da817367f8a7493d333f88dc1bc12444f4ebb45",
+  "tree": "78d31e626f87312162c1297787bad932aef46395",
+  "distribution_checker": "2abeead177d616582db7029561df2e10c95381eb",
+  "kernel_suite_build": "f889acd6c195627859c3074801192b71f70f41a690baa4345ca66755ed338365",
+  "boots": {
+    "optical-plain": {
+      "startup": 71,
+      "final": 72,
+      "exit": 0,
+      "display": "display: Bochs, 1920x1080, 2 page(s), 16384 KiB of its memory mapped at 0xfd000000",
+      "parser_width": 1920,
+      "frame_size": [
+        1920,
+        1080
+      ],
+      "parsed_sound": true,
+      "checked_frames": 25,
+      "serial_sha256": "845fe25dd5efa734498b8e0201c2fc6721e25240a2df980fb4ed816230e2d73f"
+    },
+    "optical-queue": {
+      "startup": 71,
+      "final": 72,
+      "exit": 0,
+      "display": "display: Bochs, 1920x1080, 2 page(s), 16384 KiB of its memory mapped at 0xfd000000",
+      "parser_width": 1920,
+      "frame_size": [
+        1920,
+        1080
+      ],
+      "parsed_sound": true,
+      "checked_frames": 26,
+      "serial_sha256": "227a6cf186caf0d1eb90c04cd07d4bdfa35d076a78d9426aeee7c53db1804999"
+    },
+    "opt-vm/first": {
+      "startup": 71,
+      "final": 72,
+      "exit": 0,
+      "display": "display: Bochs, 1920x1080, 2 page(s), 16384 KiB of its memory mapped at 0xfd000000",
+      "parser_width": 1920,
+      "frame_size": [
+        1920,
+        1080
+      ],
+      "parsed_sound": true,
+      "checked_frames": 13,
+      "serial_sha256": "40d0c0ce37be668676ef1c007b270740e177deb547f7e31ec0f94a6637e3cd00"
+    },
+    "opt-vm/cold": {
+      "startup": 71,
+      "final": 72,
+      "exit": 0,
+      "display": "display: Bochs, 1920x1080, 2 page(s), 16384 KiB of its memory mapped at 0xfd000000",
+      "parser_width": 1920,
+      "frame_size": [
+        1920,
+        1080
+      ],
+      "parsed_sound": true,
+      "checked_frames": 12,
+      "serial_sha256": "32c4ed2de4ab0cb3a9a24c8dd1714e201cf3840fe0ba70682fbfb027b8ab1b58"
+    }
+  },
+  "plain": {
+    "iso": "b8a4374ec23ced23f36da9ed63510e6d043bcf3899f658f1442b2578641a4f03",
+    "kernel": "fdb2c6f9078b8f3a9e23d99222bd9de2110c162c810d19abe5faefbfdb8cb03f",
+    "measurement": "2bf29b86362d395d6181c1d57ee5fd9ec4dca2704149b447b5ca8236ad198e90"
+  },
+  "queue": {
+    "iso": "b278946027afced9f47b1f5baeb9c1f3f1a551c3c1f8cd0ea3cbfff506b0d10e",
+    "kernel": "fdb2c6f9078b8f3a9e23d99222bd9de2110c162c810d19abe5faefbfdb8cb03f",
+    "measurement": "2bf29b86362d395d6181c1d57ee5fd9ec4dca2704149b447b5ca8236ad198e90"
+  },
+  "vm_build": {
+    "source_commit": "9da817367f8a7493d333f88dc1bc12444f4ebb45",
+    "source_tree": "78d31e626f87312162c1297787bad932aef46395",
+    "kernel_features": [
+      "vm-store"
+    ],
+    "toolchain": {
+      "binary": "rustc",
+      "commit-hash": "2d8144b7880597b6e6d3dfd63a9a9efae3f533d3",
+      "commit-date": "2026-07-07",
+      "host": "x86_64-unknown-linux-gnu",
+      "release": "1.97.0",
+      "LLVM version": "22.1.6"
+    },
+    "kernel_measurement": "b876be1b191bc1c478c6e1dc8229a86f911ab621602af3fabd222e689e96dd87",
+    "optical_iso_sha256": "b278946027afced9f47b1f5baeb9c1f3f1a551c3c1f8cd0ea3cbfff506b0d10e",
+    "files": {
+      "QUICKSTART.md": "89730902755baf91ac29a91d70daaad8ecec12f9cb09d79fe6dfaa8355cbc1ed",
+      "Third-party-notices.txt": "9cf931e506692875ce1e2616594b590893116c2888ae87c4e6e6cfe0fb256af1",
+      "clip.ppm": "f6a1d9a0702f472f5b02cf0a528586e6d4447acbad2bd92eb0fc6d70eea4df4d",
+      "clip.wav": "70ca6a81bc6f94db7d14a61630ff02c517d20a65c31273b16ff02e233018e244",
+      "create.py": "175b2662bd916812338e6124d258bb11423e72310d849018b87a424eb1e54c5a",
+      "kernel.elf": "5db2dcfee57e51f417f72c51f878a7e9efe8bd02218a22d03aabfebf8fd1d96f",
+      "limine.txt": "f174b8ff78f6f8982a1fc992668f8486eb8cf598f6938923c22e9bb50f8338a8",
+      "notice.md": "329d287bf2bac528afc035145886284908ecd139958223c6cff6477e7372e609",
+      "notices.txt": "65c842e36e77404a534d65e9e35957cffcfa920d5b2d55c99f481cfa037a6503",
+      "rdesk.elf": "46f4bbd5e4d754a78d9b018d15d9249f8dbce04fb536e6bc49f638104850d8b1",
+      "start.py": "28de54609893758d7defb5db03c73dc0288d499e3c18a05e5291d1086b8426bd",
+      "surf.elf": "031116d8be78dc4e8315e2f86548239970582c113362e5353d2d4e896a6496af"
+    }
+  },
+  "vm_store": {
+    "zip_sha256": "042e8e16f2d6ca8d273d3d3f07e460413a745d20e3aa6c24bc01591144a35682",
+    "first_disk_sha256": "6f083e06f98fd78a5a6811d6e3362af7729e9dbad4277287eedbafda69e1752e",
+    "saved_disk_sha256": "b6e9c155875bf6f8a2cbb4f7a011eff0ac16f73325906f34b46b9283099de3cb",
+    "read_back_label": "cold morning"
+  }
+}
