@@ -6,7 +6,7 @@ tasks and that the record last.
 
 | Here | What it is |
 | --- | --- |
-| `.pcp/register.jsonl` | A PCP register. Each task is admitted before it runs and released after, by the participant `DirectorZ3`, through the host's own tools. Check it with `pcpos verify audit/director-z3-tasks/.pcp/register.jsonl`. |
+| `.pcp/register.jsonl` | A PCP register. From the record `probe3` on, a task is admitted before it runs and released after, by the participant `DirectorZ3`, through the host's own tools. The three earlier records (`probe`, `probe2` and the build and check `hold-055845`) were run before the limits were set and have no admission or release: each one's `runner.txt` says so. Check the register with the host built from this repository, `pcpos` 1.0.22: `PCP_OS_Rust/target/release/pcpos verify audit/director-z3-tasks/.pcp/register.jsonl`. The host in the published Enterprise edition is older, does not know the event `TASK_LIMITS_SET`, and refuses the replay at event 5 (A3's observation). |
 | `BASIS.md` | Why the task limits in that register carry the owner's label, and that the session wrote them. |
 | `records/<label>-<time>/` | One run: `ASYNC_RECORD.json` (exit code, duration, timeout or not, and the SHA-256 of each file the task left) and the task's `T/STDOUT.txt` and `T/STDERR.txt`. |
 | `records/<label>-<time>.plan/` | The command as it was run (`plan.json`), the runner's own line and the release (`runner.txt`), and the runner's exit code (`DONE`). |
@@ -24,6 +24,6 @@ tasks and that the record last.
 - Neither authenticates anybody. The limits are `DECLARED`.
 - Paths in the records are those of the container the task ran in. The first four records were made in the
   session's scratch folder before this folder existed and name it; the three named `probe` are trials of
-  the route itself, the first two made before the limits were set and so not admitted.
+  the route itself. Which records have an admission is said in the table above.
 - The tools are a workspace helper. Under `RUST_PRIMACY.md` a command of the host that starts a program and
   records its end would be written in Rust; that is proposed, not done.
