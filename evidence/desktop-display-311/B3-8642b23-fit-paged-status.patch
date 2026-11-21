@@ -1,0 +1,54 @@
+--- a/PCP_OS_Rust/crates/pcpos-kernel/src/session.rs
++++ b/PCP_OS_Rust/crates/pcpos-kernel/src/session.rs
+@@ -581,26 +581,35 @@
+             left -= widgets_shown;
+             let list_rows = (1 + left).min(places);
+             let first = (place + 1).saturating_sub(list_rows);
+-            let mut notes: Vec<String> = Vec::new();
+-            let narrow = across < 40;
+-            if list_rows < places { notes.push(if narrow { format!("Place {}/{}", place + 1, places) } else { format!("Places {} to {} of {}", first + 1, first + list_rows, places) }); }
+-            if name_pages > 1 { notes.push(if narrow { format!("name {}/{} <- ->", name_page + 1, name_pages) } else { format!("name part {} of {}: Left/Right", name_page + 1, name_pages) }); }
+-            // How many widget lines had no room is never the part that is cut (B3): where row 4 cannot hold
+-            // it beside the place and the name's part, it has the last row of the display, below the keys.
+-            let hidden = if widgets_shown < widget_lines.len() { Some(format!("{} widget line(s) not shown", widget_lines.len() - widgets_shown)) } else { None };
+-            if let Some(count) = hidden {
+-                if notes.join(" | ").chars().count() + 3 + count.chars().count() <= across || notes.is_empty() {
+-                    notes.push(count);
++            let status_line = |compact: bool| {
++                let mut notes = Vec::new();
++                if list_rows < places {
++                    notes.push(if compact { format!("Place {}/{}", place + 1, places) }
++                               else { format!("Places {} to {} of {}", first + 1, first + list_rows, places) });
++                }
++                if name_pages > 1 {
++                    notes.push(if compact { format!("name {}/{} <- ->", name_page + 1, name_pages) }
++                               else { format!("name part {} of {}: Left/Right", name_page + 1, name_pages) });
++                }
++                let line = notes.join(" | ");
++                if compact && line.len() > across { notes.join("|") } else { line }
++            };
++            let mut status = status_line(across < 40);
++            if across >= 40 && status.len() > across {
++                status = status_line(true);
++            }
++            if widgets_shown < widget_lines.len() {
++                let count = format!("{} widget line(s) not shown", widget_lines.len() - widgets_shown);
++                if status.is_empty() {
++                    status = count;
++                } else if status.len() + 3 + count.len() <= across {
++                    status.push_str(" | ");
++                    status.push_str(&count);
+                 } else {
+                     at(2, rows - 1, &cut(&count, across), SOFT, GROUND);
+                 }
+             }
+-            // A place or a part count of more digits can make the short form too long as well; then the word
+-            // 'Place' gives way, and after it the word 'name', before either arrow or any number does.
+-            let mut line = notes.join(" | ");
+-            if line.chars().count() > across && narrow { line = line.replacen("Place ", "", 1); }
+-            if line.chars().count() > across && narrow { line = line.replacen("name ", "", 1); }
+-            if !notes.is_empty() { at(2, 4, &cut(&line, across), SOFT, GROUND); }
++            if !status.is_empty() { at(2, 4, &cut(&status, across), SOFT, GROUND); }
+             let mut row = 5;
+             for i in first..first + list_rows {
+                 let ground = if i == place { ui::PANEL } else { GROUND };
