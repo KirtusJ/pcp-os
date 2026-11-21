@@ -1381,10 +1381,11 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
 }
 
 /// The last screen on a machine this kernel cannot switch off: that it has stopped, whether it verified
-/// itself, why nothing could be chosen if nothing could, and what the person does now. The display is
+/// itself (`passed` and `failed` as they are at the very end), why nothing could be chosen if nothing
+/// could, and what the person does now. The display is
 /// cleared first, so that nothing a firmware or a program left is read as part of it, and every sentence
 /// is whole on a display of any size. Nothing is waited for: the processor is halted after it.
-pub fn stopped_screen(start: &Start, failed: u32) {
+pub fn stopped_screen(start: &Start, failed: u32, passed: u32) {
     use ui::{at, GROUND, SOFT, TEXT};
     let (cols, rows) = ui::grid();
     let across = (cols as usize).saturating_sub(4).max(1);
@@ -1393,7 +1394,7 @@ pub fn stopped_screen(start: &Start, failed: u32) {
     let mut parts: Vec<(u8, String, u32)> = Vec::new();
     parts.push((0, String::from("PCP OS has stopped."), ui::AMBER));
     parts.push((3, String::new(), TEXT));
-    parts.push((1, if failed != 0 { format!("NOT VERIFIED: {} self-test(s) failed.", failed) } else { format!("Verified: all {} self-tests it ran passed.", start.passed) },
+    parts.push((1, if failed != 0 { format!("NOT VERIFIED: {} of {} self-tests failed.", failed, passed + failed) } else { format!("Verified: all {} self-tests it ran passed.", passed) },
                 if failed != 0 { ui::BAD } else { ui::GOOD }));
     if let Some(why) = start.not_run.filter(|_| failed == 0) {
         parts.push((2, format!("Not run: the six tests that press keys, because {}.", why), SOFT));

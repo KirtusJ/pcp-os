@@ -889,7 +889,9 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     // On hardware this kernel has no way to switch the machine off, and says so instead of leaving the
     // person to wonder whether it is still working.
     if !arch::emulated() && dev::display().is_some() {
-        session::stopped_screen(&start, failed);
+        // The count is taken now, after the last check (the register's own, made after the session): the
+        // count at start is one short of it (A3).
+        session::stopped_screen(&start, failed, PASSED.load(core::sync::atomic::Ordering::Relaxed));
     }
     arch::stop(failed == 0)
 }

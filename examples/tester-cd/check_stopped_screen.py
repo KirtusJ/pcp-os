@@ -14,6 +14,8 @@ Predicates, fixed before the first run.
     "self-tests it ran passed."; the text holds "No keyboard this kernel can use answered: it drives PS/2
     keyboards only." and "This kernel cannot switch the computer off. Hold its power button until it goes
     dark."; no cell is anything but a character; the emulator is still running.
+ H5 on every stopped screen the count in "Verified: all <n> self-tests it ran passed." is the number of
+    passes in the whole serial log, which includes the check made after the session (A3 found it one short).
  H2 a keyboard, at 800 by 600: the desktop appears; F10 then Enter gives a screen that meets H1 except that
     it does not hold the sentence about a keyboard; the emulator is still running.
  H3 the kernel built with `no-key-replay-demo`, at 800 by 600: F5 holds "Not run at start: the six tests
@@ -47,7 +49,8 @@ def text_of(rows):
     return " ".join(" ".join(rows).split())
 
 
-def stopped_problems(rows, keyboard):
+def stopped_problems(rows, keyboard, passed=None):
+    """`passed` is the number of "  pass " lines in the whole serial log, when it is known."""
     problems = []
     held = [row for row in rows if row.strip()]
     text = text_of(rows)
@@ -55,6 +58,8 @@ def stopped_problems(rows, keyboard):
         problems.append("the first row is not %r" % STOPPED)
     if not any(row.startswith("  Verified: all ") for row in rows) or "self-tests it ran passed." not in text:
         problems.append("the verification sentence is not whole")
+    if passed is not None and "Verified: all %d self-tests it ran passed." % passed not in text:
+        problems.append("the count on the screen is not the %d passes of the serial log" % passed)
     if POWER not in text:
         problems.append("what the person must do is not whole")
     if (NO_KEYBOARD in text) == keyboard:
@@ -115,6 +120,9 @@ class Guest:
         (self.out / (name + ".txt")).write_text("\n".join(rows or []) + "\n")
         raise TimeoutError("%s was not accepted; the last rows are in %s.txt" % (name, name))
 
+    def passed(self):
+        return sum(line.startswith("  pass ") for line in self.serial.read_text(errors="replace").splitlines())
+
     def running(self):
         return self.process.poll() is None and self.rpc("query-status")["status"] == "running"
 
@@ -153,7 +161,7 @@ def main():
     def no_keyboard(guest):
         rows = guest.screen("stopped", lambda rows: any(STOPPED in row for row in rows))
         results[guest.out.name] = [row for row in rows if row.strip()]
-        return ["H1: " + p for p in stopped_problems(rows, keyboard=False)]
+        return ["H1: " + p for p in stopped_problems(rows, False, guest.passed())]
 
     def with_keyboard(guest):
         guest.screen("home", lambda rows: any("Programs" in row for row in rows))
@@ -166,7 +174,7 @@ def main():
         guest.key("ret")
         rows = guest.screen("stopped", lambda rows: any(STOPPED in row for row in rows))
         results[guest.out.name] = [row for row in rows if row.strip()]
-        return found + ["H2: " + p for p in stopped_problems(rows, keyboard=True)]
+        return found + ["H2: " + p for p in stopped_problems(rows, True, guest.passed())]
 
     def without_replay(guest):
         guest.screen("home", lambda rows: any("Programs" in row for row in rows))
@@ -181,7 +189,7 @@ def main():
         results[guest.out.name] = [row for row in rows if row.strip()]
         if "Not run: " + WHY not in text_of(rows):
             found.append("H3: the stopped screen does not say which tests were not run and why")
-        return found + ["H3: " + p for p in stopped_problems(rows, keyboard=True)]
+        return found + ["H3: " + p for p in stopped_problems(rows, True, guest.passed())]
 
     trial("nokbd-320", args.default, "320x200", "pc,i8042=off", no_keyboard)
     trial("nokbd-1080", args.default, "1920x1080", "pc,i8042=off", no_keyboard)
