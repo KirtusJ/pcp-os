@@ -50,7 +50,8 @@ below are the texts of those frames, each with its rows joined by single spaces.
     was not before, and the title now says that it is cut.
  T8 F5: below the whole label "The whole head of the register's chain:" (on one row, or broken between its
     words), rows that are nothing but hex digits hold
-    64 of them on one page, and they begin with the 16 the same screen shows after "head".
+    64 of them on one page, and they begin with the 16 the same screen shows after "head"; any other page's
+    run of such rows is a beginning of those 64.
  T5 F3: rows 2 and 3, joined, are "Session files | cleared at power-off".
  T6 the desktop's row 3 is the verification sentence in one of the kernel's wordings, whole.
  T7 every one of these screens has, as its last row that holds anything, a row that says how to leave it
@@ -426,8 +427,13 @@ def text_trial(key, screen, passed, problems, results, mode, graphic=False):
     verification_rows = pages("verification-again", "f5", "VERIFICATION")
     heads = whole_heads(verification_rows)
     prefixes = {m[1] for page in verification for m in re.finditer(r"head ([0-9a-f]{16})\.\.\.", page)}
-    if len(heads) != 1 or len(next(iter(heads))) != 64 or {next(iter(heads))[:16]} != prefixes:
+    # A page that shows only the head's first rows gives a beginning of it; that is allowed, a different
+    # head or a beginning that is not this head's is not (A3, from frames at 320 by 200).
+    full = {h for h in heads if len(h) == 64}
+    partial_ok = len(full) == 1 and all(next(iter(full)).startswith(h) for h in heads)
+    if not partial_ok or {next(iter(full))[:16]} != prefixes:
         found.append("T8: F5 does not hold one whole head of 64 digits that begins with the 16 it shows above: %r %r" % (sorted(heads), sorted(prefixes)))
+    heads = full
     results["whole_head"] = sorted(heads)
     # The control: the last digit of the head taken off its row. No head of 64 may then be read.
     digit_rows = [(p, i) for p, rows in enumerate(verification_rows) for i, row in enumerate(rows)
@@ -435,10 +441,10 @@ def text_trial(key, screen, passed, problems, results, mode, graphic=False):
     if not digit_rows:
         problems.append("%s: no row to make the erased-digit control from" % mode)
     else:
-        p, i = digit_rows[0]
         erased = [list(rows) for rows in verification_rows]
-        erased[p][i] = erased[p][i].rstrip()[:-1]
-        if any(len(h) == 64 for h in whole_heads([erased[p]])):
+        for p, i in digit_rows:
+            erased[p][i] = erased[p][i].rstrip()[:-1]
+        if any(len(h) == 64 for h in whole_heads(erased)):
             problems.append("%s control accepted: a head with its last digit erased" % mode)
     register_pages = pages("register", "f4", "REGISTER", "up")
     register = "".join("".join(rows).replace(" ", "") for rows in register_pages)
