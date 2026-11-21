@@ -250,16 +250,22 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
         home = wait_screen("home", home_visible)
         if launcher_list_visible(home) or placed(home):
             raise RuntimeError("the first desktop was not empty")
-        # The programs are on a bar across the foot of the desktop by default, with the word on it; B
-        # changes to the dock in the middle, where the word is in the corner on a row of its own, and back.
+        # The programs are on a bar across the foot of the desktop by default, with the word on it; the
+        # settings change it to the dock in the middle, where the word is in the corner on a row of its own, and back.
         def one_row(view):
             return any("Programs" in row and "verified" in row for row in view)
         if not one_row(home):
             raise RuntimeError("the first desktop did not have the bar across its foot")
-        key("b")
-        wait_screen("home-dock", lambda view: home_visible(view) and not one_row(view))
-        key("b")
-        wait_screen("home-bar", lambda view: home_visible(view) and one_row(view))
+        def setting(view, mark, name):
+            return any("SETTINGS" in row for row in view) and any(mark + "   " + name in row for row in view)
+        for step, (down, bar, dock, same_row) in enumerate([("down", "( )", "(o)", False), ("up", "(o)", "( )", True)]):
+            key("s")
+            wait_screen(f"settings-{step}", lambda view: any("SETTINGS" in row for row in view))
+            key(down)
+            key("ret")
+            wait_screen(f"settings-set-{step}", lambda view: setting(view, bar, "A bar across the screen") and setting(view, dock, "A dock in the middle"))
+            key("esc")
+            wait_screen(f"home-form-{step}", lambda view: home_visible(view) and one_row(view) == same_row)
         # The corner says one word; V says the whole of it, in the sentence every kernel screen has used.
         key("v")
         wait_screen("verification", startup_verified)
