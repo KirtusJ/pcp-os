@@ -343,7 +343,8 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
         def enter(down):
             rpc("input-send-event", events=[{"type": "key", "data": {"down": down, "key": {"type": "qcode", "data": "ret"}}}])
         enter(True)
-        wait_screen("launcher-with-enter-held", launcher_list_visible)
+        selected = "rdesk.elf" if queue_desk else "surf.elf"
+        wait_screen("launcher-with-enter-held", lambda view: launcher_list_visible(view, selected))
         key("f10")
         wait_screen("power-question-enter-held", lambda view: any("POWER OFF" in row for row in view))
         for _ in range(3):
