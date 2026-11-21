@@ -65,6 +65,14 @@ the desktop is the full one: T1 to T5 and T7 as above with the full desktop's ke
     is granted." and it ends inside its plate; a row says what the chosen program may use; Esc gives the
     desktop as it was.
 
+Letters and Details (third change for issue 314; rule 5 at every size):
+ K1 on the small desktop and in the small list of programs, each of the letters d, r, p, v, k, f leaves the
+    frame as it was (they used to open screens and ask to power off);
+ K2 in the small list, Ctrl+D opens a screen titled DETAILS whose pages hold, after a row "SHA-256", rows of
+    hex digits that are the whole SHA-256 of the program's file (any shorter run a beginning of it), the
+    names of both programs, its three headings, the memory and keyboard lines, and "Esc back" as the last
+    row of every page; Esc gives the list as it was.
+
 A failed start, at 320 by 200 and 640 by 480, made by naming to the kernel a measurement that is not its own:
  F1 the desktop has a row that begins "NOT VERIFIED:";
  F2 the list of programs has such a row and the words "Programs are disabled.";
@@ -100,8 +108,9 @@ PINS = runpy.run_path(str(HERE / "check_compact_pins.py"))
 PROGRAMS = ["alpha.elf", "bravo.elf"]
 CHOICES = ["A bar across the screen", "A dock in the middle", "Recent activity", "This machine", "Session"]
 SETTINGS_KEYS = {True: "Up/Down choose    Enter set    Esc back", False: "Up/Down  Enter set  Esc back"}
-LIST_KEYS = {True: ["Up/Down choose   Enter open   D details   R register   P off"],
-             False: ["Up/Down choose   Enter open", "D details  R register  P off"]}
+LIST_KEYS = {True: ["Up/Down choose   Enter open   Esc back   F1 keys   F10 off"],
+             False: ["Up/Down choose   Enter open", "Esc back   F1 keys   F10 off"]}
+LETTERS = ("d", "r", "p", "v", "k", "f")
 MARK = re.compile(r"^  (\(o\)|\( \)|\[on\]|\[  \]) {2,3}(.+)$")
 
 
@@ -247,7 +256,13 @@ def boot(qemu, kernel, folder, measurement, mode, out, glyphs, timeout, named=No
 
 
 def settings_trial(key, screen, roomy, problems, results, mode):
-    home, _ = screen("home", lambda rows, frame: any("Programs" in row for row in rows))
+    home, home_frame = screen("home", lambda rows, frame: any("Programs" in row for row in rows))
+    # K1: letters do nothing on the small desktop.
+    for letter in LETTERS:
+        key(letter)
+        _, after = screen("home-letter-" + letter, lambda rows, frame: True)
+        if after != home_frame:
+            problems.append("%s K1: the letter %s changed the desktop" % (mode, letter))
     key("f2")
     rows, frame = screen("settings-0", lambda rows, frame: any("SETTINGS" in row for row in rows))
     states = {label: marks[0] for label, marks in settings_states(rows).items() if len(marks) == 1}
@@ -312,7 +327,7 @@ def settings_trial(key, screen, roomy, problems, results, mode):
     results["settings_controls_refused"] = sorted(forged)
 
 
-def list_trial(key, screen, roomy, passed, problems, results, mode):
+def list_trial(key, screen, roomy, passed, problems, results, mode, digest):
     key("ret")
     seen = {}
     for name in PROGRAMS:
@@ -323,6 +338,39 @@ def list_trial(key, screen, roomy, passed, problems, results, mode):
         problems += ["%s programs with %s chosen: %s" % (mode, name, p) for p in found]
         seen[name] = [row for row in rows if row.strip()]
     results["programs"] = seen
+    # K1: letters do nothing in the list. The frame after each is the frame before it.
+    for letter in LETTERS:
+        key(letter)
+        _, after = screen("programs-letter-" + letter, lambda rows, frame: True)
+        if after != frame:
+            problems.append("%s K1: the letter %s changed the list of programs" % (mode, letter))
+    if not roomy:
+        # K2: on a display narrower than the plain list, Ctrl+D is a screen of text with everything whole.
+        key("ctrl", "d")
+        first, shot = screen("details-1", lambda rows, frame: any("DETAILS" in row for row in rows))
+        pages, shots = [first], [shot]
+        while "Up/Down scroll" in " ".join(pages[-1]) and len(pages) < 150:
+            key("down")
+            more, shot = screen("details-%d" % (len(pages) + 1), lambda rows, frame: True)
+            if shot == shots[-1]:
+                break
+            pages.append(more)
+            shots.append(shot)
+        digests = {m[1].replace("\n", "") for page in pages
+                   for m in re.finditer(r"SHA-256\n((?:[0-9a-f]+\n)+)", "\n".join(row.strip() for row in page) + "\n")}
+        if not any(len(d) == 64 and d == digest for d in digests) or any(not digest.startswith(d) for d in digests):
+            problems.append("%s K2: Details does not hold the program's whole digest and only it: %r" % (mode, sorted(digests)))
+        text = " ".join(" ".join(" ".join(page).split()) for page in pages)
+        for name in PROGRAMS + ["PROGRAMS", "FILES FROM THE LOADER", "MACHINE", "memory for programs:", "keyboard: PS/2"]:
+            if name not in text:
+                problems.append("%s K2: Details does not show %r" % (mode, name))
+        if any(not [row for row in page if row.strip()][-1].endswith("Esc back") for page in pages):
+            problems.append("%s K2: a page of Details does not say how to leave" % mode)
+        key("esc")
+        back, after = screen("details-left", lambda rows, frame: True)
+        if after != frame:
+            problems.append("%s K2: Esc from Details did not give the list as it was" % mode)
+        results["details_pages"] = len(pages)
     lit = chosen_rows(frame)
     verified = [i for i, row in enumerate(rows) if row.startswith("  Verified")]
     for what, gone in (("the verification row emptied", verified[:1]), ("the chosen row emptied", lit[:1])):
@@ -567,7 +615,7 @@ def main():
                 # Settings is roomy from fourteen rows and forty-one columns; 320 across is never roomy.
                 settings_trial(key, screen, roomy, problems, results[mode], mode)
             if programs:
-                list_trial(key, screen, roomy, passed, problems, results[mode], mode)
+                list_trial(key, screen, roomy, passed, problems, results[mode], mode, hashlib.sha256(files["surf.elf"]).hexdigest())
             key("f10")
             screen("power-question", lambda rows, frame: any("POWER OFF" in row for row in rows))
             key("ret")
