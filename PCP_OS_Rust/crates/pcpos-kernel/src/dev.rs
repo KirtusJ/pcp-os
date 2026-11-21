@@ -495,7 +495,10 @@ pub fn interrupt(line: u8) {
                     break;
                 }
                 let byte = in8(0x60);
-                if status & 0x20 == 0 {
+                // Only the keyboard's own byte, received whole, is used: one from the second port (bit 5)
+                // or marked with a time-out or a parity error (bits 6 and 7) is taken off the controller
+                // and dropped, before it can answer the replay probe or be read as a key (A3).
+                if status & 0xE0 == 0 {
                     // The byte the replay probe sent comes back here if the controller replays; it is not a key.
                     if PROBE.load(Ordering::SeqCst) == 0x100 | byte as u32 {
                         PROBE.store(0, Ordering::SeqCst);
