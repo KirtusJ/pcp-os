@@ -206,7 +206,9 @@ def frame(monitor, directory, name, timeout, register=False):
 
 
 def selected_program(rows, frame, program, permissions, digest=None):
-    if SCREEN['graphical_selection'](rows, program, permissions, digest):
+    _, size, _, pixels = frame.split(b'\n', 3)
+    width = int(size.split()[0])
+    if SCREEN['selected_entry_visible'](rows, width, program, digest, permissions):
         return True
     if len(rows) < 8 or 'Enter open' not in rows[-2]:
         return False
@@ -223,18 +225,15 @@ def selected_program(rows, frame, program, permissions, digest=None):
         return False
     # In the compact layout the font reader reports the 3x20 teal strip as
     # an unknown glyph in column 2. Check its pixels on the named row.
-    for row_number, row in enumerate(rows):
-        if row == '  ?' + program:
-            _, size, _, pixels = frame.split(b'\n', 3)
-            width = int(size.split()[0])
-            strip = bytes.fromhex('41bad7') * 3
-            for y in range(row_number * 20, (row_number + 1) * 20):
-                start = (y * width + 20) * 3
-                if pixels[start:start + len(strip)] != strip:
-                    break
-            else:
-                return True
-    return False
+    marked = [i for i in range(5, len(rows) - 7) if rows[i].startswith('  ?')]
+    if len(marked) != 1 or rows[marked[0]] != '  ?' + program:
+        return False
+    strip = bytes.fromhex('41bad7') * 3
+    for y in range(marked[0] * 20, (marked[0] + 1) * 20):
+        start = (y * width + 20) * 3
+        if pixels[start:start + len(strip)] != strip:
+            return False
+    return True
 
 
 class DesktopScreens:

@@ -13,22 +13,29 @@ class LauncherSelection(unittest.TestCase):
         prefix = '0123456789abcdef'
         digest = prefix * 4
         permissions = launcher_grants(sound=True)
-        entry = '  > surf.elf                          SHA-256 ' + prefix + '...'
-        grants = '    may use: display, keyboard, sound, loader files, store'
-        neighbor = ['    rdesk.elf', grants]
-        def chosen(lines, program='surf.elf', sha=digest):
-            return selected_program([entry, *lines, '', *neighbor], b'', program, permissions, sha)
+        width = 1920
+        header = f'P6\n{width} 1080\n255\n'.encode()
+        indent = ' ' * (width // 200 + 2)
+        entry = indent + '> surf.elf                    118 KiB    SHA-256 ' + prefix + '...'
+        grants = indent + '  may use: display, keyboard, sound, loader files, store'
+        neighbor = indent + '  rdesk.elf                    53 KiB    SHA-256 ' + 'a' * 16 + '...'
+        def chosen(lines, program='surf.elf', sha=digest, selected=entry, other=neighbor):
+            return selected_program([selected, *lines, '', other, grants], header, program, permissions, sha)
 
         self.assertTrue(chosen([grants]))
-        self.assertTrue(chosen([grants, '    pinned to the desktop']))
+        self.assertTrue(chosen([grants, indent + '  pinned to the desktop']))
         self.assertFalse(chosen([grants], 'rdesk.elf'))
         self.assertFalse(chosen([grants], 'surf'))
         self.assertFalse(chosen([grants], sha='f' * 64))
-        for wrong in ['', '    may use: display', '    may use: console only', grants.replace('sound, ', ''),
-                      grants.replace('store', 'store, store'), grants.replace('store', 'console only')]:
+        self.assertFalse(chosen([grants], other=neighbor.replace('  rdesk.elf', '> rdesk.elf')))
+        self.assertFalse(chosen([grants], selected=entry.replace('118 KiB', 'big KiB')))
+        self.assertFalse(chosen([grants], selected=entry.replace('118 KiB', '1.5 KiB')))
+        self.assertFalse(chosen([grants], selected=' ' + entry))
+        for wrong in ['', indent + '  may use: display', indent + '  may use: console only', grants.replace('sound, ', ''),
+                      grants + ', second serial port', grants.replace('store', 'console only')]:
             with self.subTest(wrong=wrong):
                 self.assertFalse(chosen([wrong]))
-        self.assertFalse(chosen([grants, '             second serial port']))
+        self.assertFalse(chosen([grants, indent + '           second serial port']))
 
     def test_active_image_grants_and_wrapped_lines(self):
         digest, other = 'a' * 64, 'b' * 64
@@ -44,18 +51,22 @@ class LauncherSelection(unittest.TestCase):
         self.assertEqual(expected(command + ' net_image=' + digest), base + ('second serial port',))
         self.assertEqual(launcher_grants(sound=True, command_line=command, digest=digest),
                          ('display', 'keyboard', 'sound', 'loader files', 'store'))
-        entry = '  > surf.elf                      SHA-256 ' + digest[:16] + '...'
-        first = '    may use: display, keyboard, loader files, store,'
-        last = '             raw Ethernet frames, second serial port'
+        # At 1280 pixels the card wraps after 'store,'.
+        width = 1280
+        header = f'P6\n{width} 720\n255\n'.encode()
+        indent = ' ' * (width // 200 + 2)
+        entry = indent + '> surf.elf  118 KiB  SHA-256 ' + digest[:16] + '...'
+        first = indent + '  may use: display, keyboard, loader files, store,'
+        last = indent + '           raw Ethernet frames, second serial port'
         def chosen(lines, permissions):
-            return selected_program([entry, *lines, ''], b'', 'surf.elf', permissions, digest)
+            return selected_program([entry, *lines, ''], header, 'surf.elf', permissions, digest)
 
         self.assertTrue(chosen([first, last], expected()))
         self.assertFalse(chosen([first], expected()))
         self.assertFalse(chosen([first, last[1:]], expected()))
         self.assertFalse(chosen([first, last], expected(sha=other)))
         self.assertFalse(chosen([first, last.replace('raw Ethernet frames', 'second serial port')], expected()))
-        self.assertTrue(chosen(['    may use: console only'], expected(command + ' grant=none')))
+        self.assertTrue(chosen([indent + '  may use: console only'], expected(command + ' grant=none')))
 
     def test_compact_strip_follows_selected_filename(self):
         width, height = 640, 480
@@ -80,6 +91,9 @@ class LauncherSelection(unittest.TestCase):
                 rows[-5] = '  Access: second serial port'
                 self.assertFalse(selected_program(rows, frame, expected, permissions))
                 rows[-5] = ''
+                rows[5 + 1 - selected] = '  ?' + programs[1 - selected]
+                self.assertFalse(selected_program(rows, frame, expected, permissions))
+                rows[5 + 1 - selected] = '   ' + programs[1 - selected]
                 self.assertFalse(selected_program(rows, frame, programs[1 - selected], permissions))
                 # The decoded '?' alone must not stand in for a full teal strip.
                 pixels[offset:offset + 3] = b'\x00\x00\x00'

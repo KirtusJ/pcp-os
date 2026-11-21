@@ -23,6 +23,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import socket
 import subprocess
 import sys
@@ -101,33 +102,49 @@ def launcher_grants(*, sound, command_line="", digest=None, features=()):
     return tuple(permissions)
 
 
-def graphical_selection(rows, program, permissions, digest=None):
-    """Read the selected card only, including any wrapped permission lines."""
-    entries = [(i, row) for i, row in enumerate(rows) if "> " + program + " " in row]
-    if len(entries) != 1:
+def launcher_boot_profile(log):
+    """The command, display width and driven audio devices from this boot's serial log."""
+    command = re.search(r"^command line: ([^\r\n]*)", log, re.MULTILINE)
+    display = re.search(r"^display: [^,\r\n]+, (\d+)x\d+,", log, re.MULTILINE)
+    if not command or not display:
+        raise ValueError("the boot log is missing its command line or display mode")
+    sound = "sound: an AC'97 device," in log or "music: an FM synthesiser of the AdLib kind answered" in log
+    return command[1], int(display[1]), sound
+
+
+def selected_entry_visible(rows, width, program, digest, access):
+    """Read only the selected plate's interior; artifacts in the background are outside the entry."""
+    left = width // 200
+    columns = min(width * 47 // 100, 1100) // 10
+    interior = [row[left + 1:left + columns - 1].rstrip() for row in rows]
+    marked = [i for i, row in enumerate(interior) if row.startswith(" > ")]
+    if len(marked) != 1:
         return False
-    index, entry = entries[0]
-    start = entry.index("> " + program + " ") + 2
-    label = re.search(r"\bSHA-256 ([0-9a-f]{16})\.\.\.", entry[start:])
-    if not label or (digest is not None and label[1] != digest[:16]):
+    i = marked[0]
+    if not digest or not re.fullmatch(r"[0-9a-f]{64}", digest):
         return False
-    # The digest ends one cell before the card's last usable column. Clip out
-    # the neighboring desktop art, but retain the final comma of a wrapped line.
-    end = start + label.end() + 1
-    lines = iter(row[start:end].rstrip() for row in rows[index + 1:])
-    text = next(lines, "")
-    while text.endswith(","):
-        continuation = next(lines, "")
-        if not re.match(r"^ {9}[^ ]", continuation):
-            return False
-        text += " " + continuation[9:]
-    if text != "may use: " + ", ".join(permissions):
+    size = r"(?:[0-9]+ KiB|[1-9]\.[0-9] MiB|[1-9][0-9]+ MiB)"
+    identity = r" > " + re.escape(program) + r" +" + size + r" +SHA-256 " + digest[:16] + r"\.\.\."
+    if not re.fullmatch(identity, interior[i]):
         return False
-    # Only a pin label or the card border may follow its last permission.
-    following = next(lines, "")
-    if following == "pinned to the desktop":
-        following = next(lines, "")
-    return not following.strip(" ?")
+    # The renderer wraps before a whole permission and retains the separating comma.
+    lines = []
+    line = "may use:"
+    for n, permission in enumerate(access):
+        part = (" " if n == 0 else ", ") + permission
+        if n and len(line) + len(part) > columns - 6:
+            lines.append("   " + line + ",")
+            line = "         " + permission
+        else:
+            line += part
+    lines.append("   " + line)
+    after = i + 1 + len(lines)
+    if interior[i + 1:after] != lines:
+        return False
+    if interior[after:after + 1] == ["   pinned to the desktop"]:
+        after += 1
+    # The next row is the plate edge. A surplus continuation is still a false disclosure.
+    return after < len(interior) and not interior[after].strip(" ?")
 
 
 def register_problems(rows):
@@ -198,7 +215,7 @@ def exercise_queue(key, wait, screen, out):
     wait("rdesk.elf ended DONE: exit 0", 3)
 
 
-def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, app_digests):
+def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, app_digests, kernel_features):
     queue_desk = "rdesk.elf" in app_digests
     out.mkdir()
     serial, sock = out / "serial.txt", out / "qmp.sock"
@@ -268,6 +285,7 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, app_
         wait(measurement + " (measured; equal to the value the loader named)")
         wait("leaves no memory behind")
         seen = log()
+        command_line, width, sound = launcher_boot_profile(seen)
         result["startup_pass_lines"] = sum(line.startswith("  pass ") for line in seen.splitlines())
         result["startup_fail_lines"] = sum(line.lower().startswith("  fail") for line in seen.splitlines())
         def wait_screen(name, matches):
@@ -293,8 +311,9 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, app_
 
         def launcher_list_visible(rows, selected_program="surf.elf"):
             """The launcher: a chosen program with what it may use, and the corner word."""
-            return corner_verified(rows) and graphical_selection(
-                rows, selected_program, launcher_grants(sound=True), app_digests[selected_program])
+            digest = app_digests[selected_program]
+            access = launcher_grants(sound=sound, command_line=command_line, digest=digest, features=kernel_features)
+            return corner_verified(rows) and selected_entry_visible(rows, width, selected_program, digest, access)
 
         def home_activity(rows):
             """The outcomes on the desktop's activity widget, oldest first."""
@@ -483,19 +502,21 @@ def main():
     parser.add_argument("--queue-desk", action="store_true", help="require the second app and its saved queue")
     args = parser.parse_args()
     receipt = json.loads((args.built / "receipt.json").read_text())
-    files = receipt.get("on_disc", receipt.get("files", {}))
-    app_digests = {name: info["sha256"] for name, info in files.items() if name.endswith(".elf")}
-    if args.queue_desk and "rdesk.elf" not in app_digests:
-        sys.exit("the receipt has no queue desk")
     iso = (args.built / "pcp-os-tester.iso").resolve(strict=True)
-    if hashlib.sha256(iso.read_bytes()).hexdigest() != receipt["iso_sha256"]:
+    image = iso.read_bytes()
+    if hashlib.sha256(image).hexdigest() != receipt["iso_sha256"]:
         sys.exit("the ISO is not the one its receipt describes")
+    files = runpy.run_path(str(Path(__file__).with_name("build.py")))["read_back"](image)
+    app_digests = {name: hashlib.sha256(data).hexdigest() for name, data in files.items() if name.endswith(".elf")}
+    if args.queue_desk and "rdesk.elf" not in app_digests:
+        sys.exit("the CD has no queue desk")
+    kernel_features = set(re.split(r"[, ]+", receipt.get("kernel_features", "default")))
     evidence = args.evidence.resolve()
     evidence.mkdir(parents=True, exist_ok=False)
     glyphs = kernel_glyphs()
     version = subprocess.check_output([args.qemu, "--version"], text=True).splitlines()[0]
     results = [session(args.qemu, iso, evidence / ("%s-%s" % (machine, "counted" if counted else "ordinary")), machine, counted,
-                       receipt["kernel_measurement"], args.timeout, glyphs, app_digests)
+                       receipt["kernel_measurement"], args.timeout, glyphs, app_digests, kernel_features)
                for machine in ("pc", "q35") for counted in (False, True)]
     summary = {"iso_sha256": receipt["iso_sha256"], "source_commit": receipt["source_commit"], "kernel_measurement": receipt["kernel_measurement"],
                "qemu": version, "host": " ".join(os.uname()[i] for i in (0, 2, 4)), "passed": all(r["passed"] for r in results),
