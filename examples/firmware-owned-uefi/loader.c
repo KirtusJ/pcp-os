@@ -22,6 +22,7 @@ struct boot_data {
     char command[96];
     struct mb_range map[MAX_DESCRIPTORS];
 };
+_Static_assert(sizeof(GRANT) <= sizeof(((struct boot_data *)0)->command), "kernel command does not fit");
 static UINT64 raw_map[MAP_CAPACITY / sizeof(UINT64)];
 extern void transfer(UINT64 info, UINT64 entry, UINT64 stack) __attribute__((sysv_abi,noreturn));
 extern char transfer_end[];
@@ -36,6 +37,23 @@ static void hex(UINT64 x) {
 static void value(const char *s, UINT64 x) { word(s); byte('='); hex(x); byte('\n'); }
 static void halt(void) __attribute__((noreturn));
 static void halt(void) { for (;;) __asm__ volatile("cli; hlt"); }
+#ifdef PCP_USB_VM
+/* This unattended experiment is limited to the QEMU TCG fixture. */
+static int tcg_fixture(void) {
+    UINT32 a, b, c, d;
+    __asm__ volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(1), "c"(0));
+    if (!(c & (1U << 31))) return 0;
+    __asm__ volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(0x40000000), "c"(0));
+    return b == 0x54474354 && c == 0x43544743 && d == 0x47435447; /* TCGTCGTCGTCG */
+}
+
+static int matches(UINTN start, const UINT8 *expected, UINTN length) {
+    const volatile UINT8 *actual = (const volatile UINT8 *)start;
+    for (UINTN i = 0; i < length; ++i)
+        if (actual[i] != (expected ? expected[i] : 0)) return 0;
+    return 1;
+}
+#else
 static UINT8 input(UINT16 port) {
     UINT8 result;
     __asm__ volatile("inb %1,%0" : "=a"(result) : "Nd"(port));
@@ -45,10 +63,50 @@ static UINT8 gate(void) {
     while (!(input(0x2fd) & 1)) __asm__ volatile("pause");
     return input(0x2f8);
 }
+#endif
 static void copy_bytes(void *dest, const void *src, UINTN size) {
     UINT8 *d = dest; const UINT8 *s = src;
     while (size--) *d++ = *s++;
 }
+#ifdef PCP_USB_VM
+/* Multiboot 1 puts the direct-colour descriptor at byte 88 of the boot information. */
+struct __attribute__((packed)) mb_framebuffer {
+    UINT64 address;
+    UINT32 pitch, width, height;
+    UINT8 bits, type, red_pos, red_bits, green_pos, green_bits, blue_pos, blue_bits;
+};
+_Static_assert(sizeof(struct mb_framebuffer) == 28, "Multiboot framebuffer layout");
+_Static_assert(88 + sizeof(struct mb_framebuffer) <= sizeof(((struct boot_data *)0)->info),
+               "Multiboot framebuffer must fit the boot header");
+
+static void describe_console(EFI_SYSTEM_TABLE *system, struct boot_data *boot) {
+    EFI_GUID guid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
+    EFI_GRAPHICS_OUTPUT_PROTOCOL *gop = NULL;
+    EFI_STATUS status = uefi_call_wrapper(system->BootServices->HandleProtocol, 3,
+                                          system->ConsoleOutHandle, &guid, (void **)&gop);
+    if (EFI_ERROR(status) || !gop || !gop->Mode) return;
+    EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE *mode = gop->Mode;
+    EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *info = mode->Info;
+    if (!info || mode->SizeOfInfo < sizeof(*info)
+        || info->PixelFormat != PixelBlueGreenRedReserved8BitPerColor
+        || !info->HorizontalResolution || !info->VerticalResolution
+        || info->PixelsPerScanLine < info->HorizontalResolution
+        || info->PixelsPerScanLine > 0xffffffffU / 4) return;
+    UINT32 pitch = info->PixelsPerScanLine * 4;
+    UINT64 bytes = (UINT64)pitch * info->VerticalResolution;
+    if (!mode->FrameBufferBase || (mode->FrameBufferBase & 3)
+        || bytes > mode->FrameBufferSize || mode->FrameBufferBase > ~((UINT64)0) - bytes) return;
+    struct mb_framebuffer fb = {
+        mode->FrameBufferBase, pitch, info->HorizontalResolution, info->VerticalResolution,
+        32, 1, 16, 8, 8, 8, 0, 8
+    };
+    copy_bytes((UINT8 *)boot->info + 88, &fb, sizeof(fb));
+    boot->info[0] |= 1U << 12;
+    value("console_framebuffer", fb.address);
+    value("console_pitch", fb.pitch);
+}
+#endif
+
 static void set_module(struct boot_data *b, unsigned i, UINTN base, UINTN size,
                        const UINT8 *bytes, const char *name, UINTN name_size) {
     b->modules[i] = (struct module){base, base+size, (UINTN)b->names[i], 0};
@@ -100,6 +158,9 @@ static int translate(UINTN stride, UINTN count, struct mb_range *out, int initia
 }
 
 EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
+#ifdef PCP_USB_VM
+    if (!tcg_fixture()) return EFI_UNSUPPORTED;
+#endif
     InitializeLib(image, system);
     EFI_BOOT_SERVICES *bs = system->BootServices;
     UINTN key=0, stride=0, count=0;
@@ -110,6 +171,10 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     s=read_map(bs,&key,&stride,&count);
     if (EFI_ERROR(s) || !translate(stride,count,NULL,1)) return EFI_UNSUPPORTED;
     value("arena_start",IMAGE_BASE); value("arena_end",ARENA_END);
+#ifdef PCP_USB_VM
+    const UINT8 mode = 'G';
+    word("removable-vm\n");
+#else
     word("await-host\n");
     UINT8 mode=gate();
     if (mode!='G' && mode!='X' && mode!='R') return EFI_ABORTED;
@@ -119,6 +184,7 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
         value("control_page",s);
         if (EFI_ERROR(s)) return s;
     }
+#endif
     s=uefi_call_wrapper(bs->AllocatePages,4,AllocateAddress,EfiLoaderData,(ARENA_END-IMAGE_BASE)/PAGE,&base);
     value("allocation",s);
     if (EFI_ERROR(s) || base!=IMAGE_BASE || mode=='X') {
@@ -140,8 +206,22 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     b->info[4]=(UINTN)b->command;
     b->info[5]=3; b->info[6]=(UINTN)b->modules;
     b->info[12]=(UINTN)b->map;
+#ifdef PCP_USB_VM
+    /* The kernel and modules come from this measured build. Read the destination
+     * back before handoff, including every zero-filled kernel tail. */
+    if (!matches(IMAGE_BASE, kernel_bytes, KERNEL_FILE_BYTES)
+        || !matches(IMAGE_BASE + KERNEL_FILE_BYTES, NULL, SURF_BASE - IMAGE_BASE - KERNEL_FILE_BYTES)
+        || !matches(SURF_BASE, surf_bytes, SURF_SIZE)
+        || !matches(PICTURE_BASE, picture_bytes, PICTURE_SIZE)
+        || !matches(AUDIO_BASE, audio_bytes, AUDIO_SIZE)) {
+        word("content-refused\n"); halt();
+    }
+    word("content-verified\n");
+    describe_console(system, b);
+#else
     word("await-content-check\n");
     if (gate() != 'C') { word("content-refused\n"); halt(); }
+#endif
     for (unsigned attempt=0; attempt<3; ++attempt) {
         s=read_map(bs,&key,&stride,&count);
         if (EFI_ERROR(s) || !translate(stride,count,b->map,0)) { word("final-map-refused\n"); halt(); }
