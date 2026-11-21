@@ -1,0 +1,8 @@
+input,width,height,pixels_per_scanline,framebuffer_described,handed_off_pitch
+BGR,1920,1080,1920,1,7680
+BGR padded,1920,1080,1984,1,7936
+RGB,1920,1080,1920,0,0
+bit mask with BGR channel positions,1920,1080,1920,0,0
+BLT only,1920,1080,1920,0,0
+no GOP on console handle,1920,1080,1920,0,0
+alternate current BGR mode,1024,768,1024,1,4096
