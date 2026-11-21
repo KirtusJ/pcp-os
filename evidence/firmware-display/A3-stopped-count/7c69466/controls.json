@@ -1,0 +1,126 @@
+{
+  "kbd-800": {
+    "serial": 72,
+    "display_original": 71,
+    "controls": {
+      "original": {
+        "digits": "71",
+        "stock_accepts": true,
+        "agrees_with_serial": false
+      },
+      "corrected": {
+        "digits": "72",
+        "stock_accepts": true,
+        "agrees_with_serial": true
+      },
+      "transposed": {
+        "digits": "17",
+        "stock_accepts": true,
+        "agrees_with_serial": false
+      },
+      "last digit erased": {
+        "digits": "7 ",
+        "stock_accepts": true,
+        "agrees_with_serial": false
+      },
+      "both erased": {
+        "digits": "  ",
+        "stock_accepts": true,
+        "agrees_with_serial": false
+      }
+    }
+  },
+  "nokbd-1080": {
+    "serial": 66,
+    "display_original": 65,
+    "controls": {
+      "original": {
+        "digits": "65",
+        "stock_accepts": true,
+        "agrees_with_serial": false
+      },
+      "corrected": {
+        "digits": "66",
+        "stock_accepts": true,
+        "agrees_with_serial": true
+      },
+      "transposed": {
+        "digits": "56",
+        "stock_accepts": true,
+        "agrees_with_serial": false
+      },
+      "last digit erased": {
+        "digits": "6 ",
+        "stock_accepts": true,
+        "agrees_with_serial": false
+      },
+      "both erased": {
+        "digits": "  ",
+        "stock_accepts": true,
+        "agrees_with_serial": false
+      }
+    }
+  },
+  "nokbd-320": {
+    "serial": 66,
+    "display_original": 65,
+    "controls": {
+      "original": {
+        "digits": "65",
+        "stock_accepts": true,
+        "agrees_with_serial": false
+      },
+      "corrected": {
+        "digits": "66",
+        "stock_accepts": true,
+        "agrees_with_serial": true
+      },
+      "transposed": {
+        "digits": "56",
+        "stock_accepts": true,
+        "agrees_with_serial": false
+      },
+      "last digit erased": {
+        "digits": "6 ",
+        "stock_accepts": true,
+        "agrees_with_serial": false
+      },
+      "both erased": {
+        "digits": "  ",
+        "stock_accepts": true,
+        "agrees_with_serial": false
+      }
+    }
+  },
+  "noreplay-800": {
+    "serial": 66,
+    "display_original": 65,
+    "controls": {
+      "original": {
+        "digits": "65",
+        "stock_accepts": true,
+        "agrees_with_serial": false
+      },
+      "corrected": {
+        "digits": "66",
+        "stock_accepts": true,
+        "agrees_with_serial": true
+      },
+      "transposed": {
+        "digits": "56",
+        "stock_accepts": true,
+        "agrees_with_serial": false
+      },
+      "last digit erased": {
+        "digits": "6 ",
+        "stock_accepts": true,
+        "agrees_with_serial": false
+      },
+      "both erased": {
+        "digits": "  ",
+        "stock_accepts": true,
+        "agrees_with_serial": false
+      }
+    }
+  }
+}
