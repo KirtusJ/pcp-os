@@ -879,8 +879,8 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     let no_keyboard = match keyboard_start {
         dev::KeyboardStart::Ready => None,
         dev::KeyboardStart::Absent => Some("No keyboard controller answered. This kernel drives PS/2 keyboards only."),
-        dev::KeyboardStart::ControllerBusy => Some("A keyboard controller is there but did not take its set-up in time, so the keyboard is not used."),
-        dev::KeyboardStart::NoAcknowledgement => Some("The keyboard did not acknowledge being told to send keys, so it is not used."),
+        dev::KeyboardStart::ControllerBusy => Some("The keyboard controller did not take its set-up in time; the keyboard is not used."),
+        dev::KeyboardStart::NoAcknowledgement => Some("The keyboard did not acknowledge, so it is not used."),
     };
     let start = session::Start { boot: &boot, display, keyboard, no_keyboard, not_run, sound: sound || music, passed: PASSED.load(core::sync::atomic::Ordering::Relaxed), failed, tasks: 14, version: env!("CARGO_PKG_VERSION") };
     let _tasks = session::run(&mut rec, &start, &mut failed);

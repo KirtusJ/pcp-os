@@ -1413,12 +1413,22 @@ pub fn stopped_screen(start: &Start, failed: u32, passed: u32) {
             wrapped_words(text, across).into_iter().map(|part| (part, *colour)).collect()
         }).collect()
     };
-    // Give up, in turn, the empty rows, then what is least needed, until the rest fits.
-    for giving_up in [3u8, 2, 1] {
+    // Give up, in turn, the empty rows and then what is least needed, until the rest fits. The verdict
+    // and the reason there is no keyboard are given up only one at a time and last of all, the reason
+    // before the verdict: on the smallest display the kernel has (ten rows of thirty-two columns) all of
+    // the title, the verdict, each of the three reasons and what to do fit, and a guest check holds
+    // that so (a first form dropped both together when a longer reason needed one row more).
+    for giving_up in [3u8, 2] {
         if lines_of_parts(&parts).len() <= rows as usize {
             break;
         }
         parts.retain(|(rank, _, _)| *rank != giving_up);
+    }
+    while lines_of_parts(&parts).len() > rows as usize {
+        match parts.iter().rposition(|(rank, _, _)| *rank == 1) {
+            Some(at) => { parts.remove(at); }
+            None => break,
+        }
     }
     let lines = lines_of_parts(&parts);
     ui::clear(GROUND);
