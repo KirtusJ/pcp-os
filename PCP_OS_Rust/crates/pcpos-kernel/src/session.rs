@@ -156,7 +156,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
                 dev::keys_forget();
             }
             (0x13, false) => register_view(rec),
-            (0x19, false) | (0x01, false) => break,
+            (0x19, false) => break,
             _ => {}
         }
     }
