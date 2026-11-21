@@ -231,10 +231,13 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
 
         def launcher_list_visible(rows, selected_program="surf.elf"):
             """The launcher: a chosen program with what it may use, and the corner word."""
-            return corner_verified(rows) and any(
-                f"> {selected_program} " in row and "may use:" in grants
-                for row, grants in zip(rows, rows[1:])
-            )
+            if not corner_verified(rows):
+                return False
+            for entry, grants in zip(rows, rows[1:]):
+                marker = entry.find(f"> {selected_program} ")
+                if marker >= 0 and re.match(r"may use: (?:display|console only)\b", grants[marker + 2:]):
+                    return True
+            return False
 
         def home_activity(rows):
             """The outcomes on the desktop's activity widget, oldest first."""
