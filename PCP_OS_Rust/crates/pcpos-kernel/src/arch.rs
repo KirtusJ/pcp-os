@@ -157,7 +157,7 @@ pub struct BootInfo {
 }
 
 impl BootInfo {
-    #[cfg(feature = "guest-ethernet")]
+    #[cfg(any(feature = "guest-ethernet", feature = "vm-store"))]
     pub(crate) fn exact_command_line(&self) -> Option<&str> {
         self.command_line_exact.then_some(self.command_line.as_str())
     }
@@ -187,6 +187,8 @@ pub fn boot_info(magic: u32, info: u32) -> BootInfo {
         }
         if flags & 4 != 0 {
             (out.command_line, out.command_line_exact) = text(word(16) as usize);
+        } else {
+            out.command_line_exact = true; // The loader supplied no arguments.
         }
         if flags & 8 != 0 {
             let (count, at) = (word(20) as usize, word(24) as usize);
