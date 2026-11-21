@@ -1,0 +1,39 @@
+{
+  "normal": {
+    "default": 72,
+    "demo": 59,
+    "omitted_records": {
+      "rejected batch returns the frames of every member": 3,
+      "the stop key ends a program that never yields, long before its budget": 1,
+      "a program the person stopped is STOPPED in the kernel's task table, as it is in what the kernel observed of it": 1,
+      "a program that sleeps 50 ms is woken at its millisecond: the processor idled 51 timer periods, no fewer and no more, and the sleep answered 0": 1,
+      "a program waiting in a read of the keyboard is woken by each key's interrupt and reads the keys in order: it idled until the first and exited 0 on the third": 1,
+      "the stop key ends a program that is asleep (for the longest sleep accepted: its deadline does not overflow) at once, and all its memory comes back": 1,
+      "the stop key ends a program that waits in a read of the keyboard; it had read Ctrl and Alt and was never handed Delete; all its memory comes back": 1,
+      "a stop key pressed before a program is started does not stop it": 1,
+      "a program under a name of 32 bytes is admitted and runs to its end": 1,
+      "a program under a name of 33 bytes is refused admission as a task": 1,
+      "a program that cannot be admitted as a task leaves no memory behind: as many frames are free after as before": 1
+    },
+    "omitted_count": 13
+  },
+  "opt-in": {
+    "default": 73,
+    "demo": 59,
+    "omitted_records": {
+      "rejected batch returns the frames of every member": 3,
+      "the stop key ends a program that never yields, long before its budget": 1,
+      "a program the person stopped is STOPPED in the kernel's task table, as it is in what the kernel observed of it": 1,
+      "a program that sleeps 50 ms is woken at its millisecond: the processor idled 51 timer periods, no fewer and no more, and the sleep answered 0": 1,
+      "a program waiting in a read of the keyboard is woken by each key's interrupt and reads the keys in order: it idled until the first and exited 0 on the third": 1,
+      "the stop key ends a program that is asleep (for the longest sleep accepted: its deadline does not overflow) at once, and all its memory comes back": 1,
+      "the stop key ends a program that waits in a read of the keyboard; it had read Ctrl and Alt and was never handed Delete; all its memory comes back": 1,
+      "a stop key pressed before a program is started does not stop it": 1,
+      "a program under a name of 32 bytes is admitted and runs to its end": 1,
+      "a program under a name of 33 bytes is refused admission as a task": 1,
+      "a program that cannot be admitted as a task leaves no memory behind: as many frames are free after as before": 1,
+      "a built-in address space gives its frames back at every allocation cutoff and after a successful construction": 1
+    },
+    "omitted_count": 14
+  }
+}
