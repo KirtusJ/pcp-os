@@ -1,0 +1,261 @@
+{
+  "tested_working_commit": "62c24cc2a76bc35bdf12b7ad40302c524f045b50",
+  "tester_iso_sha256": "0d00e31eebe9d12afe402b986b57d0dc515c4e720f6a8a0d402c6b9cab825832",
+  "kernel_measurement": "57358c6eb67ad61a0b9b1ef361ebdcfb5165ee89233c7f92cf3341be66a02b0f",
+  "source_tree": "4ab97da84b2ff3f8b127abe5965670d884d840cd",
+  "compiler": "1.97.0",
+  "qemu": "QEMU emulator version 10.0.13 (Debian 1:10.0.13+ds-0+deb13u1)",
+  "optical": [
+    {
+      "machine": "pc",
+      "clock": "ordinary",
+      "passed": true,
+      "startup_pass_lines": 71,
+      "final_pass_lines": 72,
+      "register_problems": [],
+      "exit_code": 0,
+      "problems": []
+    },
+    {
+      "machine": "pc",
+      "clock": "instruction-counted",
+      "passed": true,
+      "startup_pass_lines": 71,
+      "final_pass_lines": 72,
+      "register_problems": [],
+      "exit_code": 0,
+      "problems": []
+    },
+    {
+      "machine": "q35",
+      "clock": "ordinary",
+      "passed": true,
+      "startup_pass_lines": 71,
+      "final_pass_lines": 72,
+      "register_problems": [],
+      "exit_code": 0,
+      "problems": []
+    },
+    {
+      "machine": "q35",
+      "clock": "instruction-counted",
+      "passed": true,
+      "startup_pass_lines": 71,
+      "final_pass_lines": 72,
+      "register_problems": [],
+      "exit_code": 0,
+      "problems": []
+    }
+  ],
+  "candidate_desktop_cases": {
+    "1280x720": {
+      "exit_code": 0,
+      "final_pass_lines": 72,
+      "captures": 18,
+      "expected_verification_failure": false
+    },
+    "1920x1080": {
+      "exit_code": 0,
+      "final_pass_lines": 72,
+      "captures": 17,
+      "expected_verification_failure": false
+    },
+    "2560x1440": {
+      "exit_code": 0,
+      "final_pass_lines": 72,
+      "captures": 17,
+      "expected_verification_failure": false
+    },
+    "320x200": {
+      "exit_code": 0,
+      "final_pass_lines": 72,
+      "captures": 102,
+      "expected_verification_failure": false
+    },
+    "failed-320x200": {
+      "exit_code": 0,
+      "final_pass_lines": 40,
+      "captures": 4,
+      "expected_verification_failure": true
+    },
+    "320x220": {
+      "exit_code": 0,
+      "final_pass_lines": 72,
+      "captures": 17,
+      "expected_verification_failure": false
+    },
+    "320x240": {
+      "exit_code": 0,
+      "final_pass_lines": 72,
+      "captures": 17,
+      "expected_verification_failure": false
+    },
+    "320x260": {
+      "exit_code": 0,
+      "final_pass_lines": 72,
+      "captures": 17,
+      "expected_verification_failure": false
+    },
+    "320x280": {
+      "exit_code": 0,
+      "final_pass_lines": 72,
+      "captures": 15,
+      "expected_verification_failure": false
+    },
+    "320x480": {
+      "exit_code": 0,
+      "final_pass_lines": 72,
+      "captures": 15,
+      "expected_verification_failure": false
+    },
+    "640x240": {
+      "exit_code": 0,
+      "final_pass_lines": 72,
+      "captures": 15,
+      "expected_verification_failure": false
+    },
+    "640x260": {
+      "exit_code": 0,
+      "final_pass_lines": 72,
+      "captures": 15,
+      "expected_verification_failure": false
+    },
+    "640x480": {
+      "exit_code": 0,
+      "final_pass_lines": 72,
+      "captures": 46,
+      "expected_verification_failure": false
+    },
+    "failed-640x480": {
+      "exit_code": 0,
+      "final_pass_lines": 40,
+      "captures": 4,
+      "expected_verification_failure": true
+    },
+    "800x600": {
+      "exit_code": 0,
+      "final_pass_lines": 72,
+      "captures": 17,
+      "expected_verification_failure": false
+    }
+  },
+  "fresh_capture_count": 336,
+  "independent_notice_results": [
+    {
+      "revision": "e749600490364700bdf4eb4ab5c05df2628553c0",
+      "mode": "320x200",
+      "disabled_notice": true,
+      "task_launches": 0,
+      "before": 6,
+      "after": 6,
+      "closed": 8
+    },
+    {
+      "revision": "e749600490364700bdf4eb4ab5c05df2628553c0",
+      "mode": "640x480",
+      "disabled_notice": true,
+      "task_launches": 0,
+      "before": 6,
+      "after": 6,
+      "closed": 8
+    },
+    {
+      "revision": "e749600490364700bdf4eb4ab5c05df2628553c0",
+      "mode": "648x480",
+      "disabled_notice": true,
+      "task_launches": 0,
+      "before": 6,
+      "after": 6,
+      "closed": 8
+    },
+    {
+      "revision": "e749600490364700bdf4eb4ab5c05df2628553c0",
+      "mode": "656x480",
+      "disabled_notice": true,
+      "task_launches": 0,
+      "before": 6,
+      "after": 6,
+      "closed": 8
+    }
+  ],
+  "independent_checker_results": {
+    "1024x768": {
+      "before": {
+        "original_accepted": true,
+        "erased_digit_rejected": true
+      },
+      "after": {
+        "original_accepted": true,
+        "erased_digit_rejected": true
+      }
+    },
+    "1280x720": {
+      "before": {
+        "original_accepted": true,
+        "erased_digit_rejected": true
+      },
+      "after": {
+        "original_accepted": true,
+        "erased_digit_rejected": true
+      }
+    },
+    "1920x1080": {
+      "before": {
+        "original_accepted": true,
+        "erased_digit_rejected": true
+      },
+      "after": {
+        "original_accepted": true,
+        "erased_digit_rejected": true
+      }
+    },
+    "2560x1440": {
+      "before": {
+        "original_accepted": true,
+        "erased_digit_rejected": true
+      },
+      "after": {
+        "original_accepted": true,
+        "erased_digit_rejected": true
+      }
+    },
+    "320x200": {
+      "before": {
+        "original_accepted": true,
+        "erased_digit_rejected": true,
+        "conflicting_partial_rejected": true,
+        "conflicting_full_rejected": true
+      },
+      "after": {
+        "original_accepted": true,
+        "erased_digit_rejected": true,
+        "conflicting_partial_rejected": true,
+        "conflicting_full_rejected": true
+      }
+    },
+    "640x480": {
+      "before": {
+        "original_accepted": true,
+        "erased_digit_rejected": true
+      },
+      "after": {
+        "original_accepted": true,
+        "erased_digit_rejected": true
+      }
+    },
+    "800x600": {
+      "before": {
+        "original_accepted": true,
+        "erased_digit_rejected": true
+      },
+      "after": {
+        "original_accepted": true,
+        "erased_digit_rejected": true
+      }
+    }
+  },
+  "execution": "Clean source, repository tester-CD build, pinned Limine and Rust 1.97.0. The four optical guests booted that read-only ISO. The desktop suite used its measured kernel and the test program from that ISO, with QMP over stdio in place of a Unix socket and the same test cases divided among native PCP workers. No test predicate, key sequence or timing changed.",
+  "checker_replay": "The independent corrected T8 replay used originals from kernel ea3bbb48 with checker 012ca21. To repeat it, extract the original archive referenced below, copy the three files in checker-replay into its root, and run python3 -B check_fixed.py with NumPy. The 62c24cc runs above used fresh frames from their own kernel.",
+  "inputs": "https://github.com/KirtusJ/pcp-os/tree/1757b8d5078a3c97121bfb154ddadc7da9ba9d17/evidence/compact-desktop/A3-F5-2c27f91",
+  "outstanding": "Physical laptop testing, USB keyboard support and full-desktop automatic scaling remain outside these cases."
+}
