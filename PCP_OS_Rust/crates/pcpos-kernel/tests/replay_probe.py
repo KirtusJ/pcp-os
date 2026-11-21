@@ -82,6 +82,8 @@ def lost_key_problems(code, log, independent_passes):
     failures = Counter(line.removeprefix("  FAIL ") for line in lines if line.startswith("  FAIL "))
     if failures != Counter(KEY_CHECKS):
         problems.append(f"R4: expected one failure for each key check, got {dict(failures)}")
+    if any(line.startswith("the self-tests that press keys were not run:") for line in lines):
+        problems.append("R4: the kernel says it skipped the key checks that should have failed")
     passes = pass_inventory(log)
     if passes != independent_passes:
         problems.append(f"R4: missing independent passes {dict(independent_passes - passes)}, "
