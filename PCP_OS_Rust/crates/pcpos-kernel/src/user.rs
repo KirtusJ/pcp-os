@@ -191,7 +191,7 @@ fn new_table(world: World) -> Table {
     Table { procs: Vec::new(), current: None, kernel: None, tasks: TaskTable::new(), caps: CapSpace::new(64), fpu_owner: None, fs_loaded: 0, world, idle: 0 }
 }
 
-fn empty_world() -> World {
+pub(crate) fn empty_world() -> World {
     World { files: Vec::new(), store: Vec::new(),
         #[cfg(feature = "vm-store")] volume: None, epoch_at_start: 0, unanswered: Vec::new() }
 }
