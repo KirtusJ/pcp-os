@@ -384,7 +384,7 @@ fn verification_view(start: &Start, rec: &Record) {
     let head = rec.ledger().head();
     at(2, 6, &format!("Register: {} events, head {}...", rec.ledger().len(), &head[..head.len().min(16)]), TEXT, GROUND);
     at(2, 7, if ledger::verify(rec.ledger().bytes()).is_ok() { "The register's chain is intact." } else { "The register's chain does NOT verify." }, TEXT, GROUND);
-    at(2, 9, "R shows every event of the register from the desktop.", SOFT, GROUND);
+    at(2, 9, "F4 shows every event of the register.", SOFT, GROUND);
     at(2, rows - 2, "Any key goes back", SOFT, GROUND);
     wait_key();
 }
