@@ -1,0 +1,118 @@
+name: D11 normalized kernel native boot acceptance (test only)
+
+on:
+  push:
+    branches:
+      - director-11/register-default-build-parity-20261116
+    paths:
+      - "os-docs/register-forensics/check_stripped_kernel_boot.py"
+      - ".github/workflows/d11-stripped-kernel-native.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  normalized_native_boot:
+    name: Exact A/A and diagnostic-OFF stripped Q35 guest boots
+    runs-on: ubuntu-24.04
+    timeout-minutes: 28
+    steps:
+      - name: Read independent test-only verifier
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Pin D10 production draft #233 source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: 74c4d4a9934ad68e1b5be380971bf3377a464c6d
+          path: baseline
+      - name: Pin D10 successor #240 source with diagnostic disabled
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: f1b7430a9c1aaabc5587f19b16e0c1e76646ef81
+          path: candidate
+      - name: Validate source checkout identifiers and set up toolchain
+        run: |
+          set -euo pipefail
+          test "$(git -C baseline rev-parse HEAD)" = 74c4d4a9934ad68e1b5be380971bf3377a464c6d
+          test "$(git -C candidate rev-parse HEAD)" = f1b7430a9c1aaabc5587f19b16e0c1e76646ef81
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 binutils lld
+          rustup target add x86_64-unknown-none
+          rustup component add rust-src
+      - name: Build exact pins twice and once, then normalize copies without shipping
+        env:
+          REPRO_STAGE: ${{ runner.temp }}/d11-stripped-native-staging
+        run: |
+          set -euo pipefail
+          mkdir -p witness
+          rustc -V > witness/rustc-version.txt
+          cargo -V > witness/cargo-version.txt
+          printf '%s\n' 'base=74c4d4a9934ad68e1b5be380971bf3377a464c6d' \
+            'candidate=f1b7430a9c1aaabc5587f19b16e0c1e76646ef81' \
+            > witness/source-pins.txt
+          make_case() {
+            local src="$1" name="$2"
+            rm -rf "$REPRO_STAGE"
+            export PCPOS_KERNEL_STAGE="$REPRO_STAGE"
+            unset PCPOS_KERNEL_FEATURES || :
+            sh "$src/PCP_OS_Rust/crates/pcpos-kernel/run.sh" build
+            local elf="$src/PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32"
+            cp "$elf" "witness/$name.raw.elf32"
+            sha256sum "$elf" | awk '{print $1}' > "witness/$name.raw.sha256"
+            python3 "$src/PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py" "$elf" \
+              > "witness/$name.raw.measurement"
+            objcopy --strip-all "$elf" "witness/$name.stripped.elf32"
+            sha256sum "witness/$name.stripped.elf32" | awk '{print $1}' > "witness/$name.stripped.sha256"
+            python3 "$src/PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py" "witness/$name.stripped.elf32" \
+              > "witness/$name.stripped.measurement"
+            wc -c < "witness/$name.stripped.elf32" | tr -d ' ' > "witness/$name.stripped.size"
+            echo "CASE=$name RAW=$(cat witness/$name.raw.sha256) STRIPPED=$(cat witness/$name.stripped.sha256)"
+          }
+          make_case baseline base_a
+          make_case baseline base_b
+          make_case candidate candidate_off
+      - name: Boot two normalized but identical kernel images in disposable model-free QEMU
+        run: |
+          set -euo pipefail
+          for k in base_a candidate_off; do
+            measurement="$(cat "witness/$k.stripped.measurement")"
+            set +e
+            timeout 180 qemu-system-x86_64 \
+              -machine q35 -accel tcg -cpu max -icount shift=3 \
+              -m 128M -nic none -display none \
+              -serial "file:witness/$k.serial" \
+              -no-reboot -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+              -kernel "witness/$k.stripped.elf32" \
+              -append "image=$measurement then=off" \
+              > "witness/$k.qemu.stdout" 2> "witness/$k.qemu.stderr"
+            code=$?
+            set -e
+            printf '%d\n' "$code" > "witness/$k.exit"
+            echo "NATIVE_GUEST=$k QEMU_EXIT=$code"
+          done
+          python3 os-docs/register-forensics/check_stripped_kernel_boot.py witness
+      - name: Retain source and serial summaries only, never built ELFs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: d11-stripped-kernel-native-boot
+          path: |
+            witness/*.raw.sha256
+            witness/*.raw.measurement
+            witness/*.stripped.sha256
+            witness/*.stripped.measurement
+            witness/*.stripped.size
+            witness/*.exit
+            witness/*.serial
+            witness/*.qemu.stdout
+            witness/*.qemu.stderr
+            witness/stripped-native-boot-result.json
+            witness/rustc-version.txt
+            witness/cargo-version.txt
+            witness/source-pins.txt
+          if-no-files-found: warn
+          retention-days: 14

@@ -1,0 +1,77 @@
+name: D11 pinned D10 Python vs Rust ledger contract controls
+
+on:
+  push:
+    branches:
+      - director-11/register-default-build-parity-20261116
+    paths:
+      - "os-docs/register-forensics/d11_d10_parser_vectors.py"
+      - "os-docs/register-forensics/d11_rust_ledger_contract.rs"
+      - ".github/workflows/d11-d10-rust-parser-contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic_parser_contract:
+    name: Exact Rust core against independent Python ledger adversaries
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout only D11 test apparatus
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Checkout original Rust ledger exactly
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: 74c4d4a9934ad68e1b5be380971bf3377a464c6d
+          path: baseline
+      - name: Checkout D10 parser source exactly
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: f1b7430a9c1aaabc5587f19b16e0c1e76646ef81
+          path: diagnostic
+      - name: Generate bounded synthetic vectors and exercise D10 reader
+        run: |
+          set -euo pipefail
+          python3 os-docs/register-forensics/d11_d10_parser_vectors.py \
+            --diagnostic diagnostic --baseline baseline --output witness
+          printf 'Rust: %s\nPython: %s\nD10 Python: %s\n' \
+            "$(git -C baseline rev-parse HEAD)" \
+            "$(python3 --version)" \
+            "$(git -C diagnostic rev-parse HEAD)" > witness/source-pins.txt
+      - name: Independently execute the exact pinned Rust verifier on same vectors
+        run: |
+          set -euo pipefail
+          mkdir -p baseline/PCP_OS_Rust/crates/pcpos-core/tests
+          cp os-docs/register-forensics/d11_rust_ledger_contract.rs \
+             baseline/PCP_OS_Rust/crates/pcpos-core/tests/d11_parser_parity.rs
+          export D11_VECTOR_DIR="$PWD/witness/vectors"
+          cargo test --manifest-path baseline/PCP_OS_Rust/Cargo.toml \
+            -p pcpos-core --test d11_parser_parity -- --nocapture \
+            | tee witness/rust-test.log
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("witness/summary.json")
+          d=json.loads(p.read_text())
+          d["rust_executed"]=True
+          d["rust_case_count_passed"]=d["case_count"]
+          d["release_or_production_qualification"]=False
+          p.write_text(json.dumps(d, indent=2, sort_keys=True)+"\n")
+          PY
+      - name: Archive only synthetic summary and test log (not source fixtures)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: d11-d10-rust-ledger-synthetic-parity
+          path: |
+            witness/summary.json
+            witness/source-pins.txt
+            witness/rust-test.log
+          if-no-files-found: warn
+          retention-days: 14
