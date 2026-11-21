@@ -311,12 +311,13 @@ static STOP: AtomicBool = AtomicBool::new(false);
 static PROBE: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 static PROBE_HIT: AtomicBool = AtomicBool::new(false);
 
-fn controller_wait_write() {
+fn controller_wait_write() -> bool {
     for _ in 0..100_000 {
         if in8(0x64) & 2 == 0 {
-            return;
+            return true;
         }
     }
+    false
 }
 fn controller_read() -> Option<u8> {
     for _ in 0..100_000 {
@@ -435,16 +436,29 @@ pub fn keyboard_replays() -> bool {
     {
         // Wait for the controller to hold nothing, for at most twenty timer periods.
         let until = arch::ticks() + 20;
-        while in8(0x64) & 3 != 0 && arch::ticks() < until {
+        while in8(0x64) & 3 != 0 {
+            if arch::ticks() >= until {
+                return false;
+            }
             arch::wait_until(arch::ticks() + 1);
         }
-        PROBE_HIT.store(false, Ordering::SeqCst);
-        PROBE.store(0x100 | 0xF4, Ordering::SeqCst);
-        arch::without_interrupts(|| {
+        let sent = arch::without_interrupts(|| {
+            // A byte may have arrived since the last idle sample.
+            if in8(0x64) & 3 != 0 {
+                return false;
+            }
             out8(0x64, 0xD2);
-            controller_wait_write();
+            if !controller_wait_write() {
+                return false;
+            }
+            PROBE_HIT.store(false, Ordering::SeqCst);
+            PROBE.store(0x100 | 0xF4, Ordering::SeqCst);
             out8(0x60, 0xF4);
+            true
         });
+        if !sent {
+            return false;
+        }
         let until = arch::ticks() + 20;
         while !PROBE_HIT.load(Ordering::SeqCst) && arch::ticks() < until {
             arch::wait_until(arch::ticks() + 1);
