@@ -1,0 +1,43 @@
+{
+  "kernel_measurement": "c99b256e5df82600ff063be98d4a119328da26e4fe26fbb1612518d6d2e7761b",
+  "label": "cold morning",
+  "boots": [
+    {
+      "boot": "save",
+      "status": "Disk save",
+      "disk_sha256": "6a2b3c7112e5e7c9d1bb6f4745da0f868d8a049d6c898580abdd69ca74dbe505",
+      "screenshot_sha256": "1a6d27d1b957c3cc9b7e4414849d81fe9f9184fb68d2f75b095b48b35fd94ee7",
+      "pass_lines": 72
+    },
+    {
+      "boot": "restore",
+      "status": "Queue restored",
+      "disk_sha256": "6a2b3c7112e5e7c9d1bb6f4745da0f868d8a049d6c898580abdd69ca74dbe505",
+      "screenshot_sha256": "3afb26f758b6f649c8709dad12437be432ef64596053e852b3ec4fcaec21bfe4",
+      "pass_lines": 72
+    }
+  ],
+  "merge": "3cf7752cf1da0b6f7b740696279e4f118444ffdd",
+  "tree": "1111bcf98786124c31076fbaffada8ff975ee57b",
+  "previous_master": "8a7611c6ee0200c111638da92c468f16bdc1bbd4",
+  "reviewed_head": "30e19ededc133b873bc22454bcb875098d77cac4",
+  "control_results": [
+    "rejected wrong filename at row 4, column 2: 'parrots.queue-old'",
+    "rejected wrong file size at row 4, column 178: '13 KiB'",
+    "rejected extra heading text at row 1, column 35: ' pending'",
+    "rejected extra sync text at row 2, column 36: ' pending'",
+    "rejected second file at row 5, column 2: 'other.queue  1 KiB'",
+    "rejected extra file above list at row 3, column 2: 'other.queue  1 KiB'",
+    "rejected extra file beside footer at row 52, column 10: '  other.queue  1 KiB'",
+    "rejected extra file below footer at row 53, column 2: 'other.queue  1 KiB'",
+    "rejected leading space in filename at row 4, column 2: ' parrots.queue'",
+    "rejected size one column left at row 4, column 177: '3 KiB '",
+    "rejected extra space in size at row 4, column 178: '3  KiB'"
+  ],
+  "files_frame_sha256": "9a37550d0f3dda5547e562cf1234be70535be0443df273b9f537f7256a41fed1",
+  "files_frame_matches_hosted": true,
+  "commands": [
+    "python3 -B merged/examples/vm-store/check_queue.py integrated-inputs/kernel.elf integrated-inputs/queue.elf merged-guest --qemu /workspace/scratch/7c7df1723510/work/emulator/qemu-system-x86_64",
+    "python3 -B merged/examples/vm-store/check_queue_files.py merged-guest/restore-files.ppm"
+  ]
+}
