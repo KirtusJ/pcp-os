@@ -1,0 +1,150 @@
+{
+  "status": "Working, pre-freeze read-back for issue #314, third change.",
+  "tested": {
+    "1c56a70": {
+      "1280x720": {
+        "bare_keys_each_surface": "K F R V P D",
+        "after_details_and_power_cancel": "bravo.elf",
+        "details": "plain",
+        "detail_pages": 0
+      },
+      "1920x1080": {
+        "bare_keys_each_surface": "K F R V P D",
+        "after_details_and_power_cancel": "bravo.elf",
+        "details": "plain",
+        "detail_pages": 0
+      },
+      "2560x1440": {
+        "bare_keys_each_surface": "K F R V P D",
+        "after_details_and_power_cancel": "bravo.elf",
+        "details": "plain",
+        "detail_pages": 0
+      },
+      "320x200": {
+        "bare_keys_each_surface": "K F R V P D",
+        "after_details_and_power_cancel": "bravo.elf",
+        "details": "text",
+        "detail_pages": 14
+      },
+      "640x480": {
+        "bare_keys_each_surface": "K F R V P D",
+        "after_details_and_power_cancel": "bravo.elf",
+        "details": "text",
+        "detail_pages": 4
+      },
+      "800x600": {
+        "bare_keys_each_surface": "K F R V P D",
+        "after_details_and_power_cancel": "bravo.elf",
+        "details": "text",
+        "detail_pages": 3
+      },
+      "952x600": {
+        "bare_keys_each_surface": "K F R V P D",
+        "after_details_and_power_cancel": "bravo.elf",
+        "details": "text",
+        "detail_pages": 2
+      },
+      "960x600": {
+        "bare_keys_each_surface": "K F R V P D",
+        "after_details_and_power_cancel": "bravo.elf",
+        "details": "plain",
+        "detail_pages": 0
+      },
+      "plain-320x200": {
+        "boot": "first=details",
+        "routes": [
+          "R register",
+          "P confirmation",
+          "D programs"
+        ]
+      },
+      "plain-640x480": {
+        "boot": "first=details",
+        "routes": [
+          "R register",
+          "P confirmation",
+          "D programs"
+        ]
+      },
+      "widget-320x480": {
+        "widget": "Files last until power-off"
+      },
+      "widget-640x480": {
+        "widget": "Session files | cleared at power-off"
+      }
+    },
+    "3920027": {
+      "1280x720": {
+        "bare_keys_each_surface": "K F R V P D",
+        "after_details_and_power_cancel": "bravo.elf",
+        "details": "plain",
+        "detail_pages": 0
+      },
+      "1920x1080": {
+        "bare_keys_each_surface": "K F R V P D",
+        "after_details_and_power_cancel": "bravo.elf",
+        "details": "plain",
+        "detail_pages": 0
+      },
+      "2560x1440": {
+        "bare_keys_each_surface": "K F R V P D",
+        "after_details_and_power_cancel": "bravo.elf",
+        "details": "plain",
+        "detail_pages": 0
+      },
+      "320x200": {
+        "bare_keys_each_surface": "K F R V P D",
+        "after_details_and_power_cancel": "bravo.elf",
+        "details": "text",
+        "detail_pages": 14
+      },
+      "640x480": {
+        "bare_keys_each_surface": "K F R V P D",
+        "after_details_and_power_cancel": "bravo.elf",
+        "details": "text",
+        "detail_pages": 4
+      },
+      "800x600": {
+        "bare_keys_each_surface": "K F R V P D",
+        "after_details_and_power_cancel": "bravo.elf",
+        "details": "text",
+        "detail_pages": 3
+      },
+      "952x600": {
+        "bare_keys_each_surface": "K F R V P D",
+        "after_details_and_power_cancel": "bravo.elf",
+        "details": "text",
+        "detail_pages": 2
+      },
+      "960x600": {
+        "bare_keys_each_surface": "K F R V P D",
+        "after_details_and_power_cancel": "bravo.elf",
+        "details": "plain",
+        "detail_pages": 0
+      }
+    }
+  },
+  "checker_field_erasure": {
+    "original": {
+      "accepted": true,
+      "erased_visible_rows_across_pages": 0
+    },
+    "alpha_only_erased": {
+      "accepted": true,
+      "erased_visible_rows_across_pages": 12
+    },
+    "bravo_only_erased": {
+      "accepted": true,
+      "erased_visible_rows_across_pages": 12
+    },
+    "both_erased": {
+      "accepted": false,
+      "erased_visible_rows_across_pages": 24
+    }
+  },
+  "checker_blob": "6fa77363f05d6622bc3a4dcaf50e836b748a3963",
+  "source": "Both revisions were built from clean checkouts. The frozen 62c24cc six-guest controls are provided alongside this archive. This replay checks settled frames, selected program and returned surfaces, and makes no inference about framebuffer write counts.",
+  "inputs": "Each uniform guest used the measured kernel and Surfbird from the named tester CD, a distinct Queue Desk ELF and a text file with a 53-character name. Narrow Details was checked under Programs and Files from the loader. Each digest was computed directly from its corresponding file. The 952/960 pair tests the 96-column switch.",
+  "first_attempt": "Kept under initial-fixture. The first test used a name above the 64-character artifact-name limit and expected each program to appear only once. The display lists each program in both Programs and Files from the loader. The comparison was corrected for the two sections and the filename shortened; all reported passing runs are fresh boots.",
+  "replay": "Check SHA256SUMS. Run python3 -IB verify.py <1c56a70 checkout> 1c56a70 and the same for 3920027. Run python3 -IB stock/field_control.py <1c56a70 checkout> stock/320x200 replay.json and compare with stock/k2-control.json. It calls the unmodified list_trial on original and edited pixel data. All unmodified original captures are kept."
+}

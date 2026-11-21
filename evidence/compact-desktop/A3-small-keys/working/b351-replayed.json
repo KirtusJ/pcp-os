@@ -1,0 +1,21 @@
+{
+  "positions": {
+    "alpha.elf": [
+      7,
+      29
+    ],
+    "bravo.elf": [
+      17,
+      35
+    ]
+  },
+  "checker_problems_on_original": [
+    "'alpha.elf' is on 2 lines of Details",
+    "'bravo.elf' is on 2 lines of Details"
+  ],
+  "problems_scoped_to_each_section": [
+    [],
+    []
+  ],
+  "pages": 14
+}

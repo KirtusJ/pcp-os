@@ -1,0 +1,123 @@
+{
+  "tested_commit": "62c24cc2a76bc35bdf12b7ad40302c524f045b50",
+  "status": "Pre-change observations for the third part of #314, not verification of the proposed change.",
+  "setup": "Six QEMU PC TCG guests, two tester applications, 128 MiB, no network or disk, QMP over stdio, six bare keys exercised separately on Home and on Programs. For Programs, the second item was selected first. Captures from each letter were compared byte for byte to either the preceding screen or a named screen opened using its function key or Ctrl+D. The affected screens were closed individually. Full-file SHA-256 and frame equality apply to settled scanouts, not transient framebuffer writes.",
+  "observations": {
+    "1280x720": {
+      "home": {
+        "k": "unchanged",
+        "f": "unchanged",
+        "r": "unchanged",
+        "v": "unchanged",
+        "p": "unchanged",
+        "d": "unchanged"
+      },
+      "programs": {
+        "k": "unchanged",
+        "f": "unchanged",
+        "r": "unchanged",
+        "v": "unchanged",
+        "p": "unchanged",
+        "d": "unchanged"
+      },
+      "selection_after_details_and_cancel": "bravo.elf"
+    },
+    "1920x1080": {
+      "home": {
+        "k": "unchanged",
+        "f": "unchanged",
+        "r": "unchanged",
+        "v": "unchanged",
+        "p": "unchanged",
+        "d": "unchanged"
+      },
+      "programs": {
+        "k": "unchanged",
+        "f": "unchanged",
+        "r": "unchanged",
+        "v": "unchanged",
+        "p": "unchanged",
+        "d": "unchanged"
+      },
+      "selection_after_details_and_cancel": "bravo.elf"
+    },
+    "2560x1440": {
+      "home": {
+        "k": "unchanged",
+        "f": "unchanged",
+        "r": "unchanged",
+        "v": "unchanged",
+        "p": "unchanged",
+        "d": "unchanged"
+      },
+      "programs": {
+        "k": "unchanged",
+        "f": "unchanged",
+        "r": "unchanged",
+        "v": "unchanged",
+        "p": "unchanged",
+        "d": "unchanged"
+      },
+      "selection_after_details_and_cancel": "bravo.elf"
+    },
+    "320x200": {
+      "home": {
+        "k": "home-help",
+        "f": "files",
+        "r": "register",
+        "v": "verification",
+        "p": "power",
+        "d": "unchanged"
+      },
+      "programs": {
+        "k": "programs-help",
+        "f": "unchanged",
+        "r": "register",
+        "v": "verification",
+        "p": "power",
+        "d": "details"
+      },
+      "selection_after_details_and_cancel": "bravo.elf"
+    },
+    "640x480": {
+      "home": {
+        "k": "home-help",
+        "f": "files",
+        "r": "register",
+        "v": "verification",
+        "p": "power",
+        "d": "unchanged"
+      },
+      "programs": {
+        "k": "programs-help",
+        "f": "unchanged",
+        "r": "register",
+        "v": "verification",
+        "p": "power",
+        "d": "details"
+      },
+      "selection_after_details_and_cancel": "bravo.elf"
+    },
+    "800x600": {
+      "home": {
+        "k": "home-help",
+        "f": "files",
+        "r": "register",
+        "v": "verification",
+        "p": "power",
+        "d": "unchanged"
+      },
+      "programs": {
+        "k": "programs-help",
+        "f": "unchanged",
+        "r": "register",
+        "v": "verification",
+        "p": "power",
+        "d": "details"
+      },
+      "selection_after_details_and_cancel": "bravo.elf"
+    }
+  },
+  "details": "Ctrl+D opened plain Details from the selected program. R opened the register there, P opened the confirmation, and Esc returned from each. D from Details restored the same Programs selection. F10 then Esc also restored it. All six guests completed 72 checks and shut down after a fresh confirmation.",
+  "how_to_replay": "Check SHA256SUMS after extraction. With a checkout of the tested commit, run python3 -IB replay.py <checkout> <archive root>. The script checks every P6 against its hash and dimensions, identifies destinations and the selected item by their pixels, then derives the per-key routes independently from the named reference frames."
+}
