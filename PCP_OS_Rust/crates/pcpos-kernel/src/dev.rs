@@ -346,14 +346,20 @@ fn controller_command(command: u8) -> bool {
     controller_wait_write() && { out8(0x64, command); true }
 }
 
-/// The next byte the controller holds, if one comes in time and it is the keyboard's own, unmarked by an
-/// error. A byte of another kind is taken off the controller and is not an answer.
+/// The keyboard's answer to a command: its acknowledgement (0xFA) or its request to be sent the byte
+/// again (0xFE), if one comes within one budget of polls. Anything else that arrives meanwhile is taken
+/// off the controller and passed over: a byte from the second port (status bit 5), a byte marked with a
+/// time-out or parity error (bits 6 and 7), a key somebody pressed. A stream of such bytes uses up the
+/// same budget and ends as no answer (A3: the first form gave up at the first unrelated byte and left a
+/// genuine acknowledgement unread behind it).
 fn keyboard_answer() -> Option<u8> {
     for _ in 0..100_000 {
         let status = in8(0x64);
         if status & 1 != 0 {
             let byte = in8(0x60);
-            return if status & 0xE0 == 0 { Some(byte) } else { None };
+            if status & 0xE0 == 0 && (byte == 0xFA || byte == 0xFE) {
+                return Some(byte);
+            }
         }
     }
     None
@@ -413,9 +419,7 @@ pub fn keyboard_init() -> KeyboardStart {
             return KeyboardStart::ControllerBusy;
         }
         out8(0x60, 0xF4);
-        // The answer counts only if it is the keyboard's and came whole: a byte from the second port
-        // (status bit 5) or one marked with a time-out or parity error (bits 6 and 7) is no
-        // acknowledgement, whatever its value (A3).
+        // Only the keyboard's own unmarked 0xFA or 0xFE is an answer; see `keyboard_answer`.
         match keyboard_answer() {
             Some(0xFA) => {
                 acknowledged = true;
