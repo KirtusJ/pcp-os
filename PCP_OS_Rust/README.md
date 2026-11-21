@@ -62,6 +62,18 @@ crates/pcpos-kernel/run.sh               # builds the kernel and starts it in QE
 
 The kernel build sets `RUSTC_BOOTSTRAP=1` to compile `core` for the bare-metal target with a stable compiler. A release build would use a pinned toolchain that ships that target.
 
+## Host platforms
+
+This table is about the hosted programs (`pcpos`, `pcpos-verify`, `pcpos-vectors`), not the kernel. The [host workflow](../.github/workflows/rust-host.yml) builds them from the lock file with Rust 1.97.0, regenerates the vectors and requires the tracked files unchanged, and runs every workspace test on each platform, on pull requests and pushes to `master` that change this workspace or the workflow itself.
+
+| Platform | Runner | Status |
+| --- | --- | --- |
+| Linux x86_64 | `ubuntu-24.04` | Builds; all workspace tests pass. This is one of the two platforms of the packaged build 22 program; the other, Linux AArch64, is not run by this workflow. |
+| macOS arm64 | `macos-15` | Builds; all workspace tests pass. No packaged program is supplied. |
+| Windows x86_64 (MSVC) | `windows-2022` | Builds; all workspace tests pass, including the refusal of a linked register and of a register with a second name. The check that the opened file is still the one its name refers to uses the 64-bit file index: sound on NTFS, and weaker on ReFS, where Windows does not guarantee that index unique ([issue 65](https://github.com/KirtusJ/pcp-os/issues/65)). The Windows build takes one dependency the others do not, `winapi-util`, for those two checks. No packaged program is supplied. |
+
+A passing run shows that the programs build and that the tests pass on a hosted runner of that system. It is not a test on your machine, and nothing here has been run on FreeBSD or OpenBSD. The kernel is separate: it is an x86-64 guest started under an emulator, whatever the host. For booting it, see the [first-boot guide](https://github.com/KirtusJ/pcp/blob/master/audit/public-live-cd/README.md).
+
 ## Rights and status
 
 Proprietary; see `NOTICE.md`. Untested and unreviewed beyond the table above. Nothing here is certified, and nothing here is fit for use where a failure can harm people.
