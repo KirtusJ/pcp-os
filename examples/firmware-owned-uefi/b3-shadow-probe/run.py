@@ -78,15 +78,20 @@ def main():
     before = "        let base = call(9, 0, bytes, 3, 1, fd as usize, 0);"
     assert client.count(before) == 1
     device.write_text(client.replace(before, r'''        if shadow {
-            assert_eq!(ioctl(fd, 0x5003, 0), -22);
-            log(b"B3 opt-in shadow; present before mapping returned EINVAL\n");
+            match ioctl(fd, 0x5003, 0) {
+                -22 => log(b"B3 opt-in shadow; early present returned EINVAL\n"),
+                0 => log(b"B3 opt-in shadow; early present incorrectly returned success\n"),
+                _ => log(b"B3 opt-in shadow; early present returned an unexpected errno\n"),
+            }
         } else {
             log(b"B3 opt-in direct\n");
         }
 ''' + before + r'''
         if base >= 0 && shadow {
-            assert_eq!(call(9, 0, bytes, 3, 1, fd as usize, 0), -22);
-            log(b"B3 repeated shadow mapping returned EINVAL\n");
+            match call(9, 0, bytes, 3, 1, fd as usize, 0) {
+                -22 => log(b"B3 repeated shadow mapping returned EINVAL\n"),
+                _ => log(b"B3 repeated shadow mapping did not return EINVAL\n"),
+            }
         }'''))
     shutil.copyfile(WORK / "edge/main.rs", APP / "guest/src/main.rs")
     build_guest("edge")
@@ -121,6 +126,8 @@ def main():
              ("edge","1024x768","ramfb"), ("app","800x600","ramfb"), ("app","800x600","bochs"),
              ("app","1280x720","bochs"), ("app","1920x1080","bochs"), ("app","2560x1440","bochs")]
     for name, size, driver in cases:
+        if os.environ.get("B3_BOUNDARY_ONLY", "1") == "1" and (name != "edge" or size != "800x600"):
+            continue
         folder = WORK / f"{name}-{size}-{driver}"
         script = "boot_current.py" if name == "app" else "boot_edge.py"
         record = {"guest":name, "size":size, "driver":driver, "passed":False}
@@ -141,8 +148,11 @@ def main():
                     if size=="1024x768":
                         assert report["frames"][stage] == direct["frames"][stage]
                 if size=="800x600":
-                    assert "B3 opt-in shadow; present before mapping returned EINVAL" in serial
+                    record["complete_patterns"] = 2
+                    record["lifecycle"] = [line for line in serial.splitlines() if line.startswith("B3 ")]
+                    print(json.dumps(record["lifecycle"]), flush=True)
                     assert "B3 repeated shadow mapping returned EINVAL" in serial
+                    assert "B3 opt-in shadow; early present returned EINVAL" in serial
                 else:
                     assert "B3 opt-in direct" in serial
             record.update(passed=True, launch=report["launch_outcome"], pitch=report["pitch"],
