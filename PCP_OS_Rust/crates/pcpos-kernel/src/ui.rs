@@ -7,6 +7,7 @@
 use crate::dev;
 use crate::font::{CELL_HEIGHT, CELL_WIDTH, FIRST, GLYPHS};
 use alloc::vec::Vec;
+use pcpos_desktop::{raster_row, Surface};
 
 /// The Core plate, the text on it, and the accents.
 pub const GROUND: u32 = 0x10283F;
@@ -69,6 +70,30 @@ pub fn at(col: u32, row: u32, s: &str, colour: u32, ground: u32) -> u32 {
 /// (columns, rows) of the character grid on the display as it is.
 pub fn grid() -> (u32, u32) {
     dev::display().map(|d| (d.width / CELL_W, d.height / CELL_H)).unwrap_or((0, 0))
+}
+
+/// Paint the first-launch desktop at the dimensions actually reported by the
+/// display driver. It does not choose a mode or assume a fixed 1024x768 bitmap.
+/// Each row is exactly the reported width in RGB pixels; the driver respects byte pitch.
+/// False means the mode was unsupported/inconsistent, and the existing
+/// flat-colour kernel menu remains the fallback.
+pub fn desktop_background() -> bool {
+    let d = match dev::display() {
+        Some(d) => d,
+        None => return false,
+    };
+    let surface = match Surface::new(d.width, d.height, d.pitch, d.mapped) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    let mut pixels = alloc::vec![GROUND; surface.width as usize];
+    for y in 0..surface.height {
+        if raster_row(surface, y, &mut pixels).is_err() {
+            return false;
+        }
+        dev::display_row(0, y, &pixels);
+    }
+    true
 }
 
 /// The emblem's shapes, in tenths of the bird's own units, in drawing order: an ellipse is (centre x, centre y,

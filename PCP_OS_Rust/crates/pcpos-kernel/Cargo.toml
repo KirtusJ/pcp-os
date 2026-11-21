@@ -10,6 +10,7 @@ publish = false
 
 [dependencies]
 pcpos-core = { path = "../pcpos-core" }
+pcpos-desktop = { path = "../../../apps/desktop/renderer" }
 
 [features]
 uefi-demo-heap = [] # 4 MiB heap for the guarded Q35/OVMF demo trial
