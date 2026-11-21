@@ -1,0 +1,70 @@
+{
+  "source": "751f40c5be636b474b9fe92f2608621acdf72040",
+  "tree": "daac1d8c3822451c74cb8087a783d49b73df3f66",
+  "usb_sha256": "edb9466101f5ff9451192b907fca593fd70448f8e3be356492bc835800ef3730",
+  "firmware": {
+    "CODE": "624e06de18b4fa535e90db7160d00d3d07d206422b89999bf1e27d920264e4e0",
+    "VARS": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e"
+  },
+  "commands": [
+    "python3 replay.py 128",
+    "python3 replay.py 256",
+    "python3 replay.py changed-home",
+    "python3 read_hosted.py"
+  ],
+  "guests": {
+    "128": {
+      "case": "128",
+      "frames": [
+        "9ed103015e66b97de216d76bd92de8e1e392b415cd46fe1054bebdce9c5e33fe",
+        "9ed103015e66b97de216d76bd92de8e1e392b415cd46fe1054bebdce9c5e33fe"
+      ],
+      "passed": true,
+      "rejection": null,
+      "checks": 72,
+      "exit": 0,
+      "internal_disk_sha256": "9594abb6b6a56ec0b92b4c3b4baa5cf7edc053aa8e4e033a5adef94955bfbd0a",
+      "firmware_bytes_changed_before_home": 6047,
+      "firmware_bytes_changed_after_home": 0
+    },
+    "256": {
+      "case": "256",
+      "frames": [
+        "9ed103015e66b97de216d76bd92de8e1e392b415cd46fe1054bebdce9c5e33fe",
+        "9ed103015e66b97de216d76bd92de8e1e392b415cd46fe1054bebdce9c5e33fe"
+      ],
+      "passed": true,
+      "rejection": null,
+      "checks": 72,
+      "exit": 0,
+      "internal_disk_sha256": "9594abb6b6a56ec0b92b4c3b4baa5cf7edc053aa8e4e033a5adef94955bfbd0a",
+      "firmware_bytes_changed_before_home": 6047,
+      "firmware_bytes_changed_after_home": 0
+    },
+    "changed-home": {
+      "case": "changed-home",
+      "frames": [
+        "9ed103015e66b97de216d76bd92de8e1e392b415cd46fe1054bebdce9c5e33fe",
+        "2f14ca17e6dcb6774eeee3defc5daabc09cf05c1eaba968cd63e62d139587d1a"
+      ],
+      "passed": false,
+      "rejection": "Esc from Verification did not restore the original Home frame",
+      "checks": null,
+      "exit": null
+    }
+  },
+  "hosted": {
+    "run": "https://github.com/KirtusJ/pcp-os/actions/runs/44903435629",
+    "artifacts": {
+      "full-heap-ownership.zip": "8d918c1f0c968f62a233b33018c3635c130c63ca4cf7e4f5b442fc31eb092876",
+      "full-heap-usb-observations.zip": "40b30d7de33382f20e1ada5c2efd83f8441b7826810f5fecd387e428bc6c6936"
+    },
+    "firmware_code_sha256": "ad23261d43116abc3747d59a7837fbf578c9586a8993f4eeba064cd07eccb083",
+    "firmware_template_sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+    "firmware_bytes_changed_before_home": 16248,
+    "firmware_bytes_changed_after_home": 0,
+    "disk_control_changed_bytes": 7,
+    "firmware_control_changed_bytes": 124
+  },
+  "scope": "QEMU 10.0.13 and OVMF. The changed-Home test used real keys inside a third guest, pinning surf.elf before F5. Cross-guest measurements are retained separately. Physical computers and Secure Boot were outside this replay."
+}
