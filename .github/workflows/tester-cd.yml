@@ -99,8 +99,16 @@ jobs:
           cp target/pcpos-kernel.elf32 "$RUNNER_TEMP/no-replay.elf32"
           PCPOS_KERNEL_STAGE="$RUNNER_TEMP/lost-key-kernel" PCPOS_KERNEL_FEATURES=lost-key-demo sh run.sh build
           python3 -IB tests/replay_probe.py "$RUNNER_TEMP/default.elf32" "$RUNNER_TEMP/no-replay.elf32" --lost-keys target/pcpos-kernel.elf32
+          for feature in keyboard-busy-demo keyboard-silent-demo; do
+            PCPOS_KERNEL_STAGE="$RUNNER_TEMP/$feature" PCPOS_KERNEL_FEATURES=$feature sh run.sh build
+            cp target/pcpos-kernel.elf32 "$RUNNER_TEMP/$feature.elf32"
+          done
           cd "$GITHUB_WORKSPACE"
-          python3 -IB examples/tester-cd/check_stopped_screen.py "$RUNNER_TEMP/default.elf32" "$RUNNER_TEMP/no-replay.elf32" "$RUNNER_TEMP/evidence/stopped-screen"
+          python3 -IB examples/tester-cd/check_stopped_screen.py "$RUNNER_TEMP/default.elf32" "$RUNNER_TEMP/no-replay.elf32" "$RUNNER_TEMP/evidence/stopped-screen" \
+            --busy "$RUNNER_TEMP/keyboard-busy-demo.elf32" --silent "$RUNNER_TEMP/keyboard-silent-demo.elf32"
+      - name: Check swapped stopped screens and altered reason pixels
+        if: matrix.option == ''
+        run: python3 -IB examples/tester-cd/check_stopped_captures.py "$RUNNER_TEMP/evidence/stopped-screen"
       - name: Replay selected grants and RGB controls on the native captures
         run: python3 -IB examples/tester-cd/check_launcher_grants.py "$RUNNER_TEMP/first/receipt.json" "$RUNNER_TEMP/evidence"
       - name: Check the source CD beside disposable IDE and NVMe disks

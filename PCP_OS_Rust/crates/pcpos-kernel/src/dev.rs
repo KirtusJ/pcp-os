@@ -388,6 +388,18 @@ fn keyboard_answer() -> Option<u8> {
 /// asked twice more and no oftener (A3 and B3 found that the first form of this wrote after a wait had
 /// run out and let the interrupt through whatever the keyboard answered).
 pub fn keyboard_init() -> KeyboardStart {
+    // The demonstrations of the two refusals no emulator here produces: the outcome without any port touched,
+    // so that what the kernel then says and shows can be seen in a guest.
+    #[cfg(feature = "keyboard-busy-demo")]
+    return KeyboardStart::ControllerBusy;
+    #[cfg(feature = "keyboard-silent-demo")]
+    return KeyboardStart::NoAcknowledgement;
+    #[cfg(not(any(feature = "keyboard-busy-demo", feature = "keyboard-silent-demo")))]
+    keyboard_init_on_ports()
+}
+
+#[cfg_attr(any(feature = "keyboard-busy-demo", feature = "keyboard-silent-demo"), allow(dead_code))]
+fn keyboard_init_on_ports() -> KeyboardStart {
     // A machine with no controller reads all ones from its status port.
     if in8(0x64) == 0xFF {
         return KeyboardStart::Absent;
