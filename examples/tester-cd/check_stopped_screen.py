@@ -11,8 +11,8 @@ hardware.
 Predicates, fixed before the first run.
  H1 no keyboard controller (`-machine pc,i8042=off`), at 320 by 200 and at 1920 by 1080: the first row that
     holds anything is "PCP OS has stopped."; a row begins "Verified: all " and the screen's text holds
-    "self-tests it ran passed."; the text holds "No keyboard this kernel can use answered: it drives PS/2
-    keyboards only." and "This kernel cannot switch the computer off. Hold its power button until it goes
+    "self-tests it ran passed."; the text holds "No keyboard controller answered. This kernel drives PS/2 keyboards
+    only." and "This kernel cannot switch the computer off. Hold its power button until it goes
     dark."; no cell is anything but a character; the emulator is still running.
  H5 on every stopped screen the count in "Verified: all <n> self-tests it ran passed." is the number of
     passes in the whole serial log, which includes the check made after the session (A3 found it one short).
@@ -40,7 +40,7 @@ CHECK = runpy.run_path(str(HERE / "check.py"))
 PINS = runpy.run_path(str(HERE / "check_compact_pins.py"))
 MEASURE = HERE.parents[1] / "PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py"
 STOPPED = "PCP OS has stopped."
-NO_KEYBOARD = "No keyboard this kernel can use answered: it drives PS/2 keyboards only."
+NO_KEYBOARD = "No keyboard controller answered. This kernel drives PS/2 keyboards only."
 POWER = "This kernel cannot switch the computer off. Hold its power button until it goes dark."
 WHY = "the six tests that press keys, because this keyboard controller does not replay keys for a test."
 

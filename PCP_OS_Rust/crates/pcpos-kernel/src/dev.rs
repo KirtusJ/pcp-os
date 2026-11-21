@@ -346,6 +346,19 @@ fn controller_command(command: u8) -> bool {
     controller_wait_write() && { out8(0x64, command); true }
 }
 
+/// The next byte the controller holds, if one comes in time and it is the keyboard's own, unmarked by an
+/// error. A byte of another kind is taken off the controller and is not an answer.
+fn keyboard_answer() -> Option<u8> {
+    for _ in 0..100_000 {
+        let status = in8(0x64);
+        if status & 1 != 0 {
+            let byte = in8(0x60);
+            return if status & 0xE0 == 0 { Some(byte) } else { None };
+        }
+    }
+    None
+}
+
 /// Prepare the keyboard controller and let the keyboard interrupt.
 ///
 /// Every byte is written only after the controller has shown that it can take one; a wait that runs out
@@ -400,7 +413,10 @@ pub fn keyboard_init() -> KeyboardStart {
             return KeyboardStart::ControllerBusy;
         }
         out8(0x60, 0xF4);
-        match controller_read() {
+        // The answer counts only if it is the keyboard's and came whole: a byte from the second port
+        // (status bit 5) or one marked with a time-out or parity error (bits 6 and 7) is no
+        // acknowledgement, whatever its value (A3).
+        match keyboard_answer() {
             Some(0xFA) => {
                 acknowledged = true;
                 break;

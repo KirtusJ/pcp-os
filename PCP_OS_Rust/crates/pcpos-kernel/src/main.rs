@@ -815,7 +815,11 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
         replays
     };
     let not_run = if replays { None } else if failed != 0 { Some("the kernel did not verify itself") }
-                  else if !keyboard { Some("there is no keyboard controller") }
+                  else if !keyboard { Some(match keyboard_start {
+                      dev::KeyboardStart::Absent => "there is no keyboard controller",
+                      dev::KeyboardStart::ControllerBusy => "the keyboard controller did not take its set-up",
+                      _ => "the keyboard did not acknowledge",
+                  }) }
                   else { Some("this keyboard controller does not replay keys for a test") };
     if failed == 0 {
         asynchronous(&mut failed, replays);
@@ -861,7 +865,13 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     if failed != 0 && rec.state().system() == Some(System::Operational) {
         system_event(&mut rec, "INTEGRITY_FAULT", "a self-test failed after initial verification", &mut failed);
     }
-    let start = session::Start { boot: &boot, display, keyboard, not_run, sound: sound || music, passed: PASSED.load(core::sync::atomic::Ordering::Relaxed), failed, tasks: 14, version: env!("CARGO_PKG_VERSION") };
+    let no_keyboard = match keyboard_start {
+        dev::KeyboardStart::Ready => None,
+        dev::KeyboardStart::Absent => Some("No keyboard controller answered. This kernel drives PS/2 keyboards only."),
+        dev::KeyboardStart::ControllerBusy => Some("A keyboard controller is there but did not take its set-up in time, so the keyboard is not used."),
+        dev::KeyboardStart::NoAcknowledgement => Some("The keyboard did not acknowledge being told to send keys, so it is not used."),
+    };
+    let start = session::Start { boot: &boot, display, keyboard, no_keyboard, not_run, sound: sound || music, passed: PASSED.load(core::sync::atomic::Ordering::Relaxed), failed, tasks: 14, version: env!("CARGO_PKG_VERSION") };
     let _tasks = session::run(&mut rec, &start, &mut failed);
     system_event(&mut rec, "SHUTDOWN", "end of the session", &mut failed);
     system_event(&mut rec, "STOPPED_OK", "stopped in order", &mut failed);
