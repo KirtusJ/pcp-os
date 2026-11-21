@@ -1,0 +1,7 @@
+  "kernel_measurement": "08487692bd531e4f3d2d056301673f94105b6d4a8f84bbadba2263adf2c84186",
+  "iso_bytes": 2625536,
+  "iso_sha256": "a5d97e541ae78f65571d3fcc987936a13a5ec3f0319c24ad0e932fe177fa9c56"
+}
+FAILED 1280x720 text screens: G2: the sentence above the programs reads ['     ?? Choose one. Each runs with only what it is granted.      ?      ???                                         ???'] and its plate ends at column 66
+FAILED 1920x1080 text screens: G2: the sentence above the programs reads ['         ? Choose one to start. Each runs with only what it is granted.                           ?                 ????                                             ?????'] and its plate ends at column 99
+FAILED 2560x1440 text screens: G2: the sentence above the programs reads ['            ? Choose one to start. Each runs with only what it is granted.                                               ?  ???                                    ??????                                           ??????                                    ??'] and its plate ends at column 122

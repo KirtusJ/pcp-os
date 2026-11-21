@@ -1,0 +1,5 @@
+  "kernel_measurement": "737b477b3e04a690a6a301e00aeb79178a81c6828c94ae30c89789563c48bcad",
+  "iso_bytes": 2625536,
+  "iso_sha256": "57913d957313c60df4107a522c16636aa36dfddb01800dacdab5ad61dcb929e6"
+}
+FAILED 320x200 text screens: T4: the count or the whole head of the chain is not on the register's pages

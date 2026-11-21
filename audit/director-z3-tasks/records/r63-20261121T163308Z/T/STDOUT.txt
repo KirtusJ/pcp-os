@@ -1,0 +1,214 @@
+{
+  "clock": "ordinary",
+  "expected_kernel_sha256": "bfbbce39f28876a377d1580d80b7a651acde9b67dfc68eae0f22000966ac8156",
+  "host": "Linux-6.18.44-fc-v726-x86_64-with-glibc2.39",
+  "host_architecture": "x86_64",
+  "iso_sha256": "37a692f52e881aeaf42edbf065581f5bde36c2312e6132c0fb9310ffdfad7534",
+  "argv": [
+    "/usr/bin/qemu-system-x86_64",
+    "-machine",
+    "pc",
+    "-accel",
+    "tcg",
+    "-cpu",
+    "qemu64",
+    "-m",
+    "64M",
+    "-boot",
+    "order=d",
+    "-cdrom",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/cdNeg/pcp-os-tester.iso",
+    "-vga",
+    "std",
+    "-nic",
+    "none",
+    "-audiodev",
+    "none,id=snd0",
+    "-device",
+    "AC97,audiodev=snd0",
+    "-display",
+    "none",
+    "-monitor",
+    "none",
+    "-qmp",
+    "stdio",
+    "-serial",
+    "file:serial.txt"
+  ],
+  "qemu_version": "QEMU emulator version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.18)",
+  "source_commit": "dda343687a89544890edd345cac0c5c1eec4009e",
+  "source_tree": "78d31e626f87312162c1297787bad932aef46395",
+  "receipt_sha256": "3a4d13803027dd31bd246b588819b20478d855003bfbeb9300e4487a24c6ba97",
+  "inserted_media": [
+    {
+      "iops_rd": 0,
+      "detect_zeroes": "off",
+      "image": {
+        "virtual-size": 2605056,
+        "filename": "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/cdNeg/pcp-os-tester.iso",
+        "format": "raw",
+        "actual-size": 2605056,
+        "dirty-flag": false
+      },
+      "iops_wr": 0,
+      "ro": true,
+      "node-name": "#block164",
+      "backing_file_depth": 0,
+      "drv": "raw",
+      "iops": 0,
+      "bps_wr": 0,
+      "write_threshold": 0,
+      "encrypted": false,
+      "bps": 0,
+      "bps_rd": 0,
+      "cache": {
+        "no-flush": false,
+        "direct": false,
+        "writeback": true
+      },
+      "file": "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/cdNeg/pcp-os-tester.iso"
+    }
+  ],
+  "home_form": "bar",
+  "screen_sha256": {
+    "home": "9ed103015e66b97de216d76bd92de8e1e392b415cd46fe1054bebdce9c5e33fe",
+    "verification": "82d28bea6b74087f7223f55b2a2853e33d5285f98af93f7dd4f1f4b136722af7",
+    "home-after-verification": "9ed103015e66b97de216d76bd92de8e1e392b415cd46fe1054bebdce9c5e33fe",
+    "launcher": "e613b13530bf1386ca1abe91264ac7f742e49e17def781322b6dc48a438209e0",
+    "launcher-power": "d1b17a61aebaefe984d9e1a153631f67c8f1a86c11a9ccdc94f81ec55270e4b8",
+    "launcher-after-cancel": "e613b13530bf1386ca1abe91264ac7f742e49e17def781322b6dc48a438209e0",
+    "home-after-escape": "9ed103015e66b97de216d76bd92de8e1e392b415cd46fe1054bebdce9c5e33fe",
+    "home-power": "d1b17a61aebaefe984d9e1a153631f67c8f1a86c11a9ccdc94f81ec55270e4b8",
+    "home-after-cancel": "9ed103015e66b97de216d76bd92de8e1e392b415cd46fe1054bebdce9c5e33fe",
+    "held-enter-launcher": "e613b13530bf1386ca1abe91264ac7f742e49e17def781322b6dc48a438209e0",
+    "held-enter-power": "d1b17a61aebaefe984d9e1a153631f67c8f1a86c11a9ccdc94f81ec55270e4b8",
+    "held-enter-after-repeat": "d1b17a61aebaefe984d9e1a153631f67c8f1a86c11a9ccdc94f81ec55270e4b8",
+    "held-enter-after-release": "d1b17a61aebaefe984d9e1a153631f67c8f1a86c11a9ccdc94f81ec55270e4b8",
+    "held-enter-after-cancel": "e613b13530bf1386ca1abe91264ac7f742e49e17def781322b6dc48a438209e0",
+    "home-after-held-enter": "9ed103015e66b97de216d76bd92de8e1e392b415cd46fe1054bebdce9c5e33fe",
+    "mixed-enter-verification": "82d28bea6b74087f7223f55b2a2853e33d5285f98af93f7dd4f1f4b136722af7",
+    "mixed-enter-one-held": "9ed103015e66b97de216d76bd92de8e1e392b415cd46fe1054bebdce9c5e33fe",
+    "mixed-enter-launcher": "e613b13530bf1386ca1abe91264ac7f742e49e17def781322b6dc48a438209e0",
+    "mixed-enter-power": "d1b17a61aebaefe984d9e1a153631f67c8f1a86c11a9ccdc94f81ec55270e4b8",
+    "mixed-enter-other-released": "d1b17a61aebaefe984d9e1a153631f67c8f1a86c11a9ccdc94f81ec55270e4b8",
+    "mixed-enter-after-repeat": "d1b17a61aebaefe984d9e1a153631f67c8f1a86c11a9ccdc94f81ec55270e4b8",
+    "mixed-enter-after-release": "d1b17a61aebaefe984d9e1a153631f67c8f1a86c11a9ccdc94f81ec55270e4b8",
+    "mixed-enter-after-cancel": "e613b13530bf1386ca1abe91264ac7f742e49e17def781322b6dc48a438209e0",
+    "home-after-mixed-enter": "9ed103015e66b97de216d76bd92de8e1e392b415cd46fe1054bebdce9c5e33fe",
+    "confirm-shutdown": "d1b17a61aebaefe984d9e1a153631f67c8f1a86c11a9ccdc94f81ec55270e4b8"
+  },
+  "startup_pass_lines": 71,
+  "held_enter": {
+    "inputs": [
+      [
+        "ret",
+        true
+      ],
+      [
+        "f10",
+        true
+      ],
+      [
+        "f10",
+        false
+      ],
+      [
+        "ret",
+        true
+      ],
+      [
+        "ret",
+        false
+      ],
+      [
+        "esc",
+        true
+      ],
+      [
+        "esc",
+        false
+      ],
+      [
+        "esc",
+        true
+      ],
+      [
+        "esc",
+        false
+      ],
+      [
+        "f10",
+        true
+      ],
+      [
+        "f10",
+        false
+      ],
+      [
+        "ret",
+        true
+      ],
+      [
+        "ret",
+        false
+      ]
+    ],
+    "held": "ret"
+  },
+  "mixed_enter": {
+    "inputs": [
+      [
+        "ret",
+        true
+      ],
+      [
+        "kp_enter",
+        true
+      ],
+      [
+        "f10",
+        true
+      ],
+      [
+        "f10",
+        false
+      ],
+      [
+        "kp_enter",
+        false
+      ],
+      [
+        "ret",
+        true
+      ],
+      [
+        "ret",
+        false
+      ],
+      [
+        "esc",
+        true
+      ],
+      [
+        "esc",
+        false
+      ],
+      [
+        "esc",
+        true
+      ],
+      [
+        "esc",
+        false
+      ]
+    ],
+    "held": "ret",
+    "released_other": "kp_enter"
+  },
+  "shutdown": {
+    "guest": true,
+    "reason": "guest-shutdown"
+  },
+  "exit_code": 0
+}
+exit 0
