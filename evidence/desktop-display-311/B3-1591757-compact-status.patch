@@ -1,0 +1,18 @@
+--- a/PCP_OS_Rust/crates/pcpos-kernel/src/session.rs
++++ b/PCP_OS_Rust/crates/pcpos-kernel/src/session.rs
+@@ -595,7 +595,14 @@
+                     at(2, rows - 1, &cut(&count, across), SOFT, GROUND);
+                 }
+             }
+-            if !notes.is_empty() { at(2, 4, &cut(&notes.join(" | "), across), SOFT, GROUND); }
++            if !notes.is_empty() {
++                let mut status = notes.join(" | ");
++                // The widest supported place and 10/10 name page fit at 320 pixels without separator padding.
++                if narrow && name_pages > 1 && status.chars().count() > across {
++                    status = notes.join("|");
++                }
++                at(2, 4, &cut(&status, across), SOFT, GROUND);
++            }
+             let mut row = 5;
+             for i in first..first + list_rows {
+                 let ground = if i == place { ui::PANEL } else { GROUND };
