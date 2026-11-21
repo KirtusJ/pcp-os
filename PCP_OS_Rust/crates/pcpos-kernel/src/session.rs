@@ -269,6 +269,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     let room = if graphic { foot_room(display.width) } else { programs.len() + 1 };
     arch::interrupts_on();
     dev::keys_forget();
+    let mut drawn = None;
     loop {
         #[cfg(feature = "vm-store")]
         let mounted = world.volume.is_some();
@@ -276,11 +277,17 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
         let mounted = false;
         // The dock holds the way to all the programs first, then what is pinned.
         place = place.min(shortcuts.len()).min(room - 1);
-        match surface {
-            Surface::Home => name_pages = draw_home(start, &programs, rec, &shortcuts, place, whole_bar, &widgets, &world.store, mounted, tasks - start.tasks, &message, last_refusal, name_page),
-            Surface::Launcher => draw_desktop(start, &programs, rec, chosen, &message, &shortcuts),
-            Surface::Details => draw_menu(start, &programs, &files, rec, chosen, &message, world.store.len(),
-                                          #[cfg(feature = "vm-store")] mounted),
+        // A surface is drawn when what it shows has changed or another screen was drawn over it, and at
+        // no other time: a key that changes nothing writes nothing to the display (B3 traced the stores).
+        let shows = (surface, chosen, place, name_page, shortcuts.clone(), whole_bar, widgets, message.clone(), last_refusal, tasks, world.store.len(), mounted);
+        if drawn.as_ref() != Some(&(shows.clone(), ui::clears())) {
+            match surface {
+                Surface::Home => name_pages = draw_home(start, &programs, rec, &shortcuts, place, whole_bar, &widgets, &world.store, mounted, tasks - start.tasks, &message, last_refusal, name_page),
+                Surface::Launcher => draw_desktop(start, &programs, rec, chosen, &message, &shortcuts),
+                Surface::Details => draw_menu(start, &programs, &files, rec, chosen, &message, world.store.len(),
+                                              #[cfg(feature = "vm-store")] mounted),
+            }
+            drawn = Some((shows, ui::clears()));
         }
         let (code, extended, ctrl) = wait_chord();
         let key = (code, extended);
