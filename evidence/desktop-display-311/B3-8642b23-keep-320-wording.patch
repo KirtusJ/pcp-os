@@ -1,0 +1,25 @@
+--- a/PCP_OS_Rust/crates/pcpos-kernel/src/session.rs
++++ b/PCP_OS_Rust/crates/pcpos-kernel/src/session.rs
+@@ -581,10 +581,18 @@
+             left -= widgets_shown;
+             let list_rows = (1 + left).min(places);
+             let first = (place + 1).saturating_sub(list_rows);
+-            let mut notes: Vec<String> = Vec::new();
+-            let narrow = across < 40;
+-            if list_rows < places { notes.push(if narrow { format!("Place {}/{}", place + 1, places) } else { format!("Places {} to {} of {}", first + 1, first + list_rows, places) }); }
+-            if name_pages > 1 { notes.push(if narrow { format!("name {}/{} <- ->", name_page + 1, name_pages) } else { format!("name part {} of {}: Left/Right", name_page + 1, name_pages) }); }
++            let status_notes = |narrow: bool| {
++                let mut notes: Vec<String> = Vec::new();
++                if list_rows < places { notes.push(if narrow { format!("Place {}/{}", place + 1, places) } else { format!("Places {} to {} of {}", first + 1, first + list_rows, places) }); }
++                if name_pages > 1 { notes.push(if narrow { format!("name {}/{} <- ->", name_page + 1, name_pages) } else { format!("name part {} of {}: Left/Right", name_page + 1, name_pages) }); }
++                notes
++            };
++            let mut narrow = across < 40;
++            let mut notes = status_notes(narrow);
++            if !narrow && notes.join(" | ").len() > across {
++                narrow = true;
++                notes = status_notes(true);
++            }
+             // How many widget lines had no room is never the part that is cut (B3): where row 4 cannot hold
+             // it beside the place and the name's part, it has the last row of the display, below the keys.
+             let hidden = if widgets_shown < widget_lines.len() { Some(format!("{} widget line(s) not shown", widget_lines.len() - widgets_shown)) } else { None };
