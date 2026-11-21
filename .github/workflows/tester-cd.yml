@@ -10,6 +10,8 @@ on:
       - 'PCP_OS_Rust/crates/pcpos-core/**'
       - 'apps/surfbird/guest/**'
       - 'store/native/guest/**'
+      - 'store/apps/parrots-all-the-way-down/guest/**'
+      - 'store/apps/parrots-all-the-way-down/core/**'
       - '.github/workflows/tester-cd.yml'
   push:
     branches: [master]
@@ -19,6 +21,8 @@ on:
       - 'PCP_OS_Rust/crates/pcpos-core/**'
       - 'apps/surfbird/guest/**'
       - 'store/native/guest/**'
+      - 'store/apps/parrots-all-the-way-down/guest/**'
+      - 'store/apps/parrots-all-the-way-down/core/**'
       - '.github/workflows/tester-cd.yml'
   workflow_dispatch:
 
@@ -31,6 +35,14 @@ concurrency:
 
 jobs:
   build-and-boot:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - option: ''
+            suffix: ''
+          - option: '--queue-desk'
+            suffix: '-queue-desk'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -55,17 +67,17 @@ jobs:
           rustup toolchain install 1.97.0 --profile minimal --no-self-update -c rust-src -t x86_64-unknown-none
       - name: Build the CD twice and require the same image
         run: |
-          python3 -B examples/tester-cd/build.py upstream-loader "$RUNNER_TEMP/first"
-          python3 -B examples/tester-cd/build.py upstream-loader "$RUNNER_TEMP/a-second-directory"
+          python3 -B examples/tester-cd/build.py ${{ matrix.option }} upstream-loader "$RUNNER_TEMP/first"
+          python3 -B examples/tester-cd/build.py ${{ matrix.option }} upstream-loader "$RUNNER_TEMP/a-second-directory"
           cmp "$RUNNER_TEMP/first/pcp-os-tester.iso" "$RUNNER_TEMP/a-second-directory/pcp-os-tester.iso"
           cat "$RUNNER_TEMP/first/receipt.json"
       - name: Boot it on pc and q35, on both clocks
-        run: python3 -B examples/tester-cd/check.py "$RUNNER_TEMP/first" "$RUNNER_TEMP/evidence"
+        run: python3 -B examples/tester-cd/check.py ${{ matrix.option }} "$RUNNER_TEMP/first" "$RUNNER_TEMP/evidence"
       - name: Keep the receipt and the evidence, including a failed case
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: tester-cd-evidence
+          name: tester-cd-evidence${{ matrix.suffix }}
           path: |
             ${{ runner.temp }}/first/receipt.json
             ${{ runner.temp }}/evidence
@@ -74,6 +86,6 @@ jobs:
       - name: Keep the unpublished image that was tested
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: unpublished-tester-cd
+          name: unpublished-tester-cd${{ matrix.suffix }}
           path: ${{ runner.temp }}/first/pcp-os-tester.iso
           retention-days: 14
