@@ -1,0 +1,127 @@
+{
+  "head": "27b181e100e5dacd334090b7839ed5c920eb9845",
+  "tree": "baf61afb8d2f69949fc43dbd8d4a6c6b51525a69",
+  "artifact": 14713207690,
+  "run": 44920327496,
+  "artifact_sha256": "106ef6eea5788ed0c238fd52ed332253eb6977130bfca1dddbb26f200d8df22a",
+  "usb_sha256": "76f37429fee30405f145b2e3ed89268659278bb31a88d4de12b1f63dc5747356",
+  "firmware_code_sha256": "624e06de18b4fa535e90db7160d00d3d07d206422b89999bf1e27d920264e4e0",
+  "older_control_commit": "70dc1b4092d421e7f77b08072ad5fa056bded5ed",
+  "pairs": {
+    "128": {
+      "local": {
+        "home_sha256": "9ed103015e66b97de216d76bd92de8e1e392b415cd46fe1054bebdce9c5e33fe",
+        "serial_sha256": "d8c90cd70404e61ab6da440eebe6bbd28074a93a0d4854a267937a404b0aad92",
+        "disk_sha256": "9594abb6b6a56ec0b92b4c3b4baa5cf7edc053aa8e4e033a5adef94955bfbd0a",
+        "display": "display: Bochs, 1920x1080, 2 page(s), 16384 KiB of its memory mapped at 0x80000000",
+        "address": null,
+        "startup": 71,
+        "final": 72,
+        "exit": 0
+      },
+      "hosted": {
+        "home_sha256": "9ed103015e66b97de216d76bd92de8e1e392b415cd46fe1054bebdce9c5e33fe",
+        "serial_sha256": "0c03b83154f23ca2ca3b42e34a07875e4257a2e09f95fdae0486afe2cf85e6d7",
+        "disk_sha256": "9594abb6b6a56ec0b92b4c3b4baa5cf7edc053aa8e4e033a5adef94955bfbd0a",
+        "display": "display: Bochs, 1920x1080, 2 page(s), 16384 KiB of its memory mapped at 0x80000000",
+        "address": null,
+        "startup": 71,
+        "final": 72,
+        "exit": 0
+      }
+    },
+    "256": {
+      "local": {
+        "home_sha256": "9ed103015e66b97de216d76bd92de8e1e392b415cd46fe1054bebdce9c5e33fe",
+        "serial_sha256": "5c147098b53fca3cfa0fd0eddc4f1134d4c9a746bc81ef25b9e33829ab2c8939",
+        "disk_sha256": "9594abb6b6a56ec0b92b4c3b4baa5cf7edc053aa8e4e033a5adef94955bfbd0a",
+        "display": "display: Bochs, 1920x1080, 2 page(s), 16384 KiB of its memory mapped at 0x80000000",
+        "address": null,
+        "startup": 71,
+        "final": 72,
+        "exit": 0
+      },
+      "hosted": {
+        "home_sha256": "9ed103015e66b97de216d76bd92de8e1e392b415cd46fe1054bebdce9c5e33fe",
+        "serial_sha256": "8ce115f5a3235417a644cf80b4f7f4e4a4762c95f9a732d13ca54a4e927fb58f",
+        "disk_sha256": "9594abb6b6a56ec0b92b4c3b4baa5cf7edc053aa8e4e033a5adef94955bfbd0a",
+        "display": "display: Bochs, 1920x1080, 2 page(s), 16384 KiB of its memory mapped at 0x80000000",
+        "address": null,
+        "startup": 71,
+        "final": 72,
+        "exit": 0
+      }
+    },
+    "virtio-vga": {
+      "local": {
+        "home_sha256": "72fe8f29a2709bf356eac7cf1ed4960cb2c677a92e1e2e97633ed426c4d10fc8",
+        "serial_sha256": "d4a6aae310857aee1751a59fe128ac083c23c4de9fe99c75b364f752fdb8d925",
+        "disk_sha256": "9594abb6b6a56ec0b92b4c3b4baa5cf7edc053aa8e4e033a5adef94955bfbd0a",
+        "display": "display: Loader, 1280x800, 1 page(s), 4000 KiB of its memory mapped at 0x80000000",
+        "address": 2147483648,
+        "startup": 71,
+        "final": 72,
+        "exit": 0
+      },
+      "hosted": {
+        "home_sha256": "72fe8f29a2709bf356eac7cf1ed4960cb2c677a92e1e2e97633ed426c4d10fc8",
+        "serial_sha256": "0b9e57e7fb0cc25596747cba4da2c00477d6a5324411a433638dccdeceec717c",
+        "disk_sha256": "9594abb6b6a56ec0b92b4c3b4baa5cf7edc053aa8e4e033a5adef94955bfbd0a",
+        "display": "display: Loader, 1280x800, 1 page(s), 4000 KiB of its memory mapped at 0x80000000",
+        "address": 2147483648,
+        "startup": 71,
+        "final": 72,
+        "exit": 0
+      }
+    },
+    "ramfb-128": {
+      "local": {
+        "home_sha256": "0007c7b0822f948281f89c18d49d6cfeb5760f6663cd6ac0593cb0fbd4385d6f",
+        "serial_sha256": "cb6b238378ae055bbe7576ffcc3654959aa5dfc0ffbe35460f2152b678b2c658",
+        "disk_sha256": "9594abb6b6a56ec0b92b4c3b4baa5cf7edc053aa8e4e033a5adef94955bfbd0a",
+        "display": "display: Loader, 800x600, 1 page(s), 1876 KiB of its memory mapped at 0x6a3f000",
+        "address": 111407104,
+        "startup": 71,
+        "final": 72,
+        "exit": 0
+      },
+      "hosted": {
+        "home_sha256": "0007c7b0822f948281f89c18d49d6cfeb5760f6663cd6ac0593cb0fbd4385d6f",
+        "serial_sha256": "4a7ec56314c66de9ebd15192b4f3c3576f7cba4b49a239fdf13ab19a63a2d89c",
+        "disk_sha256": "9594abb6b6a56ec0b92b4c3b4baa5cf7edc053aa8e4e033a5adef94955bfbd0a",
+        "display": "display: Loader, 800x600, 1 page(s), 1876 KiB of its memory mapped at 0x6ab2000",
+        "address": 111878144,
+        "startup": 71,
+        "final": 72,
+        "exit": 0
+      }
+    },
+    "ramfb-256": {
+      "local": {
+        "home_sha256": "0007c7b0822f948281f89c18d49d6cfeb5760f6663cd6ac0593cb0fbd4385d6f",
+        "serial_sha256": "ee05a8d9693b0c9bd96c8527a88e2e6bba79c0e6f61f7d2f5ae2cc557146b9d2",
+        "disk_sha256": "9594abb6b6a56ec0b92b4c3b4baa5cf7edc053aa8e4e033a5adef94955bfbd0a",
+        "display": "display: Loader, 800x600, 1 page(s), 1876 KiB of its memory mapped at 0xea3f000",
+        "address": 245624832,
+        "startup": 71,
+        "final": 72,
+        "exit": 0
+      },
+      "hosted": {
+        "home_sha256": "0007c7b0822f948281f89c18d49d6cfeb5760f6663cd6ac0593cb0fbd4385d6f",
+        "serial_sha256": "efc076696bdaad7ed7e84f76a7c37ea83f02e058cff38534eebdd4fdee3f40b5",
+        "disk_sha256": "9594abb6b6a56ec0b92b4c3b4baa5cf7edc053aa8e4e033a5adef94955bfbd0a",
+        "display": "display: Loader, 800x600, 1 page(s), 1876 KiB of its memory mapped at 0xeab2000",
+        "address": 246095872,
+        "startup": 71,
+        "final": 72,
+        "exit": 0
+      }
+    }
+  },
+  "rejected_observations": {
+    "other_ramfb_firmware": "kernel framebuffer address or mapped size disagrees with the firmware picture",
+    "other_home_capture": "visible Home and loader display dimensions differ",
+    "older_virtio_4096_KiB": "kernel framebuffer address or mapped size disagrees with the firmware picture"
+  }
+}
