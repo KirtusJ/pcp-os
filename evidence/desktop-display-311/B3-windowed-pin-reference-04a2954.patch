@@ -1,0 +1,76 @@
+diff --git a/PCP_OS_Rust/crates/pcpos-kernel/src/session.rs b/PCP_OS_Rust/crates/pcpos-kernel/src/session.rs
+index 91a3717..584e6de 100644
+--- a/PCP_OS_Rust/crates/pcpos-kernel/src/session.rs
++++ b/PCP_OS_Rust/crates/pcpos-kernel/src/session.rs
+@@ -520,24 +520,39 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
+         _ => {
+             use ui::{at, GROUND};
+             ui::clear(GROUND);
+-            let (_, rows) = ui::grid();
++            let (cols, rows) = ui::grid();
+             ui::emblem(20, 16, 36, GROUND);
+             at(7, 1, "PCP OS | DESKTOP", TEXT, GROUND);
+             at(2, 3, &if safe { format!("NOT VERIFIED: {} of {} self-tests failed.", start.failed, start.passed + start.failed) }
+                       else { format!("Verified at start: all {} self-tests passed.", start.passed) }, if safe { BAD } else { GOOD }, GROUND);
++            let selected = place.checked_sub(1).map(|i| &programs[shortcuts[i]]);
++            let name_lines = selected.map(|p| wrapped(&p.name, cols.saturating_sub(4) as usize)).unwrap_or_default();
++            let identity_rows = if selected.is_some() { name_lines.len() + 3 } else { 0 };
++            let widget_rows = recent.len() + usize::from(widgets[1]) + usize::from(widgets[2]);
++            let footer = rows.saturating_sub(2);
++            // Programs stays on row 5. Window the pins as the selection moves, leaving room for the
++            // whole selected name, its facts, the enabled widgets and the footer.
++            let pin_rows = (footer as usize).saturating_sub(6 + identity_rows + widget_rows + usize::from(widget_rows != 0)).max(1);
++            let first = place.saturating_sub(pin_rows);
++            let end = (first + pin_rows).min(shortcuts.len());
++            if end - first < shortcuts.len() {
++                at(2, 4, &format!("Pins {} to {} of {}", first + 1, end, shortcuts.len()), SOFT, GROUND);
++            }
+             let mut row = 5;
+-            for i in 0..=shortcuts.len() {
+-                let ground = if i == place { ui::PANEL } else { GROUND };
++            let mut pin_row = |index: usize, text: &str| {
++                let ground = if index == place { ui::PANEL } else { GROUND };
+                 ui::fill(2 * ui::CELL_W, row * ui::CELL_H, 44 * ui::CELL_W, ui::CELL_H, ground);
+-                at(3, row, &if i == 0 { String::from("Programs") } else { cut(&format!("PINNED {}", programs[shortcuts[i - 1]].name), 42) }, TEXT, ground);
++                at(3, row, text, TEXT, ground);
+                 row += 1;
++            };
++            pin_row(0, "Programs");
++            for i in first..end {
++                pin_row(i + 1, &cut(&format!("PINNED {}", programs[shortcuts[i]].name), 42));
+             }
+-            // Which program Enter will start, in full: a row has room for only so much of a name.
+-            if let Some(p) = place.checked_sub(1).and_then(|at| shortcuts.get(at)).map(|i| &programs[*i]) {
+-                let (cols, _) = ui::grid();
++            if let Some(p) = selected {
+                 row += 1;
+                 at(2, row, "Enter starts", GOOD, GROUND);
+-                for line in wrapped(&p.name, (cols as usize).saturating_sub(4)) {
++                for line in name_lines {
+                     row += 1;
+                     at(2, row, &line, TEXT, GROUND);
+                 }
+@@ -545,13 +560,19 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
+                 at(2, row, &format!("{}   SHA-256 {}...", size_text(p.image.len()), &p.digest[..16]), SOFT, GROUND);
+                 row += 1;
+             }
++            if widget_rows != 0 {
++                row += 1;
++            }
+             for (time, name, outcome, _) in recent.iter() {
+-                at(2, row + 1, &format!("{} {} {}", time, outcome, name), SOFT, GROUND);
++                at(2, row, &format!("{} {} {}", time, outcome, name), SOFT, GROUND);
++                row += 1;
++            }
++            if widgets[1] {
++                at(2, row, &format!("memory {} MiB, {} MiB free", pool * 4 / 1024, free * 4 / 1024), SOFT, GROUND);
+                 row += 1;
+             }
+-            if widgets[1] { at(2, row + 2, &format!("memory {} MiB, {} MiB free", pool * 4 / 1024, free * 4 / 1024), SOFT, GROUND); row += 1; }
+-            if widgets[2] { at(2, row + 3, files_line, SOFT, GROUND); }
+-            at(2, rows - 2, "Up/Down choose   Enter open   F1 keys   F10 off", TEXT, GROUND);
++            if widgets[2] { at(2, row, files_line, SOFT, GROUND); }
++            at(2, footer, "Up/Down choose   Enter open   F1 keys   F10 off", TEXT, GROUND);
+             return;
+         }
+     };
