@@ -753,9 +753,15 @@ fn display_call(p: &mut Process, caps: &CapSpace, request: u64, arg: u64) -> u64
             }
         }
         0x5003 => {
-            if let (Some(from), Some(d)) = (p.linux.as_ref().and_then(|l| l.shadow), dev::display()) {
-                // The program draws to its own memory; showing page 0 is the copy.
-                if arg != 0 || !display_needs_shadow(&d) || !shadow_present(p, from, &d) {
+            // A program that asked to draw through the kernel, on a display that needs it, shows only
+            // what it has drawn in the memory it mapped for that. Before the map there is nothing to
+            // show, and it is not let through to the device's own page (B3's fixture found it was).
+            if let Some(d) = dev::display().filter(|d| shadow_wanted(p, d)) {
+                let from = match p.linux.as_ref().and_then(|l| l.shadow) {
+                    Some(from) if arg == 0 => from,
+                    _ => return err(EINVAL),
+                };
+                if !shadow_present(p, from, &d) {
                     return err(EINVAL);
                 }
                 dev::display_count_show();
