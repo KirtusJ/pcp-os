@@ -340,7 +340,8 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
         def enter(down, which="ret"):
             rpc("input-send-event", events=[{"type": "key", "data": {"down": down, "key": {"type": "qcode", "data": which}}}])
         enter(True)
-        wait_screen("launcher-with-enter-held", launcher_list_visible)
+        # Whichever program is chosen there: with the queue desk on the disc it is the desk, not Surfbird.
+        wait_screen("launcher-with-enter-held", lambda view: corner_verified(view) and any("may use:" in row for row in view))
         key("f10")
         wait_screen("power-question-enter-held", lambda view: any("POWER OFF" in row for row in view))
         for _ in range(3):
