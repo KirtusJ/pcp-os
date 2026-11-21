@@ -280,8 +280,13 @@ def main():
     aliases = ["a" * 30 + letter + "z" * 29 + ".elf" for letter in "AB"]
     for name in aliases:
         (folder / name).write_bytes(surf)
+    # Ten short-named programs go before them, so that the place has two digits and row 4 is as full as it
+    # gets (A3's case: 'Place 15/15 | name 1/3 <- ->' lost its right arrow when a count was added).
+    fillers = PROGRAMS[:10]
     out = evidence / "aliases-320x200"
-    rpc, key, screen, guest, stream = boot(args.qemu, folder / "kernel.elf32", folder, receipt["kernel_measurement"], "320x200", out, glyphs, args.timeout, programs=aliases)
+    rpc, key, screen, guest, stream = boot(args.qemu, folder / "kernel.elf32", folder, receipt["kernel_measurement"], "320x200", out, glyphs, args.timeout, programs=fillers + aliases)
+    for _ in fillers:
+        key("down")
     try:
         read_parts = []
         for pin in (1, 2):
@@ -291,7 +296,7 @@ def main():
             for part in (1, 2, 3):
                 if part > 1:
                     key("right")
-                rows = screen("pin%d-part%d" % (pin, part), lambda rows, pin=pin, part=part: rows[4].strip() == "Place %d/3 | name %d/3 <- ->" % (pin + 1, part))
+                rows = screen("pin%d-part%d" % (pin, part), lambda rows, pin=pin, part=part: rows[4].strip() == "Place %d/13 | name %d/3 <- ->" % (pin + 11, part))
                 body = [row.strip() for row in rows[5:len(rows) - 2] if row.strip()]
                 if len(body) != 3 or not body[0].startswith("PINNED aaaa") or not re.fullmatch(r"\d+ KiB sha [0-9a-f]{8,16}\.\.", body[2]):
                     raise RuntimeError("pin %d part %d: unexpected rows %r" % (pin, part, body))
@@ -303,6 +308,20 @@ def main():
         if differing != [2]:
             problems.append("aliases-320x200: the two names should differ in part 2 only; they differ in %r" % differing)
         results["aliases-320x200"] = {"parts": read_parts, "differ_in_part": differing}
+        # With the name in parts and a two-digit place, row 4 is full. Two widgets are turned on that have
+        # no room: how many lines are not shown must still be said (B3's and A3's finding), on the display's
+        # last row, and row 4 must keep both arrows.
+        key("f2")
+        for _ in range(3):
+            key("down")
+        key("ret")
+        key("down")
+        key("ret")
+        key("esc")
+        hidden = screen("widgets-hidden", lambda rows: rows[-1].strip() == "2 widget line(s) not shown")
+        if not re.fullmatch(r"  Place 13/13 [|] name [1-3]/3 <- ->", hidden[4]):
+            problems.append("aliases-320x200: with widgets hidden, row 4 reads %r" % hidden[4])
+        results["aliases-320x200"]["hidden_widgets_row"] = hidden[-1].strip()
         key("f10")
         screen("power-question", lambda rows: any("POWER OFF" in row for row in rows))
         key("ret")

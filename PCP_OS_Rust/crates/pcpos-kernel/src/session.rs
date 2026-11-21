@@ -585,7 +585,16 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
             let narrow = across < 40;
             if list_rows < places { notes.push(if narrow { format!("Place {}/{}", place + 1, places) } else { format!("Places {} to {} of {}", first + 1, first + list_rows, places) }); }
             if name_pages > 1 { notes.push(if narrow { format!("name {}/{} <- ->", name_page + 1, name_pages) } else { format!("name part {} of {}: Left/Right", name_page + 1, name_pages) }); }
-            if widgets_shown < widget_lines.len() { notes.push(format!("{} widget line(s) not shown", widget_lines.len() - widgets_shown)); }
+            // How many widget lines had no room is never the part that is cut (B3): where row 4 cannot hold
+            // it beside the place and the name's part, it has the last row of the display, below the keys.
+            let hidden = if widgets_shown < widget_lines.len() { Some(format!("{} widget line(s) not shown", widget_lines.len() - widgets_shown)) } else { None };
+            if let Some(count) = hidden {
+                if notes.join(" | ").chars().count() + 3 + count.chars().count() <= across || notes.is_empty() {
+                    notes.push(count);
+                } else {
+                    at(2, rows - 1, &cut(&count, across), SOFT, GROUND);
+                }
+            }
             if !notes.is_empty() { at(2, 4, &cut(&notes.join(" | "), across), SOFT, GROUND); }
             let mut row = 5;
             for i in first..first + list_rows {

@@ -1,0 +1,35 @@
+{
+ "tool": "async_run.py",
+ "plan": "plan.json",
+ "plan_sha256": "57f0e1d57eec42a8e3256d635a80b6b380c35ccbbfb6af4cbf83cd0a994c0ac8",
+ "width": 1,
+ "tasks": [
+  {
+   "id": "T",
+   "argv": [
+    "python3",
+    "-B",
+    "examples/tester-cd/check_compact_pins.py",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/cdHw1",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/evHwPins2"
+   ],
+   "exit": 2,
+   "expect_exit": 0,
+   "timed_out": false,
+   "seconds": 0.01,
+   "ended_as_expected": false,
+   "copied_in": [],
+   "files": {
+    "STDERR.txt": {
+     "sha256": "b9ec8bc3458c1ed4b6234f01c9f9f22cbb3c4a3c5eb6ad371bf05c024efdacae",
+     "bytes": 190
+    },
+    "STDOUT.txt": {
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "bytes": 0
+    }
+   }
+  }
+ ],
+ "all_ended_as_expected": false
+}
