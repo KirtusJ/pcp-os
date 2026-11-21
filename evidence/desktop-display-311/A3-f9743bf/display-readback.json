@@ -1,0 +1,421 @@
+{
+  "source": "f9743bfbb61e771806c165779d15b854cc29232e",
+  "tree": "992986aac40fc4e25ed54f23d6ae299eb7d8b821",
+  "fixture": "Queue Desk from the hosted two-program tester CD",
+  "kernel_sha256": "fbfb3102d8d1535108e7457b15a2eb59c06487e62adc3c3d51d6f2c3ba3eed38",
+  "program_sha256": "46f4bbd5e4d754a78d9b018d15d9249f8dbce04fb536e6bc49f638104850d8b1",
+  "modes": {
+    "320x200": {
+      "failures": [],
+      "checks": 101,
+      "total_checks": 101,
+      "guest_exit": 0,
+      "self_test_pass_lines": 72,
+      "launches": [
+        {
+          "name": "matching-prefix-matching-pr2.elf",
+          "pages": [
+            "matching-prefix-matching-pr2",
+            ".elf"
+          ],
+          "outcome": "ran and exited 0",
+          "visible_digest": "53 KiB sha 46f4bbd5e4d754a..",
+          "refusal_rows": []
+        },
+        {
+          "name": "matching-prefix-matching-pre3.elf",
+          "pages": [
+            "matching-prefix-matching-pre",
+            "3.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB sha 46f4bbd5e4d754a..",
+          "refusal_rows": [
+            "???  Not started: not admitted"
+          ]
+        },
+        {
+          "name": "matching-prefix-matching-prefix-matching-prefix-matching-p3.elf",
+          "pages": [
+            "matching-prefix-matching-pre",
+            "fix-matching-prefix-matching",
+            "-p3.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB sha 46f4bbd5e4d754a..",
+          "refusal_rows": [
+            "???  Not started: not admitted"
+          ]
+        },
+        {
+          "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaAzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf",
+          "pages": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "aaAzzzzzzzzzzzzzzzzzzzzzzzzz",
+            "zzzz.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB sha 46f4bbd5e4d754a..",
+          "refusal_rows": [
+            "???  Not started: not admitted"
+          ]
+        },
+        {
+          "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaBzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf",
+          "pages": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "aaBzzzzzzzzzzzzzzzzzzzzzzzzz",
+            "zzzz.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB sha 46f4bbd5e4d754a..",
+          "refusal_rows": [
+            "???  Not started: not admitted"
+          ]
+        }
+      ]
+    },
+    "640x480": {
+      "failures": [],
+      "checks": 44,
+      "total_checks": 44,
+      "guest_exit": 0,
+      "self_test_pass_lines": 72,
+      "launches": [
+        {
+          "name": "matching-prefix-matching-pr2.elf",
+          "pages": [
+            "matching-prefix-matching-pr2.elf"
+          ],
+          "outcome": "ran and exited 0",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": []
+        },
+        {
+          "name": "matching-prefix-matching-pre3.elf",
+          "pages": [
+            "matching-prefix-matching-pre3.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "Not started: the program could not be admitted as a task"
+          ]
+        },
+        {
+          "name": "matching-prefix-matching-prefix-matching-prefix-matching-p3.elf",
+          "pages": [
+            "matching-prefix-matching-prefix-matching-prefix-matching-p3.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "Not started: the program could not be admitted as a task"
+          ]
+        },
+        {
+          "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaAzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf",
+          "pages": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaAzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "Not started: the program could not be admitted as a task"
+          ]
+        },
+        {
+          "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaBzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf",
+          "pages": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaBzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "Not started: the program could not be admitted as a task"
+          ]
+        }
+      ]
+    },
+    "bar": {
+      "failures": [],
+      "checks": 44,
+      "total_checks": 44,
+      "guest_exit": 0,
+      "self_test_pass_lines": 72,
+      "launches": [
+        {
+          "name": "matching-prefix-matching-pr2.elf",
+          "pages": [
+            "matching-prefix-matching-pr2.elf"
+          ],
+          "outcome": "ran and exited 0",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": []
+        },
+        {
+          "name": "matching-prefix-matching-pre3.elf",
+          "pages": [
+            "matching-prefix-matching-pre3.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "?                 ??         ? Not started: the program could not be admitted as a task ?              ????                                                    ????"
+          ]
+        },
+        {
+          "name": "matching-prefix-matching-prefix-matching-prefix-matching-p3.elf",
+          "pages": [
+            "matching-prefix-matching-prefix-matching-prefix-matching-p3.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "?                 ??                  ??        ? Not started: the program could not be admitted as a task        ?                                            ????"
+          ]
+        },
+        {
+          "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaAzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf",
+          "pages": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaAzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "?                 ??                  ??                 ??        ? Not started: the program could not be admitted as a task         ?                        ????"
+          ]
+        },
+        {
+          "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaBzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf",
+          "pages": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaBzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "?                 ??                  ??                 ??                   ???     ? Not started: the program could not be admitted as a task         ?     ????"
+          ]
+        }
+      ]
+    },
+    "dock": {
+      "failures": [],
+      "checks": 44,
+      "total_checks": 44,
+      "guest_exit": 0,
+      "self_test_pass_lines": 72,
+      "launches": [
+        {
+          "name": "matching-prefix-matching-pr2.elf",
+          "pages": [
+            "matching-prefix-matching-pr2.elf"
+          ],
+          "outcome": "ran and exited 0",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": []
+        },
+        {
+          "name": "matching-prefix-matching-pre3.elf",
+          "pages": [
+            "matching-prefix-matching-pre3.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "??                 ?                 ??                  ??               ? Not started: the program could not be admitted as a task ?                                  ???"
+          ]
+        },
+        {
+          "name": "matching-prefix-matching-prefix-matching-prefix-matching-p3.elf",
+          "pages": [
+            "matching-prefix-matching-prefix-matching-prefix-matching-p3.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "??                 ?                 ??                  ??                  ??         ? Not started: the program could not be admitted as a task        ?             ???"
+          ]
+        },
+        {
+          "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaAzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf",
+          "pages": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaAzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "??                 ?                 ??                  ??                  ??                   ??? ? Not started: the program could not be admitted as a task         ??"
+          ]
+        },
+        {
+          "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaBzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf",
+          "pages": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaBzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "??                 ?                 ??                  ??                  ??                   ???             ? Not started: the program could not be admitted as a task         ?"
+          ]
+        }
+      ]
+    }
+  },
+  "extended_first_attempts": {
+    "320x200": [
+      "normal shutdown"
+    ],
+    "640x480": [
+      "normal shutdown"
+    ],
+    "bar": [
+      "pin1-32-page1 digest and size",
+      "pin1-32 whole name",
+      "pin1-32 after Enter digest and size",
+      "pin1-32 identity retained",
+      "pin2-33-page1 digest and size",
+      "pin2-33 whole name",
+      "pin2-33 identity retained",
+      "pin2-33 visible refusal",
+      "pin3-63 after Enter digest and size",
+      "pin3-63 identity retained",
+      "pin3-63 visible refusal",
+      "pin5-64-page1 digest and size",
+      "pin5-64 whole name",
+      "pin5-64 after Enter digest and size",
+      "pin5-64 identity retained",
+      "pin5-64 visible refusal"
+    ],
+    "dock": [
+      "pin1-32-page1 digest and size",
+      "pin1-32 whole name",
+      "pin1-32 after Enter digest and size",
+      "pin1-32 identity retained",
+      "pin2-33-page1 digest and size",
+      "pin2-33 whole name",
+      "pin2-33 after Enter digest and size",
+      "pin2-33 identity retained",
+      "pin2-33 visible refusal",
+      "pin3-63-page1 digest and size",
+      "pin3-63 whole name",
+      "pin3-63 after Enter digest and size",
+      "pin3-63 identity retained",
+      "pin3-63 visible refusal"
+    ]
+  },
+  "control_results": [
+    {
+      "length": 64,
+      "exit": 0,
+      "verdict": "ALL SELF-TESTS PASS. Present: user mode and preemptive processes; programs loaded from the loader's files; a display, a keyboard, sound and music where the machine has ones this kernel drives. Not present: storage that outlasts power, a mouse, network, a second processor.",
+      "register_messages": [],
+      "program_launched": false,
+      "command": [
+        "/workspace/scratch/7c7df1723510/work/emulator/qemu-system-x86_64",
+        "-machine",
+        "pc",
+        "-accel",
+        "tcg",
+        "-cpu",
+        "qemu64",
+        "-m",
+        "256M",
+        "-vga",
+        "std",
+        "-nic",
+        "none",
+        "-display",
+        "none",
+        "-monitor",
+        "none",
+        "-qmp",
+        "stdio",
+        "-serial",
+        "file:/workspace/scratch/ffffe64c533f/a3-f974/control-64/serial.log",
+        "-kernel",
+        "/workspace/scratch/ffffe64c533f/a3-f974/disc-kernel.elf32",
+        "-append",
+        "desktop=320x200 image=0ed05203271c1d87d874cc30db402366d5add302fdacb09e3e16b88ddb1040fa",
+        "-initrd",
+        "matching-prefix-matching-prefix-matching-prefix-matching-pr7.elf"
+      ]
+    },
+    {
+      "length": 65,
+      "exit": 0,
+      "verdict": "1 SELF-TEST(S) FAILED",
+      "register_messages": [
+        "  note the register refused ARTIFACT_ADDED: Refused(Refusal { code: 2, clause: None, message: \"the artifact name is not usable: letters, digits, '.', '_' and '-', at most 64, starting with a letter or digit\" })"
+      ],
+      "program_launched": false,
+      "command": [
+        "/workspace/scratch/7c7df1723510/work/emulator/qemu-system-x86_64",
+        "-machine",
+        "pc",
+        "-accel",
+        "tcg",
+        "-cpu",
+        "qemu64",
+        "-m",
+        "256M",
+        "-vga",
+        "std",
+        "-nic",
+        "none",
+        "-display",
+        "none",
+        "-monitor",
+        "none",
+        "-qmp",
+        "stdio",
+        "-serial",
+        "file:/workspace/scratch/ffffe64c533f/a3-f974/control-65/serial.log",
+        "-kernel",
+        "/workspace/scratch/ffffe64c533f/a3-f974/disc-kernel.elf32",
+        "-append",
+        "desktop=320x200 image=0ed05203271c1d87d874cc30db402366d5add302fdacb09e3e16b88ddb1040fa",
+        "-initrd",
+        "matching-prefix-matching-prefix-matching-prefix-matching-pre7.elf"
+      ]
+    },
+    {
+      "length": 113,
+      "exit": 0,
+      "verdict": "1 SELF-TEST(S) FAILED",
+      "register_messages": [
+        "  note the register refused ARTIFACT_ADDED: Refused(Refusal { code: 2, clause: None, message: \"the artifact name is not usable: letters, digits, '.', '_' and '-', at most 64, starting with a letter or digit\" })"
+      ],
+      "program_launched": false,
+      "command": [
+        "/workspace/scratch/7c7df1723510/work/emulator/qemu-system-x86_64",
+        "-machine",
+        "pc",
+        "-accel",
+        "tcg",
+        "-cpu",
+        "qemu64",
+        "-m",
+        "256M",
+        "-vga",
+        "std",
+        "-nic",
+        "none",
+        "-display",
+        "none",
+        "-monitor",
+        "none",
+        "-qmp",
+        "stdio",
+        "-serial",
+        "file:/workspace/scratch/ffffe64c533f/a3-f974/control-113/serial.log",
+        "-kernel",
+        "/workspace/scratch/ffffe64c533f/a3-f974/disc-kernel.elf32",
+        "-append",
+        "desktop=320x200 image=0ed05203271c1d87d874cc30db402366d5add302fdacb09e3e16b88ddb1040fa",
+        "-initrd",
+        "matching-prefix-matching-prefix-matching-prefix-matching-prefix-matching-prefix-matching-prefix-matching-pre7.elf"
+      ]
+    }
+  ]
+}
