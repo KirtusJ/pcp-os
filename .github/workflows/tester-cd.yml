@@ -105,6 +105,9 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           python3 -IB examples/tester-cd/check_stopped_screen.py "$RUNNER_TEMP/default.elf32" "$RUNNER_TEMP/no-replay.elf32" "$RUNNER_TEMP/evidence/stopped-screen" \
             --busy "$RUNNER_TEMP/keyboard-busy-demo.elf32" --silent "$RUNNER_TEMP/keyboard-silent-demo.elf32"
+      - name: Check swapped stopped screens and altered reason pixels
+        if: matrix.option == ''
+        run: python3 -IB examples/tester-cd/check_stopped_captures.py "$RUNNER_TEMP/evidence/stopped-screen"
       - name: Replay selected grants and RGB controls on the native captures
         run: python3 -IB examples/tester-cd/check_launcher_grants.py "$RUNNER_TEMP/first/receipt.json" "$RUNNER_TEMP/evidence"
       - name: Check the source CD beside disposable IDE and NVMe disks
