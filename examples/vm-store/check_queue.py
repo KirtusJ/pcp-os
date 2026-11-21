@@ -43,6 +43,15 @@ def check_frame(frame, status):
                 require(bits == expected, f"queue screen mismatch in {text!r} at character {i}")
 
 
+def saved_queue_visible(rows):
+    """Match the Files view of this fixture's one saved queue."""
+    return (len(rows) >= 7
+            and rows[1].strip() == "FILES: showing 1 to 1 of 1, 3 KiB"
+            and rows[2].strip() == "VM files | saved when an app syncs"
+            and rows[4].split() == ["parrots.queue", "3", "KiB"]
+            and not any(row.strip() for row in rows[5:-2]))
+
+
 def check_journal(image):
     # After the first save in a fresh volume, slot 1 contains generation 2.
     start = 130 * 512
@@ -109,9 +118,7 @@ def main(args):
                     desktop.home("restore-home")
                     desktop.verification("restore-home")
                     monitor.key("f3")
-                    desktop.wait("restore-files", lambda rows: any("FILES: showing 1 to 1 of 1, 3 KiB" in row for row in rows)
-                                 and any("VM files | saved when an app syncs" in row for row in rows)
-                                 and any("parrots.queue" in row and "3 KiB" in row for row in rows))
+                    desktop.wait("restore-files", saved_queue_visible)
                     monitor.key("esc")
                     desktop.home("restore-from-files")
                     monitor.key("spc")
