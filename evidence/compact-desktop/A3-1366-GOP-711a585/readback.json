@@ -1,0 +1,247 @@
+{
+  "os_commit": "711a585af4f4a46ecb5ef3b03120b55dc92c2b1d",
+  "distribution_reader": "03d68793f754a6057d6fcde87c210a1931e53ee2",
+  "distribution_reviewed_head": "987f395b3836843205e13d18500e03dba8f0da34",
+  "kernel_build": "Repository firmware-owned UEFI experiment with its 32 MiB load-base patch; full heap. The USB used the upstream loader and passed the real GOP framebuffer descriptor to PCP OS. All five guests used the same read-only experimental USB.",
+  "firmware_source": "https://deb.debian.org/debian/pool/main/e/edk2/edk2_2025.02.orig.tar.xz",
+  "firmware_source_sha256": "b63b6053d6d89c74d9291f9e96fde1584be99e6fb9c169ba9511505129d6b049",
+  "custom_firmware": "OVMF X64 RELEASE, 4 MiB. The only firmware source change selects a fixed 1366 by 768 mode in QemuRamfbDxe. The packaged OVMF default control produced 800 by 600. Each trial used separate firmware variables.",
+  "failure": "Both first exact-size trials stopped at the byte comparison. QEMU 10.0.13 emitted a 1366 by 768 P6 header followed by 4100 bytes per row. P6 requires 4098. Neither run reached shutdown. The original P6s, memory dumps and logs are preserved.",
+  "capture": "New guests used original QMP PNGs. In both guests every Home pixel matched the physical framebuffer in BGRX order. The original QEMU PPMs also matched after each row\u2019s two extra bytes were excluded. The merged distribution F10 reader consumed packed RGB serialized from the PNGs.",
+  "scope": "Virtual 1x RAM framebuffer, not a physical laptop or the shipping optical image. No OS product changes or automatic scale selection tested.",
+  "image": {
+    "elf_sha256": "e4d75f88916fae1a59dc36ab9665aa84da1565c80a579c95843518a400a1ecda",
+    "measurement": "9e012cd3518a9cd9298a38e7ea8fec9e51e75a157b27e9158d6c33410899b84b",
+    "heap": [
+      34533376,
+      16777216
+    ],
+    "segments": [
+      [
+        33554432,
+        371,
+        4096,
+        371,
+        7
+      ],
+      [
+        33558528,
+        434176,
+        8192,
+        434176,
+        5
+      ],
+      [
+        33992704,
+        229376,
+        442368,
+        229376,
+        4
+      ],
+      [
+        34222080,
+        32,
+        671744,
+        32,
+        6
+      ],
+      [
+        34226176,
+        17461248,
+        675840,
+        2648,
+        6
+      ]
+    ],
+    "modules": {
+      "surf.elf": [
+        51687424,
+        51752728
+      ],
+      "clip.ppm": [
+        51752960,
+        51863968
+      ],
+      "clip.wav": [
+        51867648,
+        52482092
+      ]
+    },
+    "arena": [
+      33554432,
+      52535296
+    ],
+    "source_iso": "93ed3b599ad7be0e1e88a64813b1f2b5299d51507df2edca691aaf6189d10d15",
+    "efi_sha256": "28a31b46fe9d6ff7b3087d7b69a49d499365d6d6a96bdeb2bee4dd9691cf4906",
+    "usb_sha256": "d03b917354db7f549a8eefc33107d7cf74f0a27d0dfaa5ae40bfa01b7ba2527e"
+  },
+  "trials": {
+    "stock-default": {
+      "requested": "firmware-default",
+      "ram_mib": 128,
+      "qemu": "QEMU emulator version 10.0.13 (Debian 1:10.0.13+ds-0+deb13u1)",
+      "kernel_source": "711a585af4f4a46ecb5ef3b03120b55dc92c2b1d",
+      "source_patch": "examples/firmware-owned-uefi/load-base.patch",
+      "measured_kernel": "9e012cd3518a9cd9298a38e7ea8fec9e51e75a157b27e9158d6c33410899b84b",
+      "usb_sha256": "d03b917354db7f549a8eefc33107d7cf74f0a27d0dfaa5ae40bfa01b7ba2527e",
+      "firmware_code_sha256": "624e06de18b4fa535e90db7160d00d3d07d206422b89999bf1e27d920264e4e0",
+      "vars_template_sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+      "usb_read_only": true,
+      "passed": true,
+      "loader_display": "display: Loader, 800x600, 1 page(s), 1876 KiB of its memory mapped at 0x6a3f000",
+      "captured": "800x600",
+      "kernel_reported": "800x600",
+      "firmware_pitch_bytes": 3200,
+      "framebuffer_address": "0x6a3f000",
+      "matched_framebuffer_pixels": 480000,
+      "warning_and_actions": [
+        "POWER OFF",
+        "Switch PCP OS off?",
+        "The register is closed and verified first. Files of this session that were",
+        "not saved by a program are lost.",
+        "Enter switch off    Esc go back"
+      ],
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "qemu_exit": 0,
+      "checks": 72,
+      "home_restored": true,
+      "identical_power_after_reopen": true
+    },
+    "exact-128": {
+      "requested": "1366x768",
+      "ram_mib": 128,
+      "qemu": "QEMU emulator version 10.0.13 (Debian 1:10.0.13+ds-0+deb13u1)",
+      "kernel_source": "711a585af4f4a46ecb5ef3b03120b55dc92c2b1d",
+      "source_patch": "examples/firmware-owned-uefi/load-base.patch",
+      "measured_kernel": "9e012cd3518a9cd9298a38e7ea8fec9e51e75a157b27e9158d6c33410899b84b",
+      "usb_sha256": "d03b917354db7f549a8eefc33107d7cf74f0a27d0dfaa5ae40bfa01b7ba2527e",
+      "firmware_code_sha256": "07e6d74df876d8bc1b48cd1eb07b30dd79b0ae75a44f62660d5b14294b53086b",
+      "vars_template_sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+      "usb_read_only": true,
+      "passed": false,
+      "loader_display": "display: Loader, 1366x768, 1 page(s), 4100 KiB of its memory mapped at 0x6ba1000",
+      "captured": "1366x768",
+      "kernel_reported": "1366x768",
+      "firmware_pitch_bytes": 5464,
+      "framebuffer_address": "0x6ba1000"
+    },
+    "exact-256": {
+      "requested": "1366x768",
+      "ram_mib": 256,
+      "qemu": "QEMU emulator version 10.0.13 (Debian 1:10.0.13+ds-0+deb13u1)",
+      "kernel_source": "711a585af4f4a46ecb5ef3b03120b55dc92c2b1d",
+      "source_patch": "examples/firmware-owned-uefi/load-base.patch",
+      "measured_kernel": "9e012cd3518a9cd9298a38e7ea8fec9e51e75a157b27e9158d6c33410899b84b",
+      "usb_sha256": "d03b917354db7f549a8eefc33107d7cf74f0a27d0dfaa5ae40bfa01b7ba2527e",
+      "firmware_code_sha256": "07e6d74df876d8bc1b48cd1eb07b30dd79b0ae75a44f62660d5b14294b53086b",
+      "vars_template_sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+      "usb_read_only": true,
+      "passed": false,
+      "loader_display": "display: Loader, 1366x768, 1 page(s), 4100 KiB of its memory mapped at 0xeba1000",
+      "captured": "1366x768",
+      "kernel_reported": "1366x768",
+      "firmware_pitch_bytes": 5464,
+      "framebuffer_address": "0xeba1000"
+    },
+    "png-128": {
+      "requested": "1366x768",
+      "ram_mib": 128,
+      "qemu": "QEMU emulator version 10.0.13 (Debian 1:10.0.13+ds-0+deb13u1)",
+      "kernel_source": "711a585af4f4a46ecb5ef3b03120b55dc92c2b1d",
+      "source_patch": "examples/firmware-owned-uefi/load-base.patch",
+      "measured_kernel": "9e012cd3518a9cd9298a38e7ea8fec9e51e75a157b27e9158d6c33410899b84b",
+      "usb_sha256": "d03b917354db7f549a8eefc33107d7cf74f0a27d0dfaa5ae40bfa01b7ba2527e",
+      "firmware_code_sha256": "07e6d74df876d8bc1b48cd1eb07b30dd79b0ae75a44f62660d5b14294b53086b",
+      "vars_template_sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+      "usb_read_only": true,
+      "passed": true,
+      "qemu_ppm_bytes_per_row": 4100,
+      "packed_rgb_bytes_per_row": 4098,
+      "loader_display": "display: Loader, 1366x768, 1 page(s), 4100 KiB of its memory mapped at 0x6ba1000",
+      "captured": "1366x768",
+      "kernel_reported": "1366x768",
+      "firmware_pitch_bytes": 5464,
+      "framebuffer_address": "0x6ba1000",
+      "matched_framebuffer_pixels": 1049088,
+      "programs": {
+        "caption": "Choose one to start. Each runs with only what it is granted.",
+        "panel_interior": [
+          61,
+          699
+        ],
+        "caption_cells": [
+          80,
+          680
+        ],
+        "right_clearance": 19
+      },
+      "warning_and_actions": [
+        "POWER OFF",
+        "Switch PCP OS off?",
+        "The register is closed and verified first. Files of this session that were",
+        "not saved by a program are lost.",
+        "Enter switch off    Esc go back"
+      ],
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "qemu_exit": 0,
+      "checks": 72,
+      "home_restored": true,
+      "identical_power_after_reopen": true
+    },
+    "png-256": {
+      "requested": "1366x768",
+      "ram_mib": 256,
+      "qemu": "QEMU emulator version 10.0.13 (Debian 1:10.0.13+ds-0+deb13u1)",
+      "kernel_source": "711a585af4f4a46ecb5ef3b03120b55dc92c2b1d",
+      "source_patch": "examples/firmware-owned-uefi/load-base.patch",
+      "measured_kernel": "9e012cd3518a9cd9298a38e7ea8fec9e51e75a157b27e9158d6c33410899b84b",
+      "usb_sha256": "d03b917354db7f549a8eefc33107d7cf74f0a27d0dfaa5ae40bfa01b7ba2527e",
+      "firmware_code_sha256": "07e6d74df876d8bc1b48cd1eb07b30dd79b0ae75a44f62660d5b14294b53086b",
+      "vars_template_sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+      "usb_read_only": true,
+      "passed": true,
+      "qemu_ppm_bytes_per_row": 4100,
+      "packed_rgb_bytes_per_row": 4098,
+      "loader_display": "display: Loader, 1366x768, 1 page(s), 4100 KiB of its memory mapped at 0xeba1000",
+      "captured": "1366x768",
+      "kernel_reported": "1366x768",
+      "firmware_pitch_bytes": 5464,
+      "framebuffer_address": "0xeba1000",
+      "matched_framebuffer_pixels": 1049088,
+      "programs": {
+        "caption": "Choose one to start. Each runs with only what it is granted.",
+        "panel_interior": [
+          61,
+          699
+        ],
+        "caption_cells": [
+          80,
+          680
+        ],
+        "right_clearance": 19
+      },
+      "warning_and_actions": [
+        "POWER OFF",
+        "Switch PCP OS off?",
+        "The register is closed and verified first. Files of this session that were",
+        "not saved by a program are lost.",
+        "Enter switch off    Esc go back"
+      ],
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "qemu_exit": 0,
+      "checks": 72,
+      "home_restored": true,
+      "identical_power_after_reopen": true
+    }
+  },
+  "replay": "Extract originals.tar.xz and run python3 replay_pixels.py with Pillow installed. It verifies file hashes, all five Home memory read-backs and the untouched PNG/PPM captures of both successful exact-size guests."
+}
