@@ -12,6 +12,13 @@
 # For game-link, a matching link_image and a non-console-only launch select the COM2 initialization
 # probe. Its scratch-register write precedes readback. Only a successful readback enables configuration.
 
+# Device writes that are not port writes, which this check does not find and a person must look for
+# (searched by hand on 21 November 2026 for issue 309: write_volatile, wrmsr, bus_write):
+#   arch.rs device_write32, device_fill32: a display's memory, inside the exact bytes mapped for it;
+#   arch.rs syscall and thread-pointer setup: five model-specific registers of the processor (wrmsr);
+#   dev.rs bus_write: one configuration register (command) of an AC'97 device found by its identity.
+# None of them, and no port write in the default build, reaches storage, firmware variables, the
+# clock's memory or flash; the default build has no storage or network driver.
 arch.rs | cmos | 0x70 | always; the clock's index port, on every PC; the top bit is written clear
 arch.rs | exception_entry | 0x20 | always; end-of-interrupt to the two interrupt controllers every PC has or emulates
 arch.rs | exception_entry | 0xA0 | always; end-of-interrupt to the two interrupt controllers every PC has or emulates
@@ -47,8 +54,10 @@ dev.rs | fm_register | 0x388 | emulator only: fm_init is called only under an em
 dev.rs | fm_register | 0x389 | emulator only: fm_init is called only under an emulator and later writes need the device to have answered
 dev.rs | keyboard_init | 0x60 | only after the keyboard controller's status port did not read as absent
 dev.rs | keyboard_init | 0x64 | only after the keyboard controller's status port did not read as absent
-dev.rs | script_tick | 0x60 | self-tests, UNGUARDED on hardware: asks the keyboard controller to replay scan codes (command 0xD2); a controller that lacks the command fails those self-tests
-dev.rs | script_tick | 0x64 | self-tests, UNGUARDED on hardware: asks the keyboard controller to replay scan codes (command 0xD2); a controller that lacks the command fails those self-tests
+dev.rs | keyboard_replays | 0x60 | once at start, after a keyboard controller answered and the kernel verified itself: the probe byte 0xF4 after command 0xD2; if a controller passes it to the keyboard instead, it is the command the keyboard is already obeying
+dev.rs | keyboard_replays | 0x64 | once at start, after a keyboard controller answered and the kernel verified itself: command 0xD2, to learn whether the controller replays a byte
+dev.rs | script_tick | 0x60 | self-tests, only after keyboard_replays found that this controller replays (command 0xD2)
+dev.rs | script_tick | 0x64 | self-tests, only after keyboard_replays found that this controller replays (command 0xD2)
 dev.rs | sound_init | engine + 0x10 | only after the AC'97 device was found on the bus by its identity; ports from its own registers
 dev.rs | sound_init | engine + 0x16 | only after the AC'97 device was found on the bus by its identity; ports from its own registers
 dev.rs | sound_init | engine + 0x1B | only after the AC'97 device was found on the bus by its identity; ports from its own registers

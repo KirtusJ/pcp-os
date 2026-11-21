@@ -307,13 +307,17 @@ static KEYBOARD: arch::Single<Keyboard> = arch::Single::new(Keyboard { present: 
                                                                          extended: false, skip: 0, ctrl: false, alt: false, enter: [false; 2], dropped: 0 });
 /// Set when the person presses Ctrl, Alt and Delete together: the kernel's own key, which no program can take.
 static STOP: AtomicBool = AtomicBool::new(false);
+/// The byte the replay probe is waiting to get back, with bit 8 set while it waits; and whether it came.
+static PROBE: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+static PROBE_HIT: AtomicBool = AtomicBool::new(false);
 
-fn controller_wait_write() {
+fn controller_wait_write() -> bool {
     for _ in 0..100_000 {
         if in8(0x64) & 2 == 0 {
-            return;
+            return true;
         }
     }
+    false
 }
 fn controller_read() -> Option<u8> {
     for _ in 0..100_000 {
@@ -403,10 +407,66 @@ pub fn interrupt(line: u8) {
                 }
                 let byte = in8(0x60);
                 if status & 0x20 == 0 {
+                    // The byte the replay probe sent comes back here if the controller replays; it is not a key.
+                    if PROBE.load(Ordering::SeqCst) == 0x100 | byte as u32 {
+                        PROBE.store(0, Ordering::SeqCst);
+                        PROBE_HIT.store(true, Ordering::SeqCst);
+                        continue;
+                    }
                     keyboard_byte(k, byte);
                 }
             }
         });
+    }
+}
+
+/// Whether this keyboard controller replays a byte handed to it with its command 0xD2 ("put this in the
+/// output buffer as if the keyboard had sent it"), which is how the self-tests press keys with nobody at
+/// the keyboard. An emulated controller does. A laptop's keyboard controller is a program in its embedded
+/// controller that imitates the old chip, and it need not know this command; a kernel that assumed it did
+/// would wait for keys that never come. Interrupts must be on.
+///
+/// The byte sent is 0xF4. If the controller replays, 0xF4 comes back on the keyboard's interrupt. If it
+/// passes the byte to the keyboard instead, 0xF4 is the keyboard's own "send keys" command, which it is
+/// already obeying, and its answer (0xFA) is not 0xF4. If it ignores the command, nothing comes back.
+pub fn keyboard_replays() -> bool {
+    #[cfg(feature = "no-key-replay-demo")]
+    return false;
+    #[cfg(not(feature = "no-key-replay-demo"))]
+    {
+        // Wait for the controller to hold nothing, for at most twenty timer periods.
+        let until = arch::ticks() + 20;
+        while in8(0x64) & 3 != 0 {
+            if arch::ticks() >= until {
+                return false;
+            }
+            arch::wait_until(arch::ticks() + 1);
+        }
+        let sent = arch::without_interrupts(|| {
+            // A byte may have arrived since the last idle sample.
+            if in8(0x64) & 3 != 0 {
+                return false;
+            }
+            out8(0x64, 0xD2);
+            if !controller_wait_write() {
+                return false;
+            }
+            PROBE_HIT.store(false, Ordering::SeqCst);
+            PROBE.store(0x100 | 0xF4, Ordering::SeqCst);
+            out8(0x60, 0xF4);
+            true
+        });
+        if !sent {
+            return false;
+        }
+        let until = arch::ticks() + 20;
+        while !PROBE_HIT.load(Ordering::SeqCst) && arch::ticks() < until {
+            arch::wait_until(arch::ticks() + 1);
+        }
+        PROBE.store(0, Ordering::SeqCst);
+        // Whatever else arrived meanwhile (an acknowledgement, a key somebody pressed) is not kept.
+        keys_forget();
+        PROBE_HIT.load(Ordering::SeqCst)
     }
 }
 
