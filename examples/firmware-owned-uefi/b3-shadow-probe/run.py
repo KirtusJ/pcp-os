@@ -17,7 +17,7 @@ WORK = Path(os.environ["RUNNER_TEMP"]) / "display-shadow"
 CAPTURES = WORK / "captures"
 APP = ROOT / "guest-checkout"
 PIN = "745e8831cb25090ce478fcf246dcf6c8a65ec7b2"
-KERNEL = "7f2e9008b3365722a4fdcf87b3c78b06d5af3fff"
+KERNEL = "c3258242fea6371784f796e0fb8b6677d0dd217d"
 REPO = "https://github.com/KirtusJ/pcp-os.git"
 RAW = "https://raw.githubusercontent.com/KirtusJ/pcp-os/"
 
