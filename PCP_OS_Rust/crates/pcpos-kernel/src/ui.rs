@@ -32,7 +32,8 @@ pub fn scale() -> u32 {
     SCALE.load(Ordering::Relaxed)
 }
 
-fn blend(under: u32, over: u32, coverage: u32) -> u32 {
+/// `over` laid on `under` at `coverage` of 255.
+pub fn blend(under: u32, over: u32, coverage: u32) -> u32 {
     let mix = |shift: u32| {
         let (u, o) = (under >> shift & 0xff, over >> shift & 0xff);
         (u * (255 - coverage) + o * coverage + 127) / 255
@@ -250,10 +251,18 @@ impl Field {
     }
 }
 
-/// A flat bar across the display with a lit top edge and a line beneath: the status bar and the key bar.
-/// Returns the colour text on it lies on, for each row.
+/// A bar across the display with a lit top edge and a line beneath: the status bar and the key bar. Its
+/// middle, where the text goes, is one flat colour, so that the text can be read back from a picture of
+/// the screen; the shading is above and below that. Returns the colour text on it lies on, for each row.
 pub fn bar(y: u32, height: u32, width: u32, top: u32, bottom: u32, line: u32) -> impl Fn(u32, u32) -> u32 {
-    let shade = move |_x: u32, py: u32| blend(top, bottom, (py.saturating_sub(y)) * 255 / height.max(1));
+    let middle = blend(top, bottom, 128);
+    let edge = (height.saturating_sub(CELL_H)) / 2;
+    let shade = move |_x: u32, py: u32| {
+        let into = py.saturating_sub(y);
+        if into < edge { blend(top, middle, into * 255 / edge.max(1)) }
+        else if into >= height - edge { blend(middle, bottom, (into - (height - edge)) * 255 / edge.max(1)) }
+        else { middle }
+    };
     let mut row: Vec<u32> = alloc::vec![0; width as usize];
     for py in y..y + height {
         let c = if py == y { blend(shade(0, py), TEXT, 56) } else if py + 1 == y + height { line } else { shade(0, py) };

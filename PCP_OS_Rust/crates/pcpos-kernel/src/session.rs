@@ -176,7 +176,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
 /// bar, the programs as a list, the machine, the emblem on a soft field, and the keys. On a smaller display
 /// the plain list below is drawn instead. Both say the same things and answer the same keys.
 fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, message: &str, stored: usize) {
-    use ui::{label, label_width, AMBER, BAD, GOOD, SOFT, TEAL, TEXT};
+    use ui::{blend as blend_colour, label, label_width, AMBER, BAD, GOOD, SOFT, TEAL, TEXT};
     let display = match dev::display() {
         Some(d) if d.width >= 1280 && d.height >= 720 && ui::scale() == 1 => d,
         _ => return draw_desktop_plain(start, programs, chosen, message),
@@ -190,25 +190,30 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
     field.paint();
     let over_field = |x: u32, y: u32| field.colour(x, y);
 
-    // The status bar: what this is, whether it verified itself, and the state of its register.
-    let on_bar = ui::bar(0, 56, w, BAR_TOP, BAR_END, OUTLINE);
-    let mut x = label(28, 18, "PCP OS", TEXT, false, &on_bar);
-    x = label(x + 14, 18, &format!("{} | x86-64", start.version), SOFT, false, &on_bar);
-    let verified = if safe { format!("NOT VERIFIED: {} of {} self-tests failed", start.failed, start.passed + start.failed) }
-                   else { format!("verified at start | {} of {} self-tests passed", start.passed, start.passed) };
+    // The status bar: what this is, whether it verified itself, and the state of its register. Its text is
+    // on the character grid (multiples of 10 across, 20 down) and the sentence about verification is the one
+    // the details screen uses, so that a check reading the screen finds the same words in either.
+    let on_bar = ui::bar(0, 60, w, BAR_TOP, BAR_END, OUTLINE);
+    let mut x = label(30, 20, "PCP OS", TEXT, false, &on_bar);
+    x = label(x + 10, 20, &format!("{} | x86-64", start.version), SOFT, false, &on_bar);
+    let verified = if safe { format!("NOT VERIFIED: {} of {} self-tests failed.", start.failed, start.passed + start.failed) }
+                   else { format!("Verified at start: all {} self-tests passed.", start.passed) };
+    // A pill is a flat tint with an outline; its text starts on the grid.
+    let bar_middle = on_bar(0, 30);
     let pill = |x: u32, s: &str, colour: u32, tint: u32| {
-        let width = label_width(s, false) + 28;
-        let on_pill = ui::panel(x, 12, width, 32, &on_bar, tint, 46, if colour == BAD { BAD } else { OUTLINE }, false);
-        label(x + 14, 18, s, colour, false, &on_pill);
-        x + width
+        let width = label_width(s, false) + 20;
+        let flat = move |_: u32, _: u32| blend_colour(bar_middle, tint, 46);
+        ui::panel(x - 10, 14, width, 32, &flat, tint, 0, if colour == BAD { BAD } else { OUTLINE }, false);
+        label(x, 20, s, colour, false, &flat);
+        x - 10 + width
     };
-    pill(x + 18, &verified, if safe { BAD } else { GOOD }, if safe { BAD } else { 0x187C78 });
+    pill(x + 30, &verified, if safe { BAD } else { GOOD }, if safe { BAD } else { 0x187C78 });
     let head = rec.ledger().head();
     let chain = "chain intact";
-    let events = format!("register {} events | head {}...", rec.ledger().len(), &head[..head.len().min(12)]);
-    let right = w - 28 - (label_width(chain, false) + 28);
+    let events = format!("Register: {} events, head {}...", rec.ledger().len(), &head[..head.len().min(16)]);
+    let right = (w - 30 - label_width(chain, false)) / 10 * 10;
     pill(right, chain, TEXT, 0x187C78);
-    label(right.saturating_sub(18 + label_width(&events, false)), 18, &events, SOFT, false, &on_bar);
+    label((right.saturating_sub(30 + label_width(&events, false))) / 10 * 10, 20, &events, SOFT, false, &on_bar);
 
     // The programs.
     let left = w / 20;

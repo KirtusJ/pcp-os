@@ -50,14 +50,17 @@ def read_screen(ppm, glyphs):
         return None
     if magic != b"P6" or depth != b"255" or len(pixels) != width * height * 3 or width < 640 or height < 480:
         return None
-    ground = collections.Counter(pixels[i:i + 3] for i in range(0, len(pixels), 3 * 97)).most_common(1)[0][0]
     rows = []
     for row in range(height // 20):
         text = ""
         for column in range(width // 10):
-            inked = tuple(pixels[at:at + 3] != ground for y in range(20) for x in range(10)
-                          for at in (((row * 20 + y) * width + column * 10 + x) * 3,))
-            text += glyphs.get(inked, "?")
+            cell = [pixels[at:at + 3] for y in range(20) for x in range(10)
+                    for at in (((row * 20 + y) * width + column * 10 + x) * 3,)]
+            # The ground is taken cell by cell (its commonest colour), so that text on a bar or a panel of
+            # another colour than the screen's is read too. Where the ground under a cell is shaded and
+            # not flat, the cell matches no character and reads as '?'.
+            ground = collections.Counter(cell).most_common(1)[0][0]
+            text += glyphs.get(tuple(pixel != ground for pixel in cell), "?")
         rows.append(text.rstrip())
     return rows
 
