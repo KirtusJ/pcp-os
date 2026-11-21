@@ -1,0 +1,1 @@
+{"tasks": [{"id": "T", "argv": ["bash", "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/job_rng.sh"], "timeout": 3000, "expect_exit": 0}], "width": 1}

@@ -674,8 +674,12 @@ fn files_view(store: &crate::regular::Files, mounted: bool) {
     let mut top = 0usize;
     loop {
         ui::clear(GROUND);
-        // The files of which at least the first line is on the screen.
-        let shown: Vec<usize> = begins.iter().enumerate().filter(|(_, b)| **b >= top && **b < top + page).map(|(i, _)| i).collect();
+        // The files of which any line is on the screen: a long name that began on the page before still
+        // has its last lines here, and it is one of the files shown.
+        let shown: Vec<usize> = (0..begins.len()).filter(|i| {
+            let end = begins.get(i + 1).copied().unwrap_or(lines.len());
+            begins[*i] < top + page && end > top
+        }).collect();
         let heading = match (shown.first(), shown.last()) {
             (Some(a), Some(b)) => format!("FILES: showing {} to {} of {}, {}", a + 1, b + 1, store.len(), size_text(total)),
             _ => format!("FILES: {} file(s), {}", store.len(), size_text(total)),
