@@ -1,0 +1,30 @@
+diff --git a/PCP_OS_Rust/crates/pcpos-kernel/src/session.rs b/PCP_OS_Rust/crates/pcpos-kernel/src/session.rs
+index 5ad7a2c..804d24b 100644
+--- a/PCP_OS_Rust/crates/pcpos-kernel/src/session.rs
++++ b/PCP_OS_Rust/crates/pcpos-kernel/src/session.rs
+@@ -716,6 +716,12 @@ fn files_view(store: &crate::regular::Files, mounted: bool) {
+             (Some(a), Some(b)) => format!("FILES: showing {} to {} of {}, {}", a + 1, b + 1, store.len(), size_text(total)),
+             _ => format!("FILES: {} file(s), {}", store.len(), size_text(total)),
+         };
++        let available = cols.saturating_sub(2) as usize;
++        let heading = match (shown.first(), shown.last()) {
++            (Some(a), Some(b)) if heading.len() > available =>
++                format!("FILES: {}-{}/{} | {}", a + 1, b + 1, store.len(), size_text(total)),
++            _ => heading,
++        };
+         at(2, 1, &heading, ui::TEAL, GROUND);
+         at(2, 2, if mounted { "VM files | saved when an app syncs" } else { "Session files | cleared at power-off" }, SOFT, GROUND);
+         if store.len() == 0 {
+@@ -725,7 +731,11 @@ fn files_view(store: &crate::regular::Files, mounted: bool) {
+             at(2, 4 + n as u32, part, TEXT, GROUND);
+             at(cols.saturating_sub(14), 4 + n as u32, size, SOFT, GROUND);
+         }
+-        at(2, rows - 2, if last_top > 0 { "Up/Down, Page Up/Page Down move    Esc back" } else { "Esc back" }, SOFT, GROUND);
++        let page_keys = "Up/Down, Page Up/Page Down move    Esc back";
++        let keys = if last_top == 0 { "Esc back" } else if page_keys.len() <= available {
++            page_keys
++        } else { "Up/Down PgUp/PgDn  Esc back" };
++        at(2, rows - 2, keys, SOFT, GROUND);
+         match wait_key() {
+             (0x01, _) | (0x1C, _) => return,
+             (0x48, _) if top > 0 => top -= 1,
