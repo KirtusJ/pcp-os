@@ -303,9 +303,9 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
             (_, (0x13, false)) if letters => register_view(rec),
             (_, (0x3F, false)) if desk => verification_view(start, rec),
             (_, (0x2F, false)) if desk && letters => verification_view(start, rec),
-            (Surface::Home, (0x3B, false)) => keys_view("KEYS ON THE DESKTOP", &HOME_KEYS),
+            (Surface::Home, (0x3B, false)) => keys_view("KEYS ON THE DESKTOP", if graphic { &HOME_KEYS } else { &SMALL_HOME_KEYS }),
             (Surface::Launcher, (0x3B, false)) => keys_view("KEYS IN THE PROGRAMS", &LAUNCHER_KEYS),
-            (Surface::Home, (0x25, false)) if letters => keys_view("KEYS ON THE DESKTOP", &HOME_KEYS),
+            (Surface::Home, (0x25, false)) if letters => keys_view("KEYS ON THE DESKTOP", if graphic { &HOME_KEYS } else { &SMALL_HOME_KEYS }),
             (Surface::Launcher, (0x25, false)) if letters => keys_view("KEYS IN THE PROGRAMS", &LAUNCHER_KEYS),
             // On the small-display desktop Left and Right turn the parts of a long name; Up and Down choose.
             (Surface::Home, (0x4B, _)) if !graphic => name_page = name_page.saturating_sub(1),
@@ -469,42 +469,109 @@ fn dock(programs: &[Entry], pinned: &[usize], place: usize, w: u32, h: u32, refu
     }
 }
 
-/// Whether the kernel verified itself, in full, and the state of its register. Any key goes back.
-fn verification_view(start: &Start, rec: &Record) {
-    use ui::{at, GROUND, SOFT, TEXT};
-    let (_, rows) = ui::grid();
-    ui::clear(GROUND);
-    at(2, 1, "VERIFICATION", ui::TEAL, GROUND);
-    if start.failed != 0 {
-        at(2, 3, &format!("NOT VERIFIED: {} of {} self-tests failed.", start.failed, start.passed + start.failed), ui::BAD, GROUND);
-    } else {
-        at(2, 3, &format!("Verified at start: all {} self-tests passed.", start.passed), ui::GOOD, GROUND);
+/// One line of a text screen: pieces of text, each at its column and in its colour.
+type Line = Vec<(u32, String, u32)>;
+
+/// A sentence as lines at one column, broken between words to fit the display.
+fn lines_of(col: u32, text: &str, colour: u32) -> Vec<Line> {
+    let (cols, _) = ui::grid();
+    let across = (cols.saturating_sub(col + 2) as usize).max(1);
+    if text.is_empty() {
+        return alloc::vec![Vec::new()];
     }
-    at(2, 5, &format!("kernel {} | x86-64", start.version), TEXT, GROUND);
-    let head = rec.ledger().head();
-    at(2, 6, &format!("Register: {} events, head {}...", rec.ledger().len(), &head[..head.len().min(16)]), TEXT, GROUND);
-    at(2, 7, if ledger::verify(rec.ledger().bytes()).is_ok() { "The register's chain is intact." } else { "The register's chain does NOT verify." }, TEXT, GROUND);
-    at(2, 9, "F4 shows every event of the register.", SOFT, GROUND);
-    at(2, rows - 2, "Any key goes back", SOFT, GROUND);
-    wait_key();
+    wrapped_words(text, across).into_iter().map(|part| alloc::vec![(col, part, colour)]).collect()
 }
 
-/// Every key of a desktop surface and what it does. Any key goes back.
-fn keys_view(title: &str, keys: &[(&str, &str)]) {
-    use ui::{at, GROUND, SOFT, TEXT};
-    let (_, rows) = ui::grid();
-    ui::clear(GROUND);
-    at(2, 1, title, ui::TEAL, GROUND);
-    for (i, (key, does)) in keys.iter().enumerate() {
-        at(2, 3 + i as u32, key, TEXT, GROUND);
-        at(20, 3 + i as u32, does, SOFT, GROUND);
+/// A screen of text that is read and left: a title, lines, and on the row of the keys how it is left.
+/// With fourteen rows the title is on row 1, the lines begin on row 3 (a `header`, if any, on row 2) and
+/// the keys are two rows from the bottom; with fewer the title is on the first row, the lines follow it
+/// and the keys are on the last. If the lines do not all fit, Up and Down move them by half a screenful,
+/// the keys' row says so, and Esc or Enter leaves; `from_end` begins at the last of them. If they fit,
+/// `foot` is on the keys' row; `any_key` then says whether any key leaves or only Esc and Enter.
+fn text_screen(title: &str, title_colour: u32, header: Option<&str>, lines: &[Line], foot: &str, any_key: bool, from_end: bool) {
+    use ui::{at, GROUND, SOFT};
+    let (cols, rows) = ui::grid();
+    let across = (cols as usize).saturating_sub(4).max(1);
+    let roomy = rows >= 14;
+    let (title_row, first, foot_row) = if roomy { (1, 3, rows - 2) } else { (0, 1, rows.saturating_sub(1)) };
+    let per = ((if roomy { rows - 6 } else { rows.saturating_sub(2) }) as usize).max(1);
+    let paged = lines.len() > per;
+    let last_top = lines.len().saturating_sub(per);
+    let mut top = if from_end { last_top } else { 0 };
+    loop {
+        ui::clear(GROUND);
+        at(2, title_row, &cut(title, across), title_colour, GROUND);
+        if let Some(header) = header.filter(|h| roomy && h.len() <= across) {
+            at(2, 2, header, SOFT, GROUND);
+        }
+        for (n, line) in lines.iter().skip(top).take(per).enumerate() {
+            for (col, part, colour) in line {
+                at(*col, first + n as u32, part, *colour, GROUND);
+            }
+        }
+        at(2, foot_row, &cut(if paged { "Up/Down scroll    Esc back" } else { foot }, across), SOFT, GROUND);
+        match wait_key() {
+            (0x48, _) if paged => top = top.saturating_sub((per / 2).max(1)),
+            (0x50, _) if paged => top = (top + (per / 2).max(1)).min(last_top),
+            (0x01, _) | (0x1C, _) => return,
+            _ if any_key && !paged => return,
+            _ => {}
+        }
     }
-    at(2, rows - 2, "Any key goes back", SOFT, GROUND);
-    wait_key();
+}
+
+/// Whether the kernel verified itself, in full, and the state of its register. Any key goes back, or Esc
+/// if the display is too small to show it all at once.
+fn verification_view(start: &Start, rec: &Record) {
+    use ui::{SOFT, TEXT};
+    let mut lines: Vec<Line> = Vec::new();
+    if start.failed != 0 {
+        lines.extend(lines_of(2, &format!("NOT VERIFIED: {} of {} self-tests failed.", start.failed, start.passed + start.failed), ui::BAD));
+    } else {
+        lines.extend(lines_of(2, &format!("Verified at start: all {} self-tests passed.", start.passed), ui::GOOD));
+    }
+    lines.extend(lines_of(2, "", TEXT));
+    lines.extend(lines_of(2, &format!("kernel {} | x86-64", start.version), TEXT));
+    let head = rec.ledger().head();
+    lines.extend(lines_of(2, &format!("Register: {} events, head {}...", rec.ledger().len(), &head[..head.len().min(16)]), TEXT));
+    lines.extend(lines_of(2, if ledger::verify(rec.ledger().bytes()).is_ok() { "The register's chain is intact." } else { "The register's chain does NOT verify." }, TEXT));
+    lines.extend(lines_of(2, "", TEXT));
+    lines.extend(lines_of(2, "F4 shows every event of the register.", SOFT));
+    text_screen("VERIFICATION", ui::TEAL, None, &lines, "Any key goes back", true, false);
+}
+
+/// Every key of a desktop surface and what it does. Any key goes back, or Esc if the display is too small
+/// to show them all at once. With sixty columns a key and what it does are side by side; with fewer, what
+/// it does is under the key.
+fn keys_view(title: &str, keys: &[(&str, &str)]) {
+    use ui::{SOFT, TEXT};
+    let (cols, _) = ui::grid();
+    let mut lines: Vec<Line> = Vec::new();
+    for (key, does) in keys {
+        let beside = cols >= 60;
+        let mut parts = lines_of(if beside { 20 } else { 4 }, does, SOFT).into_iter();
+        if beside {
+            let mut first = alloc::vec![(2, key.to_string(), TEXT)];
+            first.extend(parts.next().unwrap_or_default());
+            lines.push(first);
+        } else {
+            lines.push(alloc::vec![(2, key.to_string(), TEXT)]);
+        }
+        lines.extend(parts);
+    }
+    text_screen(title, ui::TEAL, None, &lines, "Any key goes back", true, false);
 }
 
 const HOME_KEYS: [(&str, &str); 11] = [("Left/Right", "choose among the programs at the foot of the desktop"), ("Enter", "open what is chosen: all the programs, or a pinned program"),
     ("Space", "open all the programs"), ("Del", "take the chosen program out of the foot of the desktop"),
+    ("F1", "this list"), ("F2", "settings: how the desktop looks, and its widgets"), ("F3", "the files programs have written"),
+    ("F4", "the register"), ("F5", "verification, in full"), ("F10", "power off, after asking"),
+    ("Ctrl+Alt+Delete", "stops a running program; no program can take that key")];
+/// The keys of the desktop of a small display, which are not those of the full one: Up and Down choose,
+/// Left and Right turn the parts of a long name, and the letters it has always had still answer.
+const SMALL_HOME_KEYS: [(&str, &str); 12] = [("Up/Down", "choose among all the programs and the pinned programs"), ("Left/Right", "turn the parts of a long name"),
+    ("Enter", "open what is chosen: all the programs, or a pinned program"),
+    ("Space", "open all the programs"), ("Del", "take the chosen program out of the pinned programs"),
     ("F1", "this list"), ("F2", "settings: how the desktop looks, and its widgets"), ("F3", "the files programs have written"),
     ("F4", "the register"), ("F5", "verification, in full"), ("F10", "power off, after asking"),
     ("Ctrl+Alt+Delete", "stops a running program; no program can take that key")];
@@ -579,8 +646,7 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
             let (_, rows) = ui::grid();
             ui::emblem(20, 16, 36, GROUND);
             at(7, 1, "PCP OS | DESKTOP", TEXT, GROUND);
-            at(2, 3, &if safe { format!("NOT VERIFIED: {} of {} self-tests failed.", start.failed, start.passed + start.failed) }
-                      else { format!("Verified at start: all {} self-tests passed.", start.passed) }, if safe { BAD } else { GOOD }, GROUND);
+            at(2, 3, &verified_sentence(start, (ui::grid().0 as usize).saturating_sub(4)), if safe { BAD } else { GOOD }, GROUND);
             // The rows between the heading and the keys are shared out so that nothing is drawn over
             // anything else and nothing that is left out is left out in silence (after B3's windowed list).
             // First what must be there: one row of the list, holding the chosen place, for a chosen pin
@@ -888,7 +954,10 @@ fn files_view(store: &crate::regular::Files, mounted: bool) {
             _ => heading,
         };
         at(2, 1, &heading, ui::TEAL, GROUND);
-        at(2, 2, if mounted { "VM files | saved when an app syncs" } else { "Session files | cleared at power-off" }, SOFT, GROUND);
+        // Row 3 is empty above the list, and takes the end of this line on a display too narrow for it.
+        for (n, part) in wrapped_words(if mounted { "VM files | saved when an app syncs" } else { "Session files | cleared at power-off" }, available.max(1)).iter().enumerate().take(2) {
+            at(2, 2 + n as u32, part, SOFT, GROUND);
+        }
         if store.len() == 0 {
             at(2, 4, "No program has written a file.", SOFT, GROUND);
         }
@@ -1122,13 +1191,40 @@ fn foot_room(w: u32) -> usize {
 /// person was, with what was chosen there unchanged.
 fn power_prompt() -> bool {
     use ui::{at, GROUND, SOFT, TEXT};
-    let (_, rows) = ui::grid();
+    let (cols, rows) = ui::grid();
+    let across = (cols as usize).saturating_sub(4).max(1);
     ui::clear(GROUND);
-    at(2, 1, "POWER OFF", ui::AMBER, GROUND);
-    at(2, 3, "Switch PCP OS off?", TEXT, GROUND);
-    at(2, 5, "The register is closed and verified first. Files of this session that were", SOFT, GROUND);
-    at(2, 6, "not saved by a program are lost.", SOFT, GROUND);
-    at(2, rows - 2, "Enter switch off    Esc go back", TEXT, GROUND);
+    // The warning is whole on every display. With 79 columns it is on the two rows it has always had;
+    // with fewer it is broken between words. Where its last row would not leave an empty row above the
+    // keys, or the keys do not fit their row, the screen begins on the first row and each answer has a
+    // row of its own at the bottom.
+    let two = ["The register is closed and verified first. Files of this session that were", "not saved by a program are lost."];
+    let warning: Vec<String> = if two[0].len() <= across { two.iter().map(|l| l.to_string()).collect() } else { wrapped_words(&two.join(" "), across) };
+    let answers = "Enter switch off    Esc go back";
+    if 5 + warning.len() as u32 + 1 <= rows.saturating_sub(2) && answers.len() <= across {
+        at(2, 1, "POWER OFF", ui::AMBER, GROUND);
+        at(2, 3, "Switch PCP OS off?", TEXT, GROUND);
+        for (n, line) in warning.iter().enumerate() {
+            at(2, 5 + n as u32, line, SOFT, GROUND);
+        }
+        at(2, rows - 2, answers, TEXT, GROUND);
+    } else {
+        at(2, 0, "POWER OFF", ui::AMBER, GROUND);
+        at(2, 1, "Switch PCP OS off?", TEXT, GROUND);
+        // The answers are never given up for the warning: they have the last rows, and the warning the rows between.
+        let split = answers.len() > across;
+        let answer_rows = if split { 2 } else { 1 };
+        let room = (rows.saturating_sub(2 + answer_rows) as usize).max(1);
+        for (n, line) in warning.iter().enumerate().take(room) {
+            at(2, 2 + n as u32, &if n + 1 == room && warning.len() > room { cut(&format!("{}...", line), across) } else { line.clone() }, SOFT, GROUND);
+        }
+        if split {
+            at(2, rows.saturating_sub(2), "Enter switch off", TEXT, GROUND);
+            at(2, rows.saturating_sub(1), "Esc go back", TEXT, GROUND);
+        } else {
+            at(2, rows.saturating_sub(1), answers, TEXT, GROUND);
+        }
+    }
     // Only an Enter pressed in answer switches off. A key that is held repeats its press, and those repeats
     // are not an answer, whichever Enter key they come from and whichever is let go first: a press counts
     // only when both Enter keys (the main one and the number pad's) were up before it. Which are down is
@@ -1251,27 +1347,40 @@ fn register_view(rec: &Record) {
             }
         }
     };
-    let per = (rows - 6) as usize;
-    let mut top = events.len().saturating_sub(per);
-    loop {
-        ui::clear(GROUND);
-        at(2, 1, &format!("THE KERNEL'S REGISTER: {} events, chain intact, head {}", events.len(), head), ui::TEAL, GROUND);
-        at(2, 2, "seq  time                  actor     kind                 what", SOFT, GROUND);
-        for (n, e) in events.iter().skip(top).take(per).enumerate() {
-            let field = |k: &str| e.get(k).and_then(Value::as_str).unwrap_or("").to_string();
-            let body = e.get("body");
-            let what = ["label", "event", "name", "id", "outcome", "note", "to"].iter().filter_map(|k| body.and_then(|b| b.get(k)).and_then(Value::as_str).map(|v| format!("{} {}", k, v))).collect::<Vec<_>>().join("; ");
-            let line = format!("{:<4} {:<21} {:<9} {:<20} {}", e.get("seq").and_then(Value::as_int).unwrap_or(0), field("ts"), field("actor"), field("kind"), what);
-            at(2, 3 + n as u32, &line.chars().take(cols as usize - 4).collect::<String>(), TEXT, GROUND);
-        }
-        at(2, rows - 2, "Up/Down scroll    Esc back", SOFT, GROUND);
-        match wait_key() {
-            (0x48, _) => top = top.saturating_sub(per / 2),
-            (0x50, _) => top = (top + per / 2).min(events.len().saturating_sub(per)),
-            (0x01, _) | (0x1C, _) => return,
-            _ => {}
+    // With room for a row of each event the screen is as it has always been: the count and the head of the
+    // chain in the title, a row of headings, and an event to a row, a row that is too long going on under
+    // itself. On a narrower display the title is short, the count and the head are the first lines, and
+    // each event is a few short lines. Nothing is cut.
+    let across = (cols as usize).saturating_sub(4).max(1);
+    let full_title = format!("THE KERNEL'S REGISTER: {} events, chain intact, head {}", events.len(), head);
+    let table = "seq  time                  actor     kind                 what";
+    let wide = table.len() <= across;
+    let mut lines: Vec<Line> = Vec::new();
+    if full_title.len() > across {
+        lines.extend(lines_of(2, &format!("{} events, chain intact", events.len()), SOFT));
+        lines.extend(wrapped(&format!("head {}", head), across).into_iter().map(|part| alloc::vec![(2, part, SOFT)]));
+    }
+    for e in events.iter() {
+        let field = |k: &str| e.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+        let body = e.get("body");
+        let what = ["label", "event", "name", "id", "outcome", "note", "to"].iter().filter_map(|k| body.and_then(|b| b.get(k)).and_then(Value::as_str).map(|v| format!("{} {}", k, v))).collect::<Vec<_>>().join("; ");
+        let seq = e.get("seq").and_then(Value::as_int).unwrap_or(0);
+        if wide {
+            let line = format!("{:<4} {:<21} {:<9} {:<20} {}", seq, field("ts"), field("actor"), field("kind"), what);
+            let mut parts = wrapped(&line, across).into_iter();
+            lines.push(alloc::vec![(2, parts.next().unwrap_or_default(), TEXT)]);
+            let rest: String = parts.collect();
+            lines.extend(wrapped(&rest, across.saturating_sub(5).max(1)).into_iter().map(|part| alloc::vec![(7, part, TEXT)]));
+        } else {
+            lines.extend(lines_of(2, &format!("{} {}", seq, field("kind")), TEXT));
+            lines.extend(lines_of(4, &format!("{} {}", field("ts"), field("actor")), SOFT));
+            if !what.is_empty() {
+                lines.extend(lines_of(4, &what, TEXT));
+            }
         }
     }
+    let title = if full_title.len() <= across { full_title } else { String::from("THE KERNEL'S REGISTER") };
+    text_screen(&title, ui::TEAL, Some(table), &lines, "Up/Down scroll    Esc back", false, true);
 }
 
 /// Run one program as a task in the register. Interrupts must be off; returns with them off.
