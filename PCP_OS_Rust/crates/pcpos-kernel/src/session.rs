@@ -498,18 +498,24 @@ fn text_screen(title: &str, title_colour: u32, header: Option<&str>, lines: &[Li
     let paged = lines.len() > per;
     let last_top = lines.len().saturating_sub(per);
     let mut top = if from_end { last_top } else { 0 };
+    // The screen is drawn when it is opened and when the lines move, and at no other time: a key that
+    // does nothing here changes nothing on it.
+    let mut shown = None;
     loop {
-        ui::clear(GROUND);
-        at(2, title_row, &cut(title, across), title_colour, GROUND);
-        if let Some(header) = header.filter(|h| roomy && h.len() <= across) {
-            at(2, 2, header, SOFT, GROUND);
-        }
-        for (n, line) in lines.iter().skip(top).take(per).enumerate() {
-            for (col, part, colour) in line {
-                at(*col, first + n as u32, part, *colour, GROUND);
+        if shown != Some(top) {
+            ui::clear(GROUND);
+            at(2, title_row, &cut(title, across), title_colour, GROUND);
+            if let Some(header) = header.filter(|h| roomy && h.len() <= across) {
+                at(2, 2, header, SOFT, GROUND);
             }
+            for (n, line) in lines.iter().skip(top).take(per).enumerate() {
+                for (col, part, colour) in line {
+                    at(*col, first + n as u32, part, *colour, GROUND);
+                }
+            }
+            at(2, foot_row, &cut(if paged { "Up/Down scroll    Esc back" } else { foot }, across), SOFT, GROUND);
+            shown = Some(top);
         }
-        at(2, foot_row, &cut(if paged { "Up/Down scroll    Esc back" } else { foot }, across), SOFT, GROUND);
         match wait_key() {
             (0x48, _) if paged => top = top.saturating_sub((per / 2).max(1)),
             (0x50, _) if paged => top = (top + (per / 2).max(1)).min(last_top),
@@ -537,6 +543,12 @@ fn verification_view(start: &Start, rec: &Record) {
     lines.extend(lines_of(2, if ledger::verify(rec.ledger().bytes()).is_ok() { "The register's chain is intact." } else { "The register's chain does NOT verify." }, TEXT));
     lines.extend(lines_of(2, "", TEXT));
     lines.extend(lines_of(2, "F4 shows every event of the register.", SOFT));
+    // The whole head, which the register's own title cannot hold on every display. It is below the lines
+    // that have always been here, which keep their rows.
+    lines.extend(lines_of(2, "", TEXT));
+    lines.extend(lines_of(2, "The whole head of the register's chain:", SOFT));
+    let across = (ui::grid().0 as usize).saturating_sub(4).max(1);
+    lines.extend(wrapped(head, across).into_iter().map(|part| alloc::vec![(2, part, TEXT)]));
     text_screen("VERIFICATION", ui::TEAL, None, &lines, "Any key goes back", true, false);
 }
 
@@ -864,7 +876,10 @@ fn settings_view(whole_bar: &mut bool, widgets: &mut [bool; 3]) {
     let items: [(Option<&str>, usize); 7] = [(Some(if roomy { "Programs at the foot of the desktop" } else { "Foot of the desktop" }), 0), (None, 0), (None, 1),
         (Some(if roomy { "Widgets on the desktop" } else { "Widgets" }), 0), (None, 2), (None, 3), (None, 4)];
     let mut at_row = 0usize;
+    // Drawn when opened and when a key changed something, and at no other time.
+    let mut draw = true;
     loop {
+        if draw {
         ui::clear(GROUND);
         let (first_row, room) = if roomy {
             at(2, 1, "SETTINGS", ui::TEAL, GROUND);
@@ -903,13 +918,15 @@ fn settings_view(whole_bar: &mut bool, widgets: &mut [bool; 3]) {
             }
             row += 1;
         }
+        }
+        draw = true;
         match wait_key() {
             (0x48, _) if at_row > 0 => at_row -= 1,
             (0x50, _) if at_row + 1 < forms.len() + WIDGETS.len() => at_row += 1,
             (0x1C, _) if at_row < 2 => *whole_bar = at_row == 0,
             (0x1C, _) => widgets[at_row - 2] = !widgets[at_row - 2],
             (0x01, _) => return,
-            _ => {}
+            _ => draw = false,
         }
     }
 }
@@ -1132,7 +1149,10 @@ fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message:
         } else {
             alloc::vec![String::from("Up/Down choose   Enter open"), String::from("D details  R register  P off")]
         };
-        let mut below: Vec<(String, u32)> = said.iter().map(|line| (line.clone(), ui::AMBER)).collect();
+        // After a failed start the list can be read and nothing in it can be started; that is said, in
+        // the words the roomy screen uses.
+        let mut below: Vec<(String, u32)> = if start.failed != 0 { alloc::vec![(String::from("Programs are disabled."), ui::BAD)] } else { Vec::new() };
+        below.extend(said.iter().map(|line| (line.clone(), ui::AMBER)));
         for (line, colour) in &access {
             below.extend(wrapped_words(line, across).into_iter().map(|part| (part, *colour)));
         }

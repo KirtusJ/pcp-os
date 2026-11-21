@@ -48,6 +48,8 @@ below are the texts of those frames, each with its rows joined by single spaces.
     or, only where the display holds the table (66 columns) but not its whole title (800 across), by
     exactly the digits the title has room for and "..": there the whole head is not on the screen, as it
     was not before, and the title now says that it is cut.
+ T8 F5: below the label "The whole head of the register's chain:", rows that are nothing but hex digits hold
+    64 of them on one page, and they begin with the 16 the same screen shows after "head".
  T5 F3: rows 2 and 3, joined, are "Session files | cleared at power-off".
  T6 the desktop's row 3 is the verification sentence in one of the kernel's wordings, whole.
  T7 every one of these screens has, as its last row that holds anything, a row that says how to leave it
@@ -60,6 +62,15 @@ the desktop is the full one: T1 to T5 and T7 as above with the full desktop's ke
  G2 in the programs, one row holds the sentence "Choose one[ to start]. Each runs with only what it
     is granted." and it ends inside its plate; a row says what the chosen program may use; Esc gives the
     desktop as it was.
+
+A failed start, at 320 by 200 and 640 by 480, made by naming to the kernel a measurement that is not its own:
+ F1 the desktop has a row that begins "NOT VERIFIED:";
+ F2 the list of programs has such a row and the words "Programs are disabled.";
+ F3 neither of its last two rows that hold anything offers Enter;
+ F4 after Enter a row begins "Not started:", and the serial log shows no program started or ended.
+The exit code of such a guest is recorded and not judged.
+
+In Settings, S6: a key that does nothing leaves the settled frame as it was.
 
 The check proves its own reading on a good frame of each kind (for the text screens: the warning with
 "not" taken out, and a key's explanation with its last word taken out): for Settings, the keys' line written over
@@ -165,11 +176,12 @@ def list_problems(rows, frame, name, roomy, passed):
     return problems
 
 
-def boot(qemu, kernel, folder, measurement, mode, out, glyphs, timeout):
+def boot(qemu, kernel, folder, measurement, mode, out, glyphs, timeout, named=None):
+    """`named` is the measurement given to the kernel when it is not the true one (a failed start)."""
     out.mkdir(parents=True)
     serial, sock = out / "serial.txt", out / "qmp.sock"
     cmd = [qemu, "-machine", "pc", "-accel", "tcg", "-cpu", "qemu64", "-m", "128M", "-kernel", str(kernel),
-           "-initrd", ",".join(PROGRAMS), "-append", "image=%s desktop=%s" % (measurement, mode),
+           "-initrd", ",".join(PROGRAMS), "-append", "image=%s desktop=%s" % (named or measurement, mode),
            # Two pictures of 2560 by 1440 need more than the sixteen mebibytes the standard adapter has.
            *(["-vga", "none", "-device", "VGA,vgamem_mb=64"] if int(mode.split("x")[0]) >= 1280 else ["-vga", "std"]), "-nic", "none",
            "-display", "none", "-monitor", "none", "-qmp", "unix:%s,server=on,wait=off" % sock, "-serial", "file:%s" % serial, "-no-reboot"]
@@ -223,7 +235,7 @@ def boot(qemu, kernel, folder, measurement, mode, out, glyphs, timeout):
                 raise TimeoutError("the kernel did not reach its desktop at " + mode)
             time.sleep(0.5)
         log = serial.read_text(errors="replace")
-        if measurement + " (measured; equal to the value the loader named)" not in log:
+        if named is None and measurement + " (measured; equal to the value the loader named)" not in log:
             raise RuntimeError("the running kernel did not measure as the receipt says")
         passed = sum(line.startswith("  pass ") for line in log.split("desktop: ")[0].splitlines())
         return key, screen, guest, passed
@@ -237,6 +249,12 @@ def settings_trial(key, screen, roomy, problems, results, mode):
     key("f2")
     rows, frame = screen("settings-0", lambda rows, frame: any("SETTINGS" in row for row in rows))
     states = {label: marks[0] for label, marks in settings_states(rows).items() if len(marks) == 1}
+    # S6: a key that does nothing in Settings leaves the frame as it was (a settled frame; a flash between
+    # two captures would not be seen by this).
+    key("x")
+    _, after_x = screen("settings-0-x", lambda rows, frame: True)
+    if after_x != frame:
+        problems.append("%s S6: a key that does nothing changed the Settings frame" % mode)
     seen = []
     for chosen in range(5):
         if chosen:
@@ -396,6 +414,12 @@ def text_trial(key, screen, passed, problems, results, mode, graphic=False):
                           ("the way to the events", r"F4 shows every event of the register\.")):
         if not any(re.search(pattern, page) for page in verification):
             found.append("T3: %s is whole on no page" % what)
+    verification_rows = pages("verification-again", "f5", "VERIFICATION")
+    heads = {m[1].replace("\n", "") for rows in verification_rows
+             for m in re.finditer(r"The whole head of the register's chain:\n((?:[0-9a-f]+\n)+)", "\n".join(row.strip() for row in rows) + "\n")}
+    prefixes = {m[1] for page in verification for m in re.finditer(r"head ([0-9a-f]{16})\.\.\.", page)}
+    if len(heads) != 1 or len(next(iter(heads))) != 64 or {next(iter(heads))[:16]} != prefixes:
+        found.append("T8: F5 does not hold one whole head of 64 digits that begins with the 16 it shows above: %r %r" % (sorted(heads), sorted(prefixes)))
     register_pages = pages("register", "f4", "REGISTER", "up")
     register = "".join("".join(rows).replace(" ", "") for rows in register_pages)
     # The whole head must be on the screen unless the display holds the table (62 characters and the two
@@ -452,6 +476,31 @@ def text_trial(key, screen, passed, problems, results, mode, graphic=False):
     results["text_controls_refused"] = ["an explanation without its last word", "the warning without 'not'"]
 
 
+def failed_trial(key, screen, serial, roomy, problems, results, mode):
+    """A start whose image is not the one named: the list says so and Enter starts nothing."""
+    home, _ = screen("failed-home", lambda rows, frame: any("Programs" in row for row in rows))
+    found = []
+    if not any(row.startswith("  NOT VERIFIED:") for row in home):
+        found.append("F1: the desktop does not say NOT VERIFIED")
+    key("ret")
+    rows, _ = screen("failed-programs", lambda rows, frame: any(PROGRAMS[0] in row for row in rows))
+    if not any(row.startswith("  NOT VERIFIED:") for row in rows) or not any("Programs are disabled." in row for row in rows):
+        found.append("F2: the list does not say NOT VERIFIED and that programs are disabled")
+    held = [row for row in rows if row.strip()]
+    if "Enter" in held[-1] or "Enter" in held[-2]:
+        found.append("F3: the keys offer Enter")
+    key("ret")
+    after, _ = screen("failed-enter", lambda rows, frame: True)
+    if not any(row.startswith("  Not started:") for row in after):
+        found.append("F4: Enter did not leave the words that nothing was started")
+    log = serial.read_text(errors="replace")
+    if any(name + " ended" in log for name in PROGRAMS) or "TASK_STARTED" in log.split("desktop: ", 1)[-1]:
+        found.append("F4: the serial log shows a program run after a failed start")
+    key("esc")
+    problems += ["%s failed start: %s" % (mode, p) for p in found]
+    results["failed_start"] = [row for row in after if row.strip()]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("built", type=Path)
@@ -501,6 +550,27 @@ def main():
                 problems.append("%s: the guest ended with %r" % (mode, results[mode]["exit_code"]))
         except Exception as error:  # every failure is kept, with what was on the screen
             problems.append("%s: %s: %s" % (mode, type(error).__name__, error))
+        finally:
+            if guest.poll() is None:
+                guest.kill()
+    # A failed start, made by naming a measurement that is not the kernel's.
+    wrong = receipt["kernel_measurement"][:-1] + ("0" if receipt["kernel_measurement"][-1] != "0" else "1")
+    for mode in ("320x200", "640x480"):
+        name = "failed-" + mode
+        results[name] = {}
+        try:
+            key, screen, guest, _ = boot(args.qemu, folder / "kernel.elf32", folder, receipt["kernel_measurement"], mode, evidence / name, glyphs, args.timeout, named=wrong)
+        except Exception as error:
+            problems.append("%s: %s: %s" % (name, type(error).__name__, error))
+            continue
+        try:
+            failed_trial(key, screen, evidence / name / "serial.txt", mode == "640x480", problems, results[name], name)
+            key("f10")
+            screen("power-question", lambda rows, frame: any("POWER OFF" in row for row in rows))
+            key("ret")
+            results[name]["exit_code"] = guest.wait(timeout=40)
+        except Exception as error:
+            problems.append("%s: %s: %s" % (name, type(error).__name__, error))
         finally:
             if guest.poll() is None:
                 guest.kill()
