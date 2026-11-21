@@ -13,6 +13,17 @@ on:
       - 'store/apps/parrots-all-the-way-down/guest/**'
       - 'store/apps/parrots-all-the-way-down/core/**'
       - '.github/workflows/tester-cd.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'examples/tester-cd/**'
+      - 'PCP_OS_Rust/crates/pcpos-kernel/**'
+      - 'PCP_OS_Rust/crates/pcpos-core/**'
+      - 'apps/surfbird/guest/**'
+      - 'store/native/guest/**'
+      - 'store/apps/parrots-all-the-way-down/guest/**'
+      - 'store/apps/parrots-all-the-way-down/core/**'
+      - '.github/workflows/tester-cd.yml'
   workflow_dispatch:
 
 permissions:
@@ -35,8 +46,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
+      # On a pull request the default checkout is a merge commit that GitHub makes for the test and later
+      # drops, so a receipt naming it names nothing anyone can fetch. Build the pull request's own head
+      # commit; on a push to master this is the pushed commit.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Read the pinned Limine 10.8.5 binary release
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
