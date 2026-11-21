@@ -1,0 +1,155 @@
+{
+  "parent": "55ea419034a1b7251197806d6a51fc2f815838df",
+  "candidate": "62c24cc2a76bc35bdf12b7ad40302c524f045b50",
+  "checker_blob": "1718016a99255ed81ebbe500359ad5d27464b59b",
+  "results": {
+    "320x200": {
+      "parent": {
+        "whole_f5_digest": false,
+        "whole_f10_warning": false,
+        "whole_disabled_notice": false
+      },
+      "candidate": {
+        "whole_f5_digest": true,
+        "whole_f10_warning": true,
+        "whole_disabled_notice": true
+      }
+    },
+    "640x480": {
+      "parent": {
+        "whole_f5_digest": false,
+        "whole_f10_warning": false,
+        "whole_disabled_notice": false
+      },
+      "candidate": {
+        "whole_f5_digest": true,
+        "whole_f10_warning": true,
+        "whole_disabled_notice": true
+      }
+    },
+    "800x600": {
+      "parent": {
+        "whole_f5_digest": false,
+        "whole_f10_warning": true
+      },
+      "candidate": {
+        "whole_f5_digest": true,
+        "whole_f10_warning": true
+      }
+    },
+    "1280x720": {
+      "parent": {
+        "whole_f5_digest": false,
+        "whole_f10_warning": true
+      },
+      "candidate": {
+        "whole_f5_digest": true,
+        "whole_f10_warning": true
+      }
+    },
+    "1920x1080": {
+      "parent": {
+        "whole_f5_digest": false,
+        "whole_f10_warning": true
+      },
+      "candidate": {
+        "whole_f5_digest": true,
+        "whole_f10_warning": true
+      }
+    },
+    "2560x1440": {
+      "parent": {
+        "whole_f5_digest": false,
+        "whole_f10_warning": true
+      },
+      "candidate": {
+        "whole_f5_digest": true,
+        "whole_f10_warning": true
+      }
+    }
+  },
+  "stock_problems": {
+    "320x200": {
+      "parent": [
+        "320x200: no row to make the erased-digit control from",
+        "320x200 text screens: T6: the desktop's row 3 reads '  Verified at start: all 71 self'",
+        "320x200 text screens: T7: power: the last row '  Enter switch off    Esc go bac' does not say how to leave",
+        "320x200 text screens: T1: the answers are not whole on the last rows",
+        "320x200 text screens: T7: keys: the last row '  F3                the files pr' does not say how to leave",
+        "320x200 text screens: T2: 'Up/Down' and all of what it does are on no page",
+        "320x200 text screens: T2: 'Left/Right' and all of what it does are on no page",
+        "320x200 text screens: T2: 'Enter' and all of what it does are on no page",
+        "320x200 text screens: T2: 'Space' and all of what it does are on no page",
+        "320x200 text screens: T2: 'Del' and all of what it does are on no page",
+        "320x200 text screens: T2: 'F2' and all of what it does are on no page",
+        "320x200 text screens: T2: 'F3' and all of what it does are on no page",
+        "320x200 text screens: T2: 'F4' and all of what it does are on no page",
+        "320x200 text screens: T2: 'F5' and all of what it does are on no page",
+        "320x200 text screens: T2: 'F10' and all of what it does are on no page",
+        "320x200 text screens: T2: 'Ctrl+Alt+Delete' and all of what it does are on no page",
+        "320x200 text screens: T7: verification: the last row '  F4 shows every event of the re' does not say how to leave",
+        "320x200 text screens: T3: the verification sentence is whole on no page",
+        "320x200 text screens: T3: the register's line is whole on no page",
+        "320x200 text screens: T3: the chain's line is whole on no page",
+        "320x200 text screens: T3: the way to the events is whole on no page",
+        "320x200 text screens: T7: verification-again: the last row '  F4 shows every event of the re' does not say how to leave",
+        "320x200 text screens: T8: F5 does not hold one whole head of 64 digits that begins with the 16 it shows above: [] []",
+        "320x200 text screens: T4: the count is not in the register's title",
+        "320x200 text screens: T5: rows 2 and 3 read 'Session files | cleared at pow'",
+        "failed-320x200 failed start: F2: the list does not say NOT VERIFIED and that programs are disabled"
+      ],
+      "candidate": []
+    },
+    "640x480": {
+      "parent": [
+        "640x480: no row to make the erased-digit control from",
+        "640x480 text screens: T1: the warning reads 'The register is closed and verified first. Files of this sessi not saved by a program are lost.'",
+        "640x480 text screens: T2: 'Up/Down' and all of what it does are on no page",
+        "640x480 text screens: T2: 'Left/Right' and all of what it does are on no page",
+        "640x480 text screens: T2: 'Enter' and all of what it does are on no page",
+        "640x480 text screens: T2: 'Del' and all of what it does are on no page",
+        "640x480 text screens: T2: 'F2' and all of what it does are on no page",
+        "640x480 text screens: T2: 'Ctrl+Alt+Delete' and all of what it does are on no page",
+        "640x480 text screens: T8: F5 does not hold one whole head of 64 digits that begins with the 16 it shows above: [] ['4043ea5ba73b24a2']",
+        "640x480 text screens: T4: the whole head of the chain is not on the register's pages",
+        "failed-640x480 failed start: F2: the list does not say NOT VERIFIED and that programs are disabled"
+      ],
+      "candidate": []
+    },
+    "800x600": {
+      "parent": [
+        "800x600: no row to make the erased-digit control from",
+        "800x600 text screens: T2: 'Up/Down' and all of what it does are on no page",
+        "800x600 text screens: T2: 'Left/Right' and all of what it does are on no page",
+        "800x600 text screens: T2: 'Del' and all of what it does are on no page",
+        "800x600 text screens: T8: F5 does not hold one whole head of 64 digits that begins with the 16 it shows above: [] ['d73c519b4105dcd8']",
+        "800x600 text screens: T4: the title does not show the 21 digits of the head it has room for and then '..'"
+      ],
+      "candidate": []
+    },
+    "1280x720": {
+      "parent": [
+        "1280x720: no row to make the erased-digit control from",
+        "1280x720 text screens: T8: F5 does not hold one whole head of 64 digits that begins with the 16 it shows above: [] ['588e1e3e3c5c9b1d']",
+        "1280x720 text screens: G2: the sentence above the programs is on 1 rows, or ends at column [68] of a plate that ends at 66"
+      ],
+      "candidate": []
+    },
+    "1920x1080": {
+      "parent": [
+        "1920x1080: no row to make the erased-digit control from",
+        "1920x1080 text screens: T8: F5 does not hold one whole head of 64 digits that begins with the 16 it shows above: [] ['4937b4380756c776']"
+      ],
+      "candidate": []
+    },
+    "2560x1440": {
+      "parent": [
+        "2560x1440: no row to make the erased-digit control from",
+        "2560x1440 text screens: T8: F5 does not hold one whole head of 64 digits that begins with the 16 it shows above: [] ['3d587d0961fdcce5']"
+      ],
+      "candidate": []
+    }
+  },
+  "method": "The frozen checker was run against a fresh tester ISO built from the parent. Six native QEMU geometries ran with matching image measurements. Two additional boots deliberately mismatched the parent measurement. The same candidate cases came from the previously preserved frozen-head runs. The only harness adaptations were QMP transport over stdio and assigning single geometries to separate native PCP workers. Nominal 1x; each P6 dimension was verified for the replay. A rejecting checker exits 1 even when the guest shut down cleanly.",
+  "replay": "With Python 3, run python3 -IB execution/replay.py <checkout of 62c24cc> <archive root>. Compare the printed per-size verdicts with results in readback.json. Each capture is decoded directly using the frozen font and the displayed rows are compared with the retained transcripts."
+}
