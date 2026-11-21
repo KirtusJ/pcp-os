@@ -46,3 +46,7 @@
 {"actor":"DirectorZ3","auth":"HOST","body":{"id":"T20"},"kind":"TASK_RELEASED","prev":"9ee8f589b922d089dbea79dea83418bea566994319604a98b10db17280899ced","seq":45,"ts":"2026-11-21T13:51:56Z"}
 {"actor":"DirectorZ3","auth":"HOST","body":{"depth":0,"id":"T21","label":"readback-316","parent":null},"kind":"TASK_ADMITTED","prev":"27f54b9385e7d4ff0e92b40a2954ef09a8241800c86cc755ca3e8bfde077dd0e","seq":46,"ts":"2026-11-21T13:52:49Z"}
 {"actor":"DirectorZ3","auth":"HOST","body":{"id":"T21"},"kind":"TASK_RELEASED","prev":"0e1a61035c471a20ddaa72bb71f98fa2523f12da7c5a97ca6e039582b7836fd1","seq":47,"ts":"2026-11-21T13:53:50Z"}
+{"actor":"DirectorZ3","auth":"HOST","body":{"depth":0,"id":"T22","label":"ten-parts","parent":null},"kind":"TASK_ADMITTED","prev":"932e929874f5fe7ad4a5b8cc111555ba22fee901b274a694fc3ae9e035ce4beb","seq":48,"ts":"2026-11-21T14:05:23Z"}
+{"actor":"DirectorZ3","auth":"HOST","body":{"id":"T22"},"kind":"TASK_RELEASED","prev":"b81da579cc7b82851267305b5a47ad0e9cd4bf0d0187997f839c0332cd5fe8d5","seq":49,"ts":"2026-11-21T14:08:27Z"}
+{"actor":"DirectorZ3","auth":"HOST","body":{"depth":0,"id":"T23","label":"ten-parts-2","parent":null},"kind":"TASK_ADMITTED","prev":"28873961b5f04f19df620c907587129bb5f90c41c2d0976cd93a97a94632695f","seq":50,"ts":"2026-11-21T14:08:43Z"}
+{"actor":"DirectorZ3","auth":"HOST","body":{"id":"T23"},"kind":"TASK_RELEASED","prev":"b59e88ee037cde26f9a56d19fdac860cedd452a09be1d1829f54852b404c12ed","seq":51,"ts":"2026-11-21T14:22:31Z"}

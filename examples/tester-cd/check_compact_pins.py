@@ -332,6 +332,37 @@ def main():
         if guest.poll() is None:
             guest.kill()
         stream.close()
+    # A name of 255 characters, the longest a file can have, as the fifteenth pin on the smallest display:
+    # ten parts at place 16 of 16 (A3's and B3's case). Row 4 must keep both arrows on every part, and the
+    # parts must join to the whole name. The kernel's register refuses a name this long as an artifact, so
+    # this guest ends with one failed self-test of its own; that is not asserted either way here.
+    long255 = "".join("%s%02d" % (chr(97 + i % 26), i) for i in range(84))[:251] + ".elf"
+    (folder / long255).write_bytes(surf)
+    out = evidence / "ten-320"
+    rpc, key, screen, guest, stream = boot(args.qemu, folder / "kernel.elf32", folder, receipt["kernel_measurement"], "320x200", out, glyphs, args.timeout, programs=PROGRAMS[:14] + [long255])
+    try:
+        for _ in range(14):
+            key("down")
+        parts = []
+        for part in range(1, 11):
+            if part > 1:
+                key("right")
+            rows = screen("part%02d" % part, lambda rows, part=part: rows[4].strip() == "16/16 | name %d/10 <- ->" % part)
+            body = [row.strip() for row in rows[5:len(rows) - 2] if row.strip()]
+            parts.append(body[1] if len(body) == 3 else "")
+        if "".join(parts) != long255:
+            problems.append("ten-parts-320x200: the parts join to %r" % "".join(parts))
+        results["ten-parts-320x200"] = {"row_4_first": "16/16 | name 1/10 <- ->", "row_4_last": "16/16 | name 10/10 <- ->", "joined_equals_name": "".join(parts) == long255}
+        key("f10")
+        screen("power-question", lambda rows: any("POWER OFF" in row for row in rows))
+        key("ret")
+        results["ten-parts-320x200"]["exit_code"] = guest.wait(timeout=40)
+    except Exception as error:
+        problems.append("ten-parts-320x200: %s" % error)
+    finally:
+        if guest.poll() is None:
+            guest.kill()
+        stream.close()
     summary = {"kernel_measurement": receipt["kernel_measurement"], "programs": len(PROGRAMS), "results": results, "problems": problems, "passed": not problems}
     (evidence / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     for mode in results:

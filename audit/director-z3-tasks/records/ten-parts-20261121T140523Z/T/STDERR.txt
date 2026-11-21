@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "/home/user/pcp-os/examples/tester-cd/check_compact_pins.py", line 377, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "/home/user/pcp-os/examples/tester-cd/check_compact_pins.py", line 342, in main
+    rpc, key, screen, guest, stream = boot(args.qemu, folder / "kernel.elf32", folder, receipt["kernel_measurement"], "320x200", out, glyphs, args.timeout, programs=PROGRAMS[:14] + [long255])
+                                      ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/pcp-os/examples/tester-cd/check_compact_pins.py", line 122, in boot
+    link.connect(str(sock))
+    ~~~~~~~~~~~~^^^^^^^^^^^
+OSError: AF_UNIX path too long
