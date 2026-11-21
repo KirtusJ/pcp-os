@@ -222,8 +222,8 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
             return any(status in row for row in rows)
 
         def home_visible(rows):
-            """The desktop: the status sentence and the desktop's own keys (widgets, files)."""
-            return launcher_visible(rows) and any("widgets" in row and "files" in row for row in rows)
+            """The desktop: the status sentence and, on the same bar, the desktop's way to the programs and to its keys."""
+            return any(launcher_visible([row]) and "programs" in row and "keys" in row for row in rows)
 
         def launcher_list_visible(rows):
             """The launcher: the status sentence and a chosen program with what it may use."""

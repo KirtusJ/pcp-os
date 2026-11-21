@@ -156,7 +156,10 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     // What is placed lasts for the session; nothing about the desktop is written to a disk.
     let mut chosen = 0usize;
     let mut place = 0usize;
-    let mut surface = Surface::Home;
+    // `first=details` on the loader's command line starts on the plain list of everything the loader gave,
+    // which is the screen this kernel showed first before it had a desktop. Harnesses that drive that
+    // screen by its keys and compare its pixels ask for it; a person gets the desktop.
+    let mut surface = if option(line, "first") == Some("details") { Surface::Details } else { Surface::Home };
     let mut shortcuts: Vec<usize> = Vec::new();
     let mut widgets = [false; WIDGETS.len()];
     let display = start.display.unwrap();
@@ -185,6 +188,8 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
         match (surface, key) {
             (_, (0x19, false)) => break,
             (_, (0x13, false)) => register_view(rec),
+            (Surface::Home, (0x25, false)) => keys_view("KEYS ON THE DESKTOP", &HOME_KEYS),
+            (Surface::Launcher, (0x25, false)) => keys_view("KEYS IN THE PROGRAMS", &LAUNCHER_KEYS),
             (Surface::Home, (0x4B, _)) | (Surface::Home, (0x48, _)) if place > 0 => place -= 1,
             (Surface::Home, (0x4D, _)) | (Surface::Home, (0x50, _)) if place + 1 < shortcuts.len() => place += 1,
             (Surface::Home, (0x39, false)) => surface = Surface::Launcher,
@@ -233,52 +238,69 @@ const PLATE: u32 = 0x12304A;
 const PLATE_CHOSEN: u32 = 0x1B4A63;
 const PLATE_EDGE: u32 = 0x24405C;
 
-/// The status bar of every desktop surface: what this is, whether it verified itself, and the state of its
-/// register. Its text is on the character grid (multiples of 10 across, 20 down) over flat ground, and the
-/// sentence about verification is the one the details screen uses, so that a check reading a picture of the
-/// screen finds the same words on every surface.
-fn status_bar(start: &Start, rec: &Record, w: u32) {
+/// The one bar of every desktop surface, along the foot of the display: what this is and whether it verified
+/// itself, the few keys that matter here, and the state of the register. One bar and not two: the field above
+/// it is left entirely to the person. Its text is on the character grid (multiples of 10 across, 20 down)
+/// over flat ground, and the sentence about verification is the one the details screen uses, so that a check
+/// reading a picture of the screen finds the same words on every surface.
+fn the_bar(start: &Start, rec: &Record, w: u32, h: u32, keys: &[(&str, &str)]) {
     use ui::{blend, label, label_width, BAD, GOOD, SOFT, TEXT};
     let safe = start.failed != 0;
-    let on_bar = ui::bar(0, 60, w, 0x17334F, 0x11283F, OUTLINE);
-    let mut x = label(30, 20, "PCP OS", TEXT, false, &on_bar);
-    x = label(x + 10, 20, &format!("{} | x86-64", start.version), SOFT, false, &on_bar);
+    let top = h / 20 * 20 - 60;
+    let on_bar = ui::bar(top, h - top, w, 0x17334F, 0x0F2439, 0x0F2439);
+    let middle = on_bar(0, top + 30);
+    let row = top + 20;
+    let pill = |x: u32, s: &str, colour: u32, tint: u32, lit: bool| {
+        let width = label_width(s, false) + 20;
+        let flat = move |_: u32, _: u32| blend(middle, tint, if lit { 20 } else { 46 });
+        let _ = ui::panel(x - 10, row - 6, width, 32, &flat, tint, 0, if colour == BAD { BAD } else if lit { 0x3B5672 } else { OUTLINE }, lit);
+        label(x, row, s, colour, false, &flat);
+        x - 10 + width
+    };
+    let mut x = label(30, row, "PCP OS", TEXT, false, &on_bar);
     let verified = if safe { format!("NOT VERIFIED: {} of {} self-tests failed.", start.failed, start.passed + start.failed) }
                    else { format!("Verified at start: all {} self-tests passed.", start.passed) };
-    let middle = on_bar(0, 30);
-    let pill = |x: u32, s: &str, colour: u32, tint: u32| {
-        let width = label_width(s, false) + 20;
-        let flat = move |_: u32, _: u32| blend(middle, tint, 46);
-        let _ = ui::panel(x - 10, 14, width, 32, &flat, tint, 0, if colour == BAD { BAD } else { OUTLINE }, false);
-        label(x, 20, s, colour, false, &flat);
-    };
-    pill(x + 30, &verified, if safe { BAD } else { GOOD }, if safe { BAD } else { 0x187C78 });
-    let head = rec.ledger().head();
+    x = pill(x + 30, &verified, if safe { BAD } else { GOOD }, if safe { BAD } else { 0x187C78 }, false) + 20;
+    // The register's state sits at the right; the keys take what room is left between.
     let chain = "chain intact";
-    let events = format!("Register: {} events, head {}...", rec.ledger().len(), &head[..head.len().min(16)]);
     let right = (w - 30 - label_width(chain, false)) / 10 * 10;
-    pill(right, chain, TEXT, 0x187C78);
-    label((right.saturating_sub(30 + label_width(&events, false))) / 10 * 10, 20, &events, SOFT, false, &on_bar);
+    pill(right, chain, TEXT, 0x187C78, false);
+    let events = format!("Register: {} events", rec.ledger().len());
+    let events_at = (right.saturating_sub(30 + label_width(&events, false))) / 10 * 10;
+    let needed: u32 = keys.iter().map(|(k, d)| label_width(k, false) + label_width(d, false) + 60).sum();
+    let limit = if x + needed + 20 <= events_at { label(events_at, row, &events, SOFT, false, &on_bar); events_at } else { right - 20 };
+    for (key, does) in keys {
+        let width = label_width(key, false) + label_width(does, false) + 60;
+        if x + width > limit {
+            break;
+        }
+        x = (x + 9) / 10 * 10 + 10;
+        let after = pill(x, key, TEXT, TEXT, true);
+        x = label(after + 10, row, does, SOFT, false, &on_bar) + 10;
+    }
 }
 
-/// The bar of keys at the foot of a desktop surface. Returns the row its text is on.
-fn key_bar(w: u32, h: u32, keys: &[(&str, &str)], note: &str) {
-    use ui::{label, label_width, SOFT, TEXT};
-    let top = h / 20 * 20 - 60;
-    let on_keys = ui::bar(top, h - top, w, 0x142C45, 0x0F2439, 0x0F2439);
-    let middle = on_keys(0, top + 30);
-    let mut x = 30;
-    for (key, does) in keys {
-        let width = label_width(key, false) + 20;
-        let cap = move |_: u32, _: u32| ui::blend(middle, TEXT, 20);
-        let _ = ui::panel(x - 10, top + 14, width, 32, &cap, TEXT, 0, 0x3B5672, true);
-        label(x, top + 20, key, TEXT, false, &cap);
-        x = label(x + width, top + 20, does, SOFT, false, &on_keys) + 30;
+/// Every key of a desktop surface and what it does. Any key goes back.
+fn keys_view(title: &str, keys: &[(&str, &str)]) {
+    use ui::{at, GROUND, SOFT, TEXT};
+    let (_, rows) = ui::grid();
+    ui::clear(GROUND);
+    at(2, 1, title, ui::TEAL, GROUND);
+    for (i, (key, does)) in keys.iter().enumerate() {
+        at(2, 3 + i as u32, key, TEXT, GROUND);
+        at(20, 3 + i as u32, does, SOFT, GROUND);
     }
-    if x + label_width(note, false) + 30 <= w {
-        label((w - 30 - label_width(note, false)) / 10 * 10, top + 20, note, SOFT, false, &on_keys);
-    }
+    at(2, rows - 2, "Any key goes back", SOFT, GROUND);
+    wait_key();
 }
+
+const HOME_KEYS: [(&str, &str); 10] = [("Enter", "start the chosen shortcut, or open the programs when none is placed"), ("Space", "open the programs"),
+    ("Left/Right", "choose a shortcut"), ("Del", "take the chosen shortcut off the desktop"), ("W", "choose the widgets on the desktop"),
+    ("F", "the files programs have written"), ("R", "the register"), ("K", "this list"), ("P", "power off"),
+    ("Ctrl+Alt+Delete", "stops a running program; no program can take that key")];
+const LAUNCHER_KEYS: [(&str, &str); 9] = [("Up/Down", "choose a program"), ("Enter", "start it"), ("S", "put it on the desktop, or take it off"),
+    ("Esc", "back to the desktop"), ("D", "details: everything the loader gave"), ("R", "the register"), ("K", "this list"), ("P", "power off"),
+    ("Ctrl+Alt+Delete", "stops a running program; no program can take that key")];
 
 /// A flat plate with an outline: a tile, a card, a row. Text on it is read back from a picture of the screen
 /// because its ground is one colour.
@@ -334,8 +356,7 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
     let recent = if widgets[0] { recent_tasks(rec, programs, 3) } else { Vec::new() };
     let (pool, free, _, _) = crate::mem::census();
     let files_line = if mounted { "VM files | saved when an app syncs" } else { "Session files | cleared at power-off" };
-    let keys: &[(&str, &str)] = if shortcuts.is_empty() { &[("Enter", "programs"), ("W", "widgets"), ("F", "files"), ("R", "register"), ("P", "power off")] }
-                                else { &[("Left/Right", "move"), ("Enter", "start"), ("Space", "programs"), ("Del", "remove"), ("W", "widgets"), ("F", "files"), ("R", "register"), ("P", "power off")] };
+    let keys: &[(&str, &str)] = if shortcuts.is_empty() { &[("Enter", "programs"), ("K", "keys")] } else { &[("Enter", "start"), ("Space", "programs"), ("K", "keys")] };
     let display = match dev::display() {
         Some(d) if d.width >= 1280 && d.height >= 720 && ui::scale() == 1 => d,
         _ => {
@@ -367,9 +388,8 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
     let field = ui::Field { width: w, height: h, cx: w * 74 / 100, cy: h * 48 / 100 };
     field.paint();
     let over_field = |x: u32, y: u32| field.colour(x, y);
-    status_bar(start, rec, w);
     let left = w / 200 * 10;
-    let mut y = 100;
+    let mut y = 60;
 
     // Shortcuts the person placed, as tiles.
     if !shortcuts.is_empty() {
@@ -433,7 +453,7 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
     }
 
     emblem_plate(&field, h);
-    key_bar(w, h, keys, "Ctrl+Alt+Delete stops a running program.");
+    the_bar(start, rec, w, h, keys);
 }
 
 /// Choose which widgets are on the desktop. Up and Down move, Enter puts one on or takes it off, Esc goes back.
@@ -499,18 +519,17 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
     let field = ui::Field { width: w, height: h, cx: w * 74 / 100, cy: h * 48 / 100 };
     field.paint();
     let over_field = |x: u32, y: u32| field.colour(x, y);
-    status_bar(start, rec, w);
 
     let left = w / 200 * 10;
     let list_width = (w * 47 / 100).min(1100) / 10 * 10;
-    label(left, 100, "Programs", TEXT, true, &over_field);
-    let on_note = plate(left, 150, list_width, 40, PLATE, PLATE_EDGE, false);
-    label(left + 20, 160, if safe { "SAFE: verification failed. Programs are disabled." } else if programs.is_empty() { "The loader handed over no program." }
+    label(left, 60, "Programs", TEXT, true, &over_field);
+    let on_note = plate(left, 110, list_width, 40, PLATE, PLATE_EDGE, false);
+    label(left + 20, 120, if safe { "SAFE: verification failed. Programs are disabled." } else if programs.is_empty() { "The loader handed over no program." }
                                else { "Choose one to start. Each runs with only what it is granted." }, if safe { BAD } else { SOFT }, false, &on_note);
     let none = option(&start.boot.command_line, "grant") == Some("none");
     let grants = if none { "console only" } else if start.sound { "display, keyboard, sound, loader files, store" } else { "display, keyboard, loader files, store" };
     let foot = h / 20 * 20 - 60;
-    let mut y = 210;
+    let mut y = 170;
     let room = ((foot.saturating_sub(y + 120)) / 80).max(1) as usize;
     let first = (chosen + 1).saturating_sub(room);
     for (i, p) in programs.iter().enumerate().skip(first).take(room) {
@@ -547,9 +566,8 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
     }
 
     emblem_plate(&field, h);
-    let keys: &[(&str, &str)] = if programs.is_empty() || safe { &[("Esc", "desktop"), ("D", "details"), ("R", "register"), ("P", "power off")] }
-                                else { &[("Up/Down", "choose"), ("Enter", "start"), ("S", "shortcut"), ("Esc", "desktop"), ("D", "details"), ("R", "register"), ("P", "power off")] };
-    key_bar(w, h, keys, "Ctrl+Alt+Delete stops a running program.");
+    let keys: &[(&str, &str)] = if programs.is_empty() || safe { &[("Esc", "desktop"), ("K", "keys")] } else { &[("Enter", "start"), ("S", "shortcut"), ("Esc", "desktop"), ("K", "keys")] };
+    the_bar(start, rec, w, h, keys);
 }
 
 fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message: &str) {
