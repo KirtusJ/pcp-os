@@ -96,6 +96,9 @@ jobs:
           cp target/pcpos-kernel.elf32 "$RUNNER_TEMP/default.elf32"
           PCPOS_KERNEL_STAGE="$RUNNER_TEMP/no-replay-kernel" PCPOS_KERNEL_FEATURES=no-key-replay-demo sh run.sh build
           python3 -IB tests/replay_probe.py "$RUNNER_TEMP/default.elf32" target/pcpos-kernel.elf32
+          cp target/pcpos-kernel.elf32 "$RUNNER_TEMP/no-replay.elf32"
+          cd "$GITHUB_WORKSPACE"
+          python3 -IB examples/tester-cd/check_stopped_screen.py "$RUNNER_TEMP/default.elf32" "$RUNNER_TEMP/no-replay.elf32" "$RUNNER_TEMP/evidence/stopped-screen"
       - name: Replay selected grants and RGB controls on the native captures
         run: python3 -IB examples/tester-cd/check_launcher_grants.py "$RUNNER_TEMP/first/receipt.json" "$RUNNER_TEMP/evidence"
       - name: Check the source CD beside disposable IDE and NVMe disks
