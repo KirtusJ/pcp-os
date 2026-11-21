@@ -45,8 +45,9 @@ below are the texts of those frames, each with its rows joined by single spaces.
     register's chain is intact."; "F4 shows every event of the register."
  T4 F4, which opens at the newest events and is read with Up: the pages, with every space removed, hold
     "REGISTER:<n>events,chainintact" or "REGISTER:<n>events,intact", and "head" followed by 64 hex digits,
-    or, where the display holds the table but not its whole title (800 across), by fewer and "..": there
-    the whole head is not on the screen, as it was not before, and the title now says that it is cut.
+    or, only where the display holds the table (66 columns) but not its whole title (800 across), by
+    exactly the digits the title has room for and "..": there the whole head is not on the screen, as it
+    was not before, and the title now says that it is cut.
  T5 F3: rows 2 and 3, joined, are "Session files | cleared at power-off".
  T6 the desktop's row 3 is the verification sentence in one of the kernel's wordings, whole.
  T7 every one of these screens has, as its last row that holds anything, a row that says how to leave it
@@ -396,8 +397,21 @@ def text_trial(key, screen, passed, problems, results, mode, graphic=False):
         if not any(re.search(pattern, page) for page in verification):
             found.append("T3: %s is whole on no page" % what)
     register = "".join("".join(rows).replace(" ", "") for rows in pages("register", "f4", "REGISTER", "up"))
-    if not re.search(r"REGISTER:\d+events,(chain)?intact", register) or not re.search(r"head[0-9a-f]{64}|head[0-9a-f]+\.\.", register):
-        found.append("T4: the count or the whole head of the chain is not on the register's pages")
+    # The whole head must be on the screen unless the display holds the table (62 characters and the two
+    # columns each side) but not the table's whole title; there the title must show every digit it has
+    # room for and then "..". B3 found that an earlier form of this accepted a cut head anywhere.
+    across = int(mode.split("x")[0]) // 10 - 4
+    count = re.search(r"REGISTER:(\d+)events,(chain)?intact", register)
+    whole = re.search(r"head[0-9a-f]{64}", register)
+    if not count:
+        found.append("T4: the count is not in the register's title")
+    else:
+        prefix = len("THE KERNEL'S REGISTER: %s events, chain intact, head " % count[1])
+        if across >= 62 and prefix + 64 > across:
+            if not re.search(r"head[0-9a-f]{%d}\.\." % (across - prefix - 2), register):
+                found.append("T4: the title does not show the %d digits of the head it has room for and then '..'" % (across - prefix - 2))
+        elif not whole:
+            found.append("T4: the whole head of the chain is not on the register's pages")
     if graphic:
         # The programs: the sentence above the list is whole and ends inside its plate, whose width is the
         # kernel's own (47 hundredths of the display, at most 1100, from a left edge of one two-hundredth).
