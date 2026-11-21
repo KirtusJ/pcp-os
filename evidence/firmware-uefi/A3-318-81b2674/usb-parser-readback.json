@@ -2,30 +2,50 @@
   "b3_evidence_sha256": "eb3daed717269deee89c23cd3fa67354d330ea8ba50643568f445ff887b5bd36",
   "trials": {
     "candidate/guests/ramfb-128": {
+      "pixels": [
+        800,
+        600
+      ],
       "display": "display: Loader, 800x600, 1 page(s), 1876 KiB of its memory mapped at 0x6a3f000",
       "width": 800,
       "sound": true,
       "serial_sha256": "73e358c3ee1470ea4ce068dff3f447439aa05a76cc8ad164e6029d4039160ec5"
     },
     "candidate/guests/ramfb-256": {
+      "pixels": [
+        800,
+        600
+      ],
       "display": "display: Loader, 800x600, 1 page(s), 1876 KiB of its memory mapped at 0xea3f000",
       "width": 800,
       "sound": true,
       "serial_sha256": "462151a7a4ce3f064f436ebb84d8403f05bbd2a3613d93b702814c20bb316675"
     },
     "candidate/guests/std-128": {
+      "pixels": [
+        1920,
+        1080
+      ],
       "display": "display: Bochs, 1920x1080, 2 page(s), 16384 KiB of its memory mapped at 0x80000000",
       "width": 1920,
       "sound": true,
       "serial_sha256": "8b8980f9407144c1052b6490213f851e24ac8f01bfb45631f88f1e4c24a8aba0"
     },
     "candidate/guests/std-256": {
+      "pixels": [
+        1920,
+        1080
+      ],
       "display": "display: Bochs, 1920x1080, 2 page(s), 16384 KiB of its memory mapped at 0x80000000",
       "width": 1920,
       "sound": true,
       "serial_sha256": "5f09a50c753ab0a1fa1bb16536887c65e7f3f10446ee9d7675ae4c487778bcaa"
     },
     "candidate/guests/virtio-vga-128": {
+      "pixels": [
+        1280,
+        800
+      ],
       "display": "display: Loader, 1280x800, 1 page(s), 4000 KiB of its memory mapped at 0x80000000",
       "width": 1280,
       "sound": true,
@@ -56,18 +76,30 @@
       "serial_sha256": "f97d18a650f66a0b637a4c979b088c792d1ca01bdbe49758039ebed7220a5c27"
     },
     "candidate/repeat-1/virtio-vga-128": {
+      "pixels": [
+        1280,
+        800
+      ],
       "display": "display: Loader, 1280x800, 1 page(s), 4000 KiB of its memory mapped at 0x80000000",
       "width": 1280,
       "sound": true,
       "serial_sha256": "2899d4ba90aea764b5eec424d1e259a008e982988a1a778f9a82ed2730c98300"
     },
     "candidate/repeat-2/virtio-vga-128": {
+      "pixels": [
+        1280,
+        800
+      ],
       "display": "display: Loader, 1280x800, 1 page(s), 4000 KiB of its memory mapped at 0x80000000",
       "width": 1280,
       "sound": true,
       "serial_sha256": "45b9b52322340ce56deb57442748fef85539894d0293e06d684804a48b788baa"
     },
     "candidate/repeat-3/virtio-vga-128": {
+      "pixels": [
+        1280,
+        800
+      ],
       "display": "display: Loader, 1280x800, 1 page(s), 4000 KiB of its memory mapped at 0x80000000",
       "width": 1280,
       "sound": true,
