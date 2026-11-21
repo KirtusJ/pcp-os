@@ -384,7 +384,7 @@ fn verification_view(start: &Start, rec: &Record) {
     let head = rec.ledger().head();
     at(2, 6, &format!("Register: {} events, head {}...", rec.ledger().len(), &head[..head.len().min(16)]), TEXT, GROUND);
     at(2, 7, if ledger::verify(rec.ledger().bytes()).is_ok() { "The register's chain is intact." } else { "The register's chain does NOT verify." }, TEXT, GROUND);
-    at(2, 9, "R shows every event of the register from the desktop.", SOFT, GROUND);
+    at(2, 9, "F4 shows every event of the register.", SOFT, GROUND);
     at(2, rows - 2, "Any key goes back", SOFT, GROUND);
     wait_key();
 }
@@ -798,16 +798,21 @@ fn power_prompt() -> bool {
     at(2, 5, "The register is closed and verified first. Files of this session that were", SOFT, GROUND);
     at(2, 6, "not saved by a program are lost.", SOFT, GROUND);
     at(2, rows - 2, "Enter switch off    Esc go back", TEXT, GROUND);
-    dev::keys_forget();
-    // Only an Enter pressed in answer switches off. An Enter that was already held when the question came
-    // up repeats while it is held, and those repeats are not an answer: Enter counts once it has been seen
-    // to be up, here or before. Any other key pressed goes back.
-    let mut up = !dev::enter_held();
+    // Only an Enter pressed in answer switches off. A key that is held repeats its press, and those repeats
+    // are not an answer, whichever Enter key they come from and whichever is let go first: a press counts
+    // only when both Enter keys (the main one and the number pad's) were up before it. Which are down is
+    // taken at the moment the waiting keys are forgotten and then followed from the events themselves, in
+    // their order. Any other key pressed goes back.
+    let (mut main, mut pad) = dev::keys_forget_enter();
     loop {
         match dev::key_take() {
-            Some(k) if k.code == 0x1C && k.released => up = true,
-            Some(k) if k.code == 0x1C && up => return true,
-            Some(k) if k.code == 0x1C => { let _ = k; }
+            Some(k) if k.code == 0x1C => {
+                let was_clear = !main && !pad;
+                if k.extended { pad = !k.released } else { main = !k.released }
+                if !k.released && was_clear {
+                    return true;
+                }
+            }
             Some(k) if !k.released && k.code != 0x1D && k.code != 0x38 && k.code != 0x44 => return false,
             Some(_) => {}
             None => arch::wait_for_interrupt(),

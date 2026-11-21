@@ -222,6 +222,7 @@ def _(ck):
     e = ended(log, "doom.elf")
     try: secs = int(e.split(" after ")[1].split(" s")[0]); shown = int(e.split(" frames shown")[0].split()[-1]); idle = int(e.split("idled ")[1].split("%")[0]); dry = int(e.split("ran out of sound ")[1].split()[0])
     except Exception: secs = shown = idle = 0; dry = -1
+    ck("it ended DONE, not by a fault", e.startswith("doom.elf ended DONE"), e[:200])
     ck("it ran between 61 and 67 seconds (2134 tics at 35 a second is 61 s; the rest is start and the melt)", 61 <= secs <= 67, e[:160])
     ck("at least 35 pictures a second were shown", secs and shown / secs >= 35, (shown, secs))
     ck("the processor was idle more than half the time", idle > 50, idle)

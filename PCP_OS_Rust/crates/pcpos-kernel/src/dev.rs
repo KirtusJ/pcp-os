@@ -294,14 +294,15 @@ struct Keyboard {
     skip: u8,
     ctrl: bool,
     alt: bool,
-    /// Whether an Enter key is down now, by the last press or release of one that was seen.
-    enter: bool,
+    /// Whether each Enter key is down now, by its last press or release that was seen: the main one, and
+    /// the one on the number pad.
+    enter: [bool; 2],
     /// Events dropped because nothing took them in time.
     pub dropped: u64,
 }
 
 static KEYBOARD: arch::Single<Keyboard> = arch::Single::new(Keyboard { present: false, events: [Key { code: 0, extended: false, released: false, ctrl: false }; 256], head: 0, count: 0,
-                                                                         extended: false, skip: 0, ctrl: false, alt: false, enter: false, dropped: 0 });
+                                                                         extended: false, skip: 0, ctrl: false, alt: false, enter: [false; 2], dropped: 0 });
 /// Set when the person presses Ctrl, Alt and Delete together: the kernel's own key, which no program can take.
 static STOP: AtomicBool = AtomicBool::new(false);
 
@@ -372,7 +373,7 @@ fn keyboard_byte(k: &mut Keyboard, byte: u8) {
             match key.code {
                 0x1D => k.ctrl = !key.released,
                 0x38 => k.alt = !key.released,
-                0x1C => k.enter = !key.released,
+                0x1C => k.enter[key.extended as usize] = !key.released,
                 0x53 if !key.released && k.ctrl && k.alt => STOP.store(true, Ordering::SeqCst),
                 _ => {}
             }
@@ -483,9 +484,15 @@ fn script_tick(ticks: u64) {
     })
 }
 
-/// Whether an Enter key is held down now. A held key repeats its press; this tells a repeat from a new press.
-pub fn enter_held() -> bool {
-    arch::without_interrupts(|| KEYBOARD.with(|k| k.enter))
+/// Forget every key event that is waiting and say, as of that same moment, whether each Enter key is down:
+/// (the main one, the one on the number pad). Taken together with interrupts off, so that every event taken
+/// afterwards is later than the answer and none is counted twice.
+pub fn keys_forget_enter() -> (bool, bool) {
+    arch::without_interrupts(|| KEYBOARD.with(|k| {
+        k.head = 0;
+        k.count = 0;
+        (k.enter[0], k.enter[1])
+    }))
 }
 
 /// The oldest key event not yet taken, if any.
