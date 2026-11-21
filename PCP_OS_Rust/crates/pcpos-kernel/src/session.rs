@@ -1350,20 +1350,21 @@ fn register_view(rec: &Record) {
         }
     };
     // With room for a row of each event the screen is as it has always been: the count and the head of the
-    // chain in the title, a row of headings, and an event to a row, a row that is too long going on under
-    // itself. On a narrower display each event is a few short lines. Nothing is cut.
+    // chain in the title, a row of headings, and an event to a row, a row that is too long ending in
+    // "..". On a narrower display each event is a few short lines, whole.
     let across = (cols as usize).saturating_sub(4).max(1);
     let full_title = format!("THE KERNEL'S REGISTER: {} events, chain intact, head {}", events.len(), head);
     let table = "seq  time                  actor     kind                 what";
     let wide = table.len() <= across;
     let mut lines: Vec<Line> = Vec::new();
-    // The title keeps the count and that the chain is intact in the longest wording that fits; the head
-    // of the chain, when the title cannot hold it, is the first lines, above the first event.
-    let titles = [full_title, format!("THE KERNEL'S REGISTER: {} events, chain intact", events.len()), format!("REGISTER: {} events, intact", events.len())];
-    let title = titles.iter().find(|t| t.len() <= across).cloned().unwrap_or_else(|| cut(&titles[2], across));
-    if title != titles[0] {
+    // The table's title is the one it has always had, ending in ".." if the display cannot hold the whole
+    // head of the chain. On a narrower display the title keeps the count and that the chain is intact,
+    // and the whole head is the first lines, above the first event.
+    let title = if wide { cut(&full_title, across) } else {
         lines.extend(wrapped(&format!("head {}", head), across).into_iter().map(|part| alloc::vec![(2, part, SOFT)]));
-    }
+        let short = [format!("THE KERNEL'S REGISTER: {} events, chain intact", events.len()), format!("REGISTER: {} events, intact", events.len())];
+        short.iter().find(|t| t.len() <= across).cloned().unwrap_or_else(|| cut(&short[1], across))
+    };
     for e in events.iter() {
         let field = |k: &str| e.get(k).and_then(Value::as_str).unwrap_or("").to_string();
         let body = e.get("body");
@@ -1371,10 +1372,9 @@ fn register_view(rec: &Record) {
         let seq = e.get("seq").and_then(Value::as_int).unwrap_or(0);
         if wide {
             let line = format!("{:<4} {:<21} {:<9} {:<20} {}", seq, field("ts"), field("actor"), field("kind"), what);
-            let mut parts = wrapped(&line, across).into_iter();
-            lines.push(alloc::vec![(2, parts.next().unwrap_or_default(), TEXT)]);
-            let rest: String = parts.collect();
-            lines.extend(wrapped(&rest, across.saturating_sub(5).max(1)).into_iter().map(|part| alloc::vec![(7, part, TEXT)]));
+            // An event to a row, as the table has always been and as its readers expect: a row too long
+            // for the display ends in "..", so that it is seen to be cut.
+            lines.push(alloc::vec![(2, cut(&line, across), TEXT)]);
         } else {
             lines.extend(lines_of(2, &format!("{} {}", seq, field("kind")), TEXT));
             lines.extend(lines_of(4, &format!("{} {}", field("ts"), field("actor")), SOFT));
