@@ -764,7 +764,9 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     for d in &bus {
         say!("device on the bus: {:02x}:{:02x}.{} maker {:04x} device {:04x} class {:02x}.{:02x} line {}", d.bus, d.slot, d.function, d.vendor, d.device, d.class, d.subclass, d.line);
     }
-    let display = dev::display_init(&bus, boot.display);
+    let requested = boot.command_line.split_whitespace().find_map(|s| s.strip_prefix("desktop="))
+        .and_then(|s| s.split_once('x')).and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)));
+    let display = dev::display_init(&bus, boot.display, requested);
     match display {
         Some(d) => say!("display: {:?}, {}x{}, {} page(s), {} KiB of its memory mapped at {:#x}", d.kind, d.width, d.height, d.pages, d.mapped / 1024, d.memory),
         None => say!("display: none this kernel can drive"),

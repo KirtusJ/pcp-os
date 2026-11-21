@@ -7,6 +7,7 @@
 use crate::dev;
 use crate::font::{CELL_HEIGHT, CELL_WIDTH, FIRST, GLYPHS};
 use alloc::vec::Vec;
+use core::sync::atomic::{AtomicU32, Ordering};
 
 /// The Core plate, the text on it, and the accents.
 pub const GROUND: u32 = 0x10283F;
@@ -20,6 +21,16 @@ pub const BAD: u32 = 0xF08A72;
 
 pub const CELL_W: u32 = CELL_WIDTH as u32;
 pub const CELL_H: u32 = CELL_HEIGHT as u32;
+static SCALE: AtomicU32 = AtomicU32::new(1);
+const DOUBLE: &[u8; 95 * 20 * 40] = include_bytes!("font-2x.bin");
+
+pub fn set_scale(value: u32) {
+    SCALE.store(value, Ordering::Relaxed);
+}
+
+pub fn scale() -> u32 {
+    SCALE.load(Ordering::Relaxed)
+}
 
 fn blend(under: u32, over: u32, coverage: u32) -> u32 {
     let mix = |shift: u32| {
@@ -37,26 +48,30 @@ pub fn clear(colour: u32) {
 }
 
 pub fn fill(x: u32, y: u32, w: u32, h: u32, colour: u32) {
-    dev::display_fill(x, y, w, h, colour);
+    let z = scale();
+    dev::display_fill(x * z, y * z, w * z, h * z, colour);
 }
 
 /// Draw text with its top-left corner at (x, y), in pixels. A character the typeface lacks is drawn as `?`.
 /// Returns the x just after the text.
 pub fn text(x: u32, y: u32, s: &str, colour: u32, ground: u32) -> u32 {
-    let n = s.chars().count();
+    let z = scale() as usize;
+    let (width, height) = (CELL_WIDTH * z, CELL_HEIGHT * z);
+    let available = dev::display().map(|d| (d.width / z as u32).saturating_sub(x).div_ceil(CELL_W) as usize).unwrap_or(0);
+    let n = s.chars().take(available).count();
     if n == 0 {
         return x;
     }
-    let mut row: Vec<u32> = alloc::vec![ground; n * CELL_WIDTH];
-    for line in 0..CELL_HEIGHT {
-        for (i, ch) in s.chars().enumerate() {
+    let mut row: Vec<u32> = alloc::vec![ground; n * width];
+    for line in 0..height {
+        for (i, ch) in s.chars().take(n).enumerate() {
             let code = if (ch as u32) >= FIRST as u32 && (ch as u32) < 127 { ch as usize - FIRST as usize } else { b'?' as usize - FIRST as usize };
-            let glyph = &GLYPHS[code];
-            for col in 0..CELL_WIDTH {
-                row[i * CELL_WIDTH + col] = blend(ground, colour, glyph[line * CELL_WIDTH + col] as u32);
+            let glyph: &[u8] = if z == 1 { &GLYPHS[code] } else { &DOUBLE[code * width * height..(code + 1) * width * height] };
+            for col in 0..width {
+                row[i * width + col] = blend(ground, colour, glyph[line * width + col] as u32);
             }
         }
-        dev::display_row(x, y + line as u32, &row);
+        dev::display_row(x * z as u32, y * z as u32 + line as u32, &row);
     }
     x + (n * CELL_WIDTH) as u32
 }
@@ -68,7 +83,8 @@ pub fn at(col: u32, row: u32, s: &str, colour: u32, ground: u32) -> u32 {
 
 /// (columns, rows) of the character grid on the display as it is.
 pub fn grid() -> (u32, u32) {
-    dev::display().map(|d| (d.width / CELL_W, d.height / CELL_H)).unwrap_or((0, 0))
+    let z = scale();
+    dev::display().map(|d| (d.width / (CELL_W * z), d.height / (CELL_H * z))).unwrap_or((0, 0))
 }
 
 /// The emblem's shapes, in tenths of the bird's own units, in drawing order: an ellipse is (centre x, centre y,
@@ -111,6 +127,8 @@ fn inside(shape: &Shape, x: i64, y: i64) -> bool {
 /// Draw the emblem `height` pixels tall with its top-left corner at (x, y), on `ground`. Each pixel is the
 /// mean of nine samples, so the edges are smooth.
 pub fn emblem(x: u32, y: u32, height: u32, ground: u32) {
+    let z = scale();
+    let (x, y, height) = (x * z, y * z, height * z);
     // The bird is 121 units wide and 132 tall; a unit is 160 of the fixed-point steps used here.
     let width = height * 121 / 132;
     let mut row: Vec<u32> = alloc::vec![ground; width as usize];

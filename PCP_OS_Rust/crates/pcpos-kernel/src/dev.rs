@@ -152,7 +152,7 @@ fn dispi_write(index: u16, value: u16) {
 }
 
 /// Find a display and take it over. Returns what was found, in words, for the start-up report.
-pub fn display_init(bus: &[BusDevice], loader: Option<arch::LoaderDisplay>) -> Option<Display> {
+pub fn display_init(bus: &[BusDevice], loader: Option<arch::LoaderDisplay>, requested: Option<(u32, u32)>) -> Option<Display> {
     // The Bochs interface: a display-class device of one of the two makers that implement it, answering with a known version.
     let adapter = bus.iter().find(|d| d.class == 3 && ((d.vendor == 0x1234 && d.device == 0x1111) || (d.vendor == 0x80EE && d.device == 0xBEEF)));
     if let Some(d) = adapter {
@@ -164,7 +164,15 @@ pub fn display_init(bus: &[BusDevice], loader: Option<arch::LoaderDisplay>) -> O
             if mapped >= 4 << 20 && arch::map_device(memory, mapped) {
                 let display = Display { kind: DisplayKind::Bochs, width: 0, height: 0, pitch: 0, pages: 2, memory, mapped, shown: 0 };
                 arch::without_interrupts(|| DISPLAY.with(|s| *s = Some(display)));
-                return display_set(1024, 768).or_else(|| display_set(800, 600)).or_else(|| display_set(640, 480));
+                let (w, h) = requested.unwrap_or((1920, 1080));
+                if let Some(display) = display_set(w, h) {
+                    return Some(display);
+                }
+                for (width, height) in [(1920, 1080), (1280, 720), (1024, 768), (800, 600), (640, 480)] {
+                    if let Some(display) = display_set(width, height) {
+                        return Some(display);
+                    }
+                }
             }
         }
     }
@@ -194,8 +202,10 @@ pub fn display_set(width: u32, height: u32) -> Option<Display> {
             if d.kind != DisplayKind::Bochs {
                 return if d.width == width && d.height == height { Some(*d) } else { None };
             }
-            let bytes = width as usize * height as usize * 4 * 2;
-            if !(320..=2560).contains(&width) || !(200..=1600).contains(&height) || width % 8 != 0 || bytes > d.mapped {
+            if !(320..=2560).contains(&width) || !(200..=1600).contains(&height) || width % 8 != 0 {
+                return None;
+            }
+            if width as usize * height as usize * 4 * 2 > d.mapped {
                 return None;
             }
             dispi_write(4, 0);
