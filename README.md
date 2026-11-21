@@ -99,6 +99,8 @@ From the Rust workspace, run `cargo run --release --bin pcpos-vectors -- vectors
 
 The [release script](build/release.sh) builds and checks the editions and verifiers, including the host programs for `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`. It expects the edition's `ACR_1.0_Implementation.zip` extracted at `src/method`. The [method builders](build/method/) and [evidence file](build/evidence.json) supply release inputs. The [documentation builder](build/build_os_docs.py) produces reading copies and requirements data. The [reconciliation record](RECONCILIATION.md) identifies which source and packaged binary were compared.
 
+The [long-term native 64-bit boot plan](os-docs/Native_64_bit_boot.md) covers the remaining loader and high-memory work.
+
 ## Rights
 
 Source supplied by the rights holder, separate from the distributed editions. Proprietary. All rights reserved. Copyright © 2026 Kirtus Justus.
