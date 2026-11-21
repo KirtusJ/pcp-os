@@ -1362,8 +1362,11 @@ pub fn probe_execute_at(frame: usize) -> Probe {
     probe(|| unsafe { probe_exec(frame as *const u8) })
 }
 
+/// One register of the machine's clock. The index is written with its top bit clear, as is usual: that
+/// bit masks the non-maskable interrupt, and this kernel leaves it able to arrive (it has a handler for it)
+/// instead of switching it off for good as a side effect of reading the time.
 fn cmos(reg: u8) -> u8 {
-    outb(0x70, reg | 0x80);
+    outb(0x70, reg & 0x7F);
     inb(0x71)
 }
 
