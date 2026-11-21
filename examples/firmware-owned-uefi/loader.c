@@ -47,6 +47,58 @@ static int tcg_fixture(void) {
     return b == 0x54474354 && c == 0x43544743 && d == 0x47435447; /* TCGTCGTCGTCG */
 }
 
+/* Allocation failed while firmware still owns the console. Stay in this image
+ * until the person confirms power-off or uses the machine's power button. */
+static EFI_STATUS refusal_message(SIMPLE_TEXT_OUTPUT_INTERFACE *out, CHAR16 *action) {
+    uefi_call_wrapper(out->ClearScreen, 1, out);
+    EFI_STATUS s = uefi_call_wrapper(out->OutputString, 2, out,
+        L"PCP OS could not start.\r\nFirmware could not reserve the memory needed by the kernel.\r\n"
+        L"You can switch off the computer with its power button.\r\n");
+    if (EFI_ERROR(s) || !action) return s;
+    return uefi_call_wrapper(out->OutputString, 2, out, action);
+}
+
+static void allocation_refusal(EFI_SYSTEM_TABLE *system) __attribute__((noreturn));
+static void allocation_refusal(EFI_SYSTEM_TABLE *system) {
+    EFI_BOOT_SERVICES *bs = system->BootServices;
+    SIMPLE_TEXT_OUTPUT_INTERFACE *out = system->ConOut;
+    SIMPLE_INPUT_INTERFACE *in = system->ConIn;
+    EFI_STATUS watchdog = uefi_call_wrapper(bs->SetWatchdogTimer, 4, 0, 0, 0, NULL);
+    value("refusal_watchdog_status", watchdog);
+    if (!out) halt();
+    BOOLEAN confirm = FALSE;
+    if (!EFI_ERROR(watchdog) && in && in->WaitForKey &&
+        !EFI_ERROR(uefi_call_wrapper(in->Reset, 2, in, FALSE))) {
+        BOOLEAN redraw = TRUE;
+        for (;;) {
+            if (redraw) {
+                if (EFI_ERROR(refusal_message(out, confirm
+                        ? L"Switch off? Enter switches off. Esc cancels.\r\n"
+                        : L"Press F10 to request power off.\r\n"))) break;
+                /* Discard input queued before the question was visible. */
+                if (confirm && EFI_ERROR(uefi_call_wrapper(in->Reset, 2, in, FALSE))) break;
+                redraw = FALSE;
+            }
+            UINTN index;
+            EFI_INPUT_KEY key;
+            if (EFI_ERROR(uefi_call_wrapper(bs->WaitForEvent, 3, 1, &in->WaitForKey, &index))) break;
+            EFI_STATUS s = uefi_call_wrapper(in->ReadKeyStroke, 2, in, &key);
+            if (s == EFI_NOT_READY) continue;
+            if (EFI_ERROR(s)) break;
+            if ((!confirm && key.ScanCode == SCAN_F10) || (confirm && key.ScanCode == SCAN_ESC)) {
+                confirm = !confirm;
+                redraw = TRUE;
+            } else if (confirm && key.ScanCode == 0 && key.UnicodeChar == CHAR_CARRIAGE_RETURN) {
+                word("refusal-power-confirmed\n");
+                uefi_call_wrapper(system->RuntimeServices->ResetSystem, 4, EfiResetShutdown, EFI_SUCCESS, 0, NULL);
+                break;
+            }
+        }
+    }
+    refusal_message(out, NULL);
+    halt();
+}
+
 static int matches(UINTN start, const UINT8 *expected, UINTN length) {
     const volatile UINT8 *actual = (const volatile UINT8 *)start;
     for (UINTN i = 0; i < length; ++i)
@@ -189,8 +241,12 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     value("allocation",s);
     if (EFI_ERROR(s) || base!=IMAGE_BASE || mode=='X') {
         word("handoff-refused\n");
+#ifdef PCP_USB_VM
+        allocation_refusal(system);
+#else
         uefi_call_wrapper(system->RuntimeServices->ResetSystem,4,EfiResetShutdown,EFI_SUCCESS,0,NULL);
         return EFI_ABORTED;
+#endif
     }
     s=read_map(bs,&key,&stride,&count);
     if (EFI_ERROR(s) || !translate(stride,count,NULL,0)) return EFI_UNSUPPORTED;
