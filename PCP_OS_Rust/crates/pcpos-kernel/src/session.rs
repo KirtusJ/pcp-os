@@ -595,7 +595,12 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
                     at(2, rows - 1, &cut(&count, across), SOFT, GROUND);
                 }
             }
-            if !notes.is_empty() { at(2, 4, &cut(&notes.join(" | "), across), SOFT, GROUND); }
+            // A place or a part count of more digits can make the short form too long as well; then the word
+            // 'Place' gives way, and after it the word 'name', before either arrow or any number does.
+            let mut line = notes.join(" | ");
+            if line.chars().count() > across && narrow { line = line.replacen("Place ", "", 1); }
+            if line.chars().count() > across && narrow { line = line.replacen("name ", "", 1); }
+            if !notes.is_empty() { at(2, 4, &cut(&line, across), SOFT, GROUND); }
             let mut row = 5;
             for i in first..first + list_rows {
                 let ground = if i == place { ui::PANEL } else { GROUND };
