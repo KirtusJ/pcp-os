@@ -178,7 +178,9 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     say!("desktop: {}x{} at {}x UI scale", display.width, display.height, ui::scale());
     // Whether the desktop is drawn in full, or as the plain screens of a small display.
     let graphic = display.width >= 1280 && display.height >= 720 && ui::scale() == 1;
-    let room = foot_room(display.width);
+    // How many places the desktop has for the way to all the programs and what is pinned. Every place
+    // can be reached and is drawn; a pin for which there is no place is refused, and said to be.
+    let room = if graphic { foot_room(display.width) } else { (ui::grid().1.saturating_sub(10)).max(2) as usize };
     arch::interrupts_on();
     dev::keys_forget();
     loop {
@@ -240,7 +242,8 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
             }
             (Surface::Launcher, (0x19, false)) if ctrl && !programs.is_empty() => match shortcuts.iter().position(|p| *p == chosen) {
                 Some(at) => { shortcuts.remove(at); }
-                None => shortcuts.push(chosen),
+                None if shortcuts.len() + 1 < room => shortcuts.push(chosen),
+                None => message = format!("Not pinned: the desktop has room for {} pinned program(s) on this display. Take one out first.", room - 1),
             },
             (Surface::Launcher, (0x20, false)) if ctrl || letters => surface = Surface::Details,
             (Surface::Details, (0x20, false)) => surface = Surface::Launcher,
