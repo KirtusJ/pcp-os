@@ -122,7 +122,13 @@ pub fn serial_put(byte: u8) {
     // Bounded: a port that never becomes ready costs the rest of the report, not the machine. It is
     // not written to, and not waited for, again.
     for _ in 0..1_000_000u32 {
-        if inb(COM1 + 5) & 0x20 != 0 {
+        let status = inb(COM1 + 5);
+        // A status of all ones is no port, here as at the start: a port that was there and has gone
+        // is not written to (B3).
+        if status == 0xFF {
+            break;
+        }
+        if status & 0x20 != 0 {
             outb(COM1, byte);
             return;
         }
