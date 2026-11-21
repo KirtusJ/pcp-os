@@ -328,40 +328,93 @@ fn controller_read() -> Option<u8> {
     None
 }
 
-/// Prepare the keyboard controller and let the keyboard interrupt. Returns whether a controller answered.
-pub fn keyboard_init() -> bool {
+/// What became of preparing the keyboard.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum KeyboardStart {
+    /// The controller took every command and the keyboard acknowledged: keys will arrive.
+    Ready,
+    /// The status port read as nothing there.
+    Absent,
+    /// A controller is there but did not take a command, or did not give its configuration, in time.
+    ControllerBusy,
+    /// The controller is set up but the keyboard did not acknowledge being told to send keys.
+    NoAcknowledgement,
+}
+
+/// One command to the controller, sent only once it is ready to take it.
+fn controller_command(command: u8) -> bool {
+    controller_wait_write() && { out8(0x64, command); true }
+}
+
+/// Prepare the keyboard controller and let the keyboard interrupt.
+///
+/// Every byte is written only after the controller has shown that it can take one; a wait that runs out
+/// ends the attempt, and nothing further is written except the one command that turns the keyboard's
+/// port back on, if the controller will take it, so that a machine is not left with a keyboard this
+/// kernel switched off. The keyboard's interrupt is let through only after the keyboard has
+/// acknowledged (0xFA) being told to send keys; a keyboard that asks for the byte again (0xFE) is
+/// asked twice more and no oftener (A3 and B3 found that the first form of this wrote after a wait had
+/// run out and let the interrupt through whatever the keyboard answered).
+pub fn keyboard_init() -> KeyboardStart {
     // A machine with no controller reads all ones from its status port.
     if in8(0x64) == 0xFF {
-        return false;
+        return KeyboardStart::Absent;
     }
-    controller_wait_write();
-    out8(0x64, 0xAD); // first port off while it is set up
-    controller_wait_write();
-    out8(0x64, 0xA7); // second port off: there is no driver for a mouse
-    for _ in 0..64 {
-        if in8(0x64) & 1 == 0 {
-            break;
+    if !controller_command(0xAD) { // first port off while it is set up
+        return KeyboardStart::ControllerBusy;
+    }
+    let set_up = || -> bool {
+        if !controller_command(0xA7) { // second port off: there is no driver for a mouse
+            return false;
         }
-        in8(0x60);
-    }
-    controller_wait_write();
-    out8(0x64, 0x20);
-    let config = match controller_read() {
-        Some(c) => c,
-        None => return false,
+        for _ in 0..64 {
+            if in8(0x64) & 1 == 0 {
+                break;
+            }
+            in8(0x60);
+        }
+        if !controller_command(0x20) {
+            return false;
+        }
+        let config = match controller_read() {
+            Some(c) => c,
+            None => return false,
+        };
+        if !controller_command(0x60) || !controller_wait_write() {
+            return false;
+        }
+        // Interrupt for the keyboard, translation to the first scan code set, no interrupt for the second port, keyboard clock on.
+        out8(0x60, (config | 0x01 | 0x40) & !0x02 & !0x10);
+        true
     };
-    controller_wait_write();
-    out8(0x64, 0x60);
-    controller_wait_write();
-    out8(0x60, (config | 0x01 | 0x40) & !0x02 & !0x10); // interrupt for the keyboard, translation to the first scan code set, no interrupt for the second port, keyboard clock on
-    controller_wait_write();
-    out8(0x64, 0xAE);
-    controller_wait_write();
-    out8(0x60, 0xF4); // the keyboard itself: begin sending keys
-    let _ = controller_read(); // its acknowledgement
+    let configured = set_up();
+    // The keyboard's port back on, whether or not the rest was done.
+    let enabled = controller_command(0xAE);
+    if !configured || !enabled {
+        return KeyboardStart::ControllerBusy;
+    }
+    // The keyboard itself: begin sending keys. Its answer is read here, with its interrupt still masked.
+    let mut acknowledged = false;
+    for _ in 0..3 {
+        if !controller_wait_write() {
+            return KeyboardStart::ControllerBusy;
+        }
+        out8(0x60, 0xF4);
+        match controller_read() {
+            Some(0xFA) => {
+                acknowledged = true;
+                break;
+            }
+            Some(0xFE) => continue,
+            _ => break,
+        }
+    }
+    if !acknowledged {
+        return KeyboardStart::NoAcknowledgement;
+    }
     arch::without_interrupts(|| KEYBOARD.with(|k| k.present = true));
     arch::interrupt_line_on(1);
-    true
+    KeyboardStart::Ready
 }
 
 fn keyboard_byte(k: &mut Keyboard, byte: u8) {
@@ -484,12 +537,14 @@ struct Script {
     pacing: KeyPacing,
     /// A key reached the queue but the idle reader was still waiting on the next timer interrupt.
     late_wake: bool,
+    /// The controller did not become ready for a byte's parameter: the byte was not sent and the script was ended.
+    stalled: bool,
     bytes: [u8; 8],
     len: usize,
     next: usize,
 }
 
-static SCRIPT: arch::Single<Script> = arch::Single::new(Script { at: 0, pacing: KeyPacing::Timed, late_wake: false, bytes: [0; 8], len: 0, next: 0 });
+static SCRIPT: arch::Single<Script> = arch::Single::new(Script { at: 0, pacing: KeyPacing::Timed, late_wake: false, stalled: false, bytes: [0; 8], len: 0, next: 0 });
 
 /// For the kernel's self-tests, which have nobody at the keyboard: from timer tick `at`, hand the controller one
 /// of these scan codes (at most eight) per eligible tick, with its command "put this byte in the output buffer as if the
@@ -499,7 +554,7 @@ pub fn keyboard_script(at: u64, bytes: &[u8], pacing: KeyPacing) {
     arch::without_interrupts(|| SCRIPT.with(|s| {
         let n = bytes.len().min(s.bytes.len());
         s.bytes[..n].copy_from_slice(&bytes[..n]);
-        *s = Script { at, pacing, late_wake: false, bytes: s.bytes, len: n, next: 0 };
+        *s = Script { at, pacing, late_wake: false, stalled: false, bytes: s.bytes, len: n, next: 0 };
     }))
 }
 
@@ -508,7 +563,7 @@ pub fn keyboard_script(at: u64, bytes: &[u8], pacing: KeyPacing) {
 pub fn keyboard_script_finish() -> bool {
     arch::without_interrupts(|| SCRIPT.with(|s| {
         s.pacing = KeyPacing::Timed;
-        !s.late_wake
+        !s.late_wake && !s.stalled
     }))
 }
 
@@ -539,7 +594,13 @@ fn script_tick(ticks: u64) {
                 }
             }
             out8(0x64, 0xD2);
-            controller_wait_write();
+            // A byte is counted as sent only if it was sent (B3): if the controller does not become ready
+            // for it, nothing is written, the script ends there, and the test that waits on it fails.
+            if !controller_wait_write() {
+                s.stalled = true;
+                s.len = s.next;
+                return;
+            }
             out8(0x60, s.bytes[s.next]);
             s.next += 1;
         }

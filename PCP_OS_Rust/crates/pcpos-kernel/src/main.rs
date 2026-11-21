@@ -780,8 +780,14 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
         Some(d) => say!("display: {:?}, {}x{}, {} page(s), {} KiB of its memory mapped at {:#x}", d.kind, d.width, d.height, d.pages, d.mapped / 1024, d.memory),
         None => say!("display: none this kernel can drive"),
     }
-    let keyboard = dev::keyboard_init();
-    say!("keyboard: {}", if keyboard { "a PS/2 controller answered" } else { "no controller" });
+    let keyboard_start = dev::keyboard_init();
+    let keyboard = keyboard_start == dev::KeyboardStart::Ready;
+    say!("keyboard: {}", match keyboard_start {
+        dev::KeyboardStart::Ready => "a PS/2 controller answered",
+        dev::KeyboardStart::Absent => "no controller",
+        dev::KeyboardStart::ControllerBusy => "a controller is there but did not take its set-up in time; it is not used",
+        dev::KeyboardStart::NoAcknowledgement => "the controller is set up but the keyboard did not acknowledge; it is not used",
+    });
     let sound = dev::sound_init(&bus);
     say!("sound: {}", if sound { "an AC'97 device, 48000 pairs of 16-bit samples a second" } else { "no device this kernel drives" });
     // The FM synthesiser is looked for only under an emulator. Looking means writing to its usual ports
