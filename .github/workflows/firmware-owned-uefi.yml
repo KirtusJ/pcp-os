@@ -1,0 +1,46 @@
+name: Firmware-owned full-heap VM experiment
+on:
+  pull_request:
+    paths:
+      - 'examples/firmware-owned-uefi/**'
+      - '.github/workflows/firmware-owned-uefi.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  firmware:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 14
+    env:
+      RUSTUP_TOOLCHAIN: 1.100.0
+      OMP_THREAD_LIMIT: '1'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: KirtusJ/pcp
+          ref: 78e780c88dc842bbf1d949cad879fd3be99c4133
+          path: distribution
+          persist-credentials: false
+      - name: Install emulator, firmware and build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gnu-efi lld ovmf qemu-system-x86 xorriso mtools dosfstools tesseract-ocr
+          rustup toolchain install 1.100.0 --profile minimal --component rust-src
+      - name: Build the full-heap candidate in an isolated checkout
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/candidate" HEAD
+          git -C "$RUNNER_TEMP/candidate" apply "$GITHUB_WORKSPACE/examples/firmware-owned-uefi/load-base.patch"
+          PCPOS_KERNEL_FEATURES= sh "$RUNNER_TEMP/candidate/PCP_OS_Rust/crates/pcpos-kernel/run.sh" build
+      - name: Check refusal, allocation, exit, keyboard, task register and shutdown
+        run: |
+          python3 examples/firmware-owned-uefi/trial.py distribution "$RUNNER_TEMP/candidate/PCP_OS_Rust/crates/pcpos-kernel" "$RUNNER_TEMP/observations"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: full-heap-ownership
+          path: ${{ runner.temp }}/observations
+          if-no-files-found: warn
+          retention-days: 30

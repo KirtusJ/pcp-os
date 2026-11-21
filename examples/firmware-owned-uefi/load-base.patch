@@ -1,0 +1,47 @@
+--- a/PCP_OS_Rust/crates/pcpos-kernel/linker.ld
++++ b/PCP_OS_Rust/crates/pcpos-kernel/linker.ld
+@@ -1,9 +1,9 @@
+-/* The kernel is loaded at 1 MiB and runs there. Sections are page-aligned so that each can be mapped with
++/* The kernel is loaded at 32 MiB and runs there. Sections are page-aligned so that each can be mapped with
+    exactly the permissions it needs: code is never writable, data is never executable. */
+ ENTRY(_start)
+ SECTIONS
+ {
+-  . = 1M;
++  . = 32M;
+   .boot : { KEEP(*(.multiboot)) *(.boot.text) *(.boot.data) }
+   .text : ALIGN(4K) { __text_start = .; *(.text .text.*) . = ALIGN(4K); __text_end = .; }
+   .rodata : ALIGN(4K) { __rodata_start = .; *(.rodata .rodata.*) . = ALIGN(4K); __rodata_end = .; }
+--- a/PCP_OS_Rust/crates/pcpos-kernel/src/arch.rs
++++ b/PCP_OS_Rust/crates/pcpos-kernel/src/arch.rs
+@@ -391,8 +391,8 @@
+ unsafe impl Sync for Tables {}
+ static TABLES: Tables = Tables(core::cell::UnsafeCell::new([[0; 512]; TABLE_COUNT]));
+ 
+-/// Where the image begins: the loader places it at one mebibyte (linker.ld).
+-const IMAGE_START: usize = 1 << 20;
++/// Where the image begins: the firmware experiment links it at 32 MiB (linker.ld).
++pub const IMAGE_START: usize = 32 << 20;
+ 
+ /// The memory the kernel hands out as frames: [start, end), both multiples of 2 MiB. Zero until `protect`.
+ static POOL_START: AtomicUsize = AtomicUsize::new(0);
+@@ -435,7 +435,7 @@
+         frame_map::pool(map, top)
+     } else {
+         // A loader which supplied only the legacy contiguous size retains the previous 2 MiB margin.
+-        let ram_end = boot.memory.map(|(_, upper)| (IMAGE_START + upper as usize * 1024).saturating_sub(MIB2)).unwrap_or(0);
++        let ram_end = boot.memory.map(|(_, upper)| ((1 << 20) + upper as usize * 1024).saturating_sub(MIB2)).unwrap_or(0);
+         let first = top.div_ceil(MIB2) * MIB2;
+         let last = ram_end.min(LIMIT) / MIB2 * MIB2;
+         if first < last { (first, last) } else { (0, 0) }
+--- a/PCP_OS_Rust/crates/pcpos-kernel/src/main.rs
++++ b/PCP_OS_Rust/crates/pcpos-kernel/src/main.rs
+@@ -724,7 +724,7 @@
+         check("the running image measures as the value the loader named", equal, &mut failed);
+     }
+     failed += self_test();
+-    let image_pages = ((end - ts) >> 12) as u32 + ((ts - (1 << 20)) >> 12) as u32 - arch::guard_pages().len() as u32;
++    let image_pages = ((end - arch::IMAGE_START) >> 12) as u32 - arch::guard_pages().len() as u32;
+     let module_pages: u32 = boot.modules.iter().filter(|m| m.usable).map(|m| (((m.end + 4095) >> 12) - (m.start >> 12)) as u32).sum();
+     for (name, ok) in [("no memory is both writable and executable", map.writable_and_executable == 0), ("code is executable and not writable", map.code_executable_not_writable),
+                        ("read-only data is neither writable nor executable", map.read_only_data_neither), ("data is writable and not executable", map.data_writable_not_executable),
