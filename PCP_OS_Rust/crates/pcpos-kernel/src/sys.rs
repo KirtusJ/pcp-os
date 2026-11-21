@@ -52,7 +52,7 @@ pub enum Outcome {
 }
 
 /// What an open file is.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub enum Node {
     #[cfg(feature = "guest-ethernet")]
     Ethernet,
@@ -70,8 +70,8 @@ pub enum Node {
     Directory,
     /// One of the loader's files: its index in `World::files`.
     File(usize),
-    /// A file a program wrote: its name in `World::store`.
-    Stored(String),
+    /// An open writable-namespace file, even if its name has changed or been removed.
+    Stored(crate::regular::File),
 }
 
 #[derive(Clone, Debug)]
@@ -97,10 +97,9 @@ pub struct Linux {
     pub extra_pages: usize,
 }
 
-/// The most the `brk` heap may grow to, the most one mapping may be, and the most the store may hold.
+/// Limits for the `brk` heap and for a single mapping.
 const HEAP_LIMIT: usize = 1 << 30;
 const MAP_LIMIT: usize = 1 << 30;
-const STORE_LIMIT: usize = 16 << 20;
 const MAX_FILES: usize = 32;
 /// Nanoseconds in one timer tick: 1193 / 1193182 of a second.
 const TICK_NS: u64 = 999_847;
@@ -155,9 +154,9 @@ fn word(p: &Process, addr: u64) -> Option<u64> {
 }
 
 /// The 144 bytes Linux calls `struct stat`, for a file of the kind and size given.
-fn stat_bytes(mode: u32, size: usize) -> [u8; 144] {
+fn stat_bytes(mode: u32, size: usize, links: u64) -> [u8; 144] {
     let mut s = [0u8; 144];
-    s[16..24].copy_from_slice(&1u64.to_le_bytes()); // one name
+    s[16..24].copy_from_slice(&links.to_le_bytes());
     s[24..28].copy_from_slice(&mode.to_le_bytes());
     s[48..56].copy_from_slice(&(size as u64).to_le_bytes());
     s[56..64].copy_from_slice(&4096u64.to_le_bytes());
@@ -168,13 +167,13 @@ fn stat_bytes(mode: u32, size: usize) -> [u8; 144] {
 fn node_stat(world: &World, node: &Node) -> Option<[u8; 144]> {
     Some(match node {
         #[cfg(feature = "guest-ethernet")]
-        Node::Ethernet => stat_bytes(0o020660, 0),
-        Node::Console | Node::Display | Node::Keys | Node::Sound | Node::Music | Node::Null => stat_bytes(0o020666, 0),
+        Node::Ethernet => stat_bytes(0o020660, 0, 1),
+        Node::Console | Node::Display | Node::Keys | Node::Sound | Node::Music | Node::Null => stat_bytes(0o020666, 0, 1),
         #[cfg(feature = "game-link")]
-        Node::GameLink => stat_bytes(0o020666, 0),
-        Node::Directory => stat_bytes(0o040755, 0),
-        Node::File(i) => stat_bytes(0o100444, world.files.get(*i)?.1.len()),
-        Node::Stored(n) => stat_bytes(0o100644, world.store.iter().find(|f| &f.0 == n)?.1.len()),
+        Node::GameLink => stat_bytes(0o020666, 0, 1),
+        Node::Directory => stat_bytes(0o040755, 0, 1),
+        Node::File(i) => stat_bytes(0o100444, world.files.get(*i)?.1.len(), 1),
+        Node::Stored(f) => stat_bytes(0o100644, f.len(), world.store.linked(f) as u64),
     })
 }
 
@@ -195,8 +194,8 @@ fn lookup(p: &Process, caps: &CapSpace, world: &World, path: &str) -> Result<Nod
         "dev/audio" => need(Object::Sound, Rights::APPEND, Node::Sound),
         "dev/fm" if dev::fm_state().0 => need(Object::Sound, Rights::APPEND, Node::Music),
         _ => {
-            if world.store.iter().any(|f| f.0 == name) {
-                return need(Object::Store, Rights::READ, Node::Stored(name));
+            if let Some(file) = world.store.named(&name) {
+                return need(Object::Store, Rights::READ, Node::Stored(file.clone()));
             }
             match world.files.iter().position(|f| f.0 == name) {
                 Some(i) => need(Object::Files, Rights::READ, Node::File(i)),
@@ -212,12 +211,18 @@ fn open(p: &mut Process, caps: &CapSpace, world: &mut World, path: u64, flags: u
         Err(e) => return e,
     };
     let (writing, create, truncate) = (flags & 3 != 0, flags & 0x40 != 0, flags & 0x200 != 0);
-    let (node, is_new) = match lookup(p, caps, world, &path) {
+    enum Target { Existing(Node), Create(String) }
+    let target = match lookup(p, caps, world, &path) {
         Ok(_) if create && flags & 0x80 != 0 => return err(EEXIST), // O_CREAT | O_EXCL
         #[cfg(feature = "guest-ethernet")]
         Ok(Node::Ethernet) if flags & 3 != 2 => return err(EINVAL), // raw packet sessions require O_RDWR
         Ok(Node::File(_)) if writing => return err(EACCES), // the loader's files are read and never written
-        Ok(n) => (n, false),
+        Ok(n) => {
+            if writing && matches!(n, Node::Stored(_)) && !p.holds(caps, Object::Store, Rights::APPEND) {
+                return err(EACCES);
+            }
+            Target::Existing(n)
+        }
         Err(e) if e == err(ENOENT) && create => {
             let name = match name_of(&path) {
                 Some(n) if !n.is_empty() && !n.starts_with("dev/") && n.len() <= 200 => n,
@@ -229,13 +234,10 @@ fn open(p: &mut Process, caps: &CapSpace, world: &mut World, path: u64, flags: u
             if world.store.len() >= 256 {
                 return err(ENOSPC);
             }
-            (Node::Stored(name), true)
+            Target::Create(name)
         }
         Err(e) => return e,
     };
-    if writing && matches!(node, Node::Stored(_)) && !p.holds(caps, Object::Store, Rights::APPEND) {
-        return err(EACCES);
-    }
     let linux = match p.linux.as_mut() {
         Some(l) => l,
         None => return err(ENOSYS),
@@ -245,15 +247,17 @@ fn open(p: &mut Process, caps: &CapSpace, world: &mut World, path: u64, flags: u
         return err(EMFILE);
     }
     // All refusal paths precede the creation or truncation of a stored file.
-    if let Node::Stored(name) = &node {
-        if is_new {
-            world.store.push((name.clone(), Vec::new()));
-        } else if writing && truncate {
-            if let Some(f) = world.store.iter_mut().find(|f| &f.0 == name) {
-                f.1 = Vec::new();
+    let node = match target {
+        Target::Existing(node) => {
+            if let Node::Stored(f) = &node {
+                if writing && truncate {
+                    f.truncate();
+                }
             }
+            node
         }
-    }
+        Target::Create(name) => Node::Stored(world.store.insert(name, Vec::new())),
+    };
     let entry = Some(Open { node, position: 0, nonblocking: flags & 0x800 != 0, writable: writing, append: flags & 0x400 != 0 });
     if fd == linux.files.len() {
         linux.files.push(entry);
@@ -279,6 +283,7 @@ fn read(p: &mut Process, world: &World, fd: u64, addr: u64, len: u64) -> Outcome
         None => return Outcome::Return(err(EBADF)),
     };
     let len = len.min(1 << 30) as usize;
+    let stored;
     let bytes: &[u8] = match &f.node {
         #[cfg(feature = "guest-ethernet")]
         Node::Ethernet => {
@@ -328,10 +333,10 @@ fn read(p: &mut Process, world: &World, fd: u64, addr: u64, len: u64) -> Outcome
             Some(file) => file.1,
             None => return Outcome::Return(err(EBADF)),
         },
-        Node::Stored(name) => match world.store.iter().find(|s| &s.0 == name) {
-            Some(file) => &file.1,
-            None => return Outcome::Return(0), // removed while open: nothing more to read
-        },
+        Node::Stored(file) => {
+            stored = file.bytes();
+            &stored
+        }
     };
     let from = f.position.min(bytes.len());
     let n = len.min(bytes.len() - from);
@@ -342,7 +347,7 @@ fn read(p: &mut Process, world: &World, fd: u64, addr: u64, len: u64) -> Outcome
     Outcome::Return(n as u64)
 }
 
-fn write(p: &mut Process, caps: &CapSpace, world: &mut World, fd: u64, addr: u64, len: u64) -> u64 {
+fn write(p: &mut Process, caps: &CapSpace, fd: u64, addr: u64, len: u64) -> u64 {
     let f = match file(p, fd) {
         Some(f) => f,
         None => return err(EBADF),
@@ -383,7 +388,7 @@ fn write(p: &mut Process, caps: &CapSpace, world: &mut World, fd: u64, addr: u64
             }
             len as u64
         }
-        Node::Stored(name) => {
+        Node::Stored(file) => {
             if !f.writable || !p.holds(caps, Object::Store, Rights::APPEND) {
                 return err(EBADF);
             }
@@ -391,20 +396,9 @@ fn write(p: &mut Process, caps: &CapSpace, world: &mut World, fd: u64, addr: u64
                 Some(b) => b,
                 None => return err(EFAULT),
             };
-            let total: usize = world.store.iter().map(|s| s.1.len()).sum();
-            let file = match world.store.iter_mut().find(|s| &s.0 == name) {
-                Some(file) => file,
-                None => return err(EBADF),
-            };
-            let at = if f.append { file.1.len() } else { f.position };
-            let end = at + bytes.len();
-            if end > file.1.len() && total + (end - file.1.len()) > STORE_LIMIT {
-                return err(ENOSPC);
-            }
-            if end > file.1.len() {
-                file.1.resize(end, 0);
-            }
-            file.1[at..end].copy_from_slice(&bytes);
+            if bytes.is_empty() { return 0; }
+            let at = if f.append { file.len() } else { f.position };
+            let Some(end) = file.write(at, &bytes) else { return err(ENOSPC) };
             set_position(p, fd, end);
             bytes.len() as u64
         }
@@ -453,7 +447,7 @@ fn vector(p: &mut Process, caps: &CapSpace, world: &mut World, fd: u64, iov: u64
             continue;
         }
         let done = if writing {
-            write(p, caps, world, fd, base, len)
+            write(p, caps, fd, base, len)
         } else {
             match read(p, world, fd, base, len) {
                 Outcome::Return(v) => v,
@@ -478,7 +472,7 @@ fn seek(p: &mut Process, world: &World, fd: u64, offset: u64, whence: u64) -> u6
     };
     let size = match &f.node {
         Node::File(i) => world.files.get(*i).map(|x| x.1.len()).unwrap_or(0),
-        Node::Stored(n) => world.store.iter().find(|s| &s.0 == n).map(|s| s.1.len()).unwrap_or(0),
+        Node::Stored(file) => file.len(),
         _ => return err(ESPIPE),
     };
     let base = match whence {
@@ -726,7 +720,7 @@ pub fn call(t: &mut Table, i: usize, frame: &Frame) -> Outcome {
     let ret = Outcome::Return;
     match number {
         0 => read(p, world, a[0], a[1], a[2]),
-        1 => ret(write(p, caps, world, a[0], a[1], a[2])),
+        1 => ret(write(p, caps, a[0], a[1], a[2])),
         2 => ret(open(p, caps, world, a[0], a[1])),
         257 => ret(open(p, caps, world, a[1], a[2])), // openat: every path is taken from the one directory
         3 => ret(match p.linux.as_mut().and_then(|l| l.files.get_mut(a[0] as usize)) {
@@ -846,17 +840,7 @@ pub fn call(t: &mut Table, i: usize, frame: &Frame) -> Outcome {
             if !p.holds(caps, Object::Store, Rights::APPEND) {
                 return ret(err(EACCES));
             }
-            if !world.store.iter().any(|f| f.0 == from) {
-                return ret(err(ENOENT));
-            }
-            if from == to {
-                return ret(0);
-            }
-            world.store.retain(|f| f.0 != to);
-            if let Some(f) = world.store.iter_mut().find(|f| f.0 == from) {
-                f.0 = to;
-            }
-            ret(0)
+            ret(if world.store.rename(&from, to) { 0 } else { err(ENOENT) })
         }
         83 | 258 => ret(if p.holds(caps, Object::Store, Rights::APPEND) { 0 } else { err(EACCES) }), // mkdir: names may contain slashes; there is nothing to make
         87 | 263 => {
@@ -868,9 +852,7 @@ pub fn call(t: &mut Table, i: usize, frame: &Frame) -> Outcome {
             if !p.holds(caps, Object::Store, Rights::APPEND) {
                 return ret(err(EACCES));
             }
-            let before = world.store.len();
-            world.store.retain(|f| f.0 != name);
-            ret(if world.store.len() < before { 0 } else { err(ENOENT) })
+            ret(if world.store.unlink(&name) { 0 } else { err(ENOENT) })
         }
         96 => {
             let ns = clock_ns(world, 0);

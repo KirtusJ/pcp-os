@@ -28,6 +28,10 @@ jobs:
           sudo apt-get -qq update
           sudo apt-get -qq install -y --no-install-recommends qemu-system-x86 seabios clang binutils lld musl-tools
           rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --no-self-update -c rust-src -t x86_64-unknown-none
+      - name: Check open file lifetimes and the shared byte limit
+        run: |
+          rustc --edition=2021 --test PCP_OS_Rust/crates/pcpos-kernel/src/regular.rs -o "$RUNNER_TEMP/test-regular"
+          "$RUNNER_TEMP/test-regular"
       - name: Build the opt-in kernel and run isolated cold boots
         run: |
           kernel=PCP_OS_Rust/crates/pcpos-kernel
@@ -47,7 +51,7 @@ jobs:
           test "$status" = 33
           grep -Fq "probe: 0 failure(s)" file-api.serial
           grep -Fq "probe.elf ended DONE: exit 0" file-api.serial
-          test "$(grep -c '^ok  ' file-api.serial)" = 26
+          test "$(grep -c '^ok  ' file-api.serial)" = 32
       - name: Save a queue entry from the keyboard and reopen it after power-off
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/queue-target

@@ -100,7 +100,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
         }
     }
     let (y, mo, d, h, mi, s) = arch::clock();
-    let mut world = World { files: files.iter().map(|f| (f.0.clone(), f.1)).collect(), store: Vec::new(),
+    let mut world = World { files: files.iter().map(|f| (f.0.clone(), f.1)).collect(), store: Default::default(),
         #[cfg(feature = "vm-store")] volume: None,
                             epoch_at_start: epoch(y, mo, d, h, mi, s).saturating_sub(arch::ticks() / arch::TICKS_PER_SECOND), unanswered: Vec::new() };
     let line = start.boot.command_line.as_str();
@@ -165,13 +165,22 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     // settings (F2) and by no key of the desktop itself: a bar across the whole width (the default, the
     // form most desktops have), or a dock in the middle. `bar=dock` on the loader's command line starts with the dock.
     let mut whole_bar = option(line, "bar") != Some("dock");
+    // The edition whose theme the desktop wears: `edition=personal`, `commercial` or `enterprise` on the
+    // loader's command line. With none named it is Enterprise, the edition this source is published in.
+    if let Some(name) = option(line, "edition") {
+        if !ui::set_edition(name) {
+            say!("edition: '{}' is not an edition; the desktop stays in the {} theme", name, ui::edition().name);
+        }
+    }
     let mut widgets = [false; WIDGETS.len()];
     let display = start.display.unwrap();
     ui::set_scale(if option(line, "ui_scale") == Some("2") && display.width >= 1280 && display.height >= 960 { 2 } else { 1 });
     say!("desktop: {}x{} at {}x UI scale", display.width, display.height, ui::scale());
     // Whether the desktop is drawn in full, or as the plain screens of a small display.
     let graphic = display.width >= 1280 && display.height >= 720 && ui::scale() == 1;
-    let room = foot_room(display.width);
+    // How many places the desktop has for the way to all the programs and what is pinned. Every place
+    // can be reached and is drawn; a pin for which there is no place is refused, and said to be.
+    let room = if graphic { foot_room(display.width) } else { (ui::grid().1.saturating_sub(10)).max(2) as usize };
     arch::interrupts_on();
     dev::keys_forget();
     loop {
@@ -233,7 +242,8 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
             }
             (Surface::Launcher, (0x19, false)) if ctrl && !programs.is_empty() => match shortcuts.iter().position(|p| *p == chosen) {
                 Some(at) => { shortcuts.remove(at); }
-                None => shortcuts.push(chosen),
+                None if shortcuts.len() + 1 < room => shortcuts.push(chosen),
+                None => message = format!("Not pinned: the desktop has room for {} pinned program(s) on this display. Take one out first.", room - 1),
             },
             (Surface::Launcher, (0x20, false)) if ctrl || letters => surface = Surface::Details,
             (Surface::Details, (0x20, false)) => surface = Surface::Launcher,
@@ -256,10 +266,16 @@ enum Surface {
 
 /// The widgets a person can put on the desktop, in the order they are drawn.
 const WIDGETS: [&str; 3] = ["Recent activity", "This machine", "Session"];
-const OUTLINE: u32 = 0x2F8C88;
-const PLATE: u32 = 0x12304A;
+/// The outline of what is chosen and of the emblem's plate: the Core module's accent in this edition.
+fn outline() -> u32 {
+    ui::edition().core_accent
+}
+/// The quieter edge of a plate that is not chosen: the same accent, half way to the plate.
+fn edge() -> u32 {
+    ui::blend(PLATE, ui::edition().core_accent, 110)
+}
+const PLATE: u32 = ui::CORE_PLATE;
 const PLATE_CHOSEN: u32 = 0x1B4A63;
-const PLATE_EDGE: u32 = 0x24405C;
 
 /// What sits in the two lower corners of every desktop surface, small and out of the way: at the left the
 /// one or two keys worth naming here, and at the right whether the kernel verified itself. A kernel that did
@@ -271,7 +287,7 @@ fn corners(start: &Start, w: u32, h: u32, keys: &[(&str, &str)]) {
     let mut x = 30;
     for (key, does) in keys {
         let width = label_width(key, false) + label_width(does, false) + 50;
-        let on = plate(x - 10, row - 6, width, 32, PLATE, PLATE_EDGE, false);
+        let on = plate(x - 10, row - 6, width, 32, PLATE, edge(), false);
         let after = label(x, row, key, TEXT, false, &on);
         label(after + 10, row, does, SOFT, false, &on);
         x += width + 10;
@@ -287,7 +303,7 @@ fn verified_word(start: &Start, w: u32, row: u32) -> u32 {
                          else { (String::from("verified"), GOOD) };
     let width = label_width(&word, false) + 20;
     let at = (w - 20 - width) / 10 * 10;
-    let on = plate(at, row - 6, width, 32, PLATE, if colour == BAD { BAD } else { OUTLINE }, false);
+    let on = plate(at, row - 6, width, 32, PLATE, if colour == BAD { BAD } else { outline() }, false);
     label(at + 10, row, &word, colour, false, &on);
     at
 }
@@ -299,7 +315,7 @@ fn whole_bar(start: &Start, programs: &[Entry], pinned: &[usize], place: usize, 
     use ui::{label, label_width, AMBER, GOOD, SOFT, TEAL, TEXT};
     let y0 = h / 20 * 20 - 60;
     let row = y0 + 20;
-    let on_bar = plate(0, y0, w, 60, PLATE, PLATE_EDGE, false);
+    let on_bar = plate(0, y0, w, 60, PLATE, edge(), false);
     let right = verified_word(start, w, row);
     let keys_width = label_width("F1", false) + label_width("keys", false) + 30;
     let keys_at = right.saturating_sub(keys_width + 20) / 10 * 10;
@@ -309,7 +325,7 @@ fn whole_bar(start: &Start, programs: &[Entry], pinned: &[usize], place: usize, 
     for i in 0..(1 + pinned.len()).min(room) {
         let x = 10 + i as u32 * 190;
         let chosen = i == place;
-        let on_item = plate(x, y0 + 6, 180, 48, if chosen { PLATE_CHOSEN } else { PLATE }, if chosen { OUTLINE } else { PLATE }, chosen);
+        let on_item = plate(x, y0 + 6, 180, 48, if chosen { PLATE_CHOSEN } else { PLATE }, if chosen { outline() } else { PLATE }, chosen);
         if chosen {
             dev::display_fill(x + 50, y0 + 46, 80, 3, AMBER);
         }
@@ -333,11 +349,11 @@ fn dock(programs: &[Entry], pinned: &[usize], place: usize, w: u32, h: u32) {
     let shown = (1 + pinned.len()).min(room);
     let width = shown as u32 * 140 + 20;
     let (x0, y0) = ((w - width) / 20 * 10, h / 20 * 20 - 120);
-    let _ = plate(x0, y0, width, 100, PLATE, PLATE_EDGE, true);
+    let _ = plate(x0, y0, width, 100, PLATE, edge(), true);
     for i in 0..shown {
         let x = x0 + 10 + i as u32 * 140;
         let chosen = i == place;
-        let on_item = plate(x + 5, y0 + 10, 130, 80, if chosen { PLATE_CHOSEN } else { PLATE }, if chosen { OUTLINE } else { PLATE }, chosen);
+        let on_item = plate(x + 5, y0 + 10, 130, 80, if chosen { PLATE_CHOSEN } else { PLATE }, if chosen { outline() } else { PLATE }, chosen);
         if chosen {
             dev::display_fill(x + 25, y0 + 86, 90, 3, AMBER);
         }
@@ -407,13 +423,18 @@ fn plate(x: u32, y: u32, w: u32, h: u32, colour: u32, outline: u32, lit: bool) -
 /// The emblem on its plate where the field's light is, with the product's words beneath.
 fn emblem_plate(field: &ui::Field, h: u32) {
     let over_field = |x: u32, y: u32| field.colour(x, y);
-    let size = h * 28 / 100;
-    let (px, py) = (field.cx - size / 2, field.cy - size / 2);
-    let on_plate = ui::panel(px, py, size, size, &over_field, 0x10283F, 235, OUTLINE, true);
-    let bird = size * 70 / 100;
-    ui::emblem_over(px + (size - bird * 121 / 132) / 2, py + (size - bird) / 2, bird, &on_plate);
-    let motto = "EVIDENCE BEFORE AGREEMENT";
-    ui::label(field.cx - ui::label_width(motto, false) / 2, py + size + 40, motto, ui::SOFT, false, &over_field);
+    let e = ui::edition();
+    // The plate of the default backgrounds: 280 by 302 where the picture is 900 high.
+    let (wide, tall) = (h * 280 / 900, h * 302 / 900);
+    let (px, py) = (field.cx - wide / 2, field.cy - tall / 2);
+    let on_plate = ui::panel(px, py, wide, tall, &over_field, ui::CORE_PLATE, 255, outline(), true);
+    let bird = wide * 70 / 100;
+    ui::emblem_over(px + (wide - bird * 121 / 132) / 2, py + (tall - bird) / 2, bird, &on_plate);
+    // The edition is carried by the field and is also said in words, as on every cover.
+    let words = format!("Parrot Council Protocol | {} Edition", e.name);
+    ui::label(field.cx - ui::label_width(&words, false) / 2, py + tall + 30, &words, e.soft, false, &over_field);
+    let motto = "Evidence before agreement.";
+    ui::label(field.cx - ui::label_width(motto, false) / 2, py + tall + 60, motto, e.soft, false, &over_field);
 }
 
 /// The last programs that ran, newest last, as (time, name, outcome, note), read from the verified register.
@@ -444,7 +465,7 @@ fn recent_tasks(rec: &Record, programs: &[Entry], most: usize) -> Vec<(String, S
 /// what the person has put there: shortcuts to programs, one of them chosen, and widgets. With nothing placed
 /// it is empty. On a display under 1280 by 720 the same things are said as plain lines.
 #[allow(clippy::too_many_arguments)]
-fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize], place: usize, whole: bool, widgets: &[bool; 3], store: &[(String, Vec<u8>)], mounted: bool, run: u32, message: &str) {
+fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize], place: usize, whole: bool, widgets: &[bool; 3], store: &crate::regular::Files, mounted: bool, run: u32, message: &str) {
     use ui::{label, AMBER, BAD, GOOD, SOFT, TEAL, TEXT};
     let safe = start.failed != 0;
     let recent = if widgets[0] { recent_tasks(rec, programs, 3) } else { Vec::new() };
@@ -478,7 +499,7 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
         }
     };
     let (w, h) = (display.width, display.height);
-    let field = ui::Field { width: w, height: h, cx: w * 74 / 100, cy: h * 48 / 100 };
+    let field = ui::Field::of(w, h);
     field.paint();
     let over_field = |x: u32, y: u32| field.colour(x, y);
     let left = w / 200 * 10;
@@ -487,7 +508,7 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
     // Widgets the person placed.
     let wide = 860;
     if widgets[0] {
-        let on_card = plate(left, y, wide, 140, PLATE, PLATE_EDGE, false);
+        let on_card = plate(left, y, wide, 140, PLATE, edge(), false);
         label(left + 20, y + 20, "RECENT ACTIVITY", TEAL, false, &on_card);
         if recent.is_empty() {
             label(left + 20, y + 60, "No program has run in this session.", SOFT, false, &on_card);
@@ -504,7 +525,7 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
     }
     let mut x = left;
     if widgets[1] {
-        let on_machine = plate(x, y, 420, 140, PLATE, PLATE_EDGE, false);
+        let on_machine = plate(x, y, 420, 140, PLATE, edge(), false);
         label(x + 20, y + 20, "THIS MACHINE", TEAL, false, &on_machine);
         label(x + 20, y + 60, &format!("memory {} MiB, {} MiB free", pool * 4 / 1024, free * 4 / 1024), TEXT, false, &on_machine);
         label(x + 20, y + 80, &format!("display {} x {}", w, h), TEXT, false, &on_machine);
@@ -512,7 +533,7 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
         x += 440;
     }
     if widgets[2] {
-        let on_session = plate(x, y, 420, 140, PLATE, PLATE_EDGE, false);
+        let on_session = plate(x, y, 420, 140, PLATE, edge(), false);
         label(x + 20, y + 20, "SESSION", TEAL, false, &on_session);
         let up = arch::ticks() / arch::TICKS_PER_SECOND;
         label(x + 20, y + 60, &format!("up {} min, {} program(s) run, {} file(s)", up / 60, run, store.len()), TEXT, false, &on_session);
@@ -524,7 +545,7 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
     }
     // What the last program left to say is shown once, where the person is looking.
     for (i, line) in message.lines().take(3).enumerate() {
-        label(left, y + i as u32 * 20, line, AMBER, false, &over_field);
+        label(left, y + i as u32 * 20, line, ui::edition().accent, false, &over_field);
     }
 
     emblem_plate(&field, h);
@@ -575,14 +596,14 @@ fn settings_view(whole_bar: &mut bool, widgets: &mut [bool; 3]) {
 }
 
 /// The files programs have written, by name and size. Esc or Enter goes back.
-fn files_view(store: &[(String, Vec<u8>)], mounted: bool) {
+fn files_view(store: &crate::regular::Files, mounted: bool) {
     use ui::{at, GROUND, SOFT, TEXT};
     let (cols, rows) = ui::grid();
     ui::clear(GROUND);
     let total: usize = store.iter().map(|f| f.1.len()).sum();
     at(2, 1, &format!("FILES: {} file(s), {}", store.len(), size_text(total)), ui::TEAL, GROUND);
     at(2, 2, if mounted { "VM files | saved when an app syncs" } else { "Session files | cleared at power-off" }, SOFT, GROUND);
-    if store.is_empty() {
+    if store.len() == 0 {
         at(2, 4, "No program has written a file.", SOFT, GROUND);
     }
     for (n, (name, bytes)) in store.iter().take(rows.saturating_sub(8) as usize).enumerate() {
@@ -608,51 +629,77 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
     };
     let (w, h) = (display.width, display.height);
     let safe = start.failed != 0;
-    let field = ui::Field { width: w, height: h, cx: w * 74 / 100, cy: h * 48 / 100 };
+    let field = ui::Field::of(w, h);
     field.paint();
     let over_field = |x: u32, y: u32| field.colour(x, y);
 
     let left = w / 200 * 10;
     let list_width = (w * 47 / 100).min(1100) / 10 * 10;
-    label(left, 60, "Programs", TEXT, true, &over_field);
-    let on_note = plate(left, 110, list_width, 40, PLATE, PLATE_EDGE, false);
+    label(left, 60, "Programs", ui::edition().text, true, &over_field);
+    let on_note = plate(left, 110, list_width, 40, PLATE, edge(), false);
     label(left + 20, 120, if safe { "SAFE: verification failed. Programs are disabled." } else if programs.is_empty() { "The loader handed over no program." }
                                else { "Choose one to start. Each runs with only what it is granted." }, if safe { BAD } else { SOFT }, false, &on_note);
     let none = option(&start.boot.command_line, "grant") == Some("none");
     let grants = if none { "console only" } else if start.sound { "display, keyboard, sound, loader files, store" } else { "display, keyboard, loader files, store" };
     let foot = h / 20 * 20 - 60;
     let _ = rec;
-    let mut y = 170;
-    let room = ((foot.saturating_sub(y + 120)) / 80).max(1) as usize;
-    let first = (chosen + 1).saturating_sub(room);
-    for (i, p) in programs.iter().enumerate().skip(first).take(room) {
-        let on_row = plate(left, y, list_width, 60, if i == chosen { PLATE_CHOSEN } else { PLATE }, if i == chosen { OUTLINE } else { PLATE_EDGE }, i == chosen);
-        if i == chosen {
-            dev::display_fill(left, y + 8, 4, 44, AMBER);
-        }
-        // The row says, on the character grid: which is chosen, its name, its size and digest, and what it may use.
-        label(left + 20, y + 10, if i == chosen { ">" } else { " " }, AMBER, false, &on_row);
-        label(left + 40, y + 10, &p.name.chars().take(28).collect::<String>(), TEXT, false, &on_row);
-        let size = size_text(p.image.len());
-        let digest = format!("SHA-256 {}...", &p.digest[..16]);
-        label((left + list_width - 20 - label_width(&digest, false)) / 10 * 10, y + 10, &digest, SOFT, false, &on_row);
-        label((left + list_width - 60 - label_width(&digest, false) - label_width(&size, false)) / 10 * 10, y + 10, &size, SOFT, false, &on_row);
+    // What a program may use is never cut short and never drawn over: it takes as many lines as it needs,
+    // and that a program is pinned is said on a line of its own.
+    let across = (list_width / 10).saturating_sub(6) as usize;
+    let access_of = |p: &Entry| -> Vec<String> {
         #[allow(unused_mut)]
         let mut access = String::from(grants);
         #[cfg(feature = "guest-ethernet")]
         if !none && ethernet_grant(start.boot.exact_command_line(), &p.digest) { access.push_str(", raw Ethernet frames"); }
         #[cfg(feature = "game-link")]
         if !none && option(&start.boot.command_line, "link_image") == Some(p.digest.as_str()) { access.push_str(", second serial port"); }
-        label(left + 40, y + 30, &format!("may use: {}", access), SOFT, false, &on_row);
-        if shortcuts.contains(&i) {
-            let mark = "in the dock";
-            label((left + list_width - 20 - label_width(mark, false)) / 10 * 10, y + 30, mark, ui::GOOD, false, &on_row);
+        let _ = p;
+        let mut lines: Vec<String> = Vec::new();
+        let mut line = String::from("may use:");
+        for (n, part) in access.split(", ").enumerate() {
+            let piece = if n == 0 { format!(" {}", part) } else { format!(", {}", part) };
+            if line.chars().count() + piece.chars().count() > across && line != "may use:" {
+                lines.push(line + ",");
+                line = format!("         {}", part);
+            } else {
+                line.push_str(&piece);
+            }
         }
-        y += 80;
+        lines.push(line);
+        lines
+    };
+    let height_of = |i: usize, p: &Entry| 40 + 20 * (access_of(p).len() as u32 + shortcuts.contains(&i) as u32);
+    let tallest = programs.iter().enumerate().map(|(i, p)| height_of(i, p)).max().unwrap_or(60);
+    let mut y = 170;
+    let room = ((foot.saturating_sub(y + 120)) / (tallest + 20)).max(1) as usize;
+    let first = (chosen + 1).saturating_sub(room);
+    for (i, p) in programs.iter().enumerate().skip(first).take(room) {
+        let tall = height_of(i, p);
+        let on_row = plate(left, y, list_width, tall, if i == chosen { PLATE_CHOSEN } else { PLATE }, if i == chosen { outline() } else { edge() }, i == chosen);
+        if i == chosen {
+            dev::display_fill(left, y + 8, 4, tall - 16, AMBER);
+        }
+        // The row says, on the character grid: which is chosen, its name, its size and digest, and what it may use.
+        label(left + 20, y + 10, if i == chosen { ">" } else { " " }, AMBER, false, &on_row);
+        let size = size_text(p.image.len());
+        let digest = format!("SHA-256 {}...", &p.digest[..16]);
+        let size_at = (left + list_width - 60 - label_width(&digest, false) - label_width(&size, false)) / 10 * 10;
+        let name_room = (size_at.saturating_sub(left + 60) / 10).max(4) as usize;
+        label(left + 40, y + 10, &p.name.chars().take(name_room.min(28)).collect::<String>(), TEXT, false, &on_row);
+        label((left + list_width - 20 - label_width(&digest, false)) / 10 * 10, y + 10, &digest, SOFT, false, &on_row);
+        label(size_at, y + 10, &size, SOFT, false, &on_row);
+        let lines = access_of(p);
+        for (n, line) in lines.iter().enumerate() {
+            label(left + 40, y + 30 + n as u32 * 20, line, SOFT, false, &on_row);
+        }
+        if shortcuts.contains(&i) {
+            label(left + 40, y + 30 + lines.len() as u32 * 20, "pinned to the desktop", ui::GOOD, false, &on_row);
+        }
+        y += tall + 20;
     }
     if !message.is_empty() {
         let lines = message.lines().take(3).count() as u32;
-        let on_message = plate(left, y + 10, list_width, 20 + lines * 20, PLATE, PLATE_EDGE, false);
+        let on_message = plate(left, y + 10, list_width, 20 + lines * 20, PLATE, edge(), false);
         for (i, line) in message.lines().take(3).enumerate() {
             label(left + 20, y + 20 + i as u32 * 20, &line.chars().take((list_width / 10 - 4) as usize).collect::<String>(), AMBER, false, &on_message);
         }
@@ -752,7 +799,20 @@ fn power_prompt() -> bool {
     at(2, 6, "not saved by a program are lost.", SOFT, GROUND);
     at(2, rows - 2, "Enter switch off    Esc go back", TEXT, GROUND);
     dev::keys_forget();
-    matches!(wait_key(), (0x1C, _))
+    // Only an Enter pressed in answer switches off. An Enter that was already held when the question came
+    // up repeats while it is held, and those repeats are not an answer: Enter counts once it has been seen
+    // to be up, here or before. Any other key pressed goes back.
+    let mut up = !dev::enter_held();
+    loop {
+        match dev::key_take() {
+            Some(k) if k.code == 0x1C && k.released => up = true,
+            Some(k) if k.code == 0x1C && up => return true,
+            Some(k) if k.code == 0x1C => { let _ = k; }
+            Some(k) if !k.released && k.code != 0x1D && k.code != 0x38 && k.code != 0x44 => return false,
+            Some(_) => {}
+            None => arch::wait_for_interrupt(),
+        }
+    }
 }
 
 fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8], String)], rec: &Record, chosen: usize, message: &str, stored: usize,

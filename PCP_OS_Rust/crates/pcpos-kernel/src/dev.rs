@@ -294,12 +294,14 @@ struct Keyboard {
     skip: u8,
     ctrl: bool,
     alt: bool,
+    /// Whether an Enter key is down now, by the last press or release of one that was seen.
+    enter: bool,
     /// Events dropped because nothing took them in time.
     pub dropped: u64,
 }
 
 static KEYBOARD: arch::Single<Keyboard> = arch::Single::new(Keyboard { present: false, events: [Key { code: 0, extended: false, released: false, ctrl: false }; 256], head: 0, count: 0,
-                                                                         extended: false, skip: 0, ctrl: false, alt: false, dropped: 0 });
+                                                                         extended: false, skip: 0, ctrl: false, alt: false, enter: false, dropped: 0 });
 /// Set when the person presses Ctrl, Alt and Delete together: the kernel's own key, which no program can take.
 static STOP: AtomicBool = AtomicBool::new(false);
 
@@ -370,6 +372,7 @@ fn keyboard_byte(k: &mut Keyboard, byte: u8) {
             match key.code {
                 0x1D => k.ctrl = !key.released,
                 0x38 => k.alt = !key.released,
+                0x1C => k.enter = !key.released,
                 0x53 if !key.released && k.ctrl && k.alt => STOP.store(true, Ordering::SeqCst),
                 _ => {}
             }
@@ -478,6 +481,11 @@ fn script_tick(ticks: u64) {
             s.next += 1;
         }
     })
+}
+
+/// Whether an Enter key is held down now. A held key repeats its press; this tells a repeat from a new press.
+pub fn enter_held() -> bool {
+    arch::without_interrupts(|| KEYBOARD.with(|k| k.enter))
 }
 
 /// The oldest key event not yet taken, if any.

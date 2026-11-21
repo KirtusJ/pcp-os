@@ -180,50 +180,76 @@ pub fn isqrt(n: u64) -> u64 {
     low
 }
 
-/// The desktop's field: the Core plate shaded from a little lighter at the top to a little darker at the
-/// bottom, a faint teal light around one point, and thin rings about that point (the rings of the product's
-/// backgrounds).
+/// An edition's theme, from the product's design tokens (`PCP_1.0_Machine/design/pcp.tokens.json` in the
+/// edition): the field the page is, the text and the secondary text on it, its accent, and the accent of
+/// the Core module on it. The edition is carried by the field and the module by the plate, and the edition
+/// is always also said in words.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Edition {
+    pub name: &'static str,
+    pub field: u32,
+    pub text: u32,
+    pub soft: u32,
+    pub accent: u32,
+    pub core_accent: u32,
+}
+
+pub const EDITIONS: [Edition; 3] = [
+    Edition { name: "Personal", field: 0xF6F0E4, text: 0x1B2733, soft: 0x4A5560, accent: 0xA25600, core_accent: 0x157A76 },
+    Edition { name: "Commercial", field: 0x0F6B67, text: 0xF4FBF9, soft: 0xD5EEEA, accent: 0xA6F0E4, core_accent: 0x90E9E3 },
+    Edition { name: "Enterprise", field: 0x16151F, text: 0xF3F2F8, soft: 0xC9C6D8, accent: 0xB7A4F7, core_accent: 0x2F8C88 },
+];
+/// The plate of the Core module and the text on it, the same in every edition.
+pub const CORE_PLATE: u32 = 0x10283F;
+
+static EDITION: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(2);
+
+/// Choose the edition by its name in small letters. An unknown name changes nothing and gives false.
+pub fn set_edition(name: &str) -> bool {
+    match EDITIONS.iter().position(|e| e.name.eq_ignore_ascii_case(name)) {
+        Some(at) => { EDITION.store(at, core::sync::atomic::Ordering::Relaxed); true }
+        None => false,
+    }
+}
+
+/// The edition whose theme the desktop is drawn in.
+pub fn edition() -> Edition {
+    EDITIONS[EDITION.load(core::sync::atomic::Ordering::Relaxed).min(2)]
+}
+
+/// The desktop's field, as the product's default backgrounds draw it: the edition's field colour, flat, and
+/// thin rings in the edition's text colour, very faint, about one point.
 #[derive(Clone, Copy)]
 pub struct Field {
     pub width: u32,
     pub height: u32,
-    /// The centre of the light and of the rings.
+    /// The centre of the rings.
     pub cx: u32,
     pub cy: u32,
 }
 
-const FIELD_TOP: u32 = 0x132B45;
-const FIELD_MID: u32 = 0x0E2238;
-const FIELD_END: u32 = 0x0A1A2C;
-const FIELD_LIGHT: u32 = 0x1F6F7A;
-
 impl Field {
-    /// The unit every length of the field is a multiple of: one at 1080 rows.
+    /// The field of a display, with the rings where the default backgrounds have them: 1190 of 1600 across
+    /// and half way down.
+    pub fn of(width: u32, height: u32) -> Field {
+        Field { width, height, cx: (width as u64 * 1190 / 1600) as u32, cy: height / 2 }
+    }
+
+    /// A length of the default backgrounds, which are drawn 900 high, on this display.
     fn unit(&self, n: u32) -> u64 {
-        (n as u64 * self.height as u64 / 1080).max(1)
+        (n as u64 * self.height as u64 / 900).max(1)
     }
 
-    fn shade(&self, y: u32) -> u32 {
-        let turn = self.height * 55 / 100;
-        if y < turn {
-            blend(FIELD_TOP, FIELD_MID, y * 255 / turn.max(1))
+    /// The colour at a point, given its whole distance from the centre. The backgrounds' rings begin 250
+    /// from the centre and are 150 apart, 2 wide, at 7 parts in 100 of the text colour.
+    fn lit(&self, _y: u32, distance: u64) -> u32 {
+        let e = edition();
+        let (first, step) = (self.unit(250), self.unit(150));
+        if distance + 1 >= first && (distance + 1 - first) % step < self.unit(2).max(2) {
+            blend(e.field, e.text, 18)
         } else {
-            blend(FIELD_MID, FIELD_END, (y - turn) * 255 / (self.height - turn).max(1))
+            e.field
         }
-    }
-
-    /// The colour at a point, given its whole distance from the centre.
-    fn lit(&self, y: u32, distance: u64) -> u32 {
-        let mut c = self.shade(y);
-        let reach = self.unit(620);
-        if distance < reach {
-            c = blend(c, FIELD_LIGHT, ((reach - distance) * 107 / reach) as u32);
-        }
-        let (first, step) = (self.unit(230), self.unit(140));
-        if distance + 1 >= first && (distance + 1 - first) % step < 2 {
-            c = blend(c, TEXT, 15);
-        }
-        c
     }
 
     /// The colour of the field at one point.
