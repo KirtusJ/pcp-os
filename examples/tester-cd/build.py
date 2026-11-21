@@ -17,7 +17,9 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import fcntl
 import shutil
+import struct
 import subprocess
 import sys
 
@@ -55,14 +57,26 @@ def load(path, name):
     return module
 
 
-def third_party(manifest, env):
-    """Every external crate that is compiled into the bare-metal program, with the license files it ships."""
-    meta = json.loads(run("cargo", "metadata", "--locked", "--format-version", "1", "--filter-platform", "x86_64-unknown-none", "--manifest-path", manifest, env=env))
-    used = {node["id"] for node in meta["resolve"]["nodes"]}
+def third_party(manifest, features, env):
+    """Every external crate compiled into the bare-metal program, with the license files it ships. A crate
+    counts if the program reaches it through ordinary or build dependencies with the features it is built
+    with; a crate used only by the tests (a dev-dependency) is not compiled into the program and is left out."""
+    meta = json.loads(run("cargo", "metadata", "--locked", "--format-version", "1", "--filter-platform", "x86_64-unknown-none",
+                          "--manifest-path", manifest, *(["--features", features] if features else []), env=env))
+    nodes = {node["id"]: node for node in meta["resolve"]["nodes"]}
+    reached, queue = set(), [meta["resolve"]["root"]]
+    while queue:
+        current = queue.pop()
+        if current in reached:
+            continue
+        reached.add(current)
+        for dep in nodes[current]["deps"]:
+            if any(kind["kind"] in (None, "build") for kind in dep["dep_kinds"]):
+                queue.append(dep["pkg"])
     found = {}
     for package in meta["packages"]:
-        if package["id"] not in used or package["source"] is None:
-            continue  # not compiled for this target, or part of this repository
+        if package["id"] not in reached or package["source"] is None:
+            continue  # not compiled into this program, or part of this repository
         folder = Path(package["manifest_path"]).parent
         texts = sorted(p for p in folder.iterdir() if p.is_file() and p.name.upper().startswith(("LICENSE", "LICENCE", "COPYING", "NOTICE", "UNLICENSE")))
         found[(package["name"], package["version"])] = (package.get("license") or "see its files", [(p.name, p.read_text(errors="replace")) for p in texts])
@@ -80,6 +94,32 @@ def notices(crates):
         for filename, text in texts:
             lines += ["", "==== %s %s: %s ====" % (name, version, filename), "", text.rstrip()]
     return ("\n".join(lines) + "\n").encode()
+
+
+def read_back(image):
+    """The files in the root directory of an ISO 9660 image, by their Rock Ridge names, as the bytes on the disc."""
+    volume = image[16 * 2048:17 * 2048]
+    if volume[1:6] != b"CD001":
+        sys.exit("the assembled file is not an ISO 9660 image")
+    start, size = struct.unpack("<I", volume[158:162])[0], struct.unpack("<I", volume[166:170])[0]
+    directory, files, at = image[start * 2048:start * 2048 + size], {}, 0
+    while at < len(directory):
+        length = directory[at]
+        if length == 0:
+            at = (at // 2048 + 1) * 2048
+            continue
+        entry = directory[at:at + length]
+        at += length
+        extent, extent_size, flags, name_length = struct.unpack("<I", entry[2:6])[0], struct.unpack("<I", entry[10:14])[0], entry[25], entry[32]
+        if flags & 2:
+            continue  # the directory itself and its parent
+        use, name, i = entry[33 + name_length + (1 - name_length % 2):], None, 0
+        while i + 4 <= len(use) and use[i + 2]:
+            if use[i:i + 2] == b"NM":
+                name = use[i + 5:i + use[i + 2]].decode()
+            i += use[i + 2]
+        files[name or entry[33:33 + name_length].decode().split(";")[0]] = image[extent * 2048:extent * 2048 + extent_size]
+    return files
 
 
 def assemble(tree, iso, env):
@@ -115,7 +155,14 @@ def main():
     # Where a crate is compiled is part of what the compiler produces (run.sh explains why), so both
     # programs are built in one fixed folder whatever the checkout or the output directory is called.
     # The folder is removed and made again, and only if this program made it: it carries a marker file.
+    # One build at a time: a lock beside the folder is held until this program ends, so a second build
+    # started meanwhile stops instead of removing the folder this one is working in.
     work = Path(os.environ.get("PCPOS_TESTER_CD_STAGE", "/tmp/pcpos-tester-cd-build")).resolve()
+    lock = open(str(work) + ".lock", "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        sys.exit("another build is using %s; wait for it, or set PCPOS_TESTER_CD_STAGE to another folder" % work)
     marker = work / ".pcpos-tester-cd-stage"
     if work.exists():
         if not marker.is_file():
@@ -153,7 +200,7 @@ def main():
     media.mkdir()
     load(GUEST / "replay_local_media.py", "replay_local_media").make_media(media, 0)
 
-    crates = {**third_party(KERNEL / "Cargo.toml", env), **third_party(GUEST / "Cargo.toml", env)}
+    crates = {**third_party(KERNEL / "Cargo.toml", "", env), **third_party(GUEST / "Cargo.toml", "local-media", env)}
     config = ("timeout: 0\n\n/PCP OS\n    protocol: multiboot1\n    path: boot():/kernel.elf32\n    cmdline: image=%s\n"
               "    module_path: boot():/surf.elf\n    module_string: surf.elf\n"
               "    module_path: boot():/clip.ppm\n    module_string: clip.ppm\n"
@@ -182,6 +229,17 @@ def main():
         shutil.rmtree(tree)
     if images[0] != images[1]:
         sys.exit("two assemblies of the same files gave different images")
+    # What is on the disc, read back from the image. Every file must be the bytes that went in, except the
+    # two the mastering writes: the boot catalog, which it creates, and the loader's CD boot file, into which
+    # it writes the boot information table (bytes 8 to 63) that the loader reads to find itself.
+    on_disc = read_back(images[0])
+    boot = "limine-bios-cd.bin"
+    if set(on_disc) != set(files) | {"boot.cat"}:
+        sys.exit("the image does not hold exactly the files that went in and a boot catalog: %s" % sorted(set(on_disc) ^ set(files)))
+    for name, data in files.items():
+        same = on_disc[name] == data if name != boot else on_disc[name][:8] + on_disc[name][64:] == data[:8] + data[64:]
+        if not same:
+            sys.exit("%s on the disc is not the file that went in" % name)
     (out / "second.iso").unlink()
     (out / "first.iso").rename(out / "pcp-os-tester.iso")
     shutil.rmtree(work)
@@ -190,8 +248,10 @@ def main():
                "toolchain": TOOLCHAIN, "rustc": dict(line.split(": ", 1) for line in rustc.splitlines() if ": " in line),
                "kernel_features": "default", "guest_features": "local-media",
                "kernel_measurement": measurement, "iso_bytes": len(images[0]), "iso_sha256": sha(images[0]),
-               "files": {name: {"bytes": len(data), "sha256": sha(data)} for name, data in sorted(files.items())},
-               "third_party_crates": ["%s %s" % key for key in sorted(crates)]}
+               "inputs": {name: {"bytes": len(data), "sha256": sha(data)} for name, data in sorted(files.items())},
+               "on_disc": {name: {"bytes": len(data), "sha256": sha(data)} for name, data in sorted(on_disc.items())},
+               "written_by_mastering": ["boot.cat", boot],
+               "third_party_crates_compiled_in": ["%s %s" % key for key in sorted(crates)]}
     (out / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     print(json.dumps({k: receipt[k] for k in ("source_commit", "uncommitted_changes", "kernel_measurement", "iso_bytes", "iso_sha256")}, indent=2))
 

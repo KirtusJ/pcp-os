@@ -6,24 +6,77 @@
 For each of QEMU's `pc` and `q35` machines, on the ordinary clock and on the instruction-counted one: the
 kernel must measure as the value in the receipt, pass every startup self-test, start the Surfbird demo from
 the keyboard and see it end DONE, start it again and stop it with the kernel's Stop key, show the register,
-and power off when asked. The guest has no disk and no network device. Screens are kept as evidence and are
-not compared: every assertion is on the serial log, QEMU's own events and its exit status.
+and power off when asked. The guest has no disk and no network device. The register screen is read cell by
+cell with the kernel's own font and must show an intact chain and the two demo tasks ending DONE and STOPPED.
+The launcher and Surfbird screens are kept as evidence and are not compared. Every other assertion is on the
+serial log, QEMU's own events and its exit status.
 
 This is one emulator on one host. It is not a test of a physical machine, of UEFI firmware or of any other
 hypervisor.
 """
 import argparse
+import ast
+import collections
 import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import socket
 import subprocess
 import sys
 import time
 
 
-def session(qemu, iso, out, machine, counted, measurement, timeout):
+REPO = Path(__file__).resolve().parents[2]
+STARTUP_CHECKS = 71  # the number of self-tests kernel 0.3.1 reports before the launcher; change it with the kernel
+
+
+def kernel_glyphs():
+    """The kernel's 10 by 20 font, from its source, as the set of inked pixels of each character."""
+    source = (REPO / "PCP_OS_Rust" / "crates" / "pcpos-kernel" / "src" / "font.rs").read_text()
+    table = ast.literal_eval("[" + source.split(" = [", 1)[1].split("];", 1)[0] + "]")
+    return {tuple(alpha > 0 for alpha in glyph): chr(32 + i) for i, glyph in enumerate(table)}
+
+
+def read_screen(ppm, glyphs):
+    """Every text row of a 1024 by 768 kernel screen, read cell by cell against the kernel's own font.
+    A cell that is no character of the font reads as '?'."""
+    header = b"P6\n1024 768\n255\n"
+    if not ppm.startswith(header) or len(ppm) != len(header) + 1024 * 768 * 3:
+        return None
+    pixels = ppm[len(header):]
+    ground = collections.Counter(pixels[i:i + 3] for i in range(0, len(pixels), 3 * 97)).most_common(1)[0][0]
+    rows = []
+    for row in range(38):
+        text = ""
+        for column in range(102):
+            inked = tuple(pixels[((row * 20 + y) * 1024 + column * 10 + x) * 3:][:3] != ground for y in range(20) for x in range(10))
+            text += glyphs.get(inked, "?")
+        rows.append(text.rstrip())
+    return rows
+
+
+def register_problems(rows):
+    """What the register screen must show after one played and one stopped demo."""
+    if rows is None:
+        return ["the register screen was not a whole 1024 by 768 frame"]
+    problems = []
+    if any("?" in row for row in rows):
+        problems.append("the register screen holds a cell that is no character of the kernel's font")
+    head = next((row for row in rows if "THE KERNEL'S REGISTER:" in row), "")
+    if "chain intact" not in head:
+        problems.append("the register heading does not say the chain is intact")
+    started = [re.search(r"id (T\d+)", row).group(1) for row in rows if "TASK_STARTED" in row and "label surf.elf" in row and re.search(r"id (T\d+)", row)]
+    ended = {m.group(1): m.group(2) for m in (re.search(r"TASK_ENDED\s+id (T\d+); outcome (\w+)", row) for row in rows) if m}
+    if len(started) != 2:
+        problems.append("expected two starts of surf.elf on the register screen, read %d" % len(started))
+    elif [ended.get(task) for task in started] != ["DONE", "STOPPED"]:
+        problems.append("expected the two surf.elf tasks to end DONE then STOPPED, read %s" % [ended.get(task) for task in started])
+    return problems
+
+
+def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs):
     out.mkdir()
     serial, sock = out / "serial.txt", out / "qmp.sock"
     cmd = [qemu, "-machine", machine, "-accel", "tcg", "-cpu", "qemu64", "-m", "64M", "-boot", "order=d", "-cdrom", str(iso),
@@ -105,7 +158,16 @@ def session(qemu, iso, out, machine, counted, measurement, timeout):
         key("ctrl", "alt", "delete")
         wait("surf.elf ended STOPPED")
         key("r")
-        screen("register")
+        rows = None
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            time.sleep(0.5)
+            rpc("screendump", filename=str(out / "register.ppm"))
+            rows = read_screen((out / "register.ppm").read_bytes(), glyphs)
+            if rows and not register_problems(rows):
+                break
+        (out / "register.txt").write_text("\n".join(rows or []) + "\n")
+        result["register_problems"] = register_problems(rows)
         key("esc")
         time.sleep(1)
         key("p")
@@ -129,8 +191,11 @@ def session(qemu, iso, out, machine, counted, measurement, timeout):
         problems = []
         if result["startup_fail_lines"]:
             problems.append("a startup self-test failed")
-        if result["startup_pass_lines"] < 1:
-            problems.append("no startup self-test was reported")
+        if result["startup_pass_lines"] != STARTUP_CHECKS:
+            problems.append("expected %d startup self-tests to pass, counted %d" % (STARTUP_CHECKS, result["startup_pass_lines"]))
+        if result["final_pass_lines"] != STARTUP_CHECKS + 1:
+            problems.append("expected one more passing check at power off (the kernel's register of itself), counted %d in all" % result["final_pass_lines"])
+        problems += result["register_problems"]
         if result["guest_ethernet_compiled_in"]:
             problems.append("guest Ethernet is compiled into a CD that is meant to have none")
         if result["exit_code"] != 0 or not result["shutdown"] or result["shutdown"].get("guest") is not True:
@@ -163,13 +228,14 @@ def main():
         sys.exit("the ISO is not the one its receipt describes")
     evidence = args.evidence.resolve()
     evidence.mkdir(parents=True, exist_ok=False)
+    glyphs = kernel_glyphs()
     version = subprocess.check_output([args.qemu, "--version"], text=True).splitlines()[0]
     results = [session(args.qemu, iso, evidence / ("%s-%s" % (machine, "counted" if counted else "ordinary")), machine, counted,
-                       receipt["kernel_measurement"], args.timeout)
+                       receipt["kernel_measurement"], args.timeout, glyphs)
                for machine in ("pc", "q35") for counted in (False, True)]
     summary = {"iso_sha256": receipt["iso_sha256"], "source_commit": receipt["source_commit"], "kernel_measurement": receipt["kernel_measurement"],
                "qemu": version, "host": " ".join(os.uname()[i] for i in (0, 2, 4)), "passed": all(r["passed"] for r in results),
-               "sessions": [{k: r.get(k) for k in ("machine", "clock", "passed", "startup_pass_lines", "final_pass_lines", "exit_code", "problems")} for r in results]}
+               "sessions": [{k: r.get(k) for k in ("machine", "clock", "passed", "startup_pass_lines", "final_pass_lines", "register_problems", "exit_code", "problems")} for r in results]}
     (evidence / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     return 0 if summary["passed"] else 1
 
