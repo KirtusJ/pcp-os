@@ -34,7 +34,7 @@ pub struct Start<'a> {
     pub boot: &'a arch::BootInfo,
     pub display: Option<dev::Display>,
     pub keyboard: bool,
-    /// Why the self-tests that need replayed keys were not run, if they were not.
+    /// Why the six self-tests that press keys were not run, if they were not.
     pub not_run: Option<&'static str>,
     pub sound: bool,
     pub passed: u32,
@@ -548,7 +548,7 @@ fn verification_view(start: &Start, rec: &Record) {
     // What was not tested is said beside what was. It is below the lines that have always been here.
     if let Some(why) = start.not_run.filter(|_| start.failed == 0) {
         lines.extend(lines_of(2, "", TEXT));
-        lines.extend(lines_of(2, &format!("Not run at start: the tests of keys, sleep and stopping a program, because {}.", why), ui::AMBER));
+        lines.extend(lines_of(2, &format!("Not run at start: the six tests that press keys, because {}.", why), ui::AMBER));
     }
     // The whole head, which the register's own title cannot hold on every display. It is below the lines
     // that have always been here, which keep their rows.
@@ -1383,7 +1383,7 @@ pub fn stopped_screen(start: &Start, failed: u32) {
     parts.push((1, if failed != 0 { format!("NOT VERIFIED: {} self-test(s) failed.", failed) } else { format!("Verified: all {} self-tests it ran passed.", start.passed) },
                 if failed != 0 { ui::BAD } else { ui::GOOD }));
     if let Some(why) = start.not_run.filter(|_| failed == 0) {
-        parts.push((2, format!("Not run: the tests of keys, sleep and stopping a program, because {}.", why), SOFT));
+        parts.push((2, format!("Not run: the six tests that press keys, because {}.", why), SOFT));
     }
     if start.display.is_some() && !start.keyboard {
         parts.push((3, String::new(), TEXT));

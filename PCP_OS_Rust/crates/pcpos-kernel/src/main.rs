@@ -522,7 +522,7 @@ fn script_drain() -> Result<(), &'static str> {
 /// The asynchronous side, observed: sleeping, waiting for a key, and the stop key arriving while a program runs,
 /// sleeps or waits. Keys arrive through the keyboard's interrupt (see `dev::keyboard_script`). Interrupts are off
 /// when this is called and when it returns. None of these runs is a task in the kernel's register.
-fn asynchronous(failed: &mut u32) {
+fn asynchronous(failed: &mut u32, replays: bool) {
     use dev::KeyPacing::{BlockedRead, Sleeping, Timed};
     use user::{End, Grants, Program, Start, World};
     let world = || World { files: alloc::vec::Vec::new(), store: Default::default(),
@@ -555,6 +555,8 @@ fn asynchronous(failed: &mut u32) {
         check("rejected batch returns the frames of every member", rejected && before == after, failed);
     }
 
+    // The tests that press keys are run only where the controller replays them (see `dev::keyboard_replays`).
+    if replays {
     // 1. The stop key while a program runs. The program never yields and never ends; its budget is far away.
     dev::keyboard_script(arch::ticks() + 5, &STOP_KEYS, Timed);
     let t0 = arch::ticks();
@@ -565,6 +567,7 @@ fn asynchronous(failed: &mut u32) {
     say!("  note stop key while running: end {:?}, task {:?}, after {} timer periods", end, settled, took);
     check("the stop key ends a program that never yields, long before its budget", drained && end == Some(End::Stopped) && took < 100, failed);
     check("a program the person stopped is STOPPED in the kernel's task table, as it is in what the kernel observed of it", settled == Some(Task::Stopped), failed);
+    }
 
     // 2. Sleep and wake. 50 ms is 50,000,000 ns; a tick is 999,847 ns; the deadline is the tick of the call plus
     // ceil(50,000,000 / 999,847) = 51. The processor idles through exactly those 51 ticks if the program is woken at its tick.
@@ -574,6 +577,7 @@ fn asynchronous(failed: &mut u32) {
     check("a program that sleeps 50 ms is woken at its millisecond: the processor idled 51 timer periods, no fewer and no more, and the sleep answered 0",
           end == Some(End::Exited(0)) && idle == 51 && took >= 51 && free0 == free1, failed);
 
+    if replays {
     // 3. The reader checks each two-byte event in order: Shift down, Shift up, then A down.
     // Eight calls: open; then for each of Shift down, Shift up and the key, a read that waits and the same read made again.
     // Each injection is on a timer tick spent idle in a blocked read. Startup can use part of the initial 20 ticks.
@@ -617,6 +621,7 @@ fn asynchronous(failed: &mut u32) {
     let (r, free0, free1, _) = loaded("sleeper", &["sleeper"], &[], 0, Timed);
     let end = r.as_ref().map(|p| p.end).unwrap_or(None);
     check("a stop key pressed before a program is started does not stop it", end == Some(End::Exited(0)) && free0 == free1, failed);
+    }
 
     // 7. A name the task table refuses as a label (33 bytes; it takes 32). The program must be refused, with the
     // admission error and no other, and no memory may be lost. The control before it is the same program under a
@@ -792,9 +797,11 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
                   && after.user_reachable == 0 && after.not_identity == 0 && after.image_pages == map.image_pages && after.module_pages == map.module_pages && after.pool_bytes == map.pool_bytes, &mut failed);
     }
     // The asynchronous side needs the keyboard's interrupt, so it is tested here, and only by a kernel that verified itself.
-    // Those tests press keys by having the controller replay them. Whether this controller does is found
-    // out first, with one byte: where it does not, the tests are not run and that is said, here and on
-    // the verification screen; they are not counted as passed and not as failed.
+    // Some of those tests press keys by having the controller replay them. Whether this controller does
+    // is found out first, with one byte: where it does not, the tests that press keys are not run and
+    // that is said, here and on the verification screen; they are counted neither as passed nor as
+    // failed. The tests that press no key (sleep, refused groups, names, memory given back) are run on
+    // any machine whose kernel verified itself (B3 counted that they had been left out with the rest).
     let replays = failed == 0 && keyboard && {
         arch::interrupts_on();
         let replays = dev::keyboard_replays();
@@ -804,13 +811,14 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     let not_run = if replays { None } else if failed != 0 { Some("the kernel did not verify itself") }
                   else if !keyboard { Some("there is no keyboard controller") }
                   else { Some("this keyboard controller does not replay keys for a test") };
-    if replays {
-        asynchronous(&mut failed);
+    if failed == 0 {
+        asynchronous(&mut failed, replays);
         if boot.command_line.split_whitespace().any(|word| word == "test=frame-cutoffs") {
             check_space_cutoffs(&mut failed);
         }
-    } else {
-        say!("the asynchronous self-tests were not run: {}", not_run.unwrap_or(""));
+    }
+    if let Some(why) = not_run {
+        say!("the self-tests that press keys were not run: {}", why);
     }
     #[cfg(feature = "virtio-tx-probe")]
     if failed == 0 && boot.command_line.split_whitespace().any(|word| word == "test=virtio-tx") {

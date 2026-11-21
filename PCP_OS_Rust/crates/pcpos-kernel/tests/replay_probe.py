@@ -13,11 +13,12 @@ answer; it does not show what a real controller answers.
 
 Predicates, fixed before the first run. Each kernel is booted in QEMU with `then=off`, no disk, no network:
  R1 the default kernel ends with QEMU's exit code 33, says ALL SELF-TESTS PASS, has no line beginning
-    "  FAIL" and no line "the asynchronous self-tests were not run";
+    "  FAIL" and no line saying that tests were not run;
  R2 the demonstration kernel ends with exit code 33 inside the time limit, says ALL SELF-TESTS PASS, has
-    no line beginning "  FAIL", and has the line "the asynchronous self-tests were not run: this keyboard
+    no line beginning "  FAIL", and has the line "the self-tests that press keys were not run: this keyboard
     controller does not replay keys for a test";
- R3 the demonstration kernel passes fewer self-tests than the default kernel and at least one.
+ R3 the demonstration kernel passes exactly six fewer self-tests than the default kernel: the six that
+    press keys, and no other (B3 found that the first form of this left out seven that press none).
 
 Usage: replay_probe.py <default kernel.elf32> <demonstration kernel.elf32> [--qemu qemu-system-x86_64]
 """
@@ -26,7 +27,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-NOT_RUN = "the asynchronous self-tests were not run: this keyboard controller does not replay keys for a test"
+NOT_RUN = "the self-tests that press keys were not run: this keyboard controller does not replay keys for a test"
 
 
 def boot(qemu, kernel, timeout):
@@ -49,7 +50,7 @@ def main():
     args = parser.parse_args()
     problems = []
     code, log, passed = boot(args.qemu, args.default, args.timeout)
-    if code != 33 or "ALL SELF-TESTS PASS" not in log or any(line.startswith("  FAIL") for line in log.splitlines()) or "self-tests were not run" in log:
+    if code != 33 or "ALL SELF-TESTS PASS" not in log or any(line.startswith("  FAIL") for line in log.splitlines()) or "were not run" in log:
         problems.append("R1: the default kernel ended with %d after %d passes" % (code, passed))
     try:
         demo_code, demo_log, demo_passed = boot(args.qemu, args.demonstration, args.timeout)
@@ -58,7 +59,7 @@ def main():
         demo_code, demo_log, demo_passed = None, "", 0
     if demo_code != 33 or "ALL SELF-TESTS PASS" not in demo_log or any(line.startswith("  FAIL") for line in demo_log.splitlines()) or NOT_RUN not in demo_log.splitlines():
         problems.append("R2: the demonstration kernel ended with %r after %d passes" % (demo_code, demo_passed))
-    if not 0 < demo_passed < passed:
+    if demo_passed != passed - 6:
         problems.append("R3: %d passes without replay against %d with it" % (demo_passed, passed))
     for problem in problems:
         print("FAILED", problem)
