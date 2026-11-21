@@ -36,6 +36,8 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
+      - name: Check launcher selection and grants
+        run: python3 -IB examples/optical-disk-check/test_launcher.py
       - name: Replay the retained source CD observations
         run: python3 -B examples/optical-disk-check/observations/verify.py
       - name: Read the pinned PCP optical media

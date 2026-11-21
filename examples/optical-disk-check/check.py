@@ -202,6 +202,31 @@ def frame(monitor, directory, name, timeout, register=False):
     wait_for(inspect, f'waiting for {name} framebuffer', timeout)
 
 
+def selected_program(rows, frame, program):
+    # Each graphical entry has its own grants directly below its filename.
+    for entry, grants in zip(rows, rows[1:]):
+        marker = entry.find('> ' + program + ' ')
+        if marker >= 0 and re.match(r'may use: [a-z]', grants[marker + 2:]):
+            return True
+
+    if not any('Enter open' in row for row in rows) or not any('Access:' in row for row in rows):
+        return False
+    # In the compact layout the font reader reports the 3x20 teal strip as
+    # an unknown glyph in column 2. Check its pixels on the named row.
+    for row_number, row in enumerate(rows):
+        if row == '  ?' + program:
+            _, size, _, pixels = frame.split(b'\n', 3)
+            width = int(size.split()[0])
+            strip = bytes.fromhex('41bad7') * 3
+            for y in range(row_number * 20, (row_number + 1) * 20):
+                start = (y * width + 20) * 3
+                if pixels[start:start + len(strip)] != strip:
+                    break
+            else:
+                return True
+    return False
+
+
 class DesktopScreens:
     """Read the desktop kernel's framebuffer with its own font. Legacy CDs keep their recorded pixel checks."""
     def __init__(self, monitor, directory, timeout):
@@ -213,13 +238,16 @@ class DesktopScreens:
         self.monitor, self.directory, self.timeout = monitor, directory, timeout
 
     def wait(self, name, predicate):
+        return self.wait_frame(name, lambda rows, frame: predicate(rows))
+
+    def wait_frame(self, name, predicate):
         capture = self.directory / (name + '.ppm')
 
         def inspect():
             self.monitor.call('screendump', filename=str(capture))
             frame = capture.read_bytes()
             rows = self.read(frame, self.glyphs)
-            return rows if rows and predicate(rows) else None
+            return rows if rows and predicate(rows, frame) else None
 
         return wait_for(inspect, 'waiting for ' + name + ' framebuffer', self.timeout)
 
@@ -241,13 +269,7 @@ class DesktopScreens:
         self.home(prefix + '-after-verification')
 
     def launcher(self, name, program):
-        # The large layout marks the selected row with ">". Compact mode uses a
-        # coloured row, the program name and an "Access:" line.
-        return self.wait(name, lambda rows: (any('> ' + program in row for row in rows)
-                                             and any('may use:' in row for row in rows))
-                         or (any(row.strip(' ?') == program for row in rows)
-                             and any('Access:' in row for row in rows)
-                             and any('Enter open' in row for row in rows)))
+        return self.wait_frame(name, lambda rows, frame: selected_program(rows, frame, program))
 
 
 def exercise(q, evidence, timeout, result, kernel):
