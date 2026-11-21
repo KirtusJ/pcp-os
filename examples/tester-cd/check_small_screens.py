@@ -68,9 +68,9 @@ the desktop is the full one: T1 to T5 and T7 as above with the full desktop's ke
 Letters and Details (third change for issue 314; rule 5 at every size):
  K1 on the small desktop and in the small list of programs, each of the letters d, r, p, v, k, f leaves the
     frame as it was (they used to open screens and ask to power off);
- K2 in the small list, Ctrl+D opens a screen titled DETAILS whose pages hold, after a row "SHA-256", rows of
-    hex digits that are the whole SHA-256 of the program's file (any shorter run a beginning of it), the
-    names of both programs, its three headings, the memory and keyboard lines, and "Esc back" as the last
+ K2 in the small list, Ctrl+D opens a screen titled DETAILS; its pages, joined into its lines once each, have
+    each program's name on one line, followed by its own size, a line "SHA-256", and lines of hex digits
+    that are the whole SHA-256 of that program's file (the two files differ by a byte); also its three headings, the memory and keyboard lines, and "Esc back" as the last
     row of every page; Esc gives the list as it was.
 
 A failed start, at 320 by 200 and 640 by 480, made by naming to the kernel a measurement that is not its own:
@@ -327,7 +327,39 @@ def settings_trial(key, screen, roomy, problems, results, mode):
     results["settings_controls_refused"] = sorted(forged)
 
 
-def list_trial(key, screen, roomy, passed, problems, results, mode, digest):
+def merged_lines(pages):
+    """The lines of a scrolled screen of text, in order and once each, from its overlapping pages: the rows
+    between the title and the keys' row of each page, joined where the end of one page is the start of the next."""
+    bodies = [[row.strip() for row in rows[1:-1]] for rows in pages]
+    lines = list(bodies[0])
+    for body in bodies[1:]:
+        for shift in range(1, len(body) + 1):
+            if lines[len(lines) - len(body) + shift:] == body[:len(body) - shift]:
+                lines += body[len(body) - shift:]
+                break
+    return lines
+
+
+def details_problems(lines, facts):
+    """`facts` is {name: (size text, digest)}. Each name must be followed by its own size and whole digest."""
+    problems = []
+    for name, (size, digest) in facts.items():
+        where = [i for i, line in enumerate(lines) if line == name]
+        if len(where) != 1:
+            problems.append("%r is on %d lines of Details" % (name, len(where)))
+            continue
+        after = lines[where[0] + 1:]
+        hexes = []
+        for line in after[2:]:
+            if not re.fullmatch(r"[0-9a-f]+", line):
+                break
+            hexes.append(line)
+        if after[:2] != [size, "SHA-256"] or "".join(hexes) != digest:
+            problems.append("%r is not followed by its size %r and its whole digest: %r" % (name, size, after[:2 + len(hexes)]))
+    return problems
+
+
+def list_trial(key, screen, roomy, passed, problems, results, mode, digests):
     key("ret")
     seen = {}
     for name in PROGRAMS:
@@ -356,10 +388,15 @@ def list_trial(key, screen, roomy, passed, problems, results, mode, digest):
                 break
             pages.append(more)
             shots.append(shot)
-        digests = {m[1].replace("\n", "") for page in pages
-                   for m in re.finditer(r"SHA-256\n((?:[0-9a-f]+\n)+)", "\n".join(row.strip() for row in page) + "\n")}
-        if not any(len(d) == 64 and d == digest for d in digests) or any(not digest.startswith(d) for d in digests):
-            problems.append("%s K2: Details does not hold the program's whole digest and only it: %r" % (mode, sorted(digests)))
+        lines = merged_lines(pages)
+        found = details_problems(lines, digests)
+        problems += ["%s K2: %s" % (mode, p) for p in found]
+        # The control (A3): one program's digest rows taken out of a good reading must be refused.
+        if not found:
+            at = lines.index(PROGRAMS[-1])
+            cut = [line for i, line in enumerate(lines) if not (at < i <= at + 6 and re.fullmatch(r"[0-9a-f]+", line))]
+            if not details_problems(cut, digests):
+                problems.append("%s control accepted: Details without %s's digest" % (mode, PROGRAMS[-1]))
         text = " ".join(" ".join(" ".join(page).split()) for page in pages)
         for name in PROGRAMS + ["PROGRAMS", "FILES FROM THE LOADER", "MACHINE", "memory for programs:", "keyboard: PS/2"]:
             if name not in text:
@@ -592,8 +629,13 @@ def main():
     folder = evidence / "boot"
     folder.mkdir()
     (folder / "kernel.elf32").write_bytes(files["kernel.elf32"])
-    for name in PROGRAMS:
-        (folder / name).write_bytes(files["surf.elf"])
+    # Two files that differ, so that each name can be matched to its own digest (A3): the second has one
+    # byte more. Nothing in this check starts either.
+    facts = {}
+    for n, name in enumerate(PROGRAMS):
+        data = files["surf.elf"] + bytes(n)
+        (folder / name).write_bytes(data)
+        facts[name] = ("%d KiB" % ((len(data) + 1023) >> 10), hashlib.sha256(data).hexdigest())
     glyphs = CHECK["kernel_glyphs"]()
     problems, results = [], {}
     for mode, settings, programs, text in (("320x200", True, True, True), ("320x220", True, True, False), ("320x240", True, True, False),
@@ -615,7 +657,7 @@ def main():
                 # Settings is roomy from fourteen rows and forty-one columns; 320 across is never roomy.
                 settings_trial(key, screen, roomy, problems, results[mode], mode)
             if programs:
-                list_trial(key, screen, roomy, passed, problems, results[mode], mode, hashlib.sha256(files["surf.elf"]).hexdigest())
+                list_trial(key, screen, roomy, passed, problems, results[mode], mode, facts)
             key("f10")
             screen("power-question", lambda rows, frame: any("POWER OFF" in row for row in rows))
             key("ret")
