@@ -161,6 +161,10 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     // screen by its keys and compare its pixels ask for it; a person gets the desktop.
     let mut surface = if option(line, "first") == Some("details") { Surface::Details } else { Surface::Home };
     let mut shortcuts: Vec<usize> = Vec::new();
+    // The person's programs sit at the foot of the desktop in one of two forms, chosen in the
+    // settings (S) and by no key of the desktop itself: a bar across the whole width (the default, the
+    // form most desktops have), or a dock in the middle. `bar=dock` on the loader's command line starts with the dock.
+    let mut whole_bar = option(line, "bar") != Some("dock");
     let mut widgets = [false; WIDGETS.len()];
     let display = start.display.unwrap();
     ui::set_scale(if option(line, "ui_scale") == Some("2") && display.width >= 1280 && display.height >= 960 { 2 } else { 1 });
@@ -175,7 +179,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
         // The dock holds the way to all the programs first, then what is pinned.
         place = place.min(shortcuts.len());
         match surface {
-            Surface::Home => draw_home(start, &programs, rec, &shortcuts, place, &widgets, &world.store, mounted, tasks - start.tasks, &message),
+            Surface::Home => draw_home(start, &programs, rec, &shortcuts, place, whole_bar, &widgets, &world.store, mounted, tasks - start.tasks, &message),
             Surface::Launcher => draw_desktop(start, &programs, rec, chosen, &message, &shortcuts),
             Surface::Details => draw_menu(start, &programs, &files, rec, chosen, &message, world.store.len(),
                                           #[cfg(feature = "vm-store")] mounted),
@@ -198,6 +202,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
             (Surface::Home, (0x1C, _)) if to_start.is_none() => surface = Surface::Launcher,
             (Surface::Home, (0x21, false)) => files_view(&world.store, mounted),
             (Surface::Home, (0x11, false)) => widgets_view(&mut widgets),
+            (Surface::Home, (0x1F, false)) => settings_view(&mut whole_bar),
             (Surface::Home, (0x53, _)) | (Surface::Home, (0x0E, false)) if place > 0 => { shortcuts.remove(place - 1); }
             (Surface::Launcher, (0x48, _)) | (Surface::Details, (0x48, _)) if chosen > 0 => chosen -= 1,
             (Surface::Launcher, (0x50, _)) | (Surface::Details, (0x50, _)) if chosen + 1 < programs.len() => chosen += 1,
@@ -255,12 +260,53 @@ fn corners(start: &Start, w: u32, h: u32, keys: &[(&str, &str)]) {
         label(after + 10, row, does, SOFT, false, &on);
         x += width + 10;
     }
+    let _ = verified_word(start, w, row);
+}
+
+/// Whether the kernel verified itself, on its plate at the right of text row `row`: one word when it did,
+/// the whole sentence in red when it did not. Gives back where the plate begins.
+fn verified_word(start: &Start, w: u32, row: u32) -> u32 {
+    use ui::{label, label_width, BAD, GOOD};
     let (word, colour) = if start.failed != 0 { (format!("NOT VERIFIED: {} of {} self-tests failed.", start.failed, start.passed + start.failed), BAD) }
                          else { (String::from("verified"), GOOD) };
     let width = label_width(&word, false) + 20;
     let at = (w - 20 - width) / 10 * 10;
     let on = plate(at, row - 6, width, 32, PLATE, if colour == BAD { BAD } else { OUTLINE }, false);
     label(at + 10, row, &word, colour, false, &on);
+    at
+}
+
+/// The bar: the same things as the dock and the corners, in the form most desktops have, across the whole
+/// foot of the desktop. At the left the way to all the programs and each pinned program, one of them
+/// chosen; at the right the key that lists the keys, and whether the kernel verified itself.
+fn whole_bar(start: &Start, programs: &[Entry], pinned: &[usize], place: usize, w: u32, h: u32) {
+    use ui::{label, label_width, AMBER, GOOD, SOFT, TEAL, TEXT};
+    let y0 = h / 20 * 20 - 60;
+    let row = y0 + 20;
+    let on_bar = plate(0, y0, w, 60, PLATE, PLATE_EDGE, false);
+    let right = verified_word(start, w, row);
+    let keys_width = label_width("K", false) + label_width("keys", false) + 30;
+    let keys_at = right.saturating_sub(keys_width + 20) / 10 * 10;
+    let after = label(keys_at, row, "K", TEXT, false, &on_bar);
+    label(after + 10, row, "keys", SOFT, false, &on_bar);
+    let room = (keys_at.saturating_sub(30) / 190).max(1) as usize;
+    for i in 0..(1 + pinned.len()).min(room) {
+        let x = 10 + i as u32 * 190;
+        let chosen = i == place;
+        let on_item = plate(x, y0 + 6, 180, 48, if chosen { PLATE_CHOSEN } else { PLATE }, if chosen { OUTLINE } else { PLATE }, chosen);
+        if chosen {
+            dev::display_fill(x + 50, y0 + 46, 80, 3, AMBER);
+        }
+        // The same marks as the dock's, smaller: a grid of four for all the programs, three lines for one.
+        let (mx, my) = (x + 14, y0 + 20);
+        let bars: &[(u32, u32, u32, u32, u32)] = if i == 0 { &[(0, 0, 10, 8, TEAL), (14, 0, 10, 8, GOOD), (0, 12, 10, 8, GOOD), (14, 12, 10, 8, AMBER)] }
+                                                 else { &[(0, 1, 24, 4, TEAL), (0, 8, 24, 4, GOOD), (0, 15, 16, 4, AMBER)] };
+        for (bx, by, bw, bh, colour) in bars {
+            dev::display_fill(mx + bx, my + by, *bw, *bh, *colour);
+        }
+        let name: String = if i == 0 { String::from("Programs") } else { programs[pinned[i - 1]].name.chars().take(12).collect() };
+        label(x + 50, row, &name, TEXT, false, &on_item);
+    }
 }
 
 /// The dock: the person's programs, along the foot of the desktop, in the middle. First the way to all the
@@ -325,8 +371,9 @@ fn keys_view(title: &str, keys: &[(&str, &str)]) {
     wait_key();
 }
 
-const HOME_KEYS: [(&str, &str); 11] = [("Left/Right", "choose in the dock"), ("Enter", "open what is chosen: all the programs, or a pinned program"),
+const HOME_KEYS: [(&str, &str); 12] = [("Left/Right", "choose among the programs at the foot of the desktop"), ("Enter", "open what is chosen: all the programs, or a pinned program"),
     ("Space", "open all the programs"), ("Del", "take the chosen program out of the dock"), ("W", "choose the widgets on the desktop"),
+    ("S", "settings: how the desktop looks"),
     ("F", "the files programs have written"), ("R", "the register"), ("V", "verification, in full"), ("K", "this list"), ("P", "power off"),
     ("Ctrl+Alt+Delete", "stops a running program; no program can take that key")];
 const LAUNCHER_KEYS: [(&str, &str); 10] = [("Up/Down", "choose a program"), ("Enter", "start it"), ("S", "pin it to the dock, or take it out"),
@@ -381,7 +428,7 @@ fn recent_tasks(rec: &Record, programs: &[Entry], most: usize) -> Vec<(String, S
 /// what the person has put there: shortcuts to programs, one of them chosen, and widgets. With nothing placed
 /// it is empty. On a display under 1280 by 720 the same things are said as plain lines.
 #[allow(clippy::too_many_arguments)]
-fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize], place: usize, widgets: &[bool; 3], store: &crate::regular::Files, mounted: bool, run: u32, message: &str) {
+fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize], place: usize, whole: bool, widgets: &[bool; 3], store: &crate::regular::Files, mounted: bool, run: u32, message: &str) {
     use ui::{label, AMBER, BAD, GOOD, SOFT, TEAL, TEXT};
     let safe = start.failed != 0;
     let recent = if widgets[0] { recent_tasks(rec, programs, 3) } else { Vec::new() };
@@ -465,8 +512,12 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
     }
 
     emblem_plate(&field, h);
-    dock(programs, shortcuts, place, w, h);
-    corners(start, w, h, &[("K", "keys")]);
+    if whole {
+        whole_bar(start, programs, shortcuts, place, w, h);
+    } else {
+        dock(programs, shortcuts, place, w, h);
+        corners(start, w, h, &[("K", "keys")]);
+    }
 }
 
 /// Choose which widgets are on the desktop. Up and Down move, Enter puts one on or takes it off, Esc goes back.
@@ -489,6 +540,36 @@ fn widgets_view(widgets: &mut [bool; 3]) {
             (0x48, _) if at_row > 0 => at_row -= 1,
             (0x50, _) if at_row + 1 < WIDGETS.len() => at_row += 1,
             (0x1C, _) | (0x39, false) => widgets[at_row] = !widgets[at_row],
+            (0x01, _) => return,
+            _ => {}
+        }
+    }
+}
+
+/// The settings: how the desktop looks. Nothing here changes by one key from the desktop; a person comes
+/// here, chooses, and sees what is chosen. They last for this session.
+fn settings_view(whole_bar: &mut bool) {
+    use ui::{at, GROUND, PANEL, SOFT, TEXT};
+    let (_, rows) = ui::grid();
+    let forms = ["A bar across the screen", "A dock in the middle"];
+    let mut at_row = if *whole_bar { 0usize } else { 1 };
+    loop {
+        ui::clear(GROUND);
+        at(2, 1, "SETTINGS", ui::TEAL, GROUND);
+        at(2, 2, "They last for this session.", SOFT, GROUND);
+        at(2, 4, "Programs at the foot of the desktop", TEXT, GROUND);
+        for (i, name) in forms.iter().enumerate() {
+            let ground = if i == at_row { PANEL } else { GROUND };
+            let on = (i == 0) == *whole_bar;
+            ui::fill(ui::CELL_W, (5 + i as u32) * ui::CELL_H, 46 * ui::CELL_W, ui::CELL_H, ground);
+            at(2, 5 + i as u32, if on { "(o)" } else { "( )" }, if on { ui::GOOD } else { SOFT }, ground);
+            at(8, 5 + i as u32, name, TEXT, ground);
+        }
+        at(2, rows - 2, "Up/Down choose    Enter set    Esc back", SOFT, GROUND);
+        match wait_key() {
+            (0x48, _) if at_row > 0 => at_row -= 1,
+            (0x50, _) if at_row + 1 < forms.len() => at_row += 1,
+            (0x1C, _) | (0x39, false) => *whole_bar = at_row == 0,
             (0x01, _) => return,
             _ => {}
         }
