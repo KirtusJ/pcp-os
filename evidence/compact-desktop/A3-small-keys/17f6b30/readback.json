@@ -1,0 +1,78 @@
+{
+  "stock_checker": "17f6b30fda94fd217823bc0437e905d420aa1cc4",
+  "stock_checker_blob": "f319d433d4d79dca9e7bb3d62d1df7e5e65bfde5",
+  "built_kernel": "39200277158b3b6c5d6d3b9fda9f62463768ab37",
+  "distribution_checked": "03d68793f754a6057d6fcde87c210a1931e53ee2",
+  "boots": {
+    "320x200": {
+      "exit": 0,
+      "detail_pages": 12,
+      "frames": 128
+    },
+    "failed-320x200": {
+      "exit": 0,
+      "detail_pages": null,
+      "frames": 4
+    },
+    "320x220": {
+      "exit": 0,
+      "detail_pages": 12,
+      "frames": 43
+    },
+    "320x240": {
+      "exit": 0,
+      "detail_pages": 10,
+      "frames": 41
+    },
+    "320x260": {
+      "exit": 0,
+      "detail_pages": 10,
+      "frames": 41
+    }
+  },
+  "stock_list_trial_pixel_controls": {
+    "original": true,
+    "PROGRAMS / alpha.elf": false,
+    "FILES FROM THE LOADER / alpha.elf": false,
+    "PROGRAMS / bravo.elf": false,
+    "FILES FROM THE LOADER / bravo.elf": false
+  },
+  "distribution_power_reader": {
+    "1280x720": {
+      "complete": true,
+      "missing_question_mark": false
+    },
+    "1920x1080": {
+      "complete": true,
+      "missing_question_mark": false
+    },
+    "2560x1440": {
+      "complete": true,
+      "missing_question_mark": false
+    },
+    "320x200": {
+      "complete": true,
+      "missing_question_mark": false
+    },
+    "640x480": {
+      "complete": true,
+      "missing_question_mark": false
+    },
+    "800x600": {
+      "complete": true,
+      "missing_question_mark": false
+    },
+    "952x600": {
+      "complete": true,
+      "missing_question_mark": false
+    },
+    "960x600": {
+      "complete": true,
+      "missing_question_mark": false
+    }
+  },
+  "method": "The only changed source file between the kernel revision and 17f6b30 was the checker. Its own compact suite used its two distinct fixtures at 320 pixels wide and four heights, from 200 to 260 pixels. Runs used QEMU over stdio with the suite split by geometry among native PCP workers. In a separate replay, the full stock list_trial was called with frames captured using two different ELF programs in 320x200. For each of four fields only the final hex digit was erased wherever visible on overlapping pages. Every damaged capture set was rejected, and the intact set was accepted.",
+  "distribution": "The desktop-first distribution reader selects F5 and F10 on this renderer. Four unit tests passed and all 16 archived power-warning verdicts matched. With the working guest captures it accepted all eight complete confirmations and rejected all eight single-glyph question-mark erasures.",
+  "inputs": "https://github.com/KirtusJ/pcp-os/tree/459e57b4204c591819a9da71309cc37b50fc34ce/evidence/compact-desktop/A3-small-keys/working",
+  "replay": "Extract the working native archive linked in inputs. Run python3 -IB execution/field_replay.py <17f6b30 checkout> <working archive>/3920027/320x200 controls.json and compare the result with execution/verdicts.json. To repeat the distribution check run python3 -IB execution/distribution.py <03d68793 distribution checkout> <3920027 OS checkout> <working archive>/3920027."
+}
