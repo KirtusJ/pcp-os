@@ -1,0 +1,56 @@
+{
+  "1920x1080-none-match": {
+    "visible_passed": 58,
+    "serial_passed": 59,
+    "visible_failed": null,
+    "serial_failed": 0,
+    "keyboard_reason": true,
+    "skipped_tests_shown": true,
+    "cpu_halted": true
+  },
+  "1920x1080-none-wrong": {
+    "visible_passed": null,
+    "serial_passed": 40,
+    "visible_failed": 1,
+    "serial_failed": 1,
+    "keyboard_reason": true,
+    "skipped_tests_shown": false,
+    "cpu_halted": true
+  },
+  "320x200-keys-match": {
+    "visible_passed": 71,
+    "serial_passed": 72,
+    "visible_failed": null,
+    "serial_failed": 0,
+    "keyboard_reason": false,
+    "skipped_tests_shown": false,
+    "cpu_halted": true
+  },
+  "320x200-none-match": {
+    "visible_passed": 58,
+    "serial_passed": 59,
+    "visible_failed": null,
+    "serial_failed": 0,
+    "keyboard_reason": true,
+    "skipped_tests_shown": false,
+    "cpu_halted": true
+  },
+  "320x200-none-wrong": {
+    "visible_passed": null,
+    "serial_passed": 40,
+    "visible_failed": 1,
+    "serial_failed": 1,
+    "keyboard_reason": true,
+    "skipped_tests_shown": false,
+    "cpu_halted": true
+  },
+  "800x600-keys-match": {
+    "visible_passed": 71,
+    "serial_passed": 72,
+    "visible_failed": null,
+    "serial_failed": 0,
+    "keyboard_reason": false,
+    "skipped_tests_shown": false,
+    "cpu_halted": true
+  }
+}
