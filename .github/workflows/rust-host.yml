@@ -55,6 +55,11 @@ jobs:
       - name: Require every port write in the kernel to be on the reviewed list
         if: runner.os == 'Linux'
         run: python3 crates/pcpos-kernel/tests/port_writes.py
+      - name: Test the kernel's decision on a loader's framebuffer on the host
+        if: runner.os == 'Linux'
+        run: |
+          rustc --edition=2021 --test crates/pcpos-kernel/tests/test_framebuffer.rs -o "$RUNNER_TEMP/test-framebuffer"
+          "$RUNNER_TEMP/test-framebuffer"
       - name: Run the workspace tests
         run: cargo test --locked --release --workspace
       - name: List the instruments in the built program

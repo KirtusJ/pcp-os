@@ -607,10 +607,9 @@ fn mmap(p: &mut Process, caps: &CapSpace, len: u64, prot: u64, flags: u64, fd: u
                 Some(s) => s,
                 None => return err(EFAULT),
             };
-            for n in 0..pages {
-                if !space.map_device(start + n * 4096, d.memory + n * 4096) {
-                    return err(ENOMEM);
-                }
+            // All of it or none: a picture that ends partway through a page cannot be mapped whole.
+            if !space.map_device(start, d.memory, pages) {
+                return err(ENOMEM);
             }
             start as u64
         }

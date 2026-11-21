@@ -150,6 +150,7 @@ pub struct LoaderDisplay {
 
 mod boot_text;
 mod frame_map;
+mod framebuffer;
 
 /// Everything the loader said, copied out of its own structures while they can still be read.
 #[derive(Clone, Debug, Default)]
@@ -235,7 +236,8 @@ pub fn boot_info(magic: u32, info: u32) -> BootInfo {
             let (pitch, width, height) = (word(96), word(100), word(104));
             let bits = ((info as usize + 108) as *const u8).read();
             let kind = ((info as usize + 109) as *const u8).read();
-            if kind == 1 && addr < (1u64 << 32) && addr != 0 {
+            // Where it lies is judged when it is mapped (`map_loader_display`), with the reason said if refused.
+            if kind == 1 && addr != 0 {
                 out.display = Some(LoaderDisplay { address: addr as usize, pitch, width, height, bits });
             }
         }
@@ -392,8 +394,13 @@ const ADDRESS: u64 = 0x000f_ffff_ffff_f000;
 const MIB2: usize = 2 << 20;
 /// 4 KiB pages for the first 128 MiB, which holds the whole kernel image and the files the loader placed after it.
 const SMALL_TABLES: usize = 64;
-/// Top table, second-level table, the third-level table of each of the first four gibibytes, and the small tables.
-const TABLE_COUNT: usize = 6 + SMALL_TABLES;
+/// Tables kept for the two ends of a loader's framebuffer: where it begins or ends inside a 2 MiB stretch
+/// that has no small table, that stretch is mapped page by page from one of these.
+const SPARE_TABLES: usize = 2;
+/// Top table, second-level table, the third-level table of each of the first four gibibytes, the small
+/// tables, and the spare ones.
+const TABLE_COUNT: usize = 6 + SMALL_TABLES + SPARE_TABLES;
+static SPARE_USED: AtomicUsize = AtomicUsize::new(0);
 
 #[repr(align(4096))]
 struct Tables(core::cell::UnsafeCell<[[u64; 512]; TABLE_COUNT]>);
@@ -412,6 +419,10 @@ static POOL_END: AtomicUsize = AtomicUsize::new(0);
 static MODULES: Single<([(usize, usize); 16], usize)> = Single::new(([(0, 0); 16], 0));
 /// Device memory mapped by `map_device`: up to four [start, end) ranges.
 static DEVICES: Single<([(usize, usize); 4], usize)> = Single::new(([(0, 0); 4], 0));
+/// For each of those ranges, the bytes inside it that the kernel itself may write: all of it for a device
+/// whose memory was mapped whole, the picture alone for a loader's framebuffer, whose last page can hold
+/// bytes past the picture's end.
+static DEVICE_BYTES: Single<[(usize, usize); 4]> = Single::new([(0, 0); 4]);
 
 /// Replace the loader-time mapping, in which the first gibibyte was writable and executable, by one that
 /// maps what the kernel uses and nothing else. The kernel image: code is executable and not writable;
@@ -572,6 +583,7 @@ pub fn map_device(phys: usize, len: usize) -> bool {
             return false;
         }
         d.0[d.1] = (phys, end);
+        DEVICE_BYTES.with(|b| b[d.1] = (phys, end));
         d.1 += 1;
         true
     });
@@ -595,13 +607,98 @@ fn in_device(phys: usize) -> bool {
     DEVICES.with(|d| d.0[..d.1].iter().any(|&(s, e)| phys >= s && phys < e))
 }
 
+/// Whether [phys, end) lies wholly inside the bytes of one device that the kernel may write.
+fn in_device_bytes(phys: usize, end: usize) -> bool {
+    let count = DEVICES.with(|d| d.1);
+    DEVICE_BYTES.with(|b| b[..count].iter().any(|&(s, e)| phys >= s && end <= e))
+}
+
+/// Map the framebuffer the loader described, if it may be mapped: exactly the pages the picture occupies,
+/// writable and never executable, each at its own address. Whether it may be is `framebuffer::decide`,
+/// given the loader's memory map and every range this kernel uses; nothing that is already mapped is
+/// changed, and if any page of it is, nothing is mapped at all. Returns the bytes mapped, or why not.
+pub fn map_loader_display(boot: &BootInfo) -> Result<usize, &'static str> {
+    let l = boot.display.ok_or("the loader described none")?;
+    if boot.memory_map.as_ref().is_some_and(|m| m.is_empty()) {
+        return Err("the loader's memory map could not be read");
+    }
+    let [_, _, _, _, image_end] = layout();
+    let mut protected: alloc::vec::Vec<(usize, usize)> = alloc::vec![(IMAGE_START, image_end), pool()];
+    protected.extend(boot.modules.iter().filter(|m| m.end > m.start).map(|m| (m.start, (m.end + 4095) & !4095)));
+    let memory_top = boot.memory.map(|(_, upper)| IMAGE_START as u64 + upper as u64 * 1024);
+    let window = framebuffer::decide(l.address as u64, l.pitch, l.width, l.height, l.bits, boot.memory_map.as_deref(), memory_top, &protected)?;
+    let (first, last) = window.pages;
+    let on = interrupts_save_off();
+    let done = (|| {
+        if DEVICES.with(|d| d.1 == 4 || d.0[..d.1].iter().any(|&(s, e)| s < last && first < e)) {
+            return Err("device memory is already mapped there, or four devices are");
+        }
+        // Safety: TABLES is this kernel's own static storage. The first pass only reads it. The second
+        // writes entries the first found absent, so no translation in use changes; a spare table is
+        // zeroed before the entry that points to it is written.
+        unsafe {
+            let t = TABLES.0.get() as *mut [u64; 512];
+            let stretches = || (first / MIB2 * MIB2..last).step_by(MIB2);
+            let whole = |stretch: usize| first <= stretch && stretch + MIB2 <= last;
+            let mut spare_needed = 0;
+            for stretch in stretches() {
+                let entry = (*t.add(2 + (stretch >> 30)))[(stretch >> 21) & 511];
+                if entry & P == 0 {
+                    spare_needed += !whole(stretch) as usize;
+                } else if entry & HUGE != 0 {
+                    return Err("part of it is already mapped");
+                } else {
+                    let table = (entry & ADDRESS) as *const [u64; 512];
+                    for page in (stretch.max(first)..(stretch + MIB2).min(last)).step_by(4096) {
+                        if (*table)[(page >> 12) & 511] != 0 {
+                            return Err("part of it is already mapped");
+                        }
+                    }
+                }
+            }
+            let used = SPARE_USED.load(Ordering::SeqCst);
+            if used + spare_needed > SPARE_TABLES {
+                return Err("it would need more page tables than are kept for it");
+            }
+            let mut next = used;
+            for stretch in stretches() {
+                let directory = t.add(2 + (stretch >> 30));
+                let slot = (stretch >> 21) & 511;
+                if (*directory)[slot] & P == 0 {
+                    if whole(stretch) {
+                        (*directory)[slot] = stretch as u64 | P | W | NX | HUGE;
+                        continue;
+                    }
+                    let table = t.add(6 + SMALL_TABLES + next);
+                    (*table) = [0; 512];
+                    (*directory)[slot] = table as u64 | P | W;
+                    next += 1;
+                }
+                let table = ((*directory)[slot] & ADDRESS) as *mut [u64; 512];
+                for page in (stretch.max(first)..(stretch + MIB2).min(last)).step_by(4096) {
+                    (*table)[(page >> 12) & 511] = page as u64 | P | W | NX;
+                }
+            }
+            SPARE_USED.store(next, Ordering::SeqCst);
+        }
+        DEVICES.with(|d| {
+            d.0[d.1] = (first, last);
+            DEVICE_BYTES.with(|b| b[d.1] = window.bytes);
+            d.1 += 1;
+        });
+        Ok(last - first)
+    })();
+    interrupts_restore(on);
+    done
+}
+
 /// Write 32-bit words into mapped device memory. False if any of them would fall outside it.
 pub fn device_write32(phys: usize, words: &[u32]) -> bool {
     let end = match phys.checked_add(words.len() * 4) {
         Some(e) => e,
         None => return false,
     };
-    if phys % 4 != 0 || words.is_empty() || !DEVICES.with(|d| d.0[..d.1].iter().any(|&(s, e)| phys >= s && end <= e)) {
+    if phys % 4 != 0 || words.is_empty() || !in_device_bytes(phys, end) {
         return false;
     }
     // Safety: the whole destination lies inside one device range mapped writable by `map_device`.
@@ -615,7 +712,7 @@ pub fn device_fill32(phys: usize, count: usize, word: u32) -> bool {
         Some(e) => e,
         None => return false,
     };
-    if phys % 4 != 0 || !DEVICES.with(|d| d.0[..d.1].iter().any(|&(s, e)| phys >= s && end <= e)) {
+    if phys % 4 != 0 || !in_device_bytes(phys, end) {
         return false;
     }
     // Safety: as `device_write32`.
@@ -1538,23 +1635,32 @@ impl Space {
         }
     }
 
-    /// Give the program one page of mapped device memory: readable and writable, never executable. The
-    /// space does not own it and does not return it to the pool.
-    pub fn map_device(&mut self, addr: usize, phys: usize) -> bool {
-        if addr % 4096 != 0 || phys % 4096 != 0 || !in_device(phys) {
+    /// Give the program whole pages of mapped device memory, one after another from `addr`: readable and
+    /// writable, never executable. Every byte of every page must be memory of one device that the kernel
+    /// itself may write, and every page of the program's must be free; if not, nothing is mapped. The
+    /// space does not own the pages and does not return them to the pool.
+    pub fn map_device(&mut self, addr: usize, phys: usize, pages: usize) -> bool {
+        let count = DEVICES.with(|d| d.1);
+        let granted = DEVICE_BYTES.with(|b| b[..count].iter().any(|&bytes| framebuffer::grant(bytes, phys, pages)));
+        if addr % 4096 != 0 || !granted {
             return false;
         }
-        match self.slot(addr, true) {
-            // Safety: as `map`.
-            Some(e) => unsafe {
-                if *e & P != 0 {
-                    return false;
-                }
-                *e = phys as u64 | P | U | W | NX | NOT_OWNED;
-                true
-            },
-            None => false,
+        // First every slot is found, which makes any tables it needs, and seen to be free.
+        for n in 0..pages {
+            match self.slot(addr + n * 4096, true) {
+                // Safety: the slot is a leaf entry of this space's own tables.
+                Some(e) if unsafe { *e } & P == 0 => {}
+                _ => return false,
+            }
         }
+        for n in 0..pages {
+            match self.slot(addr + n * 4096, true) {
+                // Safety: as above; the pass before found this slot and found it free.
+                Some(e) => unsafe { *e = (phys + n * 4096) as u64 | P | U | W | NX | NOT_OWNED },
+                None => return false,
+            }
+        }
+        true
     }
 
     /// Take a page away from the program. Returns the frame if the space owned it, for the caller to give back to the pool.

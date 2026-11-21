@@ -154,7 +154,7 @@ fn dispi_write(index: u16, value: u16) {
 }
 
 /// Find a display and take it over. Returns what was found, in words, for the start-up report.
-pub fn display_init(bus: &[BusDevice], loader: Option<arch::LoaderDisplay>, requested: Option<(u32, u32)>) -> Option<Display> {
+pub fn display_init(bus: &[BusDevice], boot: &arch::BootInfo, requested: Option<(u32, u32)>) -> Option<Display> {
     // The Bochs interface: a display-class device of one of the two makers that implement it, answering with a known version.
     let adapter = bus.iter().find(|d| d.class == 3 && ((d.vendor == 0x1234 && d.device == 0x1111) || (d.vendor == 0x80EE && d.device == 0xBEEF)));
     if let Some(d) = adapter {
@@ -178,13 +178,15 @@ pub fn display_init(bus: &[BusDevice], loader: Option<arch::LoaderDisplay>, requ
             }
         }
     }
-    // Otherwise, a mode the loader set, if it is one this kernel can draw in.
-    if let Some(l) = loader {
-        let bytes = (l.pitch as usize * l.height as usize + (2 << 20) - 1) & !((2 << 20) - 1);
-        if l.bits == 32 && l.width >= 320 && l.height >= 200 && l.address % (2 << 20) == 0 && arch::map_device(l.address, bytes) {
-            let display = Display { kind: DisplayKind::Loader, width: l.width, height: l.height, pitch: l.pitch, pages: 1, memory: l.address, mapped: bytes, shown: 0 };
-            arch::without_interrupts(|| DISPLAY.with(|s| *s = Some(display)));
-            return Some(display);
+    // Otherwise, a mode the loader set, if its memory may be mapped (`arch::map_loader_display` says why not).
+    if let Some(l) = boot.display {
+        match arch::map_loader_display(boot) {
+            Ok(mapped) => {
+                let display = Display { kind: DisplayKind::Loader, width: l.width, height: l.height, pitch: l.pitch, pages: 1, memory: l.address, mapped, shown: 0 };
+                arch::without_interrupts(|| DISPLAY.with(|s| *s = Some(display)));
+                return Some(display);
+            }
+            Err(why) => crate::log(format_args!("display: the loader's framebuffer, {}x{} of {} bits at {:#x}, is not used: {}\n", l.width, l.height, l.bits, l.address, why)),
         }
     }
     None
