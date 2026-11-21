@@ -1,0 +1,355 @@
+{
+  "os_source": "528fbf977ae368e782cbbb85921a186c3ee368f1",
+  "os_tree": "685310e49fe1afdb4b9f7cdd6cae31b76e4dde45",
+  "kernel_sha256": "7da6bc400a7d50928c1f3d6d775489940d07597b965c53767c127529f6cb32d6",
+  "predecessor_source": "0dd8ec98d39736883ab39d08f08fa772ddf3cbf6",
+  "predecessor_720p": {
+    "text": "Choose one to start. Each runs with only what it is granted.",
+    "left": 61,
+    "right": 659,
+    "first_cell": 80,
+    "after_last_cell": 680,
+    "fits": false
+  },
+  "profiles": {
+    "scale2-2560x1440": {
+      "mode": "2560x1440",
+      "scale": 2,
+      "logical_size": [
+        1280,
+        720
+      ],
+      "font_2x_sha256": "754a70a3179a62fffc72e33ec462d9a1627f45531b3b2f3207edcd70d529429b",
+      "boot_surface": "plain program list",
+      "source": "528fbf977ae368e782cbbb85921a186c3ee368f1",
+      "measurement": "7454ed61579e335b344de53368da3cd6ff8a28e707a1b2934b9e4f806ec7d37a",
+      "kernel_sha256": "7da6bc400a7d50928c1f3d6d775489940d07597b965c53767c127529f6cb32d6",
+      "rows": [
+        [
+          1,
+          "POWER OFF"
+        ],
+        [
+          3,
+          "Switch PCP OS off?"
+        ],
+        [
+          5,
+          "The register is closed and verified first. Files of this session that were"
+        ],
+        [
+          6,
+          "not saved by a program are lost."
+        ],
+        [
+          34,
+          "Enter switch off    Esc go back"
+        ]
+      ],
+      "omitted_glyph_accepted": {},
+      "power_sha256": "af7a59b1c4d0d5c52d21eac71e9b09c1b245f255c4552bc5c5afb6f1ad415576",
+      "home_restored": true,
+      "power_reopened": true,
+      "exit": 0,
+      "checks": 72,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      }
+    },
+    "1360x768": {
+      "mode": "1360x768",
+      "program_note": {
+        "text": "Choose one. Each runs with only what it is granted.",
+        "left": 61,
+        "right": 689,
+        "first_cell": 80,
+        "after_last_cell": 590,
+        "fits": true
+      },
+      "source": "528fbf977ae368e782cbbb85921a186c3ee368f1",
+      "measurement": "7454ed61579e335b344de53368da3cd6ff8a28e707a1b2934b9e4f806ec7d37a",
+      "kernel_sha256": "7da6bc400a7d50928c1f3d6d775489940d07597b965c53767c127529f6cb32d6",
+      "rows": [
+        [
+          1,
+          "POWER OFF"
+        ],
+        [
+          3,
+          "Switch PCP OS off?"
+        ],
+        [
+          5,
+          "The register is closed and verified first. Files of this session that were"
+        ],
+        [
+          6,
+          "not saved by a program are lost."
+        ],
+        [
+          36,
+          "Enter switch off    Esc go back"
+        ]
+      ],
+      "omitted_glyph_accepted": {
+        "not": false,
+        "lost": false,
+        "Enter": false,
+        "Esc": false
+      },
+      "power_sha256": "a5ffb5ee18bee4c5cfc3aa61f8f143914b58db59b6f97b7f29c1c76078805818",
+      "home_restored": true,
+      "power_reopened": true,
+      "exit": 0,
+      "checks": 72,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      }
+    },
+    "2560x1440": {
+      "mode": "2560x1440",
+      "program_note": {
+        "text": "Choose one to start. Each runs with only what it is granted.",
+        "left": 121,
+        "right": 1219,
+        "first_cell": 140,
+        "after_last_cell": 740,
+        "fits": true
+      },
+      "source": "528fbf977ae368e782cbbb85921a186c3ee368f1",
+      "measurement": "7454ed61579e335b344de53368da3cd6ff8a28e707a1b2934b9e4f806ec7d37a",
+      "kernel_sha256": "7da6bc400a7d50928c1f3d6d775489940d07597b965c53767c127529f6cb32d6",
+      "rows": [
+        [
+          1,
+          "POWER OFF"
+        ],
+        [
+          3,
+          "Switch PCP OS off?"
+        ],
+        [
+          5,
+          "The register is closed and verified first. Files of this session that were"
+        ],
+        [
+          6,
+          "not saved by a program are lost."
+        ],
+        [
+          70,
+          "Enter switch off    Esc go back"
+        ]
+      ],
+      "omitted_glyph_accepted": {
+        "not": false,
+        "lost": false,
+        "Enter": false,
+        "Esc": false
+      },
+      "power_sha256": "8423d21a1541519d6b6a711d0aedd5ab2919fbc74c04e2bbd1c3ce3a0b37040d",
+      "home_restored": true,
+      "power_reopened": true,
+      "exit": 0,
+      "checks": 72,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      }
+    },
+    "1920x1080": {
+      "mode": "1920x1080",
+      "program_note": {
+        "text": "Choose one to start. Each runs with only what it is granted.",
+        "left": 91,
+        "right": 989,
+        "first_cell": 110,
+        "after_last_cell": 710,
+        "fits": true
+      },
+      "source": "528fbf977ae368e782cbbb85921a186c3ee368f1",
+      "measurement": "7454ed61579e335b344de53368da3cd6ff8a28e707a1b2934b9e4f806ec7d37a",
+      "kernel_sha256": "7da6bc400a7d50928c1f3d6d775489940d07597b965c53767c127529f6cb32d6",
+      "rows": [
+        [
+          1,
+          "POWER OFF"
+        ],
+        [
+          3,
+          "Switch PCP OS off?"
+        ],
+        [
+          5,
+          "The register is closed and verified first. Files of this session that were"
+        ],
+        [
+          6,
+          "not saved by a program are lost."
+        ],
+        [
+          52,
+          "Enter switch off    Esc go back"
+        ]
+      ],
+      "omitted_glyph_accepted": {
+        "not": false,
+        "lost": false,
+        "Enter": false,
+        "Esc": false
+      },
+      "power_sha256": "d1b17a61aebaefe984d9e1a153631f67c8f1a86c11a9ccdc94f81ec55270e4b8",
+      "home_restored": true,
+      "power_reopened": true,
+      "exit": 0,
+      "checks": 72,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      }
+    },
+    "1280x720": {
+      "mode": "1280x720",
+      "program_note": {
+        "text": "Choose one. Each runs with only what it is granted.",
+        "left": 61,
+        "right": 659,
+        "first_cell": 80,
+        "after_last_cell": 590,
+        "fits": true
+      },
+      "source": "528fbf977ae368e782cbbb85921a186c3ee368f1",
+      "measurement": "7454ed61579e335b344de53368da3cd6ff8a28e707a1b2934b9e4f806ec7d37a",
+      "kernel_sha256": "7da6bc400a7d50928c1f3d6d775489940d07597b965c53767c127529f6cb32d6",
+      "rows": [
+        [
+          1,
+          "POWER OFF"
+        ],
+        [
+          3,
+          "Switch PCP OS off?"
+        ],
+        [
+          5,
+          "The register is closed and verified first. Files of this session that were"
+        ],
+        [
+          6,
+          "not saved by a program are lost."
+        ],
+        [
+          34,
+          "Enter switch off    Esc go back"
+        ]
+      ],
+      "omitted_glyph_accepted": {
+        "not": false,
+        "lost": false,
+        "Enter": false,
+        "Esc": false
+      },
+      "power_sha256": "1eec37f048401bd326b0044e93f78bbe98b6ab348d6dec070bc27b37694cb660",
+      "home_restored": true,
+      "power_reopened": true,
+      "exit": 0,
+      "checks": 72,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      }
+    }
+  },
+  "attempt_1366": {
+    "requested": "1366x768",
+    "guest": "desktop: 1920x1080 at 1x UI scale",
+    "outcome": "Mode check timed out before scanout capture."
+  },
+  "first_2x_attempt": "The first reader assumed nearest-neighbor enlargement. The observed glyphs use the separate 20 by 40 font. The run stopped at the failed premise. A fresh guest used that font, read the plain program list and both F10 warnings and actions, returned to that list on Esc, and confirmed shutdown.",
+  "distribution_checker": "987f395b3836843205e13d18500e03dba8f0da34",
+  "historical_media_source": "3e86beb1ee17fad2f3d61c95b9d5dd017fb6c755",
+  "delegate": {
+    "max_depth": 1,
+    "max_live": 3,
+    "max_total": 12,
+    "revision": 16,
+    "nodes": [
+      {
+        "id": 1,
+        "parent": null,
+        "label": "Check Programs plate and complete power warning at 1280x720",
+        "state": "Finished"
+      },
+      {
+        "id": 2,
+        "parent": null,
+        "label": "Check Programs plate and complete power warning at 1920x1080",
+        "state": "Finished"
+      },
+      {
+        "id": 3,
+        "parent": null,
+        "label": "Check Programs plate and complete power warning at 2560x1440",
+        "state": "Finished"
+      },
+      {
+        "id": 4,
+        "parent": null,
+        "label": "Check Programs plate and complete power warning at 1366x768",
+        "state": "Cancelled"
+      },
+      {
+        "id": 5,
+        "parent": null,
+        "label": "Measure the previous program caption at 720p",
+        "state": "Cancelled"
+      },
+      {
+        "id": 6,
+        "parent": null,
+        "label": "Read back the adjacent BGA-aligned resolution",
+        "state": "Finished"
+      },
+      {
+        "id": 7,
+        "parent": null,
+        "label": "Check the existing explicit 2x desktop scale",
+        "state": "Cancelled"
+      },
+      {
+        "id": 8,
+        "parent": null,
+        "label": "Read native 2x glyphs and check F10 from the plain program list",
+        "state": "Finished"
+      }
+    ]
+  },
+  "distribution_worker_states": {
+    "max_depth": 1,
+    "max_live": 4,
+    "max_total": 12,
+    "revision": 6,
+    "nodes": [
+      {
+        "id": 1,
+        "parent": null,
+        "label": "Run proposed distribution power reader through its normal entry point",
+        "state": "Finished"
+      },
+      {
+        "id": 2,
+        "parent": null,
+        "label": "Run proposed distribution power reader through its normal entry point",
+        "state": "Finished"
+      },
+      {
+        "id": 3,
+        "parent": null,
+        "label": "Run proposed distribution power reader through its normal entry point",
+        "state": "Finished"
+      }
+    ]
+  }
+}
