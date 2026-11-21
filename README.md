@@ -89,7 +89,7 @@ For build targets, tests, register verification and the kernel's QEMU requiremen
 | [Store](store/README.md) | Application packages, browser players, native launch instructions and the catalog of built-in host instruments. |
 | [Rust workspace](PCP_OS_Rust/) | The host, integrity core, package-manager library, kernel and reference vectors. |
 | [Python implementation](PCP_OS_Python/) | The companion implementation tested against the Rust vectors. Place `ACR_1.0_Implementation.zip` beside the Python directory, then run `python3 -m unittest discover -s TESTS` inside it. |
-| [OS documentation](os-docs/) | The overview, specification and async execution notes. |
+| [OS documentation](os-docs/) | The overview, specification and async execution notes. Reading copies of the 20 November 2026 revision: [Overview](os-docs/PCP_OS_Overview.pdf) · [Specification](os-docs/PCP_OS_Specification.pdf). The Markdown files beside them are the Build 22 text of 13 November 2026. |
 | [Build](build/) | Release scripts, method build scripts and edition evidence. |
 | [Audit](audit/) | Simulation, live-session and calibration harnesses and their evidence. |
 

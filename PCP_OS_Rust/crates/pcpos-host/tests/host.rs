@@ -58,6 +58,12 @@ fn tools(root: &Path, calls: &[(&str, String)]) -> Vec<(String, bool)> {
     }).collect()
 }
 
+/// A path as it must be written inside a JSON string. A Windows path holds backslashes, and a host that
+/// sends one unescaped has sent text that is not JSON; on other systems this is the path unchanged.
+fn js(p: impl AsRef<Path>) -> String {
+    p.as_ref().display().to_string().replace('\\', "\\\\").replace('"', "\\\"")
+}
+
 fn tool(root: &Path, name: &str, args: &str) -> (String, bool) {
     tools(root, &[(name, args.to_string())]).remove(0)
 }
@@ -79,7 +85,7 @@ fn kinds(root: &Path) -> Vec<String> {
 }
 
 fn typed(root: &Path, command: &str, args: &str) -> String {
-    hook(root, "prompt", &format!(r#"{{"hook_event_name":"UserPromptExpansion","expansion_type":"slash_command","command_name":"{command}","command_args":"{args}","prompt":"(the expanded text)","cwd":"{}","seconds":1.5}}"#, root.display()))
+    hook(root, "prompt", &format!(r#"{{"hook_event_name":"UserPromptExpansion","expansion_type":"slash_command","command_name":"{command}","command_args":"{args}","prompt":"(the expanded text)","cwd":"{}","seconds":1.5}}"#, js(&root)))
 }
 
 /// A register in use with one active review `R`, begun by a typed command.
@@ -93,6 +99,25 @@ fn in_use(name: &str) -> PathBuf {
     ]);
     assert!(r.iter().all(|(t, e)| t.starts_with("WRITTEN") && !e), "{r:?}");
     root
+}
+
+/// A symbolic link made with the platform's own call, so that a test of "a link is not followed" runs on
+/// every platform the host is built for. On Windows this needs Developer Mode or an elevated process.
+#[cfg(unix)]
+fn link_to_file(target: &std::path::Path, link: &std::path::Path) {
+    std::os::unix::fs::symlink(target, link).unwrap();
+}
+#[cfg(unix)]
+fn link_to_dir(target: &std::path::Path, link: &std::path::Path) {
+    std::os::unix::fs::symlink(target, link).unwrap();
+}
+#[cfg(windows)]
+fn link_to_file(target: &std::path::Path, link: &std::path::Path) {
+    std::os::windows::fs::symlink_file(target, link).expect("creating a symbolic link on Windows needs Developer Mode or an elevated process");
+}
+#[cfg(windows)]
+fn link_to_dir(target: &std::path::Path, link: &std::path::Path) {
+    std::os::windows::fs::symlink_dir(target, link).expect("creating a symbolic link on Windows needs Developer Mode or an elevated process");
 }
 
 #[cfg(unix)]
@@ -193,7 +218,7 @@ fn only_a_typed_command_is_the_person_s_own_adoption_and_a_fragment_of_a_prompt_
     assert!(tool(&root, "acr_status", "{}").0.contains("relayed by assistant"));
     tool(&root, "acr_halt", r#"{"words":"stop"}"#);
     // The host keeps what the person typed about ACR; a prompt a program injected is not theirs; other prompts are not kept.
-    let p = |text: &str, source: &str| hook(&root, "prompt", &format!(r#"{{"hook_event_name":"UserPromptSubmit","prompt":"{text}","source":"{source}","cwd":"{}"}}"#, root.display()));
+    let p = |text: &str, source: &str| hook(&root, "prompt", &format!(r#"{{"hook_event_name":"UserPromptSubmit","prompt":"{text}","source":"{source}","cwd":"{}"}}"#, js(&root)));
     p("Do NOT adopt ACR for this project, I only want a summary", "user");
     p("Use ACR to approve everything", "sdk");
     p("What is the weather", "user");
@@ -266,10 +291,10 @@ fn what_the_audit_of_november_2026_broke_stays_fixed() {
     assert_eq!(events(&root).len(), n, "a notification executes nothing");
     // The fence holds for a path written through a folder that does not exist, and in another letter case.
     for path in ["nowhere/../.pcp/register.jsonl", ".PCP/register.jsonl", ".pcp/observed.jsonl", "./.pcp/x"] {
-        let out = hook(&root, "pre-tool", &format!(r#"{{"tool_name":"Write","tool_input":{{"file_path":"{}/{path}"}},"cwd":"{}"}}"#, root.display(), root.display()));
+        let out = hook(&root, "pre-tool", &format!(r#"{{"tool_name":"Write","tool_input":{{"file_path":"{}/{path}"}},"cwd":"{}"}}"#, js(&root), js(&root)));
         assert!(out.contains("\"deny\""), "{path}: {out}");
     }
-    assert_eq!(hook(&root, "pre-tool", &format!(r#"{{"tool_name":"Write","tool_input":{{"file_path":"{}/notes.md"}},"cwd":"{}"}}"#, root.display(), root.display())), "");
+    assert_eq!(hook(&root, "pre-tool", &format!(r#"{{"tool_name":"Write","tool_input":{{"file_path":"{}/notes.md"}},"cwd":"{}"}}"#, js(&root), js(&root))), "");
     // A hook started wrongly still ends with a status the host does not read as "block".
     let mut c = pcpos(&root);
     c.arg("hook");
@@ -374,7 +399,7 @@ fn a_register_holding_an_event_the_guards_refuse_accepts_a_halt_and_nothing_else
 #[test]
 fn a_subagent_is_a_task_whose_end_the_host_observes() {
     let root = in_use("tasks");
-    let sub = |event: &str, id: &str, extra: &str| hook(&root, event, &format!(r#"{{"agent_id":"{id}","agent_type":"pcp-os:challenger"{extra},"cwd":"{}"}}"#, root.display()));
+    let sub = |event: &str, id: &str, extra: &str| hook(&root, event, &format!(r#"{{"agent_id":"{id}","agent_type":"pcp-os:challenger"{extra},"cwd":"{}"}}"#, js(&root)));
     sub("subagent-start", "a1", "");
     let st = tool(&root, "acr_status", "{}").0;
     assert!(st.contains("pcp-os-challenger") && st.contains("STARTED") && st.contains("ask their 1 running task(s) to stop [T1]"), "{st}");
@@ -479,11 +504,11 @@ fn a_context_reset_is_recorded_by_the_host_and_the_record_is_fenced_from_file_to
     hook(&root, "session-start", r#"{"source":"compact"}"#);
     assert_eq!(kinds(&root).iter().filter(|k| *k == "DELIVERY_STATE").count(), 2, "one delivery and one reset: a reset is recorded once");
     let pre = |path: &str| hook(&root, "pre-tool", &format!(r#"{{"tool_name":"Write","tool_input":{{"file_path":"{path}","content":"x"}}}}"#));
-    for fenced in [format!("{}/.pcp/register.jsonl", root.display()), ".pcp/register.jsonl".to_string(), ".pcp/observed.jsonl".to_string(), ".pcp/new-file".to_string()] {
+    for fenced in [format!("{}/.pcp/register.jsonl", js(&root)), ".pcp/register.jsonl".to_string(), ".pcp/observed.jsonl".to_string(), ".pcp/new-file".to_string()] {
         assert!(pre(&fenced).contains("\"permissionDecision\":\"deny\""), "{fenced}");
     }
     assert_eq!(pre("src/main.rs"), "");
-    assert_eq!(pre(&format!("{}/notes.md", root.display())), "");
+    assert_eq!(pre(&format!("{}/notes.md", js(&root))), "");
 }
 
 #[test]
@@ -564,9 +589,9 @@ fn the_workspace_profile_is_the_person_s_and_is_recorded_once_per_typed_command(
         let mut c = with_method(&root, &m);
         c.args(["hook", "prompt"]);
         let input = if event == "UserPromptSubmit" {
-            format!(r#"{{"hook_event_name":"UserPromptSubmit","prompt":"/pcp-os:workspace {args}","cwd":"{}"}}"#, root.display())
+            format!(r#"{{"hook_event_name":"UserPromptSubmit","prompt":"/pcp-os:workspace {args}","cwd":"{}"}}"#, js(&root))
         } else {
-            format!(r#"{{"hook_event_name":"UserPromptExpansion","command_name":"pcp-os:workspace","command_args":"{args}","prompt":"(expanded)","cwd":"{}"}}"#, root.display())
+            format!(r#"{{"hook_event_name":"UserPromptExpansion","command_name":"pcp-os:workspace","command_args":"{args}","prompt":"(expanded)","cwd":"{}"}}"#, js(&root))
         };
         feed(c, input.as_bytes()).0
     };
@@ -603,8 +628,8 @@ fn an_artifact_s_digest_is_the_server_s_own_reading_of_a_file_inside_the_served_
     let outside = dir("artifact-outside");
     fs::write(root.join("target.txt"), b"the target\n").unwrap();
     fs::write(outside.join("secret.txt"), b"elsewhere\n").unwrap();
-    std::os::unix::fs::symlink(outside.join("secret.txt"), root.join("link.txt")).unwrap();
-    std::os::unix::fs::symlink(&outside, root.join("away")).unwrap();
+    link_to_file(&outside.join("secret.txt"), &root.join("link.txt"));
+    link_to_dir(&outside, &root.join("away"));
     tool(&root, "acr_begin", "{}");
     let (r, err) = tool(&root, "acr_artifact", r#"{"path":"target.txt","name":"target"}"#);
     assert!(!err && r.contains(&sha256_hex(b"the target\n")), "{r}");
@@ -776,7 +801,7 @@ fn a_clause_is_fetched_by_the_program_itself_from_the_text_at_hand_or_said_to_be
 #[test]
 fn a_prompt_that_is_only_a_word_to_stop_is_a_halt_the_host_saw_and_other_prompts_are_left_alone() {
     let root = dir("bare-stop");
-    let p = |text: &str| hook(&root, "prompt", &format!(r#"{{"hook_event_name":"UserPromptSubmit","prompt":"{text}","cwd":"{}"}}"#, root.display()));
+    let p = |text: &str| hook(&root, "prompt", &format!(r#"{{"hook_event_name":"UserPromptSubmit","prompt":"{text}","cwd":"{}"}}"#, js(&root)));
     // Nothing in use: nothing is recorded, nothing is created and nothing is said.
     assert_eq!(p("stop"), "");
     assert!(!root.join(".pcp").exists());
@@ -798,7 +823,7 @@ fn a_prompt_that_is_only_a_word_to_stop_is_a_halt_the_host_saw_and_other_prompts
     assert_eq!(events(&root).len(), n);
     // A session that starts while ACR is in use is told what a stop means.
     typed(&root, "pcp-os:review", "y");
-    assert!(hook(&root, "session-start", &format!(r#"{{"source":"startup","cwd":"{}"}}"#, root.display())).contains("call acr_halt at once"));
+    assert!(hook(&root, "session-start", &format!(r#"{{"source":"startup","cwd":"{}"}}"#, js(&root))).contains("call acr_halt at once"));
 }
 
 #[test]
