@@ -2,6 +2,8 @@
 
 An experimental x86-64 UEFI optical loader booted PCP OS with its 16 MiB static heap in two Q35 virtual machines. The loader asks firmware to allocate the entire range containing the kernel, modules, Multiboot data and transition stack before writing to it. The alternate image links at 32 MiB. The workflow applies the patch in a detached worktree and boots a temporary unsigned CD. The loader waits for a host test controller on the second serial port.
 
+The separate removable USB fixture runs only under QEMU TCG. Its loader returns control to firmware on a physical machine.
+
 | RAM | Control | Firmware result | Guest result |
 | --- | --- | --- | --- |
 | 128 MiB | Occupy one required page first | Whole-range allocation returned EFI_NOT_FOUND | Refused before copying or transfer |
@@ -22,7 +24,9 @@ The USB trial builds a separate x86-64 OVMF fixture. QEMU attaches its FAT volum
 
 The USB application checks for the QEMU TCG fixture. It reserves and verifies the same full-heap memory range as the optical experiment, then reads back the copied kernel, zero-filled tail and all three modules before leaving boot services. The application uses the bytes embedded at build time for this comparison. The USB guest boots without input on a second serial port. The kernel reports its running measurement on the first serial port.
 
-The test starts a fresh Q35 guest at each of 128 and 256 MiB. Each has a disposable writable internal NVMe drive with a GPT/FAT fixture, a private writable copy of the OVMF variable store, and no NIC. At Home it opens Verification, returns with Esc, and confirms power-off. The retained test artifact includes the exact unsigned USB volume, raw screens, serial and firmware logs, QMP shutdown, disk I/O counters, and raw variable-store snapshots before boot, at Home and after guest shutdown. Hashes after QEMU exits also cover the final backing files.
+On the active OVMF console, the loader describes a linear 32-bit BGR framebuffer to the kernel when the stride and reported extent cover the mode. It keeps the current mode. The kernel can use this description when it has no native display driver.
+
+The test starts fresh standard-VGA Q35 guests at 128 and 256 MiB and a virtio VGA guest at 128 MiB. The virtio guest checks that the visible Home dimensions and kernel-reported framebuffer address match the handoff. Each has a disposable writable internal NVMe drive with a GPT/FAT fixture, a private writable copy of the OVMF variable store, and no NIC. At Home it opens Verification, returns with Esc, and confirms power-off. The retained test artifact includes the exact unsigned USB volume, raw screens, serial and firmware logs, QMP shutdown, disk I/O counters, and raw variable-store snapshots before boot, at Home and after guest shutdown. Hashes after QEMU exits also cover the final backing files.
 
 A fresh OVMF store can change before Home. The observer reports raw byte differences and the names and value hashes of active variables at each checkpoint. These intervals include firmware activity. QMP pflash write counters alone cannot establish whether the variable store changed. The experiment covers unsigned virtual firmware and media. Physical laptops, Secure Boot and physical USB media remain unqualified.
 

@@ -15,11 +15,15 @@ HERE = Path(__file__).resolve().parent
 OPTICAL = runpy.run_path(str(HERE.parent / 'optical-disk-check/check.py'))
 
 
-def usb_command(qemu, code, template, volume, out, ram):
+def usb_command(qemu, code, template, volume, out, ram, video='std'):
     """Create the ordinary writable fixtures and attach the read-only removable volume."""
     serial, trace = out / 'serial.txt', out / 'firmware.txt'
+    graphics = {
+        'std': ['-vga', 'std'],
+        'virtio-vga': ['-vga', 'none', '-device', 'virtio-vga'],
+    }[video]
     args = [qemu, '-machine', 'q35', '-accel', 'tcg', '-cpu', 'max', '-m', str(ram), '-smp', '1',
-            '-S', '-no-shutdown', '-no-reboot', '-nic', 'none', '-display', 'none', '-vga', 'std',
+            '-S', '-no-shutdown', '-no-reboot', '-nic', 'none', '-display', 'none', *graphics,
             '-audiodev', 'none,id=snd', '-device', 'AC97,audiodev=snd', '-serial', 'file:' + str(serial),
             '-monitor', 'none', '-qmp', 'stdio', '-debugcon', 'file:' + str(trace),
             '-global', 'isa-debugcon.iobase=0xe9', '-boot', 'strict=on',
@@ -29,11 +33,11 @@ def usb_command(qemu, code, template, volume, out, ram):
     return args + create(out, template, OPTICAL['make_gpt_disk'])
 
 
-def trial(qemu, code, template, volume, image, out, ram):
+def trial(qemu, code, template, volume, image, out, ram, video='std'):
     out.mkdir()
     serial, trace = out / 'serial.txt', out / 'firmware.txt'
-    args = usb_command(qemu, code, template, volume, out, ram)
-    receipt = {'ram_mib': ram, 'argv': args, 'passed': False, 'snapshots': []}
+    args = usb_command(qemu, code, template, volume, out, ram, video)
+    receipt = {'video': video, 'ram_mib': ram, 'argv': args, 'passed': False, 'snapshots': []}
     snapshots = receipt['snapshots']
     try:
         with (out / 'stderr.txt').open('wb') as err, subprocess.Popen(
@@ -64,6 +68,18 @@ def trial(qemu, code, template, volume, image, out, ram):
                 if not boot_device or sum(line.startswith('  pass ') for line in startup.splitlines()) != OPTICAL['SCREEN']['STARTUP_CHECKS']:
                     raise ValueError('missing OVMF USB boot device or startup self-tests')
                 receipt['firmware_boot_device'] = boot_device[0].strip()
+                if video == 'virtio-vga':
+                    # The display must be the firmware buffer taken over by the kernel.
+                    display = re.search(
+                        r'^display: Loader, (\d+)x(\d+), 1 page\(s\), '
+                        r'\d+ KiB of its memory mapped at (0x[0-9a-f]+)', startup, re.M)
+                    framebuffer = next((s for s in steps if s.startswith('console_framebuffer=')), None)
+                    if not display or not framebuffer or int(display[3], 16) != int(framebuffer.split('=')[1], 16):
+                        raise ValueError('virtio Home did not use the reported firmware framebuffer')
+                    size = (out / 'home.ppm').read_bytes().split(b'\n', 2)[1].decode()
+                    if size != f'{display[1]} {display[2]}':
+                        raise ValueError('visible Home and loader display dimensions differ')
+                    receipt['loader_display'] = display[0]
                 snapshots.append(capture(rpc, out, 'home'))
                 rpc('cont')
                 screens.verification('home')
@@ -137,6 +153,7 @@ def main():
         shutil.copyfile(work / 'usb.img', volume)
         for ram in (128, 256):
             trial(args.qemu, code, template, volume, image, out / str(ram), ram)
+        trial(args.qemu, code, template, volume, image, out / "virtio-vga", 128, "virtio-vga")
 
 
 if __name__ == '__main__':
