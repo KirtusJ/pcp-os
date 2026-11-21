@@ -41,8 +41,17 @@ pub fn blend(under: u32, over: u32, coverage: u32) -> u32 {
     mix(16) << 16 | mix(8) << 8 | mix(0)
 }
 
+/// How many times the whole display has been filled. A surface that finds this changed knows that
+/// another screen was drawn over it and that it must draw itself again.
+static CLEARS: AtomicU32 = AtomicU32::new(0);
+
+pub fn clears() -> u32 {
+    CLEARS.load(Ordering::Relaxed)
+}
+
 /// Fill the whole display.
 pub fn clear(colour: u32) {
+    CLEARS.fetch_add(1, Ordering::Relaxed);
     if let Some(d) = dev::display() {
         dev::display_fill(0, 0, d.width, d.height, colour);
     }
