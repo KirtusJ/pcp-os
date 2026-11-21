@@ -211,8 +211,14 @@ if __name__ == "__main__":
     from check_register import check_register
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
-        desc = make(distro / "PCP-OS.iso", kernel / "target/pcpos-kernel.elf32",
+        elf = kernel / "target/pcpos-kernel.elf32"
+        desc = make(distro / "PCP-OS.iso", elf,
                     kernel / "tools/measure.py", work, Path(__file__).resolve().parent)
+        # Preserve the exact input needed to independently derive the in-memory hashes.
+        shutil.copyfile(elf, out / "kernel.elf32")
+        desc["qemu_version"] = subprocess.check_output(
+            ["qemu-system-x86_64", "--version"], text=True).splitlines()[0]
+        desc["ovmf_vars_template_sha256"] = digest(Path("/usr/share/OVMF/OVMF_VARS_4M.fd"))
         (out / "image.json").write_text(json.dumps(desc, indent=2) + "\n")
         for ram, gate in ((128, "X"), (128, "G"), (256, "R")):
             observe(work, out / f"{ram}-{gate}", ram, gate, desc, kernel)
