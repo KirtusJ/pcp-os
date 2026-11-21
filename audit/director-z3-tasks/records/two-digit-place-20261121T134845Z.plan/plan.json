@@ -1,0 +1,1 @@
+{"tasks": [{"id": "T", "argv": ["python3", "-B", "examples/tester-cd/check_compact_pins.py", "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/cdHw1", "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/evHwPins2"], "timeout": 900, "expect_exit": 0}], "width": 1}

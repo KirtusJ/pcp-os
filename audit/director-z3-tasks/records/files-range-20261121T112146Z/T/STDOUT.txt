@@ -1,0 +1,10 @@
+  "kernel_measurement": "51e9b24ea13d1d310c83c9b4eea65454741d844ce6d3c9b6a38f39342744d434",
+  "iso_bytes": 2584576,
+  "iso_sha256": "18d789bb09b15183183a3d05893cb77445908b7f5d8837372b01529d7452e238"
+}
+pc   ordinary            passed
+pc   instruction-counted passed
+q35  ordinary            passed
+q35  instruction-counted passed
+save Disk save cold morning
+restore Queue restored cold morning

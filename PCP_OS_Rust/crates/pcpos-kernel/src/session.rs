@@ -58,6 +58,47 @@ mod ethernet;
 #[cfg(feature = "guest-ethernet")]
 use ethernet::ethernet_grant;
 
+/// Text made to fit `room` characters. Text that does not fit is never cut in silence: its last two places
+/// become "..", so that a person sees that there is more than is shown.
+fn cut(text: &str, room: usize) -> String {
+    if text.chars().count() <= room {
+        text.into()
+    } else {
+        let mut out: String = text.chars().take(room.saturating_sub(2)).collect();
+        out.push_str("..");
+        out
+    }
+}
+
+/// A long name on as many lines as it needs, none longer than `across`. Nothing is left out.
+fn wrapped(text: &str, across: usize) -> Vec<String> {
+    let all: Vec<char> = text.chars().collect();
+    all.chunks(across.max(1)).map(|c| c.iter().collect()).collect()
+}
+
+/// The whole of what the chosen pinned program is, on a plate that ends just above `bottom`: its name in
+/// full, its size and the beginning of its digest. A label in the bar or the dock has room for twelve
+/// characters, and two programs can agree in those; this is what says which one Enter will start.
+fn chosen_pin(p: &Entry, x: u32, bottom: u32, w: u32, refused: Option<&str>) {
+    use ui::{label, BAD, GOOD, SOFT, TEXT};
+    let across = ((w.saturating_sub(80)) / 10).min(72) as usize;
+    let name = wrapped(&p.name, across);
+    let facts = format!("{}   SHA-256 {}...", size_text(p.image.len()), &p.digest[..16]);
+    // After Enter was refused for this program, the plate says so in place of 'Enter starts' (B3's patch
+    // did this for the small display; the same holds here).
+    let caption = match refused { Some(why) => cut(&format!("Not started: {}", why), across), None => String::from("Enter starts") };
+    let widest = name.iter().map(|l| l.chars().count()).max().unwrap_or(0).max(facts.chars().count()).max(caption.chars().count()).max(18) as u32;
+    let (wide, tall) = (widest * 10 + 40, 80 + 20 * name.len() as u32);
+    let x = (x.min(w.saturating_sub(wide + 20))) / 10 * 10;
+    let y = (bottom.saturating_sub(tall + 10)) / 20 * 20;
+    let on = plate(x, y, wide, tall, PLATE, outline(), false);
+    label(x + 20, y + 20, &caption, if refused.is_some() { BAD } else { GOOD }, false, &on);
+    for (n, line) in name.iter().enumerate() {
+        label(x + 20, y + 40 + n as u32 * 20, line, TEXT, false, &on);
+    }
+    label(x + 20, y + 40 + name.len() as u32 * 20, &facts, SOFT, false, &on);
+}
+
 fn size_text(bytes: usize) -> String {
     if bytes >= 10 << 20 {
         format!("{} MiB", bytes >> 20)
@@ -129,7 +170,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
         match programs.iter().find(|p| p.name == name) {
             Some(entry) if safe => say!("auto={}: not started", entry.name),
             Some(entry) => {
-                let (m, w) = run_entry(rec, entry, world, &mut tasks, start, failed);
+                let (m, w, _) = run_entry(rec, entry, world, &mut tasks, start, failed);
                 world = w;
                 message = m;
             }
@@ -156,6 +197,9 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     // What is placed lasts for the session; nothing about the desktop is written to a disk.
     let mut chosen = 0usize;
     let mut place = 0usize;
+    let mut last_refusal = None;
+    // Which part of the chosen pin's name the small-display desktop shows, and how many parts it has.
+    let (mut name_page, mut name_pages) = (0usize, 1usize);
     // `first=details` on the loader's command line starts on the plain list of everything the loader gave,
     // which is the screen this kernel showed first before it had a desktop. Harnesses that drive that
     // screen by its keys and compare its pixels ask for it; a person gets the desktop.
@@ -180,7 +224,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     let graphic = display.width >= 1280 && display.height >= 720 && ui::scale() == 1;
     // How many places the desktop has for the way to all the programs and what is pinned. Every place
     // can be reached and is drawn; a pin for which there is no place is refused, and said to be.
-    let room = if graphic { foot_room(display.width) } else { (ui::grid().1.saturating_sub(10)).max(2) as usize };
+    let room = if graphic { foot_room(display.width) } else { programs.len() + 1 };
     arch::interrupts_on();
     dev::keys_forget();
     loop {
@@ -191,7 +235,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
         // The dock holds the way to all the programs first, then what is pinned.
         place = place.min(shortcuts.len()).min(room - 1);
         match surface {
-            Surface::Home => draw_home(start, &programs, rec, &shortcuts, place, whole_bar, &widgets, &world.store, mounted, tasks - start.tasks, &message),
+            Surface::Home => name_pages = draw_home(start, &programs, rec, &shortcuts, place, whole_bar, &widgets, &world.store, mounted, tasks - start.tasks, &message, last_refusal, name_page),
             Surface::Launcher => draw_desktop(start, &programs, rec, chosen, &message, &shortcuts),
             Surface::Details => draw_menu(start, &programs, &files, rec, chosen, &message, world.store.len(),
                                           #[cfg(feature = "vm-store")] mounted),
@@ -221,20 +265,28 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
             (Surface::Launcher, (0x3B, false)) => keys_view("KEYS IN THE PROGRAMS", &LAUNCHER_KEYS),
             (Surface::Home, (0x25, false)) if letters => keys_view("KEYS ON THE DESKTOP", &HOME_KEYS),
             (Surface::Launcher, (0x25, false)) if letters => keys_view("KEYS IN THE PROGRAMS", &LAUNCHER_KEYS),
-            (Surface::Home, (0x4B, _)) | (Surface::Home, (0x48, _)) if place > 0 => place -= 1,
-            (Surface::Home, (0x4D, _)) | (Surface::Home, (0x50, _)) if place < shortcuts.len().min(room - 1) => place += 1,
+            // On the small-display desktop Left and Right turn the parts of a long name; Up and Down choose.
+            (Surface::Home, (0x4B, _)) if !graphic => name_page = name_page.saturating_sub(1),
+            (Surface::Home, (0x4D, _)) if !graphic => name_page = (name_page + 1).min(name_pages.saturating_sub(1)),
+            (Surface::Home, (0x4B, _)) | (Surface::Home, (0x48, _)) if place > 0 => { place -= 1; name_page = 0; }
+            (Surface::Home, (0x4D, _)) | (Surface::Home, (0x50, _)) if place < shortcuts.len().min(room - 1) => { place += 1; name_page = 0; }
             (Surface::Home, (0x39, false)) => surface = Surface::Launcher,
             (Surface::Home, (0x1C, _)) if to_start.is_none() => surface = Surface::Launcher,
             (Surface::Home, (0x3D, false)) => files_view(&world.store, mounted),
             (Surface::Home, (0x21, false)) if letters => files_view(&world.store, mounted),
             (Surface::Home, (0x3C, false)) => settings_view(&mut whole_bar, &mut widgets),
-            (Surface::Home, (0x53, _)) | (Surface::Home, (0x0E, false)) if place > 0 => { shortcuts.remove(place - 1); }
+            (Surface::Home, (0x53, _)) | (Surface::Home, (0x0E, false)) if place > 0 => { shortcuts.remove(place - 1); name_page = 0; }
             (Surface::Launcher, (0x48, _)) | (Surface::Details, (0x48, _)) if chosen > 0 => chosen -= 1,
             (Surface::Launcher, (0x50, _)) | (Surface::Details, (0x50, _)) if chosen + 1 < programs.len() => chosen += 1,
-            (_, (0x1C, _)) if to_start.is_some() && safe => message = String::from("Not started: the kernel did not verify itself, and starts no program."),
+            (_, (0x1C, _)) if to_start.is_some() && safe => {
+                last_refusal = to_start.map(|index| (index, "the kernel did not verify itself"));
+                message = String::from("Not started: the kernel did not verify itself, and starts no program.");
+            }
             (_, (0x1C, _)) if to_start.is_some() => {
                 arch::interrupts_off();
-                let (m, w) = run_entry(rec, &programs[to_start.unwrap()], world, &mut tasks, start, failed);
+                let index = to_start.unwrap();
+                let (m, w, refusal) = run_entry(rec, &programs[index], world, &mut tasks, start, failed);
+                last_refusal = refusal.map(|why| (index, why));
                 world = w;
                 message = m;
                 arch::interrupts_on();
@@ -311,7 +363,7 @@ fn verified_word(start: &Start, w: u32, row: u32) -> u32 {
 /// The bar: the same things as the dock and the corners, in the form most desktops have, across the whole
 /// foot of the desktop. At the left the way to all the programs and each pinned program, one of them
 /// chosen; at the right the key that lists the keys, and whether the kernel verified itself.
-fn whole_bar(start: &Start, programs: &[Entry], pinned: &[usize], place: usize, w: u32, h: u32) {
+fn whole_bar(start: &Start, programs: &[Entry], pinned: &[usize], place: usize, w: u32, h: u32, refusal: Option<(usize, &str)>) {
     use ui::{label, label_width, AMBER, GOOD, SOFT, TEAL, TEXT};
     let y0 = h / 20 * 20 - 60;
     let row = y0 + 20;
@@ -336,14 +388,17 @@ fn whole_bar(start: &Start, programs: &[Entry], pinned: &[usize], place: usize, 
         for (bx, by, bw, bh, colour) in bars {
             dev::display_fill(mx + bx, my + by, *bw, *bh, *colour);
         }
-        let name: String = if i == 0 { String::from("Programs") } else { programs[pinned[i - 1]].name.chars().take(12).collect() };
+        let name: String = if i == 0 { String::from("Programs") } else { cut(&programs[pinned[i - 1]].name, 12) };
         label(x + 50, row, &name, TEXT, false, &on_item);
+    }
+    if place > 0 && place < (1 + pinned.len()).min(room) {
+        chosen_pin(&programs[pinned[place - 1]], 10 + place as u32 * 190, y0, w, refusal.filter(|(i, _)| *i == pinned[place - 1]).map(|(_, why)| why));
     }
 }
 
 /// The dock: the person's programs, along the foot of the desktop, in the middle. First the way to all the
 /// programs; then each program the person has pinned there. One is chosen; Enter opens it.
-fn dock(programs: &[Entry], pinned: &[usize], place: usize, w: u32, h: u32) {
+fn dock(programs: &[Entry], pinned: &[usize], place: usize, w: u32, h: u32, refusal: Option<(usize, &str)>) {
     use ui::{label, label_width, AMBER, GOOD, TEAL, TEXT};
     let room = foot_room(w);
     let shown = (1 + pinned.len()).min(room);
@@ -364,8 +419,11 @@ fn dock(programs: &[Entry], pinned: &[usize], place: usize, w: u32, h: u32) {
         for (bx, by, bw, bh, colour) in bars {
             dev::display_fill(mx + bx, my + by, *bw, *bh, *colour);
         }
-        let name: String = if i == 0 { String::from("Programs") } else { programs[pinned[i - 1]].name.chars().take(12).collect() };
+        let name: String = if i == 0 { String::from("Programs") } else { cut(&programs[pinned[i - 1]].name, 12) };
         label(x + (140 - label_width(&name, false)) / 20 * 10, y0 + 60, &name, TEXT, false, &on_item);
+    }
+    if place > 0 && place < shown {
+        chosen_pin(&programs[pinned[place - 1]], x0 + 10 + place as u32 * 140, y0, w, refusal.filter(|(i, _)| *i == pinned[place - 1]).map(|(_, why)| why));
     }
 }
 
@@ -465,7 +523,7 @@ fn recent_tasks(rec: &Record, programs: &[Entry], most: usize) -> Vec<(String, S
 /// what the person has put there: shortcuts to programs, one of them chosen, and widgets. With nothing placed
 /// it is empty. On a display under 1280 by 720 the same things are said as plain lines.
 #[allow(clippy::too_many_arguments)]
-fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize], place: usize, whole: bool, widgets: &[bool; 3], store: &crate::regular::Files, mounted: bool, run: u32, message: &str) {
+fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize], place: usize, whole: bool, widgets: &[bool; 3], store: &crate::regular::Files, mounted: bool, run: u32, message: &str, last_refusal: Option<(usize, &str)>, name_page: usize) -> usize {
     use ui::{label, AMBER, BAD, GOOD, SOFT, TEAL, TEXT};
     let safe = start.failed != 0;
     let recent = if widgets[0] { recent_tasks(rec, programs, 3) } else { Vec::new() };
@@ -481,23 +539,142 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
             at(7, 1, "PCP OS | DESKTOP", TEXT, GROUND);
             at(2, 3, &if safe { format!("NOT VERIFIED: {} of {} self-tests failed.", start.failed, start.passed + start.failed) }
                       else { format!("Verified at start: all {} self-tests passed.", start.passed) }, if safe { BAD } else { GOOD }, GROUND);
+            // The rows between the heading and the keys are shared out so that nothing is drawn over
+            // anything else and nothing that is left out is left out in silence (after B3's windowed list).
+            // First what must be there: one row of the list, holding the chosen place, for a chosen pin
+            // its whole name and its size and digest, and what the last program left to say (up to three
+            // rows). Then, as far as the rows go: a blank row above
+            // the keys, the words 'Enter starts', a blank row above them, the widgets' lines, and more
+            // rows of the list. Row 4 says which places are shown of how many, and how many widget lines
+            // had no room. Every place is reached by moving the choice: the list follows it.
+            let (cols, _) = ui::grid();
+            let across = (cols as usize).saturating_sub(4).max(1);
+            let selected = place.checked_sub(1).and_then(|at| shortcuts.get(at)).copied();
+            let chosen_pin = selected.map(|i| &programs[i]);
+            let name: Vec<String> = chosen_pin.map(|p| wrapped(&p.name, across)).unwrap_or_default();
+            let mut widget_lines: Vec<String> = recent.iter().map(|(time, name, outcome, _)| format!("{} {} {}", time, outcome, name)).collect();
+            if widgets[1] { widget_lines.push(format!("memory {} MiB, {} MiB free", pool * 4 / 1024, free * 4 / 1024)); }
+            if widgets[2] { widget_lines.push(String::from(files_line)); }
+            let places = shortcuts.len() + 1;
+            let body = (rows as usize).saturating_sub(7);
+            let mut left = body.saturating_sub(1);
+            // The name gives way only when the display has fewer rows than the name alone needs, and says so.
+            let name_rows = if chosen_pin.is_some() { name.len().min(left.saturating_sub(1).max(1)) } else { 0 };
+            // A name with more rows than there is room for is read a part at a time: Left and Right turn
+            // its parts, and row 4 says which part of how many is shown. Every character can be read
+            // before Enter (the ending alone does not tell two names apart that differ in the middle).
+            let name_pages = if name_rows == 0 { 1 } else { (name.len() + name_rows - 1) / name_rows };
+            let name_page = name_page.min(name_pages - 1);
+            let facts = chosen_pin.is_some() && left > name_rows;
+            left = left.saturating_sub(name_rows + facts as usize);
+            // What the last program left to say, or why one was not started, comes next: a person who
+            // pressed Enter and sees the desktop again must be told what happened.
+            let said = wrapped(message.lines().next().unwrap_or(""), across);
+            let said_rows = if message.is_empty() { 0 } else { said.len().min(3).min(left) };
+            left -= said_rows;
+            fn take(left: &mut usize, want: bool) -> bool { let got = want && *left > 0; if got { *left -= 1; } got }
+            let gap_keys = take(&mut left, true);
+            let caption = take(&mut left, chosen_pin.is_some());
+            let gap_identity = take(&mut left, chosen_pin.is_some());
+            let gap_widgets = !widget_lines.is_empty() && left >= 2 && take(&mut left, true);
+            let widgets_shown = if gap_widgets { widget_lines.len().min(left) } else { 0 };
+            left -= widgets_shown;
+            let list_rows = (1 + left).min(places);
+            let first = (place + 1).saturating_sub(list_rows);
+            let mut notes: Vec<String> = Vec::new();
+            // Row 4 says which places are shown and which part of the name, in the longest wording that fits
+            // the row it has: the width decides, not a class of display (A3 found a width where the long
+            // wording was cut and the short one would have fitted). A wording is never cut where a shorter
+            // one says the same; the arrows and the numbers are the last things to go.
+            let _ = &mut notes;
+            let paged = name_pages > 1;
+            let windowed = list_rows < places;
+            let (at_place, of, part, parts) = (place + 1, places, name_page + 1, name_pages);
+            let mut wordings: Vec<String> = Vec::new();
+            match (windowed, paged) {
+                (true, true) => {
+                    wordings.push(format!("Places {} to {} of {} | name part {} of {}: Left/Right", first + 1, first + list_rows, of, part, parts));
+                    wordings.push(format!("Place {}/{} | name {}/{} <- ->", at_place, of, part, parts));
+                    wordings.push(format!("{}/{} | name {}/{} <- ->", at_place, of, part, parts));
+                    wordings.push(format!("{}/{} | {}/{} <- ->", at_place, of, part, parts));
+                }
+                (true, false) => {
+                    wordings.push(format!("Places {} to {} of {}", first + 1, first + list_rows, of));
+                    wordings.push(format!("Place {}/{}", at_place, of));
+                }
+                (false, true) => {
+                    wordings.push(format!("name part {} of {}: Left/Right", part, parts));
+                    wordings.push(format!("name {}/{} <- ->", part, parts));
+                    wordings.push(format!("{}/{} <- ->", part, parts));
+                }
+                (false, false) => {}
+            }
+            let fits = |text: &String| text.chars().count() <= across;
+            let mut line = wordings.iter().find(|w| fits(w)).or(wordings.last()).cloned().unwrap_or_default();
+            // How many widget lines had no room is never the part that is cut (B3): where row 4 cannot hold
+            // it beside the rest, it has the last row of the display, below the keys.
+            if widgets_shown < widget_lines.len() {
+                let count = format!("{} widget line(s) not shown", widget_lines.len() - widgets_shown);
+                let both = if line.is_empty() { count.clone() } else { format!("{} | {}", line, count) };
+                if fits(&both) { line = both; } else { at(2, rows - 1, &cut(&count, across), SOFT, GROUND); }
+            }
+            if !line.is_empty() { at(2, 4, &cut(&line, across), SOFT, GROUND); }
             let mut row = 5;
-            for i in 0..=shortcuts.len() {
+            for i in first..first + list_rows {
                 let ground = if i == place { ui::PANEL } else { GROUND };
-                ui::fill(2 * ui::CELL_W, row * ui::CELL_H, 44 * ui::CELL_W, ui::CELL_H, ground);
-                at(3, row, &if i == 0 { String::from("Programs") } else { format!("PINNED {}", programs[shortcuts[i - 1]].name) }, TEXT, ground);
+                ui::fill(2 * ui::CELL_W, row * ui::CELL_H, (across as u32).min(44) * ui::CELL_W, ui::CELL_H, ground);
+                at(3, row, &if i == 0 { String::from("Programs") } else { cut(&format!("PINNED {}", programs[shortcuts[i - 1]].name), across.min(42)) }, TEXT, ground);
                 row += 1;
             }
-            for (time, name, outcome, _) in recent.iter() {
-                at(2, row + 1, &format!("{} {} {}", time, outcome, name), SOFT, GROUND);
+            if let Some(p) = chosen_pin {
+                row += gap_identity as u32;
+                if let Some((_, reason)) = last_refusal.filter(|(i, _)| Some(*i) == selected) {
+                    // With no caption row, use the space below the desktop title and to the right of the emblem.
+                    let (x, y, room) = if caption { (2, row, across) } else { (7, 2, (cols as usize).saturating_sub(7)) };
+                    let why = if reason == "the program could not be admitted as a task" && "Not started: ".len() + reason.len() > room {
+                        "not admitted"
+                    } else { reason };
+                    at(x, y, &cut(&format!("Not started: {}", why), room), BAD, GROUND);
+                } else if caption {
+                    at(2, row, "Enter starts", GOOD, GROUND);
+                }
+                row += caption as u32;
+                for line in name.iter().skip(name_page * name_rows).take(name_rows) {
+                    at(2, row, line, TEXT, GROUND);
+                    row += 1;
+                }
+                // The last part may be shorter: its rows stay the name's, so that what follows does not move.
+                row += (name_rows - name.iter().skip(name_page * name_rows).take(name_rows).count()) as u32;
+                if facts {
+                    // Where the row is too short for the usual words, the digest gets the room: as many of
+                    // its first sixteen digits as fit, then "..".
+                    let usual = format!("{}   SHA-256 {}...", size_text(p.image.len()), &p.digest[..16]);
+                    let line = if usual.chars().count() <= across { usual } else {
+                        let size = size_text(p.image.len());
+                        let digits = across.saturating_sub(size.chars().count() + 7).min(16);
+                        format!("{} sha {}..", size, &p.digest[..digits])
+                    };
+                    at(2, row, &cut(&line, across), SOFT, GROUND);
+                    row += 1;
+                }
+            }
+            for (n, line) in said.iter().enumerate().take(said_rows) {
+                at(2, row, &if n + 1 == said_rows && said.len() > said_rows { cut(&format!("{}...", line), line.chars().count()) } else { line.clone() }, ui::AMBER, GROUND);
                 row += 1;
             }
-            if widgets[1] { at(2, row + 2, &format!("memory {} MiB, {} MiB free", pool * 4 / 1024, free * 4 / 1024), SOFT, GROUND); row += 1; }
-            if widgets[2] { at(2, row + 3, files_line, SOFT, GROUND); }
-            at(2, rows - 2, "Up/Down choose   Enter open   F1 keys   F10 off", TEXT, GROUND);
-            return;
+            row += gap_widgets as u32;
+            for line in widget_lines.iter().take(widgets_shown) {
+                at(2, row, &cut(line, across), SOFT, GROUND);
+                row += 1;
+            }
+            let _ = gap_keys;
+            // On a display too narrow for the whole line, the keys that open the list of keys and that
+            // stop the machine are the ones kept.
+            at(2, rows - 2, if across >= 47 { "Up/Down choose   Enter open   F1 keys   F10 off" } else { "Enter open  F1 keys  F10 off" }, TEXT, GROUND);
+            return name_pages;
         }
     };
+    let _ = name_page;
     let (w, h) = (display.width, display.height);
     let field = ui::Field::of(w, h);
     field.paint();
@@ -519,7 +696,7 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
             let x = label(x + 20, line, outcome, if outcome == "DONE" { GOOD } else { AMBER }, false, &on_card);
             let x = label(x + 20, line, name, TEXT, false, &on_card);
             let room = ((left + wide).saturating_sub(x + 40) / 10) as usize;
-            label(x + 20, line, &note.chars().take(room).collect::<String>(), SOFT, false, &on_card);
+            label(x + 20, line, &cut(&note, room), SOFT, false, &on_card);
         }
         y += 160;
     }
@@ -544,17 +721,22 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
         y += 160;
     }
     // What the last program left to say is shown once, where the person is looking.
-    for (i, line) in message.lines().take(3).enumerate() {
-        label(left, y + i as u32 * 20, line, ui::edition().accent, false, &over_field);
+    // Each of its lines is wrapped to the width of the column it is in, so that none runs off the screen;
+    // up to five rows, and the last says so if there was more.
+    let across = ((w * 47 / 100).min(1100) / 10).max(20) as usize;
+    let said: Vec<String> = message.lines().flat_map(|line| wrapped(line, across)).collect();
+    for (i, line) in said.iter().enumerate().take(5) {
+        label(left, y + i as u32 * 20, &if i == 4 && said.len() > 5 { cut(&format!("{}...", line), line.chars().count()) } else { line.clone() }, ui::edition().accent, false, &over_field);
     }
 
     emblem_plate(&field, h);
     if whole {
-        whole_bar(start, programs, shortcuts, place, w, h);
+        whole_bar(start, programs, shortcuts, place, w, h, last_refusal);
     } else {
-        dock(programs, shortcuts, place, w, h);
+        dock(programs, shortcuts, place, w, h, last_refusal);
         corners(start, w, h, &[("F1", "keys")]);
     }
+    1
 }
 
 /// The settings: how the desktop looks, and which widgets are on it. Nothing here changes by one key from
@@ -595,25 +777,65 @@ fn settings_view(whole_bar: &mut bool, widgets: &mut [bool; 3]) {
     }
 }
 
-/// The files programs have written, by name and size. Esc or Enter goes back.
+/// The files programs have written, by name and size. Every one can be reached: Up and Down move the list
+/// by a line, Page Up and Page Down by a screenful, and the heading says which are shown of how many. A
+/// name too long for its line is on as many lines as it needs. Esc or Enter goes back.
 fn files_view(store: &crate::regular::Files, mounted: bool) {
     use ui::{at, GROUND, SOFT, TEXT};
     let (cols, rows) = ui::grid();
-    ui::clear(GROUND);
+    // The name has the columns up to the one before its size, which begins fourteen from the right.
+    let across = (cols as usize).saturating_sub(17).max(8);
+    // Each file as the lines it takes: its name, wrapped, with its size on the first.
+    let mut lines: Vec<(String, String)> = Vec::new();
+    let mut begins: Vec<usize> = Vec::new();
+    for (name, bytes) in store.iter() {
+        begins.push(lines.len());
+        for (n, part) in wrapped(name, across).into_iter().enumerate() {
+            lines.push((part, if n == 0 { size_text(bytes.len()) } else { String::new() }));
+        }
+    }
     let total: usize = store.iter().map(|f| f.1.len()).sum();
-    at(2, 1, &format!("FILES: {} file(s), {}", store.len(), size_text(total)), ui::TEAL, GROUND);
-    at(2, 2, if mounted { "VM files | saved when an app syncs" } else { "Session files | cleared at power-off" }, SOFT, GROUND);
-    if store.len() == 0 {
-        at(2, 4, "No program has written a file.", SOFT, GROUND);
-    }
-    for (n, (name, bytes)) in store.iter().take(rows.saturating_sub(8) as usize).enumerate() {
-        at(2, 4 + n as u32, &name.chars().take(cols as usize - 20).collect::<String>(), TEXT, GROUND);
-        at(cols.saturating_sub(14), 4 + n as u32, &size_text(bytes.len()), SOFT, GROUND);
-    }
-    at(2, rows - 2, "Esc back", SOFT, GROUND);
+    let page = rows.saturating_sub(8).max(1) as usize;
+    let last_top = lines.len().saturating_sub(page);
+    let mut top = 0usize;
     loop {
+        ui::clear(GROUND);
+        // The files of which any line is on the screen: a long name that began on the page before still
+        // has its last lines here, and it is one of the files shown.
+        let shown: Vec<usize> = (0..begins.len()).filter(|i| {
+            let end = begins.get(i + 1).copied().unwrap_or(lines.len());
+            begins[*i] < top + page && end > top
+        }).collect();
+        let heading = match (shown.first(), shown.last()) {
+            (Some(a), Some(b)) => format!("FILES: showing {} to {} of {}, {}", a + 1, b + 1, store.len(), size_text(total)),
+            _ => format!("FILES: {} file(s), {}", store.len(), size_text(total)),
+        };
+        let available = cols.saturating_sub(2) as usize;
+        let heading = match (shown.first(), shown.last()) {
+            (Some(a), Some(b)) if heading.len() > available =>
+                format!("FILES: {}-{}/{} | {}", a + 1, b + 1, store.len(), size_text(total)),
+            _ => heading,
+        };
+        at(2, 1, &heading, ui::TEAL, GROUND);
+        at(2, 2, if mounted { "VM files | saved when an app syncs" } else { "Session files | cleared at power-off" }, SOFT, GROUND);
+        if store.len() == 0 {
+            at(2, 4, "No program has written a file.", SOFT, GROUND);
+        }
+        for (n, (part, size)) in lines.iter().skip(top).take(page).enumerate() {
+            at(2, 4 + n as u32, part, TEXT, GROUND);
+            at(cols.saturating_sub(14), 4 + n as u32, size, SOFT, GROUND);
+        }
+        let page_keys = "Up/Down, Page Up/Page Down move    Esc back";
+        let keys = if last_top == 0 { "Esc back" } else if page_keys.len() <= available {
+            page_keys
+        } else { "Up/Down PgUp/PgDn  Esc back" };
+        at(2, rows - 2, keys, SOFT, GROUND);
         match wait_key() {
             (0x01, _) | (0x1C, _) => return,
+            (0x48, _) if top > 0 => top -= 1,
+            (0x50, _) if top < last_top => top += 1,
+            (0x49, _) => top = top.saturating_sub(page),
+            (0x51, _) => top = (top + page).min(last_top),
             _ => {}
         }
     }
@@ -685,7 +907,7 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
         let digest = format!("SHA-256 {}...", &p.digest[..16]);
         let size_at = (left + list_width - 60 - label_width(&digest, false) - label_width(&size, false)) / 10 * 10;
         let name_room = (size_at.saturating_sub(left + 60) / 10).max(4) as usize;
-        label(left + 40, y + 10, &p.name.chars().take(name_room.min(28)).collect::<String>(), TEXT, false, &on_row);
+        label(left + 40, y + 10, &cut(&p.name, name_room.min(28)), TEXT, false, &on_row);
         label((left + list_width - 20 - label_width(&digest, false)) / 10 * 10, y + 10, &digest, SOFT, false, &on_row);
         label(size_at, y + 10, &size, SOFT, false, &on_row);
         let lines = access_of(p);
@@ -701,7 +923,7 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
         let lines = message.lines().take(3).count() as u32;
         let on_message = plate(left, y + 10, list_width, 20 + lines * 20, PLATE, edge(), false);
         for (i, line) in message.lines().take(3).enumerate() {
-            label(left + 20, y + 20 + i as u32 * 20, &line.chars().take((list_width / 10 - 4) as usize).collect::<String>(), AMBER, false, &on_message);
+            label(left + 20, y + 20 + i as u32 * 20, &cut(line, (list_width / 10 - 4) as usize), AMBER, false, &on_message);
         }
     }
 
@@ -732,7 +954,7 @@ fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message:
         let bg = if i == chosen { PANEL } else { GROUND };
         ui::fill(2 * ui::CELL_W, row * ui::CELL_H, width * ui::CELL_W, ui::CELL_H, bg);
         if i == chosen { ui::fill(2 * ui::CELL_W, row * ui::CELL_H, 3, ui::CELL_H, ui::TEAL); }
-        at(3, row, &p.name.chars().take(width.saturating_sub(2) as usize).collect::<String>(), TEXT, bg);
+        at(3, row, &cut(&p.name, width.saturating_sub(2) as usize), TEXT, bg);
     }
     if let Some(_entry) = programs.get(chosen).filter(|_| start.failed == 0) {
         let none = option(&start.boot.command_line, "grant") == Some("none");
@@ -750,7 +972,12 @@ fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message:
         }
     }
     if !message.is_empty() {
-        at(2, rows - 4, message.lines().next().unwrap_or(""), ui::AMBER, GROUND);
+        // The message has the two rows above the keys. What does not fit on them ends in "..".
+        let across = (cols as usize).saturating_sub(4).max(1);
+        let lines = wrapped(message.lines().next().unwrap_or(""), across);
+        for (n, line) in lines.iter().enumerate().take(2) {
+            at(2, rows - 4 + n as u32, &if n == 1 && lines.len() > 2 { cut(&format!("{}...", line), line.chars().count()) } else { line.clone() }, ui::AMBER, GROUND);
+        }
     }
     let keys = if programs.is_empty() || start.failed != 0 {
         "D details   R register   P off"
@@ -944,8 +1171,8 @@ fn register_view(rec: &Record) {
 }
 
 /// Run one program as a task in the register. Interrupts must be off; returns with them off.
-/// Returns what to tell the person, and the world as the program left it.
-fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, start: &Start, failed: &mut u32) -> (String, World) {
+/// Returns the run summary, the resulting world and any reason the program could not start.
+fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, start: &Start, failed: &mut u32) -> (String, World, Option<&'static str>) {
     *tasks += 1;
     let id = format!("T{}", *tasks);
     let mut recorded = logged("TASK_STARTED", rec.submit(&now(), "kernel", "HOST", "TASK_STARTED",
@@ -981,6 +1208,7 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
         dev::display_set(desktop.width, desktop.height);
         dev::display_show(0);
     }
+    let refusal = result.as_ref().err().copied();
     let message = match result {
         Ok(p) => {
             let digest = sha256_hex(&p.output);
@@ -1027,5 +1255,5 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
         say!("  FAIL the run of {} was not recorded in the register", entry.name);
         *failed += 1;
     }
-    (message, world)
+    (message, world, refusal)
 }

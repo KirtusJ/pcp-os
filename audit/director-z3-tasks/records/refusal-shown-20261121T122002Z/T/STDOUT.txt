@@ -1,0 +1,24 @@
+72 port writes in the source, 72 reviewed, 0 problem(s)
+  "kernel_measurement": "4635ce106b6129fa228bcfc92dc23ca2d506cf5b773ee0fe381d9a3aa2391bb5",
+  "iso_bytes": 2590720,
+  "iso_sha256": "4511ee0b4d6195fce690d8140536cd12820d653c5215cada7ccde3d8f16817a2"
+}
+640x480  {'first_pin_row_4': 'Places 1 to 12 of 15', 'last_pin_row_4': 'Places 4 to 15 of 15', 'controls_refused': ['another program named', 'the keys overwritten', 'the size and digest replaced by the keys'], 'widget_lines': ['memory 106 MiB, 106 MiB free', 'Session files | cleared at power-off'], 'exit_code': 0}
+320x200  {'first_pin_row_4': 'Places 2 to 2 of 15', 'last_pin_row_4': 'Places 15 to 15 of 15', 'exit_code': 0}
+refused-640x480 {'said': ['a-name-of-forty-characters-in-all-xxxx.elf could not be star', 'ted: the program could not be admitted as a task.'], 'exit_code': 0}
+passed
+pc   ordinary            passed
+pc   instruction-counted passed
+q35  ordinary            passed
+q35  instruction-counted passed
+q35-counted/launcher.ppm: original accepted; rejected erased suffix, forged console-only policy, surplus grant, malformed size
+  "kernel_measurement": "4635ce106b6129fa228bcfc92dc23ca2d506cf5b773ee0fe381d9a3aa2391bb5",
+  "iso_bytes": 2646016,
+  "iso_sha256": "eba4c99a288dd790e15afa43c679e80d57b0e7680c9b4f3c50cb110443001017"
+}
+pc   ordinary            passed
+pc   instruction-counted passed
+q35  ordinary            passed
+q35  instruction-counted passed
+save Disk save cold morning
+restore Queue restored cold morning

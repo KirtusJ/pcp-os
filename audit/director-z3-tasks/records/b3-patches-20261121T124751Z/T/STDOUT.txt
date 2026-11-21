@@ -1,0 +1,24 @@
+72 port writes in the source, 72 reviewed, 0 problem(s)
+  "kernel_measurement": "e92ca757b87f6e8be1359486e805458d865e2c4eae4a7c0daab82ea5d9c27959",
+  "iso_bytes": 2598912,
+  "iso_sha256": "7e6d677eb3ae0fc74afe7c73d32941ae9b4c2d47d67fcb1d97aaa108d4419bfa"
+}
+640x480  {'first_pin_row_4': 'Places 1 to 12 of 15', 'last_pin_row_4': 'Places 4 to 15 of 15', 'controls_refused': ['another program named', 'the keys overwritten', 'the size and digest replaced by the keys'], 'widget_lines': ['memory 106 MiB, 106 MiB free', 'Session files | cleared at power-off'], 'exit_code': 0}
+320x200  {'first_pin_row_4': 'Places 2 to 2 of 15', 'last_pin_row_4': 'Places 15 to 15 of 15', 'exit_code': 0}
+refused-640x480 {'said': ['Not started: the program could not be admitted as a task', 'a-name-of-forty-characters-in-all-xxxx.elf could not be star', 'ted: the program could not be admitted as a task.'], 'exit_code': 0}
+passed
+pc   ordinary            passed
+pc   instruction-counted passed
+q35  ordinary            passed
+q35  instruction-counted passed
+q35-counted/launcher.ppm: original accepted; rejected erased suffix, forged console-only policy, surplus grant, malformed size
+  "kernel_measurement": "e92ca757b87f6e8be1359486e805458d865e2c4eae4a7c0daab82ea5d9c27959",
+  "iso_bytes": 2654208,
+  "iso_sha256": "581a6defb79ac31d537096cb980476d43dc0e99c33317f085e2fd13413b0b7e8"
+}
+pc   ordinary            passed
+pc   instruction-counted passed
+q35  ordinary            passed
+q35  instruction-counted passed
+save Disk save cold morning
+restore Queue restored cold morning
