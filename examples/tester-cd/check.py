@@ -51,7 +51,8 @@ def read_screen(ppm, glyphs):
     for row in range(38):
         text = ""
         for column in range(102):
-            inked = tuple(pixels[((row * 20 + y) * 1024 + column * 10 + x) * 3:][:3] != ground for y in range(20) for x in range(10))
+            inked = tuple(pixels[at:at + 3] != ground for y in range(20) for x in range(10)
+                          for at in (((row * 20 + y) * 1024 + column * 10 + x) * 3,))
             text += glyphs.get(inked, "?")
         rows.append(text.rstrip())
     return rows
