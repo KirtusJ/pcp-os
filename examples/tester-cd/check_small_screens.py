@@ -32,7 +32,50 @@ The list of programs, at 320 by 200, 220, 240 and 260 and, as the roomy control,
  P4 the rows of P1, P2, P3 are different rows;
  P5 Down moves the choice from alpha.elf to bravo.elf and P1 to P4 hold again.
 
-The check proves its own reading on a good frame of each kind: for Settings, the keys' line written over
+The screens of text, at 320 by 200, 640 by 480 and 800 by 600, each opened from the desktop. A screen
+that says "Up/Down scroll" is read page by page with Down (the register with Up) until its frame stops changing; "the pages"
+below are the texts of those frames, each with its rows joined by single spaces.
+ T1 F10: the first rows that hold anything are "POWER OFF" and "Switch PCP OS off?"; the last are
+    "Enter switch off    Esc go back", or "Enter switch off" and "Esc go back" on two rows; the rows
+    between, joined, are the two whole sentences of the warning and nothing else.
+ T2 F1: for every key and what it does in the kernel's list for this desktop (read from session.rs), one
+    page has a row that begins with the key and, from that row on, holds all of what it does.
+ T3 F5: one page holds each of: the whole verification sentence with the number of self-tests the serial
+    log reports; a line beginning "kernel "; "Register: <n> events, head <16 hex digits>..."; "The
+    register's chain is intact."; "F4 shows every event of the register."
+ T4 F4, which opens at the newest events and is read with Up: the pages, with every space removed, hold
+    "REGISTER:<n>events,chainintact" or "REGISTER:<n>events,intact", and "head" followed by 64 hex digits,
+    or, only where the display holds the table (66 columns) but not its whole title (800 across), by
+    exactly the digits the title has room for and "..": there the whole head is not on the screen, as it
+    was not before, and the title now says that it is cut.
+ T8 F5: below the whole label "The whole head of the register's chain:" (on one row, or broken between its
+    words), rows that are nothing but hex digits hold
+    64 of them on one page, and they begin with the 16 the same screen shows after "head"; any other page's
+    run of such rows is a beginning of those 64.
+ T5 F3: rows 2 and 3, joined, are "Session files | cleared at power-off".
+ T6 the desktop's row 3 is the verification sentence in one of the kernel's wordings, whole.
+ T7 every one of these screens has, as its last row that holds anything, a row that says how to leave it
+    ("Esc back", "Esc go back" or "Any key goes back", whole), and Esc gives a desktop whose rows equal
+    those before it was opened.
+
+The sizes most displays have, 1280 by 720, 1920 by 1080 and 2560 by 1440 (owner, 21 November 2026), where
+the desktop is the full one: T1 to T5 and T7 as above with the full desktop's keys, and in place of T6:
+ G1 the last three rows of the desktop hold "Programs", "F1 keys" and "verified";
+ G2 in the programs, one row holds the sentence "Choose one[ to start]. Each runs with only what it
+    is granted." and it ends inside its plate; a row says what the chosen program may use; Esc gives the
+    desktop as it was.
+
+A failed start, at 320 by 200 and 640 by 480, made by naming to the kernel a measurement that is not its own:
+ F1 the desktop has a row that begins "NOT VERIFIED:";
+ F2 the list of programs has such a row and the words "Programs are disabled.";
+ F3 neither of its last two rows that hold anything offers Enter;
+ F4 after Enter a row begins "Not started:", and the serial log shows no program started or ended.
+The exit code of such a guest is recorded and not judged.
+
+In Settings, S6: a key that does nothing leaves the settled frame as it was.
+
+The check proves its own reading on a good frame of each kind (for the text screens: the warning with
+"not" taken out, a key's explanation with its last word taken out, and the whole head with its last digit erased): for Settings, the keys' line written over
 a widget's row, and a state mark changed; for the list, the verification row emptied, and the chosen row
 emptied. Each must be refused.
 
@@ -135,11 +178,14 @@ def list_problems(rows, frame, name, roomy, passed):
     return problems
 
 
-def boot(qemu, kernel, folder, measurement, mode, out, glyphs, timeout):
+def boot(qemu, kernel, folder, measurement, mode, out, glyphs, timeout, named=None):
+    """`named` is the measurement given to the kernel when it is not the true one (a failed start)."""
     out.mkdir(parents=True)
     serial, sock = out / "serial.txt", out / "qmp.sock"
     cmd = [qemu, "-machine", "pc", "-accel", "tcg", "-cpu", "qemu64", "-m", "128M", "-kernel", str(kernel),
-           "-initrd", ",".join(PROGRAMS), "-append", "image=%s desktop=%s" % (measurement, mode), "-vga", "std", "-nic", "none",
+           "-initrd", ",".join(PROGRAMS), "-append", "image=%s desktop=%s" % (named or measurement, mode),
+           # Two pictures of 2560 by 1440 need more than the sixteen mebibytes the standard adapter has.
+           *(["-vga", "none", "-device", "VGA,vgamem_mb=64"] if int(mode.split("x")[0]) >= 1280 else ["-vga", "std"]), "-nic", "none",
            "-display", "none", "-monitor", "none", "-qmp", "unix:%s,server=on,wait=off" % sock, "-serial", "file:%s" % serial, "-no-reboot"]
     guest = subprocess.Popen(cmd, cwd=folder, stdout=subprocess.DEVNULL, stderr=(out / "qemu-stderr.txt").open("wb"))
     try:
@@ -191,7 +237,7 @@ def boot(qemu, kernel, folder, measurement, mode, out, glyphs, timeout):
                 raise TimeoutError("the kernel did not reach its desktop at " + mode)
             time.sleep(0.5)
         log = serial.read_text(errors="replace")
-        if measurement + " (measured; equal to the value the loader named)" not in log:
+        if named is None and measurement + " (measured; equal to the value the loader named)" not in log:
             raise RuntimeError("the running kernel did not measure as the receipt says")
         passed = sum(line.startswith("  pass ") for line in log.split("desktop: ")[0].splitlines())
         return key, screen, guest, passed
@@ -205,6 +251,12 @@ def settings_trial(key, screen, roomy, problems, results, mode):
     key("f2")
     rows, frame = screen("settings-0", lambda rows, frame: any("SETTINGS" in row for row in rows))
     states = {label: marks[0] for label, marks in settings_states(rows).items() if len(marks) == 1}
+    # S6: a key that does nothing in Settings leaves the frame as it was (a settled frame; a flash between
+    # two captures would not be seen by this).
+    key("x")
+    _, after_x = screen("settings-0-x", lambda rows, frame: True)
+    if after_x != frame:
+        problems.append("%s S6: a key that does nothing changed the Settings frame" % mode)
     seen = []
     for chosen in range(5):
         if chosen:
@@ -281,6 +333,200 @@ def list_trial(key, screen, roomy, passed, problems, results, mode):
     key("esc")
 
 
+# The label above the whole head, whole, on one row or broken between words onto more (B3: at 320 across it must wrap).
+LABEL = r"[ \n]".join(re.escape(word) for word in "The whole head of the register's chain:".split())
+WARNING = "The register is closed and verified first. Files of this session that were not saved by a program are lost."
+LEAVE = re.compile(r"(^|  )(Esc back|Esc go back|Any key goes back)$")
+
+
+def whole_heads(pages):
+    """Every run of hex-only rows that follows the whole label on one page, joined."""
+    return {m[1].replace("\n", "") for rows in pages
+            for m in re.finditer(LABEL + r"\n((?:[0-9a-f]+\n)+)", "\n".join(row.strip() for row in rows) + "\n")}
+
+
+def joined(rows):
+    return " ".join(" ".join(rows).split())
+
+
+def power_problems(rows):
+    held = [row.strip() for row in rows if row.strip()]
+    if held[:2] != ["POWER OFF", "Switch PCP OS off?"]:
+        return ["T1: the title and the question are not the first rows"]
+    if held[-1:] == ["Enter switch off    Esc go back"]:
+        between = held[2:-1]
+    elif held[-2:] == ["Enter switch off", "Esc go back"]:
+        between = held[2:-2]
+    else:
+        return ["T1: the answers are not whole on the last rows"]
+    return [] if " ".join(between) == WARNING else ["T1: the warning reads %r" % " ".join(between)]
+
+
+def keys_problems(pages, keys):
+    problems = []
+    for key, does in keys:
+        found = False
+        for rows in pages:
+            for i, row in enumerate(rows):
+                if row == "  " + key or row.startswith("  " + key + " "):
+                    found = found or joined(rows[i:]).startswith(joined([key, does]))
+        if not found:
+            problems.append("T2: %r and all of what it does are on no page" % key)
+    return problems
+
+
+def kernel_keys(name):
+    source = (HERE.parents[1] / "PCP_OS_Rust/crates/pcpos-kernel/src/session.rs").read_text()
+    block = source.split("const %s" % name, 1)[1].split("];", 1)[0]
+    return re.findall(r'\("([^"]+)", "([^"]+)"\)', block)
+
+
+def text_trial(key, screen, passed, problems, results, mode, graphic=False):
+    home, _ = screen("text-home", lambda rows, frame: any("Programs" in row for row in rows))
+    found = []
+    if graphic:
+        # The full desktop: its foot holds the way to the programs, the keys and the verdict, and nothing else is placed.
+        foot = joined(home[-3:])
+        if not all(word in foot for word in ("Programs", "F1 keys", "verified")):
+            found.append("G1: the foot of the desktop reads %r" % foot)
+    elif not re.match(r"^  Verified(?: at start)?: all %d(?: self-tests(?: passed\.)?)?$" % passed, home[3]):
+        found.append("T6: the desktop's row 3 reads %r" % home[3])
+
+    def pages(name, press, title, move="down"):
+        key(press)
+        first, frame = screen(name + "-1", lambda rows, frame: any(title in row for row in rows))
+        seen, frames = [first], [frame]
+        while "Up/Down scroll" in " ".join(first) and len(seen) < 150:
+            key(move)
+            rows, frame = screen("%s-%d" % (name, len(seen) + 1), lambda rows, frame: True)
+            if frame == frames[-1]:
+                break
+            seen.append(rows)
+            frames.append(frame)
+        for rows in seen:
+            held = [row for row in rows if row.strip()]
+            if not LEAVE.search(held[-1]):
+                found.append("T7: %s: the last row %r does not say how to leave" % (name, held[-1]))
+        key("esc")
+        back, _ = screen(name + "-left", lambda rows, frame: any("Programs" in row for row in rows))
+        if back != home:
+            found.append("T7: %s: Esc did not give the desktop as it was" % name)
+        return seen
+
+    power = pages("power", "f10", "POWER OFF")
+    found += power_problems(power[0])
+    keys = kernel_keys("HOME_KEYS" if graphic else "SMALL_HOME_KEYS")
+    help_pages = pages("keys", "f1", "KEYS ON THE DESKTOP")
+    found += keys_problems(help_pages, keys)
+    verification = [joined(rows) for rows in pages("verification", "f5", "VERIFICATION")]
+    for what, pattern in (("the verification sentence", r"Verified at start: all %d self-tests passed\." % passed), ("the kernel's line", r"kernel \S+ \| x86-64"),
+                          ("the register's line", r"Register: \d+ events, head [0-9a-f]{16}\.\.\."), ("the chain's line", r"The register's chain is intact\."),
+                          ("the way to the events", r"F4 shows every event of the register\.")):
+        if not any(re.search(pattern, page) for page in verification):
+            found.append("T3: %s is whole on no page" % what)
+    verification_rows = pages("verification-again", "f5", "VERIFICATION")
+    heads = whole_heads(verification_rows)
+    prefixes = {m[1] for page in verification for m in re.finditer(r"head ([0-9a-f]{16})\.\.\.", page)}
+    # A page that shows only the head's first rows gives a beginning of it; that is allowed, a different
+    # head or a beginning that is not this head's is not (A3, from frames at 320 by 200).
+    full = {h for h in heads if len(h) == 64}
+    partial_ok = len(full) == 1 and all(next(iter(full)).startswith(h) for h in heads)
+    if not partial_ok or {next(iter(full))[:16]} != prefixes:
+        found.append("T8: F5 does not hold one whole head of 64 digits that begins with the 16 it shows above: %r %r" % (sorted(heads), sorted(prefixes)))
+    heads = full
+    results["whole_head"] = sorted(heads)
+    # The control: the last digit of the head taken off its row. No head of 64 may then be read.
+    digit_rows = [(p, i) for p, rows in enumerate(verification_rows) for i, row in enumerate(rows)
+                  if heads and row.strip() and next(iter(heads)).endswith(row.strip()) and re.fullmatch(r"[0-9a-f]+", row.strip())]
+    if not digit_rows:
+        problems.append("%s: no row to make the erased-digit control from" % mode)
+    else:
+        erased = [list(rows) for rows in verification_rows]
+        for p, i in digit_rows:
+            erased[p][i] = erased[p][i].rstrip()[:-1]
+        if any(len(h) == 64 for h in whole_heads(erased)):
+            problems.append("%s control accepted: a head with its last digit erased" % mode)
+    register_pages = pages("register", "f4", "REGISTER", "up")
+    register = "".join("".join(rows).replace(" ", "") for rows in register_pages)
+    # The whole head must be on the screen unless the display holds the table (62 characters and the two
+    # columns each side) but not the table's whole title; there the title must show every digit it has
+    # room for and then "..". B3 found that an earlier form of this accepted a cut head anywhere.
+    across = int(mode.split("x")[0]) // 10 - 4
+    count = re.search(r"REGISTER:(\d+)events,(chain)?intact", register)
+    # The head is read row by row: after "head", only rows that are nothing but hex digits continue it, so
+    # that a digit of the next row (an event's number) cannot stand in for one that is missing (B3).
+    whole = any(len(m[1] + m[2].replace("\n", "")) == 64
+                for rows in register_pages
+                for m in re.finditer(r"head ?([0-9a-f]*)\n((?:[0-9a-f]+\n)*)", "\n".join(row.strip() for row in rows) + "\n"))
+    if not count:
+        found.append("T4: the count is not in the register's title")
+    else:
+        prefix = len("THE KERNEL'S REGISTER: %s events, chain intact, head " % count[1])
+        if across >= 62 and prefix + 64 > across:
+            if not re.search(r"head[0-9a-f]{%d}\.\." % (across - prefix - 2), register):
+                found.append("T4: the title does not show the %d digits of the head it has room for and then '..'" % (across - prefix - 2))
+        elif not whole:
+            found.append("T4: the whole head of the chain is not on the register's pages")
+    if graphic:
+        # The programs: the sentence above the list is whole and ends inside its plate, whose width is the
+        # kernel's own (47 hundredths of the display, at most 1100, from a left edge of one two-hundredth).
+        width = int(mode.split("x")[0])
+        edge = (width // 200 * 10 + min(width * 47 // 100, 1100) // 10 * 10) // 10
+        key("ret")
+        programs, _ = screen("programs", lambda rows, frame: any("> " + PROGRAMS[0] in row for row in rows))
+        # A row of the full desktop also holds cells that are no character (a plate's edge, the field's rings).
+        note = [m for row in programs for m in re.finditer(r"Choose one( to start)?\. Each runs with only what it is granted\.", row)]
+        if len(note) != 1 or note[0].end() > edge - 1:
+            found.append("G2: the sentence above the programs is on %d rows, or ends at column %s of a plate that ends at %d"
+                         % (len(note), [m.end() for m in note], edge))
+        if not any("may use: " in row for row in programs):
+            found.append("G2: the chosen program's grants are not shown")
+        key("esc")
+        back, _ = screen("programs-left", lambda rows, frame: any("Programs" in row for row in rows))
+        if back != home:
+            found.append("G2: Esc from the programs did not give the desktop as it was")
+    key("f3")
+    files, _ = screen("files", lambda rows, frame: any("FILES" in row for row in rows))
+    if joined(files[2:4]) != "Session files | cleared at power-off":
+        found.append("T5: rows 2 and 3 read %r" % joined(files[2:4]))
+    key("esc")
+    screen("files-left", lambda rows, frame: rows == home)
+    problems += ["%s text screens: %s" % (mode, p) for p in found]
+    results["text"] = {"power": [row for row in power[0] if row.strip()], "keys_pages": len(help_pages), "verification_pages": len(verification)}
+    # The controls.
+    if not power_problems([row.replace(" not", "") for row in power[0]]):
+        problems.append("%s control accepted: the warning without 'not'" % mode)
+    cut_last = [[row.replace(" " + keys[-1][1].split()[-1], "") for row in rows] for rows in help_pages]
+    if not keys_problems(cut_last, keys):
+        problems.append("%s control accepted: an explanation without its last word" % mode)
+    results["text_controls_refused"] = ["an explanation without its last word", "the warning without 'not'"]
+
+
+def failed_trial(key, screen, serial, roomy, problems, results, mode):
+    """A start whose image is not the one named: the list says so and Enter starts nothing."""
+    home, _ = screen("failed-home", lambda rows, frame: any("Programs" in row for row in rows))
+    found = []
+    if not any(row.startswith("  NOT VERIFIED:") for row in home):
+        found.append("F1: the desktop does not say NOT VERIFIED")
+    key("ret")
+    rows, _ = screen("failed-programs", lambda rows, frame: any(PROGRAMS[0] in row for row in rows))
+    if not any(row.startswith("  NOT VERIFIED:") for row in rows) or not any("Programs are disabled." in row for row in rows):
+        found.append("F2: the list does not say NOT VERIFIED and that programs are disabled")
+    held = [row for row in rows if row.strip()]
+    if "Enter" in held[-1] or "Enter" in held[-2]:
+        found.append("F3: the keys offer Enter")
+    key("ret")
+    after, _ = screen("failed-enter", lambda rows, frame: True)
+    if not any(row.startswith("  Not started:") for row in after):
+        found.append("F4: Enter did not leave the words that nothing was started")
+    log = serial.read_text(errors="replace")
+    if any(name + " ended" in log for name in PROGRAMS) or "TASK_STARTED" in log.split("desktop: ", 1)[-1]:
+        found.append("F4: the serial log shows a program run after a failed start")
+    key("esc")
+    problems += ["%s failed start: %s" % (mode, p) for p in found]
+    results["failed_start"] = [row for row in after if row.strip()]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("built", type=Path)
@@ -302,9 +548,11 @@ def main():
         (folder / name).write_bytes(files["surf.elf"])
     glyphs = CHECK["kernel_glyphs"]()
     problems, results = [], {}
-    for mode, settings, programs in (("320x200", True, True), ("320x220", True, True), ("320x240", True, True), ("320x260", True, True),
-                                     ("320x280", True, False), ("640x240", True, False), ("640x260", True, False), ("320x480", True, False),
-                                     ("640x480", True, True)):
+    for mode, settings, programs, text in (("320x200", True, True, True), ("320x220", True, True, False), ("320x240", True, True, False),
+                                           ("320x260", True, True, False), ("320x280", True, False, False), ("640x240", True, False, False),
+                                           ("640x260", True, False, False), ("320x480", True, False, False), ("640x480", True, True, True),
+                                           ("800x600", False, False, True), ("1280x720", False, False, True), ("1920x1080", False, False, True),
+                                           ("2560x1440", False, False, True)):
         roomy = mode == "640x480"
         results[mode] = {}
         try:
@@ -313,6 +561,8 @@ def main():
             problems.append("%s: %s: %s" % (mode, type(error).__name__, error))
             continue
         try:
+            if text:
+                text_trial(key, screen, passed, problems, results[mode], mode, graphic=int(mode.split("x")[0]) >= 1280)
             if settings:
                 # Settings is roomy from fourteen rows and forty-one columns; 320 across is never roomy.
                 settings_trial(key, screen, roomy, problems, results[mode], mode)
@@ -329,12 +579,33 @@ def main():
         finally:
             if guest.poll() is None:
                 guest.kill()
+    # A failed start, made by naming a measurement that is not the kernel's.
+    wrong = receipt["kernel_measurement"][:-1] + ("0" if receipt["kernel_measurement"][-1] != "0" else "1")
+    for mode in ("320x200", "640x480"):
+        name = "failed-" + mode
+        results[name] = {}
+        try:
+            key, screen, guest, _ = boot(args.qemu, folder / "kernel.elf32", folder, receipt["kernel_measurement"], mode, evidence / name, glyphs, args.timeout, named=wrong)
+        except Exception as error:
+            problems.append("%s: %s: %s" % (name, type(error).__name__, error))
+            continue
+        try:
+            failed_trial(key, screen, evidence / name / "serial.txt", mode == "640x480", problems, results[name], name)
+            key("f10")
+            screen("power-question", lambda rows, frame: any("POWER OFF" in row for row in rows))
+            key("ret")
+            results[name]["exit_code"] = guest.wait(timeout=40)
+        except Exception as error:
+            problems.append("%s: %s: %s" % (name, type(error).__name__, error))
+        finally:
+            if guest.poll() is None:
+                guest.kill()
     (evidence / "result.json").write_text(json.dumps({"problems": problems, "results": results}, indent=2) + "\n")
     for problem in problems:
         print("FAILED", problem)
     if problems:
         sys.exit(1)
-    print("small screens: Settings at nine sizes and the list of programs at five passed; controls refused")
+    print("small screens: Settings at nine sizes, the list of programs at five and the screens of text at six, three of them the full desktop, passed; controls refused")
 
 
 if __name__ == "__main__":
