@@ -141,8 +141,8 @@ def _(ck):
 def _(ck):
     m = Machine("menu_only"); ck("devices were found", m.wait_log("music:", 60)); time.sleep(1.5)
     im = m.picture("menu"); ck("the desktop is drawn at 1920 by 1080 with the emblem's colours", im.size == (1920, 1080) and colours(im) > 20, (im.size, colours(im)))
-    m.key("r"); time.sleep(0.8); reg = m.picture("register"); ck("R shows the register", differ(im, reg) > 0.02, differ(im, reg))
-    m.key("esc"); time.sleep(0.5); m.key("p"); rc, log = m.end(30); verdict(ck, rc, log)
+    m.key("f4"); time.sleep(0.8); reg = m.picture("register"); ck("F4 shows the register", differ(im, reg) > 0.02, differ(im, reg))
+    m.key("esc"); time.sleep(0.5); m.key("f10"); time.sleep(1.0); m.key("ret"); rc, log = m.end(30); verdict(ck, rc, log)
 
 # ---- programs that are not Doom ------------------------------------------------------------------------------
 @test("the desktop negotiates two-page modes and a separate UI scale")
@@ -154,7 +154,7 @@ def _(ck):
         time.sleep(1.5)
         image = m.picture("desktop")
         ck(f"{mb} MiB guest framebuffer", image.size == size and colours(image) > 20, image.size)
-        m.key("p"); rc, log = m.end(30); verdict(ck, rc, log)
+        m.key("f10"); time.sleep(1.0); m.key("ret"); rc, log = m.end(30); verdict(ck, rc, log)
 
 @test("a C program built with an ordinary compiler and C library runs with every grant: 32 checks of its own")
 def _(ck):
@@ -260,7 +260,7 @@ def _(ck):
     ck("quitting from the game's own menu ends it DONE (exit 0)", "doom.elf ended DONE: exit 0" in second, ended(second, "doom.elf")[:120])
     # (The engine as doomgeneric builds it does not write its settings file: that code is compiled out there.)
     e2 = ended(second, "doom.elf"); ck("the saved game is still in the store after the second run: the store lasts from one program to the next", "the store holds 1 file(s)" in e2, e2[-80:])
-    time.sleep(1.0); m.key("p"); rc, log = m.end(30); verdict(ck, rc, log)
+    time.sleep(1.0); m.key("f10"); time.sleep(1.0); m.key("ret"); rc, log = m.end(30); verdict(ck, rc, log)
     lev = sound_by_second(m.wav); loud = sum(1 for v in lev if v > 200)
     ck("sound was produced for most of the time the game ran", loud >= 20, lev)
     dry = [int(l.split("ran out of sound ")[1].split()[0]) for l in log.splitlines() if "ran out of sound" in l]
@@ -276,7 +276,7 @@ def _(ck):
     for n in range(4):
         time.sleep((60 if QUICK else 240) / 4); pics.append(m.picture("soak_%d" % n))
     ck("the picture keeps changing", all(differ(pics[i], pics[i + 1]) > 0.05 for i in range(3)), [differ(pics[i], pics[i + 1]) for i in range(3)])
-    m.key("ctrl", "alt", "delete"); time.sleep(2); m.key("p"); rc, log = m.end(30); verdict(ck, rc, log)
+    m.key("ctrl", "alt", "delete"); time.sleep(2); m.key("f10"); time.sleep(1.0); m.key("ret"); rc, log = m.end(30); verdict(ck, rc, log)
     e = ended(log, "doom.elf"); ck("its memory all came back", " free before and " in e and e.split(" free before and ")[0].split()[-1] == e.split(" free before and ")[1].split()[0], e[-160:])
     try: idle = int(e.split("idled ")[1].split("%")[0]); shown = int(e.split(" frames shown")[0].split()[-1]); secs = int(e.split(" after ")[1].split(" s")[0])
     except Exception: idle = shown = secs = 0

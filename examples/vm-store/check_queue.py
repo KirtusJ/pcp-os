@@ -107,7 +107,7 @@ def main(args):
                     desktop = optical["DesktopScreens"](monitor, out, args.timeout)
                     desktop.home("restore-home")
                     desktop.verification("restore-home")
-                    monitor.key("f")
+                    monitor.key("f3")
                     desktop.wait("restore-files", lambda rows: any("FILES: 1 file(s), 3 KiB" in row for row in rows)
                                  and any("VM files | saved when an app syncs" in row for row in rows)
                                  and any("parrots.queue" in row and "3 KiB" in row for row in rows))
@@ -128,7 +128,7 @@ def main(args):
                 monitor.key("esc")
                 if boot == "restore":
                     desktop.launcher("restore-after-app", "queue.elf")
-                    monitor.key("p")
+                    desktop.power_off_from_launcher("restore-power", "queue.elf")
                 require(vm.wait(timeout=args.timeout) == 33, boot + " failed to shut down")
             finally:
                 if vm.poll() is None:
@@ -139,6 +139,7 @@ def main(args):
         log = serial.read_text(errors="replace")
         require(measure + " (measured; equal to the value the loader named)" in log, "wrong kernel")
         require("queue.elf ended DONE: exit 0" in log, "queue did not finish")
+        require("ALL SELF-TESTS PASS." in log, boot + " did not complete the kernel shutdown checks")
         image = disk.read_bytes()
         check_journal(image)
         if saved_image is None:

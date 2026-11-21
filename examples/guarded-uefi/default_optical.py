@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
-from unittest.mock import patch
+from trial import until
 
 import details_screen
 
@@ -55,11 +55,35 @@ def run(distribution, kernel, out):
         receipt = {"source_iso": public_session.ISO_SHA, "display_options": details_screen.OPTIONS, "test_iso": digest(cd), "elf": digest(elf), "measurement": measurement}
         (out / "image.json").write_text(json.dumps(receipt, indent=2) + "\n")
         session = out / "session"
-        # The pinned distribution checker has a module-level expected footer. Scope the
-        # source kernel's reference to this candidate run; keep all its register and shutdown checks.
-        with patch.object(public_session, "LAUNCHER_FOOTER", details_screen.FOOTER):
-            public_session.check(cd, session, expected_iso=receipt["test_iso"], expected_image=measurement,
-                                 debug_exit=False, check_register=True)
+        session.mkdir()
+        serial = session / "serial.txt"
+        command = ["qemu-system-x86_64", "-machine", "pc", "-accel", "tcg", "-cpu", "qemu64",
+                   "-m", "64M", "-boot", "order=d", "-cdrom", str(cd), "-nic", "none", "-vga", "std",
+                   "-display", "none", "-monitor", "none", "-serial", "file:" + str(serial), "-qmp", "stdio",
+                   "-audiodev", "none,id=snd0", "-device", "AC97,audiodev=snd0",
+                   "-icount", "shift=3,align=off,sleep=off"]
+        (session / "qemu-command.json").write_text(json.dumps(command, indent=2) + "\n")
+        with (session / "qemu.stderr").open("wb") as err, subprocess.Popen(
+                command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err) as vm:
+            try:
+                monitor = details_screen.monitor_for(vm)
+                log = lambda: serial.read_text(errors="replace") if serial.exists() else ""
+                wait = lambda test, label: until(test, label, vm)
+                wait(lambda: "leaves no memory behind" in log() or "it is in SAFE" in log(), "startup")
+                startup = log()
+                if (measurement + " (measured; equal" not in startup or "long mode true" not in startup
+                        or "it is in SAFE" in startup or sum(line.startswith("  pass ") for line in startup.splitlines()) != 71):
+                    raise RuntimeError("Unexpected optical kernel measurement or startup checks")
+                details_screen.finish_session(monitor.call, wait, log, session, public_session)
+                details_screen.power_off(monitor, vm)
+                if "ALL SELF-TESTS PASS." not in log():
+                    raise RuntimeError("Missing final optical self-test result")
+                (session / "power-events.json").write_text(json.dumps(monitor.events, indent=2) + "\n")
+                (session / "qemu-exit.txt").write_text(f"{vm.returncode}\n")
+            finally:
+                if vm.poll() is None:
+                    vm.kill()
+                    vm.wait()
         check_register(kernel / "src/font.rs", session)
 
 

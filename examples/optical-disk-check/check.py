@@ -261,7 +261,7 @@ class DesktopScreens:
         return self.wait(name, visible)
 
     def verification(self, prefix):
-        self.monitor.key('v')
+        self.monitor.key('f5')
         sentence = f'Verified at start: all {self.startup_checks} self-tests passed.'
         self.wait(prefix + '-verification', lambda rows: any(row.strip() == 'VERIFICATION' for row in rows)
                   and any(sentence in row for row in rows) and any("The register's chain is intact." in row for row in rows))
@@ -270,6 +270,19 @@ class DesktopScreens:
 
     def launcher(self, name, program):
         return self.wait_frame(name, lambda rows, frame: selected_program(rows, frame, program))
+
+    def power_off_from_launcher(self, prefix, program):
+        def question(rows):
+            lines = {row.strip() for row in rows}
+            return {'POWER OFF', 'Switch PCP OS off?', 'Enter switch off    Esc go back'} <= lines
+
+        self.monitor.key('f10')
+        self.wait(prefix + '-question', question)
+        self.monitor.key('esc')
+        self.launcher(prefix + '-cancelled', program)
+        self.monitor.key('f10')
+        self.wait(prefix + '-question-again', question)
+        self.monitor.key('ret')
 
 
 def exercise(q, evidence, timeout, result, kernel):
@@ -317,7 +330,7 @@ def exercise(q, evidence, timeout, result, kernel):
     q.key('ctrl', 'alt', 'delete')
     sees('surf.elf ended STOPPED')
     launcher('after-stop')
-    q.key('r')
+    q.key('f4' if desktop else 'r')
     if desktop:
         desktop.wait('register', lambda rows: not desktop.register_problems(rows))
     else:
@@ -325,7 +338,10 @@ def exercise(q, evidence, timeout, result, kernel):
     q.key('esc')
     launcher('returned')
     result['before_poweroff'] = q.disk_stats()
-    q.key('p')
+    if desktop:
+        desktop.power_off_from_launcher('power', 'surf.elf')
+    else:
+        q.key('p')
     sees("the kernel's register of its own start, verification and stop verifies and replays without a problem")
     sees('ALL SELF-TESTS PASS.')
     wait_for(lambda: q.call('query-status')['status'] == 'shutdown', 'guest shutdown', timeout)

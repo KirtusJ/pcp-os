@@ -50,13 +50,13 @@ WHO = {
                    "The organization assigns roles and groups and may set a floor that every installation meets. An installation may be stricter than the floor and never laxer. Whoever administers does not assess, and an auditor writes nothing."),
 }
 
-README = """# Parrot Council Protocol (PCP) 1.0 | {name} Edition
+README = """# Parrot Council Protocol (PCP) 1.0 | {name} Edition | pre-publication build
 
 *Evidence before agreement.*
 
 **Parrot Council Protocol (PCP)** is the product. **Adversarial Claim Review (ACR)** is the method inside it: an epistemological protocol that specifies how a claim is examined and what its evidence is permitted to establish.
 
-This is the whole {name} Edition, build {build} of Version 1.0, dated {date}.
+This is the whole {name} Edition, pre-publication build {build} of Version 1.0, dated {date}.
 
 ## What PCP does
 

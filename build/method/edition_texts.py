@@ -444,7 +444,7 @@ The choice of model and provider, the enforcement of every control, the testing,
 """
 
 # --------------------------------------------------------------------------------------------------
-README = """# Parrot Council Protocol (PCP) 1.0 | %(name)s
+README = """# Parrot Council Protocol (PCP) 1.0 | %(name)s | pre-publication build
 
 **Parrot Council Protocol (PCP)** is the product. The method inside it is **Adversarial Claim Review (ACR)**, an epistemological protocol: it specifies how a claim is examined and what its evidence is permitted to establish.
 
