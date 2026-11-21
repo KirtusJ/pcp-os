@@ -32,6 +32,9 @@ Predicates, fixed before the first run.
     controller does not replay keys for a test."
  H4 the default kernel's F5 at 800 by 600 holds no "Not run".
 
+ H8 the serial record and visible skipped-test paragraph agree with the fixture. The compact stopped
+    screen may omit that paragraph for space. If it is shown, the complete reason must agree.
+
 Usage: check_stopped_screen.py <default kernel.elf32> <no-key-replay-demo kernel.elf32> <new evidence folder>
                                [--busy <kernel.elf32>] [--silent <kernel.elf32>]
 """
@@ -53,20 +56,50 @@ NO_KEYBOARD = "No keyboard controller answered. This kernel drives PS/2 keyboard
 # What the kernel's serial line "keyboard: ..." says became of the keyboard, and the one sentence the
 # stopped screen must then show (none when the keyboard is in use). The kernel has three reasons for
 # having no keyboard; a screen must show the one its own boot gave and neither of the others.
+READY = "a PS/2 controller answered"
+BUSY = "a controller is there but did not take its set-up in time; it is not used"
+SILENT = "the controller is set up but the keyboard did not acknowledge; it is not used"
 REASONS = {
-    "a PS/2 controller answered": None,
+    READY: None,
     "no controller": NO_KEYBOARD,
-    "a controller is there but did not take its set-up in time; it is not used":
-        "The keyboard controller did not take its set-up in time; the keyboard is not used.",
-    "the controller is set up but the keyboard did not acknowledge; it is not used":
-        "The keyboard did not acknowledge, so it is not used.",
+    BUSY: "The keyboard controller did not take its set-up in time; the keyboard is not used.",
+    SILENT: "The keyboard did not acknowledge, so it is not used.",
 }
 POWER = "This kernel cannot switch the computer off. Hold its power button until it goes dark."
-WHY = "the six tests that press keys, because this keyboard controller does not replay keys for a test."
+NO_REPLAY = "this keyboard controller does not replay keys for a test"
+NO_CONTROLLER = "there is no keyboard controller"
+SETUP_REFUSED = "the keyboard controller did not take its set-up"
+NO_ACK = "the keyboard did not acknowledge"
+KEYBOARD_FOR_SKIP = {None: READY, NO_REPLAY: READY, NO_CONTROLLER: "no controller", SETUP_REFUSED: BUSY, NO_ACK: SILENT}
+SKIP_RECORD = "the self-tests that press keys were not run: "
+SIX_KEYS = "the six tests that press keys, because "
+WHY = SIX_KEYS + NO_REPLAY + "."
 
 
 def text_of(rows):
     return " ".join(" ".join(rows).split())
+
+
+def skip_problems(serial, rows, expected, *, f5=False, compact=False):
+    """Check the exact reason against the fixture, the same boot's serial record and the decoded pixels."""
+    lines = serial.splitlines()
+    outcomes = [line[len("keyboard: "):] for line in lines if line.startswith("keyboard: ")]
+    if outcomes != [KEYBOARD_FOR_SKIP[expected]]:
+        return ["keyboard initialization %r disagrees with the fixture for skipped reason %r" % (outcomes, expected)]
+    reasons = [line[len(SKIP_RECORD):] for line in lines if line.startswith(SKIP_RECORD)]
+    if reasons != ([expected] if expected is not None else []):
+        return ["serial skipped-test records %r disagree with the fixture %r" % (reasons, expected)]
+    text = text_of(rows)
+    heading = "Not run at start:" if f5 else "Not run:"
+    # A smaller stopped screen can sacrifice the entire skipped-tests paragraph. A visible one must
+    # still be complete. F5 and roomier stopped screens carry it whenever the serial record does.
+    if compact and not f5 and "Not run" not in text and SIX_KEYS not in text and not any(why + "." in text for why in reasons):
+        return []
+    if text.count("Not run") != len(reasons) or text.count(SIX_KEYS) != len(reasons):
+        return ["wrong number of visible skipped-test explanations for serial %r" % reasons]
+    if reasons and (heading + " " + SIX_KEYS + reasons[0] + ".") not in text:
+        return ["the visible skipped-test explanation differs from the same boot's serial record"]
+    return []
 
 
 def stopped_problems(rows, keyboard, passed=None, outcome=None):
@@ -182,7 +215,7 @@ def main():
     problems, results = [], {}
     # The controls for H6, on made-up rows: only the reading is being proved here, not the kernel.
     good = ["  " + STOPPED, "  Verified: all 66 self-tests it ran passed.", "  " + NO_KEYBOARD, "  " + POWER]
-    busy, silent = REASONS["a controller is there but did not take its set-up in time; it is not used"], REASONS["the controller is set up but the keyboard did not acknowledge; it is not used"]
+    busy, silent = REASONS[BUSY], REASONS[SILENT]
     controls = {"an intact screen": (good, False, "no controller", False),
                 "a second reason added": (good[:3] + ["  " + busy] + good[3:], False, "no controller", True),
                 "the reason of another outcome": (good[:2] + ["  " + silent] + good[3:], False, "no controller", True),
@@ -193,12 +226,14 @@ def main():
             problems.append("control: %s was %s" % (what, "accepted" if must_refuse else "refused"))
     results["reason_controls"] = sorted(controls)
 
-    def trial(name, kernel, mode, machine, steps):
+    def trial(name, kernel, mode, machine, steps, expected_skip=None):
         guest = None
         try:
             guest = Guest(args.qemu, kernel, mode, machine, evidence / name, glyphs)
             for problem in steps(guest):
                 problems.append("%s: %s" % (name, problem))
+            for problem in skip_problems(guest.serial.read_text(), results[name], expected_skip, compact=mode == "320x200"):
+                problems.append("%s H8: %s" % (name, problem))
             if not guest.running():
                 problems.append("%s: the emulator is not still running on the stopped screen" % name)
         except Exception as error:  # every failure is kept, with what was on the screen
@@ -229,6 +264,7 @@ def main():
         guest.key("f5")
         f5 = guest.screen("f5", lambda rows: any("VERIFICATION" in row for row in rows))
         found = ["H4: the default kernel's F5 says tests were not run"] if "Not run" in text_of(f5) else []
+        found.extend("H8 F5: " + p for p in skip_problems(guest.serial.read_text(), f5, None, f5=True))
         guest.key("esc")
         guest.key("f10")
         guest.screen("power", lambda rows: any("POWER OFF" in row for row in rows))
@@ -242,6 +278,7 @@ def main():
         guest.key("f5")
         f5 = guest.screen("f5", lambda rows: any("VERIFICATION" in row for row in rows))
         found = [] if "Not run at start: " + WHY in text_of(f5) else ["H3: F5 does not say which tests were not run and why"]
+        found.extend("H8 F5: " + p for p in skip_problems(guest.serial.read_text(), f5, NO_REPLAY, f5=True))
         guest.key("esc")
         guest.key("f10")
         guest.screen("power", lambda rows: any("POWER OFF" in row for row in rows))
@@ -252,17 +289,17 @@ def main():
             found.append("H3: the stopped screen does not say which tests were not run and why")
         return found + ["H3: " + p for p in stopped_problems(rows, True, guest.passed(), guest.outcome())]
 
-    trial("nokbd-320", args.default, "320x200", "pc,i8042=off", no_keyboard)
-    trial("nokbd-1080", args.default, "1920x1080", "pc,i8042=off", no_keyboard)
+    trial("nokbd-320", args.default, "320x200", "pc,i8042=off", no_keyboard, NO_CONTROLLER)
+    trial("nokbd-1080", args.default, "1920x1080", "pc,i8042=off", no_keyboard, NO_CONTROLLER)
     trial("kbd-800", args.default, "800x600", "pc", with_keyboard)
-    trial("noreplay-800", args.demonstration, "800x600", "pc", without_replay)
+    trial("noreplay-800", args.demonstration, "800x600", "pc", without_replay, NO_REPLAY)
     # H7: the kernel's other two reasons, each in a guest of its own.
     if args.busy:
-        trial("busy-800", args.busy, "800x600", "pc", no_keyboard_other)
-        trial("busy-320", args.busy, "320x200", "pc", no_keyboard_other)
+        trial("busy-800", args.busy, "800x600", "pc", no_keyboard_other, SETUP_REFUSED)
+        trial("busy-320", args.busy, "320x200", "pc", no_keyboard_other, SETUP_REFUSED)
     if args.silent:
-        trial("silent-800", args.silent, "800x600", "pc", no_keyboard_other)
-        trial("silent-320", args.silent, "320x200", "pc", no_keyboard_other)
+        trial("silent-800", args.silent, "800x600", "pc", no_keyboard_other, NO_ACK)
+        trial("silent-320", args.silent, "320x200", "pc", no_keyboard_other, NO_ACK)
     (evidence / "result.json").write_text(json.dumps({"problems": problems, "results": results}, indent=2) + "\n")
     for problem in problems:
         print("FAILED", problem)
