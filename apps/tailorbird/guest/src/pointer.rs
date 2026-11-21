@@ -582,6 +582,66 @@ mod tests {
     }
 
     #[test]
+    fn accepted_same_mode_and_aba_commits_fence_held_mode_clicks() {
+        // A remote service commit can change the visible mode and return to
+        // the original state without any F6 key or Service status refresh.
+        // Neither a same-mode receipt nor an ABA sequence may reuse a Down.
+        for commits in [
+            &[Mode::Single][..],
+            &[Mode::Ongoing, Mode::Single][..],
+        ] {
+            let mut ui = connected();
+            let mut pointer = PointerUi::new();
+            let before_service = ui.service_epoch;
+            let before_view = ui.view_epoch;
+            assert_eq!(pointer.input(event(50, 234, PointerPhase::Down), &mut ui), None);
+            for &mode in commits {
+                assert!(ui.observe(BackendEvent::ModeCommitted(mode)));
+            }
+            assert_eq!(ui.service_epoch, before_service);
+            assert_eq!(ui.view_epoch, before_view + commits.len() as u64);
+            assert_eq!(ui.mode, Mode::Single);
+            assert_eq!(pointer.input(event(50, 234, PointerPhase::Up), &mut ui), None);
+            assert_eq!(ui.mode_pending, None);
+            // The new Down/Up remains usable after an admitted commit.
+            assert_eq!(pointer.input(event(50, 234, PointerPhase::Down), &mut ui), None);
+            assert_eq!(pointer.input(event(50, 234, PointerPhase::Up), &mut ui),
+                       Some(Intent::SetMode(Mode::Ongoing)));
+        }
+    }
+
+    #[test]
+    fn accepted_mode_commit_also_fences_held_stop_without_cancelling_task() {
+        let mut ui = connected();
+        let mut pointer = PointerUi::new();
+        assert!(ui.observe(BackendEvent::Started { task_id: 7, seq: 1 }));
+        assert_eq!(pointer.input(event(60, 340, PointerPhase::Down), &mut ui), None);
+        assert!(ui.observe(BackendEvent::ModeCommitted(Mode::Single)));
+        assert_eq!(pointer.input(event(60, 340, PointerPhase::Up), &mut ui), None);
+        assert_eq!(ui.task.state, TaskState::Running);
+        assert_eq!(pointer.input(event(60, 340, PointerPhase::Down), &mut ui), None);
+        assert_eq!(pointer.input(event(60, 340, PointerPhase::Up), &mut ui),
+                   Some(Intent::Stop { task_id: 7 }));
+        assert_eq!(ui.task.state, TaskState::Running); // only a local intent
+    }
+
+    #[test]
+    fn repeated_mode_commits_saturate_generation_and_disable_pointer_capture() {
+        let mut ui = connected();
+        let mut pointer = PointerUi::new();
+        ui.view_epoch = u64::MAX - 1;
+        assert_eq!(pointer.input(event(50, 234, PointerPhase::Down), &mut ui), None);
+        assert!(ui.observe(BackendEvent::ModeCommitted(Mode::Single)));
+        assert_eq!(ui.view_epoch, u64::MAX);
+        assert_eq!(pointer.input(event(50, 234, PointerPhase::Up), &mut ui), None);
+        assert!(ui.observe(BackendEvent::ModeCommitted(Mode::Ongoing)));
+        assert_eq!(ui.view_epoch, u64::MAX);
+        assert_eq!(pointer.input(event(50, 234, PointerPhase::Down), &mut ui), None);
+        assert_eq!(pointer.input(event(50, 234, PointerPhase::Up), &mut ui), None);
+        assert_eq!(ui.mode_pending, None);
+    }
+
+    #[test]
     fn exhausted_view_epoch_does_not_wrap_to_approve_stale_pointer() {
         use crate::ordered_keys::{KeyOutcome, OrderedKeyboard};
         let mut ui = connected();
