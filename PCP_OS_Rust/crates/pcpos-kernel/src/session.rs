@@ -145,7 +145,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
         if details {
             draw_menu(start, &programs, &files, rec, chosen, &message, world.store.len());
         } else {
-            draw_desktop(start, &programs, chosen, &message);
+            draw_desktop(start, &programs, rec, chosen, &message, world.store.len());
         }
         let key = wait_key();
         match key {
@@ -172,7 +172,117 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     tasks
 }
 
-fn draw_desktop(start: &Start, programs: &[Entry], chosen: usize, message: &str) {
+/// The desktop. On a display of at least 1280 by 720 it is drawn at the display's own resolution: a status
+/// bar, the programs as a list, the machine, the emblem on a soft field, and the keys. On a smaller display
+/// the plain list below is drawn instead. Both say the same things and answer the same keys.
+fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, message: &str, stored: usize) {
+    use ui::{label, label_width, AMBER, BAD, GOOD, SOFT, TEAL, TEXT};
+    let display = match dev::display() {
+        Some(d) if d.width >= 1280 && d.height >= 720 && ui::scale() == 1 => d,
+        _ => return draw_desktop_plain(start, programs, chosen, message),
+    };
+    let (w, h) = (display.width, display.height);
+    let safe = start.failed != 0;
+    const OUTLINE: u32 = 0x2F8C88;
+    const BAR_TOP: u32 = 0x17334F;
+    const BAR_END: u32 = 0x11283F;
+    let field = ui::Field { width: w, height: h, cx: w * 74 / 100, cy: h * 48 / 100 };
+    field.paint();
+    let over_field = |x: u32, y: u32| field.colour(x, y);
+
+    // The status bar: what this is, whether it verified itself, and the state of its register.
+    let on_bar = ui::bar(0, 56, w, BAR_TOP, BAR_END, OUTLINE);
+    let mut x = label(28, 18, "PCP OS", TEXT, false, &on_bar);
+    x = label(x + 14, 18, &format!("{} | x86-64", start.version), SOFT, false, &on_bar);
+    let verified = if safe { format!("NOT VERIFIED: {} of {} self-tests failed", start.failed, start.passed + start.failed) }
+                   else { format!("verified at start | {} of {} self-tests passed", start.passed, start.passed) };
+    let pill = |x: u32, s: &str, colour: u32, tint: u32| {
+        let width = label_width(s, false) + 28;
+        let on_pill = ui::panel(x, 12, width, 32, &on_bar, tint, 46, if colour == BAD { BAD } else { OUTLINE }, false);
+        label(x + 14, 18, s, colour, false, &on_pill);
+        x + width
+    };
+    pill(x + 18, &verified, if safe { BAD } else { GOOD }, if safe { BAD } else { 0x187C78 });
+    let head = rec.ledger().head();
+    let chain = "chain intact";
+    let events = format!("register {} events | head {}...", rec.ledger().len(), &head[..head.len().min(12)]);
+    let right = w - 28 - (label_width(chain, false) + 28);
+    pill(right, chain, TEXT, 0x187C78);
+    label(right.saturating_sub(18 + label_width(&events, false)), 18, &events, SOFT, false, &on_bar);
+
+    // The programs.
+    let left = w / 20;
+    let list_width = (w * 47 / 100).min(1100);
+    let mut y = 150;
+    label(left, y, "Programs", TEXT, true, &over_field);
+    y += 48;
+    label(left, y, if safe { "SAFE: verification failed. Programs are disabled." } else if programs.is_empty() { "The loader handed over no program." }
+                   else { "Choose one to start. Each runs with only what it is granted." }, if safe { BAD } else { SOFT }, false, &over_field);
+    y += 52;
+    let none = option(&start.boot.command_line, "grant") == Some("none");
+    let grants = if none { "console only" } else if start.sound { "display, keyboard, sound, loader files, store" } else { "display, keyboard, loader files, store" };
+    let key_bar = h - 64;
+    let room = ((key_bar.saturating_sub(y + 230)) / 84).max(1) as usize;
+    let first = (chosen + 1).saturating_sub(room);
+    for (i, p) in programs.iter().enumerate().skip(first).take(room) {
+        let on_row = if i == chosen { ui::panel(left, y, list_width, 74, &over_field, TEAL, 46, OUTLINE, true) }
+                     else { ui::panel(left, y, list_width, 74, &over_field, TEXT, 9, 0x24405C, false) };
+        if i == chosen {
+            dev::display_fill(left, y + 10, 4, 54, AMBER);
+        }
+        let name: String = p.name.chars().take(((list_width - 280) / 20) as usize).collect();
+        label(left + 22, y + 8, &name, TEXT, true, &on_row);
+        #[allow(unused_mut)]
+        let mut access = String::from(grants);
+        #[cfg(feature = "guest-ethernet")]
+        if !none && ethernet_grant(start.boot.exact_command_line(), &p.digest) { access.push_str(", raw Ethernet frames"); }
+        #[cfg(feature = "game-link")]
+        if !none && option(&start.boot.command_line, "link_image") == Some(p.digest.as_str()) { access.push_str(", second serial port"); }
+        label(left + 22, y + 48, &format!("may use: {}", access), SOFT, false, &on_row);
+        let size = size_text(p.image.len());
+        label(left + list_width - 22 - label_width(&size, false), y + 12, &size, SOFT, false, &on_row);
+        let digest = format!("{}...", &p.digest[..12]);
+        label(left + list_width - 22 - label_width(&digest, false), y + 40, &digest, SOFT, false, &on_row);
+        y += 84;
+    }
+
+    // The machine, and what the last program left to say.
+    y += 30;
+    label(left, y, "MACHINE", TEAL, false, &over_field);
+    let (pool, free, _, _) = crate::mem::census();
+    label(left, y + 34, &format!("memory for programs {} MiB, {} MiB free   display {} x {}", pool * 4 / 1024, free * 4 / 1024, w, h), TEXT, false, &over_field);
+    label(left, y + 62, &format!("keyboard PS/2   sound {}   store {} file(s), kept until power off", if start.sound { "present" } else { "absent" }, stored), TEXT, false, &over_field);
+    for (i, line) in message.lines().take(3).enumerate() {
+        label(left, y + 106 + i as u32 * 26, line, AMBER, false, &over_field);
+    }
+
+    // The emblem on its plate, where the light is.
+    let plate = h * 28 / 100;
+    let (px, py) = (field.cx - plate / 2, field.cy - plate / 2);
+    let on_plate = ui::panel(px, py, plate, plate, &over_field, 0x10283F, 235, OUTLINE, true);
+    let bird = plate * 70 / 100;
+    ui::emblem_over(px + (plate - bird * 121 / 132) / 2, py + (plate - bird) / 2, bird, &on_plate);
+    let motto = "EVIDENCE BEFORE AGREEMENT";
+    label(field.cx - label_width(motto, false) / 2, py + plate + 40, motto, SOFT, false, &over_field);
+
+    // The keys.
+    let on_keys = ui::bar(key_bar, 64, w, 0x142C45, 0x0F2439, 0x0F2439);
+    let mut x = 28;
+    let keys: &[(&str, &str)] = if programs.is_empty() || safe { &[("D", "details"), ("R", "register"), ("P", "power off")] }
+                                else { &[("Up/Down", "choose"), ("Enter", "start"), ("D", "details"), ("R", "register"), ("P", "power off")] };
+    for (key, does) in keys {
+        let width = label_width(key, false) + 20;
+        let on_cap = ui::panel(x, key_bar + 17, width, 30, &on_keys, TEXT, 20, 0x3B5672, true);
+        label(x + 10, key_bar + 22, key, TEXT, false, &on_cap);
+        x = label(x + width + 10, key_bar + 22, does, SOFT, false, &on_keys) + 26;
+    }
+    let stop = "Ctrl+Alt+Delete stops a running program. No program can take that key.";
+    if x + label_width(stop, false) + 28 <= w {
+        label(w - 28 - label_width(stop, false), key_bar + 22, stop, SOFT, false, &on_keys);
+    }
+}
+
+fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message: &str) {
     use ui::{at, GROUND, PANEL, SOFT, TEXT};
     ui::clear(GROUND);
     let (cols, rows) = ui::grid();

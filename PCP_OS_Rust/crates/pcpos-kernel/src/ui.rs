@@ -128,12 +128,17 @@ fn inside(shape: &Shape, x: i64, y: i64) -> bool {
 /// mean of nine samples, so the edges are smooth.
 pub fn emblem(x: u32, y: u32, height: u32, ground: u32) {
     let z = scale();
-    let (x, y, height) = (x * z, y * z, height * z);
+    emblem_over(x * z, y * z, height * z, &|_, _| ground);
+}
+
+/// The emblem at a place given in display pixels, over whatever `under` says is beneath each pixel.
+pub fn emblem_over(x: u32, y: u32, height: u32, under: &dyn Fn(u32, u32) -> u32) {
     // The bird is 121 units wide and 132 tall; a unit is 160 of the fixed-point steps used here.
     let width = height * 121 / 132;
-    let mut row: Vec<u32> = alloc::vec![ground; width as usize];
+    let mut row: Vec<u32> = alloc::vec![0; width as usize];
     for py in 0..height {
         for px in 0..width {
+            let ground = under(x + px, y + py);
             let (mut r, mut g, mut b) = (0u32, 0u32, 0u32);
             for sy in 0..3i64 {
                 for sx in 0..3i64 {
@@ -154,4 +159,152 @@ pub fn emblem(x: u32, y: u32, height: u32, ground: u32) {
         }
         dev::display_row(x, y + py, &row);
     }
+}
+
+// ---- the desktop's own drawing: a soft field, panels with a lit edge, and text over either ---------------------
+//
+// Everything here is computed from a few numbers; nothing is a stored picture, so it is as sharp at one
+// resolution as at another. Places and sizes are in display pixels.
+
+/// The whole part of a square root.
+pub fn isqrt(n: u64) -> u64 {
+    if n < 2 {
+        return n;
+    }
+    let (mut low, mut high) = (1u64, 1u64 << 32);
+    while low + 1 < high {
+        let mid = (low + high) / 2;
+        if mid * mid <= n { low = mid } else { high = mid }
+    }
+    low
+}
+
+/// The desktop's field: the Core plate shaded from a little lighter at the top to a little darker at the
+/// bottom, a faint teal light around one point, and thin rings about that point (the rings of the product's
+/// backgrounds).
+#[derive(Clone, Copy)]
+pub struct Field {
+    pub width: u32,
+    pub height: u32,
+    /// The centre of the light and of the rings.
+    pub cx: u32,
+    pub cy: u32,
+}
+
+const FIELD_TOP: u32 = 0x132B45;
+const FIELD_MID: u32 = 0x0E2238;
+const FIELD_END: u32 = 0x0A1A2C;
+const FIELD_LIGHT: u32 = 0x1F6F7A;
+
+impl Field {
+    /// The unit every length of the field is a multiple of: one at 1080 rows.
+    fn unit(&self, n: u32) -> u64 {
+        (n as u64 * self.height as u64 / 1080).max(1)
+    }
+
+    fn shade(&self, y: u32) -> u32 {
+        let turn = self.height * 55 / 100;
+        if y < turn {
+            blend(FIELD_TOP, FIELD_MID, y * 255 / turn.max(1))
+        } else {
+            blend(FIELD_MID, FIELD_END, (y - turn) * 255 / (self.height - turn).max(1))
+        }
+    }
+
+    /// The colour at a point, given its whole distance from the centre.
+    fn lit(&self, y: u32, distance: u64) -> u32 {
+        let mut c = self.shade(y);
+        let reach = self.unit(620);
+        if distance < reach {
+            c = blend(c, FIELD_LIGHT, ((reach - distance) * 107 / reach) as u32);
+        }
+        let (first, step) = (self.unit(230), self.unit(140));
+        if distance + 1 >= first && (distance + 1 - first) % step < 2 {
+            c = blend(c, TEXT, 15);
+        }
+        c
+    }
+
+    /// The colour of the field at one point.
+    pub fn colour(&self, x: u32, y: u32) -> u32 {
+        let (dx, dy) = (x as i64 - self.cx as i64, y as i64 - self.cy as i64);
+        self.lit(y, isqrt((dx * dx + dy * dy) as u64))
+    }
+
+    /// Paint the field over the whole display. The distance is carried from one pixel to the next, since it
+    /// changes by less than one between neighbours.
+    pub fn paint(&self) {
+        let mut row: Vec<u32> = alloc::vec![0; self.width as usize];
+        for y in 0..self.height {
+            let dy = y as i64 - self.cy as i64;
+            let mut r = isqrt((self.cx as u64 * self.cx as u64) + (dy * dy) as u64);
+            for x in 0..self.width {
+                let dx = x as i64 - self.cx as i64;
+                let d2 = (dx * dx + dy * dy) as u64;
+                while r * r > d2 { r -= 1 }
+                while (r + 1) * (r + 1) <= d2 { r += 1 }
+                row[x as usize] = self.lit(y, r);
+            }
+            dev::display_row(0, y, &row);
+        }
+    }
+}
+
+/// A flat bar across the display with a lit top edge and a line beneath: the status bar and the key bar.
+/// Returns the colour text on it lies on, for each row.
+pub fn bar(y: u32, height: u32, width: u32, top: u32, bottom: u32, line: u32) -> impl Fn(u32, u32) -> u32 {
+    let shade = move |_x: u32, py: u32| blend(top, bottom, (py.saturating_sub(y)) * 255 / height.max(1));
+    let mut row: Vec<u32> = alloc::vec![0; width as usize];
+    for py in y..y + height {
+        let c = if py == y { blend(shade(0, py), TEXT, 56) } else if py + 1 == y + height { line } else { shade(0, py) };
+        row.iter_mut().for_each(|p| *p = c);
+        dev::display_row(0, py, &row);
+    }
+    shade
+}
+
+/// A panel: `tint` laid over what is beneath at `strength` of 255, with an outline and, where `lit`, one
+/// brighter line inside its top edge. Returns what text on it lies on.
+pub fn panel<'a>(x: u32, y: u32, w: u32, h: u32, under: &'a dyn Fn(u32, u32) -> u32, tint: u32, strength: u32, outline: u32, lit: bool) -> impl Fn(u32, u32) -> u32 + 'a {
+    let body = move |px: u32, py: u32| blend(under(px, py), tint, strength);
+    let mut row: Vec<u32> = alloc::vec![0; w as usize];
+    for py in y..y + h {
+        for (i, p) in row.iter_mut().enumerate() {
+            let px = x + i as u32;
+            let edge = py == y || py + 1 == y + h || i == 0 || i as u32 + 1 == w;
+            *p = if edge { blend(under(px, py), outline, 200) } else if lit && py == y + 1 { blend(body(px, py), TEXT, 60) } else { body(px, py) };
+        }
+        dev::display_row(x, py, &row);
+    }
+    body
+}
+
+/// Text at a place in display pixels, in the ordinary size or twice it, over whatever `under` says is
+/// beneath each pixel. Returns the x just after the text.
+pub fn label(x: u32, y: u32, s: &str, colour: u32, large: bool, under: &dyn Fn(u32, u32) -> u32) -> u32 {
+    let z = if large { 2usize } else { 1 };
+    let (width, height) = (CELL_WIDTH * z, CELL_HEIGHT * z);
+    let available = dev::display().map(|d| (d.width.saturating_sub(x) as usize) / width).unwrap_or(0);
+    let n = s.chars().take(available).count();
+    if n == 0 {
+        return x;
+    }
+    let mut row: Vec<u32> = alloc::vec![0; n * width];
+    for line in 0..height {
+        for (i, ch) in s.chars().take(n).enumerate() {
+            let code = if (ch as u32) >= FIRST as u32 && (ch as u32) < 127 { ch as usize - FIRST as usize } else { b'?' as usize - FIRST as usize };
+            let glyph: &[u8] = if z == 1 { &GLYPHS[code] } else { &DOUBLE[code * width * height..(code + 1) * width * height] };
+            for col in 0..width {
+                let (px, py) = (x + (i * width + col) as u32, y + line as u32);
+                row[i * width + col] = blend(under(px, py), colour, glyph[line * width + col] as u32);
+            }
+        }
+        dev::display_row(x, y + line as u32, &row);
+    }
+    x + (n * width) as u32
+}
+
+/// How wide `s` is as a label.
+pub fn label_width(s: &str, large: bool) -> u32 {
+    s.chars().count() as u32 * CELL_W * if large { 2 } else { 1 }
 }

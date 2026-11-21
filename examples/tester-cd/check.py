@@ -41,19 +41,22 @@ def kernel_glyphs():
 
 
 def read_screen(ppm, glyphs):
-    """Every text row of a 1024 by 768 kernel screen, read cell by cell against the kernel's own font.
-    A cell that is no character of the font reads as '?'."""
-    header = b"P6\n1024 768\n255\n"
-    if not ppm.startswith(header) or len(ppm) != len(header) + 1024 * 768 * 3:
+    """Every text row of a kernel screen of any size, read cell by cell against the kernel's own font, on
+    the 10 by 20 grid that starts at the top-left corner. A cell that is no character of the font reads as '?'."""
+    try:
+        magic, size, depth, pixels = ppm.split(b"\n", 3)
+        width, height = (int(n) for n in size.split())
+    except ValueError:
         return None
-    pixels = ppm[len(header):]
+    if magic != b"P6" or depth != b"255" or len(pixels) != width * height * 3 or width < 640 or height < 480:
+        return None
     ground = collections.Counter(pixels[i:i + 3] for i in range(0, len(pixels), 3 * 97)).most_common(1)[0][0]
     rows = []
-    for row in range(38):
+    for row in range(height // 20):
         text = ""
-        for column in range(102):
+        for column in range(width // 10):
             inked = tuple(pixels[at:at + 3] != ground for y in range(20) for x in range(10)
-                          for at in (((row * 20 + y) * 1024 + column * 10 + x) * 3,))
+                          for at in (((row * 20 + y) * width + column * 10 + x) * 3,))
             text += glyphs.get(inked, "?")
         rows.append(text.rstrip())
     return rows
@@ -62,7 +65,7 @@ def read_screen(ppm, glyphs):
 def register_problems(rows):
     """What the register screen must show after one played and one stopped demo."""
     if rows is None:
-        return ["the register screen was not a whole 1024 by 768 frame"]
+        return ["the register screen was not a whole frame"]
     problems = []
     if any("?" in row for row in rows):
         problems.append("the register screen holds a cell that is no character of the kernel's font")
