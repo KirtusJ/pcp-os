@@ -21,6 +21,7 @@ def usb_command(qemu, code, template, volume, out, ram, video='std'):
     graphics = {
         'std': ['-vga', 'std'],
         'virtio-vga': ['-vga', 'none', '-device', 'virtio-vga'],
+        'ramfb': ['-vga', 'none', '-device', 'ramfb'],
     }[video]
     args = [qemu, '-machine', 'q35', '-accel', 'tcg', '-cpu', 'max', '-m', str(ram), '-smp', '1',
             '-S', '-no-shutdown', '-no-reboot', '-nic', 'none', '-display', 'none', *graphics,
@@ -31,6 +32,27 @@ def usb_command(qemu, code, template, volume, out, ram, video='std'):
             '-device', 'qemu-xhci,id=xhci', '-drive', f'if=none,id=stick,format=raw,readonly=on,file={volume}',
             '-device', 'usb-storage,bus=xhci.0,id=usb,drive=stick,removable=on,bootindex=1']
     return args + create(out, template, OPTICAL['make_gpt_disk'])
+
+
+def loader_picture(startup, steps, home):
+    """Read the loader display from the kernel, the firmware trace and the actual Home frame."""
+    display = re.search(r'^display: Loader, (\d+)x(\d+), 1 page\(s\), '
+                        r'(\d+) KiB of its memory mapped at (0x[0-9a-f]+)$', startup, re.M)
+    fields = dict(line.split('=', 1) for line in steps
+                  if line.startswith(('console_framebuffer=', 'console_pitch=')))
+    if not display or 'console_framebuffer' not in fields or 'console_pitch' not in fields:
+        raise ValueError('missing kernel loader display or firmware framebuffer geometry')
+    width, height, mapped_kib = map(int, display.groups()[:3])
+    address = int(fields['console_framebuffer'], 16)
+    pitch = int(fields['console_pitch'], 16)
+    picture_end = address + pitch * height
+    first_page = address // 4096
+    end_page = (picture_end + 4095) // 4096
+    if int(display[4], 16) != address or pitch < width * 4 or mapped_kib != (end_page - first_page) * 4:
+        raise ValueError('kernel framebuffer address or mapped size disagrees with the firmware picture')
+    if home.read_bytes().split(b'\n', 2)[1] != f'{width} {height}'.encode():
+        raise ValueError('visible Home and loader display dimensions differ')
+    return display[0], address
 
 
 def trial(qemu, code, template, volume, image, out, ram, video='std'):
@@ -68,18 +90,9 @@ def trial(qemu, code, template, volume, image, out, ram, video='std'):
                 if not boot_device or sum(line.startswith('  pass ') for line in startup.splitlines()) != OPTICAL['SCREEN']['STARTUP_CHECKS']:
                     raise ValueError('missing OVMF USB boot device or startup self-tests')
                 receipt['firmware_boot_device'] = boot_device[0].strip()
-                if video == 'virtio-vga':
-                    # The display must be the firmware buffer taken over by the kernel.
-                    display = re.search(
-                        r'^display: Loader, (\d+)x(\d+), 1 page\(s\), '
-                        r'\d+ KiB of its memory mapped at (0x[0-9a-f]+)', startup, re.M)
-                    framebuffer = next((s for s in steps if s.startswith('console_framebuffer=')), None)
-                    if not display or not framebuffer or int(display[3], 16) != int(framebuffer.split('=')[1], 16):
-                        raise ValueError('virtio Home did not use the reported firmware framebuffer')
-                    size = (out / 'home.ppm').read_bytes().split(b'\n', 2)[1].decode()
-                    if size != f'{display[1]} {display[2]}':
-                        raise ValueError('visible Home and loader display dimensions differ')
-                    receipt['loader_display'] = display[0]
+                if video in ('virtio-vga', 'ramfb'):
+                    receipt['loader_display'], receipt['framebuffer_address'] = loader_picture(
+                        startup, steps, out / 'home.ppm')
                 snapshots.append(capture(rpc, out, 'home'))
                 rpc('cont')
                 screens.verification('home')
@@ -125,6 +138,7 @@ def trial(qemu, code, template, volume, image, out, ram, video='std'):
         receipt['passed'] = True
     finally:
         (out / 'result.json').write_text(json.dumps(receipt, indent=2) + '\n')
+    return receipt
 
 
 def main():
@@ -154,6 +168,12 @@ def main():
         for ram in (128, 256):
             trial(args.qemu, code, template, volume, image, out / str(ram), ram)
         trial(args.qemu, code, template, volume, image, out / "virtio-vga", 128, "virtio-vga")
+        addresses = []
+        for ram in (128, 256):
+            receipt = trial(args.qemu, code, template, volume, image, out / f'ramfb-{ram}', ram, 'ramfb')
+            addresses.append(receipt['framebuffer_address'])
+        if addresses[0] == addresses[1]:
+            raise ValueError('RAMFB stayed at the same address across the two guest memory sizes')
 
 
 if __name__ == '__main__':
