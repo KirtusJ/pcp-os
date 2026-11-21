@@ -7,9 +7,11 @@ import runpy
 import shutil
 import subprocess
 import tempfile
+import time
 
 from image import digest, make
 from usb_observer import capture, compare, create
+from refusal_screen import matches as matches_refusal
 
 HERE = Path(__file__).resolve().parent
 OPTICAL = runpy.run_path(str(HERE.parent / 'optical-disk-check/check.py'))
@@ -141,6 +143,84 @@ def trial(qemu, code, template, volume, image, out, ram, video='std'):
     return receipt
 
 
+def allocation_refusal_trial(qemu, code, template, volume, image, out):
+    """Refused fixed allocation at 64 MiB, using only the firmware USB keyboard."""
+    out.mkdir()
+    args = usb_command(qemu, code, template, volume, out, 64)
+    args[args.index('-machine') + 1] = 'q35,i8042=off'
+    args.extend(['-device', 'usb-kbd,id=external-keyboard,bus=xhci.0'])
+    serial, trace = out / 'serial.txt', out / 'firmware.txt'
+    first = 'Press F10 to request power off.'
+    confirm = 'Switch off? Enter switches off. Esc cancels.'
+    receipt = {'argv': args, 'passed': False, 'keys': []}
+    with (out / 'stderr.txt').open('w') as err, subprocess.Popen(
+            args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err) as vm:
+        try:
+            monitor = OPTICAL['Monitor'](vm)
+            call = monitor.call
+            call('qmp_capabilities')
+            before = capture(call, out, 'before')
+            call('cont')
+
+            def screen(name, prompt, occurrence):
+                OPTICAL['wait_for'](lambda: serial.read_text(errors='replace').count(prompt) >= occurrence,
+                                    name, 45)
+                if call('query-status')['status'] != 'running':
+                    raise ValueError('firmware stopped before confirmation')
+                frame = out / (name + '.ppm')
+                def visible():
+                    call('screendump', filename=str(frame))
+                    return matches_refusal(frame.read_bytes(), prompt)
+                OPTICAL['wait_for'](visible, 'complete text on ' + name, 10)
+
+            def key(name):
+                monitor.key(name)
+                receipt['keys'].append(name)
+                time.sleep(.2)
+
+            screen('refused', first, 1)
+            for name in ('ret', 'q', 'f10'):
+                key(name)
+            screen('confirm', confirm, 1)
+            for name in ('y', 'esc'):
+                key(name)
+            screen('cancelled', first, 2)
+            for name in ('ret', 'f10'):
+                key(name)
+            screen('confirm-again', confirm, 2)
+            key('ret')
+            OPTICAL['wait_for'](lambda: call('query-status')['status'] == 'shutdown', 'confirmed power off', 30)
+            after = capture(call, out, 'shutdown')
+            steps = trace.read_text().splitlines()
+            allocation = next(line for line in steps if line.startswith('allocation='))
+            guard = ['handoff-refused', 'refusal_watchdog_status=0000000000000000', 'refusal-power-confirmed']
+            if ([line for line in steps if line in guard] != guard or int(allocation.split('=')[1], 16) == 0 or
+                    any(line in steps for line in ('owned-before-write', 'owned-handoff'))):
+                raise ValueError('unexpected allocation or handoff trace')
+            text = serial.read_text(errors='replace')
+            if ('PCP OS could not start.' not in text or
+                    'Firmware could not reserve the memory needed by the kernel.' not in text or
+                    'You can switch off the computer with its power button.' not in text or
+                    text.count(first) != 2 or text.count(confirm) != 2 or '  pass ' in text):
+                raise ValueError('incomplete refusal or unexpected kernel output')
+            receipt.update(snapshots=[before, after], interval=compare(out, before, after),
+                           events=monitor.events.copy(), usb_sha256=digest(volume))
+            if ([e['data'] for e in receipt['events'] if e['event'] == 'SHUTDOWN'] !=
+                    [{'guest': True, 'reason': 'guest-shutdown'}] or receipt['usb_sha256'] != image['usb_sha256'] or
+                    not receipt['interval']['nvme_bytes_preserved'] or
+                    any(receipt['interval']['counter_deltas']['sentinel'].values())):
+                raise ValueError('shutdown, media, or internal block requests disagreed')
+            call('quit')
+            receipt['passed'] = vm.wait(timeout=10) == 0
+            if not receipt['passed']:
+                raise ValueError('QEMU did not exit normally')
+        finally:
+            if vm.poll() is None:
+                vm.kill()
+                vm.wait()
+            (out / 'result.json').write_text(json.dumps(receipt, indent=2) + '\n')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('distribution_iso', type=Path)
@@ -174,6 +254,7 @@ def main():
             addresses.append(receipt['framebuffer_address'])
         if addresses[0] == addresses[1]:
             raise ValueError('RAMFB stayed at the same address across the two guest memory sizes')
+        allocation_refusal_trial(args.qemu, code, template, volume, image, out / 'allocation-refusal')
 
 
 if __name__ == '__main__':
