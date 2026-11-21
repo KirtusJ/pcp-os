@@ -20,3 +20,9 @@ path = "src/vectors.rs"
 
 [dependencies]
 pcpos-core = { path = "../pcpos-core" }
+
+# Windows only: the link count and the identity of an opened file, which the standard library does not yet
+# give to safe code there. winapi-util is a safe wrapper over Microsoft's windows-sys bindings. Nothing is
+# added to the dependencies of any other platform, of pcpos-core or of the kernel.
+[target.'cfg(windows)'.dependencies]
+winapi-util = "=0.1.11"
