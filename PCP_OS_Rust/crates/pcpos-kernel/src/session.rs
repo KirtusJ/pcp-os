@@ -161,9 +161,9 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     // screen by its keys and compare its pixels ask for it; a person gets the desktop.
     let mut surface = if option(line, "first") == Some("details") { Surface::Details } else { Surface::Home };
     let mut shortcuts: Vec<usize> = Vec::new();
-    // The person's programs sit at the foot of the desktop in one of two forms, and B changes between
-    // them: a bar across the whole width (the default, the form most desktops have), or a dock in the
-    // middle. `bar=dock` on the loader's command line starts with the dock.
+    // The person's programs sit at the foot of the desktop in one of two forms, chosen in the
+    // settings (S) and by no key of the desktop itself: a bar across the whole width (the default, the
+    // form most desktops have), or a dock in the middle. `bar=dock` on the loader's command line starts with the dock.
     let mut whole_bar = option(line, "bar") != Some("dock");
     let mut widgets = [false; WIDGETS.len()];
     let display = start.display.unwrap();
@@ -202,7 +202,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
             (Surface::Home, (0x1C, _)) if to_start.is_none() => surface = Surface::Launcher,
             (Surface::Home, (0x21, false)) => files_view(&world.store, mounted),
             (Surface::Home, (0x11, false)) => widgets_view(&mut widgets),
-            (Surface::Home, (0x30, false)) => whole_bar = !whole_bar,
+            (Surface::Home, (0x1F, false)) => settings_view(&mut whole_bar),
             (Surface::Home, (0x53, _)) | (Surface::Home, (0x0E, false)) if place > 0 => { shortcuts.remove(place - 1); }
             (Surface::Launcher, (0x48, _)) | (Surface::Details, (0x48, _)) if chosen > 0 => chosen -= 1,
             (Surface::Launcher, (0x50, _)) | (Surface::Details, (0x50, _)) if chosen + 1 < programs.len() => chosen += 1,
@@ -373,7 +373,7 @@ fn keys_view(title: &str, keys: &[(&str, &str)]) {
 
 const HOME_KEYS: [(&str, &str); 12] = [("Left/Right", "choose among the programs at the foot of the desktop"), ("Enter", "open what is chosen: all the programs, or a pinned program"),
     ("Space", "open all the programs"), ("Del", "take the chosen program out of the dock"), ("W", "choose the widgets on the desktop"),
-    ("B", "change between the bar across the screen and the dock in the middle"),
+    ("S", "settings: how the desktop looks"),
     ("F", "the files programs have written"), ("R", "the register"), ("V", "verification, in full"), ("K", "this list"), ("P", "power off"),
     ("Ctrl+Alt+Delete", "stops a running program; no program can take that key")];
 const LAUNCHER_KEYS: [(&str, &str); 10] = [("Up/Down", "choose a program"), ("Enter", "start it"), ("S", "pin it to the dock, or take it out"),
@@ -540,6 +540,36 @@ fn widgets_view(widgets: &mut [bool; 3]) {
             (0x48, _) if at_row > 0 => at_row -= 1,
             (0x50, _) if at_row + 1 < WIDGETS.len() => at_row += 1,
             (0x1C, _) | (0x39, false) => widgets[at_row] = !widgets[at_row],
+            (0x01, _) => return,
+            _ => {}
+        }
+    }
+}
+
+/// The settings: how the desktop looks. Nothing here changes by one key from the desktop; a person comes
+/// here, chooses, and sees what is chosen. They last for this session.
+fn settings_view(whole_bar: &mut bool) {
+    use ui::{at, GROUND, PANEL, SOFT, TEXT};
+    let (_, rows) = ui::grid();
+    let forms = ["A bar across the screen", "A dock in the middle"];
+    let mut at_row = if *whole_bar { 0usize } else { 1 };
+    loop {
+        ui::clear(GROUND);
+        at(2, 1, "SETTINGS", ui::TEAL, GROUND);
+        at(2, 2, "They last for this session.", SOFT, GROUND);
+        at(2, 4, "Programs at the foot of the desktop", TEXT, GROUND);
+        for (i, name) in forms.iter().enumerate() {
+            let ground = if i == at_row { PANEL } else { GROUND };
+            let on = (i == 0) == *whole_bar;
+            ui::fill(ui::CELL_W, (5 + i as u32) * ui::CELL_H, 46 * ui::CELL_W, ui::CELL_H, ground);
+            at(2, 5 + i as u32, if on { "(o)" } else { "( )" }, if on { ui::GOOD } else { SOFT }, ground);
+            at(8, 5 + i as u32, name, TEXT, ground);
+        }
+        at(2, rows - 2, "Up/Down choose    Enter set    Esc back", SOFT, GROUND);
+        match wait_key() {
+            (0x48, _) if at_row > 0 => at_row -= 1,
+            (0x50, _) if at_row + 1 < forms.len() => at_row += 1,
+            (0x1C, _) | (0x39, false) => *whole_bar = at_row == 0,
             (0x01, _) => return,
             _ => {}
         }
