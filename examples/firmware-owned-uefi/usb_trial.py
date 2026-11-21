@@ -67,6 +67,8 @@ def trial(qemu, code, template, volume, image, out, ram):
                 snapshots.append(capture(rpc, out, 'home'))
                 rpc('cont')
                 screens.verification('home')
+                if (out / 'home-after-verification.ppm').read_bytes() != (out / 'home.ppm').read_bytes():
+                    raise ValueError('Esc from Verification did not restore the original Home frame')
                 monitor.key('f10')
                 screens.wait('power', lambda v: v[1] == '  POWER OFF' and v[3] == '  Switch PCP OS off?'
                              and v[5] == '  The register is closed and verified first. Files of this session that were'
