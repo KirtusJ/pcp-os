@@ -12,6 +12,13 @@
 # For game-link, a matching link_image and a non-console-only launch select the COM2 initialization
 # probe. Its scratch-register write precedes readback. Only a successful readback enables configuration.
 
+# Device writes that are not port writes, which this check does not find and a person must look for
+# (searched by hand on 21 November 2026 for issue 309: write_volatile, wrmsr, bus_write):
+#   arch.rs device_write32, device_fill32: a display's memory, inside the exact bytes mapped for it;
+#   arch.rs syscall and thread-pointer setup: five model-specific registers of the processor (wrmsr);
+#   dev.rs bus_write: one configuration register (command) of an AC'97 device found by its identity.
+# None of them, and no port write in the default build, reaches storage, firmware variables, the
+# clock's memory or flash; the default build has no storage or network driver.
 arch.rs | cmos | 0x70 | always; the clock's index port, on every PC; the top bit is written clear
 arch.rs | exception_entry | 0x20 | always; end-of-interrupt to the two interrupt controllers every PC has or emulates
 arch.rs | exception_entry | 0xA0 | always; end-of-interrupt to the two interrupt controllers every PC has or emulates
