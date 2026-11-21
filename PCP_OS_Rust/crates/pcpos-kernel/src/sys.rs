@@ -828,6 +828,9 @@ pub fn call(t: &mut Table, i: usize, frame: &Frame) -> Outcome {
             if !world.store.iter().any(|f| f.0 == from) {
                 return ret(err(ENOENT));
             }
+            if from == to {
+                return ret(0);
+            }
             world.store.retain(|f| f.0 != to);
             if let Some(f) = world.store.iter_mut().find(|f| f.0 == from) {
                 f.0 = to;

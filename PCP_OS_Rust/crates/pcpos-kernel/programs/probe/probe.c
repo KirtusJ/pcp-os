@@ -85,12 +85,16 @@ int main(int argc, char **argv)
         check("a file from the loader cannot be opened for writing", open("/probe.elf", O_WRONLY) == -1 && errno == EACCES);
         FILE *f = fopen("note.txt", "w");
         int wrote = f != NULL && fputs("kept until power off\n", f) >= 0 && fclose(f) == 0;
+        int renamed_to_self = rename("note.txt", "note.txt") == 0;
         char back[64] = "";
         f = fopen("note.txt", "r");
         int read_back = f != NULL && fgets(back, sizeof back, f) != NULL && strcmp(back, "kept until power off\n") == 0;
         if (f)
             fclose(f);
         check("a file can be written to the store and read back", wrote && read_back);
+        check("renaming a stored file to itself preserves its bytes", renamed_to_self && read_back);
+        errno = 0;
+        check("renaming a missing file to itself reports ENOENT", rename("absent.txt", "absent.txt") == -1 && errno == ENOENT);
         check("and renamed, and removed", rename("note.txt", "note2.txt") == 0 && access("note2.txt", F_OK) == 0 && remove("note2.txt") == 0 && access("note2.txt", F_OK) == -1);
         int fb = open(PCPOS_DISPLAY_PATH, O_RDWR);
         struct pcpos_display d;
