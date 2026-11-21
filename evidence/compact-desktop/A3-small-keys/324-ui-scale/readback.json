@@ -1,0 +1,38 @@
+{
+  "1280x944": {
+    "scale": 1,
+    "columns": 128,
+    "route": "plain Details",
+    "checks": 72,
+    "unique_frames": 6,
+    "unchanged_letter_inputs": 12,
+    "digits_independently_erased_and_rejected": 0
+  },
+  "1280x960": {
+    "scale": 2,
+    "columns": 64,
+    "route": "scrolling Details",
+    "checks": 72,
+    "unique_frames": 8,
+    "unchanged_letter_inputs": 12,
+    "digits_independently_erased_and_rejected": 4
+  },
+  "1904x1080": {
+    "scale": 2,
+    "columns": 95,
+    "route": "scrolling Details",
+    "checks": 72,
+    "unique_frames": 6,
+    "unchanged_letter_inputs": 12,
+    "digits_independently_erased_and_rejected": 4
+  },
+  "1920x1080": {
+    "scale": 2,
+    "columns": 96,
+    "route": "plain Details",
+    "checks": 72,
+    "unique_frames": 6,
+    "unchanged_letter_inputs": 12,
+    "digits_independently_erased_and_rejected": 0
+  }
+}
