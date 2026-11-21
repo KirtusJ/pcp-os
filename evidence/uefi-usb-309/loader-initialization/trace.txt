@@ -1,0 +1,2 @@
+Lang=missing reads=EFIDebug,Lang writes=0 loaded_image=1 unicode_locate=1 allocations=2 frees=2
+Lang=present reads=EFIDebug,Lang writes=0 loaded_image=1 unicode_locate=1 allocations=2 frees=2
