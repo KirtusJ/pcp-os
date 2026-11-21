@@ -68,8 +68,8 @@ the desktop is the full one: T1 to T5 and T7 as above with the full desktop's ke
 Letters and Details (third change for issue 314; rule 5 at every size):
  K1 on the small desktop and in the small list of programs, each of the letters d, r, p, v, k, f leaves the
     frame as it was (they used to open screens and ask to power off);
- K2 in the small list, Ctrl+D opens a screen titled DETAILS; its pages, joined into its lines once each, have
-    each program's name on one line, followed by its own size, a line "SHA-256", and lines of hex digits
+ K2 in the small list, Ctrl+D opens a screen titled DETAILS; its pages, joined into its lines once each, have, under PROGRAMS and again under
+    FILES FROM THE LOADER, each program's name on one line, followed by its own size, a line "SHA-256", and lines of hex digits
     that are the whole SHA-256 of that program's file (the two files differ by a byte); also its three headings, the memory and keyboard lines, and "Esc back" as the last
     row of every page; Esc gives the list as it was.
 
@@ -340,22 +340,37 @@ def merged_lines(pages):
     return lines
 
 
+def details_sections(lines):
+    """The lines under each of the three headings, or None if the headings are not there once each and in order."""
+    heads = ["PROGRAMS", "FILES FROM THE LOADER", "MACHINE"]
+    at = [[i for i, line in enumerate(lines) if line == head] for head in heads]
+    if any(len(found) != 1 for found in at) or not at[0][0] < at[1][0] < at[2][0]:
+        return None
+    return {"PROGRAMS": lines[at[0][0] + 1:at[1][0]], "FILES FROM THE LOADER": lines[at[1][0] + 1:at[2][0]]}
+
+
 def details_problems(lines, facts):
-    """`facts` is {name: (size text, digest)}. Each name must be followed by its own size and whole digest."""
+    """`facts` is {name: (size text, digest)}. The kernel lists each program under PROGRAMS and again, as a
+    file, under FILES FROM THE LOADER (A3): in each of the two, each name must be there once, followed by
+    its own size and whole digest."""
+    sections = details_sections(lines)
+    if sections is None:
+        return ["the three headings are not there once each and in order"]
     problems = []
-    for name, (size, digest) in facts.items():
-        where = [i for i, line in enumerate(lines) if line == name]
-        if len(where) != 1:
-            problems.append("%r is on %d lines of Details" % (name, len(where)))
-            continue
-        after = lines[where[0] + 1:]
-        hexes = []
-        for line in after[2:]:
-            if not re.fullmatch(r"[0-9a-f]+", line):
-                break
-            hexes.append(line)
-        if after[:2] != [size, "SHA-256"] or "".join(hexes) != digest:
-            problems.append("%r is not followed by its size %r and its whole digest: %r" % (name, size, after[:2 + len(hexes)]))
+    for heading, part in sections.items():
+        for name, (size, digest) in facts.items():
+            where = [i for i, line in enumerate(part) if line == name]
+            if len(where) != 1:
+                problems.append("%r is on %d lines under %s" % (name, len(where), heading))
+                continue
+            after = part[where[0] + 1:]
+            hexes = []
+            for line in after[2:]:
+                if not re.fullmatch(r"[0-9a-f]+", line):
+                    break
+                hexes.append(line)
+            if after[:2] != [size, "SHA-256"] or "".join(hexes) != digest:
+                problems.append("under %s %r is not followed by its size %r and its whole digest: %r" % (heading, name, size, after[:2 + len(hexes)]))
     return problems
 
 
@@ -391,12 +406,13 @@ def list_trial(key, screen, roomy, passed, problems, results, mode, digests):
         lines = merged_lines(pages)
         found = details_problems(lines, digests)
         problems += ["%s K2: %s" % (mode, p) for p in found]
-        # The control (A3): one program's digest rows taken out of a good reading must be refused.
+        # The controls (A3): one entry's digest rows taken out of a good reading, in either section, must be refused.
         if not found:
-            at = lines.index(PROGRAMS[-1])
-            cut = [line for i, line in enumerate(lines) if not (at < i <= at + 6 and re.fullmatch(r"[0-9a-f]+", line))]
-            if not details_problems(cut, digests):
-                problems.append("%s control accepted: Details without %s's digest" % (mode, PROGRAMS[-1]))
+            for nth, heading in enumerate(("PROGRAMS", "FILES FROM THE LOADER")):
+                at = [i for i, line in enumerate(lines) if line == PROGRAMS[-1]][nth]
+                cut = [line for i, line in enumerate(lines) if not (at < i <= at + 6 and re.fullmatch(r"[0-9a-f]+", line))]
+                if not details_problems(cut, digests):
+                    problems.append("%s control accepted: Details without %s's digest under %s" % (mode, PROGRAMS[-1], heading))
         text = " ".join(" ".join(" ".join(page).split()) for page in pages)
         for name in PROGRAMS + ["PROGRAMS", "FILES FROM THE LOADER", "MACHINE", "memory for programs:", "keyboard: PS/2"]:
             if name not in text:
