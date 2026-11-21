@@ -271,6 +271,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     let room = if graphic { foot_room(display.width) } else { programs.len() + 1 };
     arch::interrupts_on();
     dev::keys_forget();
+    let mut drawn = None;
     loop {
         #[cfg(feature = "vm-store")]
         let mounted = world.volume.is_some();
@@ -278,11 +279,17 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
         let mounted = false;
         // The dock holds the way to all the programs first, then what is pinned.
         place = place.min(shortcuts.len()).min(room - 1);
-        match surface {
-            Surface::Home => name_pages = draw_home(start, &programs, rec, &shortcuts, place, whole_bar, &widgets, &world.store, mounted, tasks - start.tasks, &message, last_refusal, name_page),
-            Surface::Launcher => draw_desktop(start, &programs, rec, chosen, &message, &shortcuts),
-            Surface::Details => draw_menu(start, &programs, &files, rec, chosen, &message, world.store.len(),
-                                          #[cfg(feature = "vm-store")] mounted),
+        // A surface is drawn when what it shows has changed or another screen was drawn over it, and at
+        // no other time: a key that changes nothing writes nothing to the display (B3 traced the stores).
+        let shows = (surface, chosen, place, name_page, shortcuts.clone(), whole_bar, widgets, message.clone(), last_refusal, tasks, world.store.len(), mounted);
+        if drawn.as_ref() != Some(&(shows.clone(), ui::clears())) {
+            match surface {
+                Surface::Home => name_pages = draw_home(start, &programs, rec, &shortcuts, place, whole_bar, &widgets, &world.store, mounted, tasks - start.tasks, &message, last_refusal, name_page),
+                Surface::Launcher => draw_desktop(start, &programs, rec, chosen, &message, &shortcuts),
+                Surface::Details => draw_menu(start, &programs, &files, rec, chosen, &message, world.store.len(),
+                                              #[cfg(feature = "vm-store")] mounted),
+            }
+            drawn = Some((shows, ui::clears()));
         }
         let (code, extended, ctrl) = wait_chord();
         let key = (code, extended);
@@ -294,9 +301,10 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
         // The rules of the desktop's keys. No key that is typed (a letter) does anything on the desktop or
         // in the launcher: screens are opened with function keys, and a change to what is chosen takes
         // Ctrl. Nothing that stops the machine happens at one press: F10 asks, and a fresh Enter answers.
-        // The plain list (`first=details`) and the small-display screens keep the letters they have always
-        // had, since they name them on the screen; their P asks in the same way.
-        let letters = !graphic || surface == Surface::Details;
+        // That holds on a display of any size (directors' debrief, 21 November 2026). Only the plain list
+        // (`first=details`, or Ctrl+D on a display wide enough for it) keeps the letters it has always had,
+        // since it names them on the screen and harnesses drive it by them; its P asks in the same way.
+        let letters = surface == Surface::Details;
         let desk = surface != Surface::Details;
         match (surface, key) {
             (_, (0x44, false)) => if power_prompt() { break },
@@ -341,7 +349,10 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
                 None if shortcuts.len() + 1 < room => shortcuts.push(chosen),
                 None => message = format!("Not pinned: the desktop has room for {} pinned program(s) on this display. Take one out first.", room - 1),
             },
-            (Surface::Launcher, (0x20, false)) if ctrl || letters => surface = Surface::Details,
+            // The plain list is laid out for ninety-six columns. On a narrower display Ctrl+D shows the
+            // same facts as a screen of text that is read and left, whole, and the choosing stays here.
+            (Surface::Launcher, (0x20, false)) if ctrl && ui::grid().0 < 96 => details_view(start, &programs, &files, rec, world.store.len(), mounted),
+            (Surface::Launcher, (0x20, false)) if ctrl => surface = Surface::Details,
             (Surface::Details, (0x20, false)) => surface = Surface::Launcher,
             (Surface::Launcher, (0x01, false)) | (Surface::Details, (0x01, false)) => surface = Surface::Home,
             _ => {}
@@ -587,7 +598,7 @@ const HOME_KEYS: [(&str, &str); 11] = [("Left/Right", "choose among the programs
     ("F4", "the register"), ("F5", "verification, in full"), ("F10", "power off, after asking"),
     ("Ctrl+Alt+Delete", "stops a running program; no program can take that key")];
 /// The keys of the desktop of a small display, which are not those of the full one: Up and Down choose,
-/// Left and Right turn the parts of a long name, and the letters it has always had still answer.
+/// Left and Right turn the parts of a long name. Letters do nothing on it, as on the full desktop.
 const SMALL_HOME_KEYS: [(&str, &str); 12] = [("Up/Down", "choose among all the programs and the pinned programs"), ("Left/Right", "turn the parts of a long name"),
     ("Enter", "open what is chosen: all the programs, or a pinned program"),
     ("Space", "open all the programs"), ("Del", "take the chosen program out of the pinned programs"),
@@ -681,7 +692,8 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
             let name: Vec<String> = chosen_pin.map(|p| wrapped(&p.name, across)).unwrap_or_default();
             let mut widget_lines: Vec<String> = recent.iter().map(|(time, name, outcome, _)| format!("{} {} {}", time, outcome, name)).collect();
             if widgets[1] { widget_lines.push(format!("memory {} MiB, {} MiB free", pool * 4 / 1024, free * 4 / 1024)); }
-            if widgets[2] { widget_lines.push(String::from(files_line)); }
+            // On a display too narrow for the sentence the files' line has a shorter wording, whole.
+            if widgets[2] { widget_lines.push(String::from(if files_line.len() <= across { files_line } else if mounted { "VM files: saved on sync" } else { "Files last until power-off" })); }
             let places = shortcuts.len() + 1;
             let body = (rows as usize).saturating_sub(7);
             let mut left = body.saturating_sub(1);
@@ -1119,9 +1131,10 @@ fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message:
             access.push((String::from("Access: second serial port"), ui::AMBER));
         }
     }
+    // The keys named are function keys and Esc, as on every other surface; letters do nothing here.
     let keys = if programs.is_empty() || start.failed != 0 {
-        "D details   R register   P off"
-    } else { "Up/Down choose   Enter open   D details   R register   P off" };
+        "Esc back   F1 keys   F10 off"
+    } else { "Up/Down choose   Enter open   Esc back   F1 keys   F10 off" };
     // The message has two rows. What does not fit on them ends in "..".
     let said: Vec<String> = if message.is_empty() { Vec::new() } else {
         let lines = wrapped(message.lines().next().unwrap_or(""), across);
@@ -1162,9 +1175,9 @@ fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message:
     } else {
         at(2, 0, &verified_sentence(start, across), if start.failed != 0 { ui::BAD } else { ui::GOOD }, GROUND);
         let key_lines: Vec<String> = if keys.len() <= across { alloc::vec![String::from(keys)] } else if programs.is_empty() || start.failed != 0 {
-            alloc::vec![String::from("D details  R register  P off")]
+            alloc::vec![String::from(keys)]
         } else {
-            alloc::vec![String::from("Up/Down choose   Enter open"), String::from("D details  R register  P off")]
+            alloc::vec![String::from("Up/Down choose   Enter open"), String::from("Esc back   F1 keys   F10 off")]
         };
         // After a failed start the list can be read and nothing in it can be started; that is said, in
         // the words the roomy screen uses.
@@ -1410,6 +1423,67 @@ pub fn stopped_screen(start: &Start, failed: u32) {
     for (n, (line, colour)) in lines.iter().enumerate().take(rows as usize) {
         at(2, first + n as u32, line, *colour, GROUND);
     }
+}
+
+/// Everything the loader gave and what the machine has, as a screen of text for a display too narrow for
+/// the plain list: nothing is cut, digests are whole, and nothing here starts or changes anything.
+fn details_view(start: &Start, programs: &[Entry], files: &[(String, &'static [u8], String)], rec: &Record, stored: usize, mounted: bool) {
+    use ui::{SOFT, TEXT};
+    let across = (ui::grid().0 as usize).saturating_sub(4).max(1);
+    let whole = |col: u32, text: &str, colour: u32| -> Vec<Line> {
+        wrapped(text, across.saturating_sub(col as usize - 2).max(1)).into_iter().map(|part| alloc::vec![(col, part, colour)]).collect()
+    };
+    let mut lines: Vec<Line> = Vec::new();
+    lines.extend(lines_of(2, &format!("PCP OS kernel {}", start.version), TEXT));
+    lines.extend(lines_of(2, &if start.failed == 0 { format!("Verified at start: all {} self-tests passed.", start.passed) }
+                              else { format!("NOT VERIFIED: {} of {} self-tests failed.", start.failed, start.passed + start.failed) }, if start.failed == 0 { ui::GOOD } else { ui::BAD }));
+    lines.extend(lines_of(2, &format!("Register: {} events. F5 shows the head of its chain.", rec.ledger().len()), SOFT));
+    lines.extend(lines_of(2, "", TEXT));
+    lines.extend(lines_of(2, "PROGRAMS", ui::TEAL));
+    if programs.is_empty() {
+        lines.extend(lines_of(4, "The loader handed over no program.", SOFT));
+    }
+    let none = option(&start.boot.command_line, "grant") == Some("none");
+    for p in programs {
+        lines.extend(whole(2, &p.name, TEXT));
+        lines.extend(lines_of(4, &size_text(p.image.len()), SOFT));
+        lines.extend(lines_of(4, "SHA-256", SOFT));
+        lines.extend(whole(4, &p.digest, SOFT));
+        if !p.arguments.is_empty() {
+            lines.extend(lines_of(4, &format!("with: {}", p.arguments), SOFT));
+        }
+        lines.extend(lines_of(4, if none { "starting it lets it use: the console only" } else if start.sound { "starting it lets it use: the display, the keyboard, sound, the loader's files, the store" }
+                                 else { "starting it lets it use: the display, the keyboard, the loader's files, the store" }, SOFT));
+        #[cfg(feature = "guest-ethernet")]
+        if !none && ethernet_grant(start.boot.exact_command_line(), &p.digest) {
+            lines.extend(lines_of(4, "Ethernet grant: this program can send and receive raw network frames.", ui::AMBER));
+        }
+        #[cfg(feature = "game-link")]
+        if !none && option(&start.boot.command_line, "link_image") == Some(p.digest.as_str()) {
+            lines.extend(lines_of(4, "Optional game cable: this image can read and write the second serial port.", ui::AMBER));
+        }
+    }
+    lines.extend(lines_of(2, "", TEXT));
+    lines.extend(lines_of(2, "FILES FROM THE LOADER", ui::TEAL));
+    if files.is_empty() {
+        lines.extend(lines_of(4, "None.", SOFT));
+    }
+    for f in files {
+        lines.extend(whole(2, &f.0, TEXT));
+        lines.extend(lines_of(4, &size_text(f.1.len()), SOFT));
+        lines.extend(lines_of(4, "SHA-256", SOFT));
+        lines.extend(whole(4, &f.2, SOFT));
+    }
+    lines.extend(lines_of(2, "", TEXT));
+    lines.extend(lines_of(2, "MACHINE", ui::TEAL));
+    let (pool, free, _, _) = crate::mem::census();
+    lines.extend(lines_of(4, &format!("memory for programs: {} MiB, {} MiB free", pool * 4096 >> 20, free * 4096 >> 20), SOFT));
+    if let Some(d) = start.display {
+        lines.extend(lines_of(4, &format!("display: {}, {} page(s)", if d.kind == dev::DisplayKind::Bochs { "Bochs interface, any mode" } else { "mode set by the loader" }, d.pages), SOFT));
+        lines.extend(lines_of(4, &format!("keyboard: PS/2; sound: {}", if start.sound { "present" } else { "none" }), SOFT));
+        lines.extend(lines_of(4, &format!("store: {} file(s) written by programs, {}", stored, if mounted { "saved to VM disk on fsync" } else { "kept until power off" }), SOFT));
+    }
+    text_screen("DETAILS", ui::TEAL, None, &lines, "Esc back", false, false);
 }
 
 /// The kernel's register, newest events last, a screen at a time.

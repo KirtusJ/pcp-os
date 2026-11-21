@@ -65,6 +65,14 @@ the desktop is the full one: T1 to T5 and T7 as above with the full desktop's ke
     is granted." and it ends inside its plate; a row says what the chosen program may use; Esc gives the
     desktop as it was.
 
+Letters and Details (third change for issue 314; rule 5 at every size):
+ K1 on the small desktop and in the small list of programs, each of the letters d, r, p, v, k, f leaves the
+    frame as it was (they used to open screens and ask to power off);
+ K2 in the small list, Ctrl+D opens a screen titled DETAILS; its pages, joined into its lines once each, have, under PROGRAMS and again under
+    FILES FROM THE LOADER, each program's name on one line, followed by its own size, a line "SHA-256", and lines of hex digits
+    that are the whole SHA-256 of that program's file (the two files differ by a byte); also its three headings, the memory and keyboard lines, and "Esc back" as the last
+    row of every page; Esc gives the list as it was.
+
 A failed start, at 320 by 200 and 640 by 480, made by naming to the kernel a measurement that is not its own:
  F1 the desktop has a row that begins "NOT VERIFIED:";
  F2 the list of programs has such a row and the words "Programs are disabled.";
@@ -100,8 +108,9 @@ PINS = runpy.run_path(str(HERE / "check_compact_pins.py"))
 PROGRAMS = ["alpha.elf", "bravo.elf"]
 CHOICES = ["A bar across the screen", "A dock in the middle", "Recent activity", "This machine", "Session"]
 SETTINGS_KEYS = {True: "Up/Down choose    Enter set    Esc back", False: "Up/Down  Enter set  Esc back"}
-LIST_KEYS = {True: ["Up/Down choose   Enter open   D details   R register   P off"],
-             False: ["Up/Down choose   Enter open", "D details  R register  P off"]}
+LIST_KEYS = {True: ["Up/Down choose   Enter open   Esc back   F1 keys   F10 off"],
+             False: ["Up/Down choose   Enter open", "Esc back   F1 keys   F10 off"]}
+LETTERS = ("d", "r", "p", "v", "k", "f")
 MARK = re.compile(r"^  (\(o\)|\( \)|\[on\]|\[  \]) {2,3}(.+)$")
 
 
@@ -247,7 +256,13 @@ def boot(qemu, kernel, folder, measurement, mode, out, glyphs, timeout, named=No
 
 
 def settings_trial(key, screen, roomy, problems, results, mode):
-    home, _ = screen("home", lambda rows, frame: any("Programs" in row for row in rows))
+    home, home_frame = screen("home", lambda rows, frame: any("Programs" in row for row in rows))
+    # K1: letters do nothing on the small desktop.
+    for letter in LETTERS:
+        key(letter)
+        _, after = screen("home-letter-" + letter, lambda rows, frame: True)
+        if after != home_frame:
+            problems.append("%s K1: the letter %s changed the desktop" % (mode, letter))
     key("f2")
     rows, frame = screen("settings-0", lambda rows, frame: any("SETTINGS" in row for row in rows))
     states = {label: marks[0] for label, marks in settings_states(rows).items() if len(marks) == 1}
@@ -312,7 +327,54 @@ def settings_trial(key, screen, roomy, problems, results, mode):
     results["settings_controls_refused"] = sorted(forged)
 
 
-def list_trial(key, screen, roomy, passed, problems, results, mode):
+def merged_lines(pages):
+    """The lines of a scrolled screen of text, in order and once each, from its overlapping pages: the rows
+    between the title and the keys' row of each page, joined where the end of one page is the start of the next."""
+    bodies = [[row.strip() for row in rows[1:-1]] for rows in pages]
+    lines = list(bodies[0])
+    for body in bodies[1:]:
+        for shift in range(1, len(body) + 1):
+            if lines[len(lines) - len(body) + shift:] == body[:len(body) - shift]:
+                lines += body[len(body) - shift:]
+                break
+    return lines
+
+
+def details_sections(lines):
+    """The lines under each of the three headings, or None if the headings are not there once each and in order."""
+    heads = ["PROGRAMS", "FILES FROM THE LOADER", "MACHINE"]
+    at = [[i for i, line in enumerate(lines) if line == head] for head in heads]
+    if any(len(found) != 1 for found in at) or not at[0][0] < at[1][0] < at[2][0]:
+        return None
+    return {"PROGRAMS": lines[at[0][0] + 1:at[1][0]], "FILES FROM THE LOADER": lines[at[1][0] + 1:at[2][0]]}
+
+
+def details_problems(lines, facts):
+    """`facts` is {name: (size text, digest)}. The kernel lists each program under PROGRAMS and again, as a
+    file, under FILES FROM THE LOADER (A3): in each of the two, each name must be there once, followed by
+    its own size and whole digest."""
+    sections = details_sections(lines)
+    if sections is None:
+        return ["the three headings are not there once each and in order"]
+    problems = []
+    for heading, part in sections.items():
+        for name, (size, digest) in facts.items():
+            where = [i for i, line in enumerate(part) if line == name]
+            if len(where) != 1:
+                problems.append("%r is on %d lines under %s" % (name, len(where), heading))
+                continue
+            after = part[where[0] + 1:]
+            hexes = []
+            for line in after[2:]:
+                if not re.fullmatch(r"[0-9a-f]+", line):
+                    break
+                hexes.append(line)
+            if after[:2] != [size, "SHA-256"] or "".join(hexes) != digest:
+                problems.append("under %s %r is not followed by its size %r and its whole digest: %r" % (heading, name, size, after[:2 + len(hexes)]))
+    return problems
+
+
+def list_trial(key, screen, roomy, passed, problems, results, mode, digests):
     key("ret")
     seen = {}
     for name in PROGRAMS:
@@ -323,6 +385,45 @@ def list_trial(key, screen, roomy, passed, problems, results, mode):
         problems += ["%s programs with %s chosen: %s" % (mode, name, p) for p in found]
         seen[name] = [row for row in rows if row.strip()]
     results["programs"] = seen
+    # K1: letters do nothing in the list. The frame after each is the frame before it.
+    for letter in LETTERS:
+        key(letter)
+        _, after = screen("programs-letter-" + letter, lambda rows, frame: True)
+        if after != frame:
+            problems.append("%s K1: the letter %s changed the list of programs" % (mode, letter))
+    if not roomy:
+        # K2: on a display narrower than the plain list, Ctrl+D is a screen of text with everything whole.
+        key("ctrl", "d")
+        first, shot = screen("details-1", lambda rows, frame: any("DETAILS" in row for row in rows))
+        pages, shots = [first], [shot]
+        while "Up/Down scroll" in " ".join(pages[-1]) and len(pages) < 150:
+            key("down")
+            more, shot = screen("details-%d" % (len(pages) + 1), lambda rows, frame: True)
+            if shot == shots[-1]:
+                break
+            pages.append(more)
+            shots.append(shot)
+        lines = merged_lines(pages)
+        found = details_problems(lines, digests)
+        problems += ["%s K2: %s" % (mode, p) for p in found]
+        # The controls (A3): one entry's digest rows taken out of a good reading, in either section, must be refused.
+        if not found:
+            for nth, heading in enumerate(("PROGRAMS", "FILES FROM THE LOADER")):
+                at = [i for i, line in enumerate(lines) if line == PROGRAMS[-1]][nth]
+                cut = [line for i, line in enumerate(lines) if not (at < i <= at + 6 and re.fullmatch(r"[0-9a-f]+", line))]
+                if not details_problems(cut, digests):
+                    problems.append("%s control accepted: Details without %s's digest under %s" % (mode, PROGRAMS[-1], heading))
+        text = " ".join(" ".join(" ".join(page).split()) for page in pages)
+        for name in PROGRAMS + ["PROGRAMS", "FILES FROM THE LOADER", "MACHINE", "memory for programs:", "keyboard: PS/2"]:
+            if name not in text:
+                problems.append("%s K2: Details does not show %r" % (mode, name))
+        if any(not [row for row in page if row.strip()][-1].endswith("Esc back") for page in pages):
+            problems.append("%s K2: a page of Details does not say how to leave" % mode)
+        key("esc")
+        back, after = screen("details-left", lambda rows, frame: True)
+        if after != frame:
+            problems.append("%s K2: Esc from Details did not give the list as it was" % mode)
+        results["details_pages"] = len(pages)
     lit = chosen_rows(frame)
     verified = [i for i, row in enumerate(rows) if row.startswith("  Verified")]
     for what, gone in (("the verification row emptied", verified[:1]), ("the chosen row emptied", lit[:1])):
@@ -544,8 +645,13 @@ def main():
     folder = evidence / "boot"
     folder.mkdir()
     (folder / "kernel.elf32").write_bytes(files["kernel.elf32"])
-    for name in PROGRAMS:
-        (folder / name).write_bytes(files["surf.elf"])
+    # Two files that differ, so that each name can be matched to its own digest (A3): the second has one
+    # byte more. Nothing in this check starts either.
+    facts = {}
+    for n, name in enumerate(PROGRAMS):
+        data = files["surf.elf"] + bytes(n)
+        (folder / name).write_bytes(data)
+        facts[name] = ("%d KiB" % ((len(data) + 1023) >> 10), hashlib.sha256(data).hexdigest())
     glyphs = CHECK["kernel_glyphs"]()
     problems, results = [], {}
     for mode, settings, programs, text in (("320x200", True, True, True), ("320x220", True, True, False), ("320x240", True, True, False),
@@ -567,7 +673,7 @@ def main():
                 # Settings is roomy from fourteen rows and forty-one columns; 320 across is never roomy.
                 settings_trial(key, screen, roomy, problems, results[mode], mode)
             if programs:
-                list_trial(key, screen, roomy, passed, problems, results[mode], mode)
+                list_trial(key, screen, roomy, passed, problems, results[mode], mode, facts)
             key("f10")
             screen("power-question", lambda rows, frame: any("POWER OFF" in row for row in rows))
             key("ret")
