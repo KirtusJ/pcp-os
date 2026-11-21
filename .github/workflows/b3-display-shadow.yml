@@ -1,0 +1,44 @@
+name: B3 UEFI display shadow verification
+on:
+  push:
+    branches: [b3/uefi-display-shadow-check]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  qemu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 32
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: KirtusJ/pcp
+          ref: 78e780c88dc842bbf1d949cad879fd3be99c4133
+          path: distribution
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: KirtusJ/tailorbird
+          ref: b16c3b217f9f46b13da1fb7f344bed1e380dc5ad
+          path: guest-checkout
+          submodules: true
+          persist-credentials: false
+      - name: Install native test dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gnu-efi lld ovmf qemu-system-x86 xorriso mtools dosfstools
+          rustup toolchain install 1.97.0 --profile minimal --target x86_64-unknown-none
+          rustup toolchain install 1.100.0 --profile minimal --component rust-src
+      - name: Boot and verify the pinned kernel on UEFI USB
+        run: python3 -B examples/firmware-owned-uefi/b3-shadow-probe/run.py
+      - name: Preserve observations including failed cases
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: b3-display-shadow-uefi
+          path: ${{ runner.temp }}/display-shadow/captures
+          if-no-files-found: warn
+          retention-days: 14
