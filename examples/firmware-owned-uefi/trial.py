@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import runpy
 import shutil
 import socket
 import subprocess
@@ -12,6 +13,9 @@ import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from image import digest, make
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "guarded-uefi"))
+import details_screen
 
 
 def wait_for(test, label, guest, seconds=120):
@@ -50,6 +54,31 @@ def verify_loaded_memory(image, elf, work, rpc):
     return results
 
 
+def exercise(guest, serial, out, image, app):
+    optical = runpy.run_path(str(Path(__file__).resolve().parents[1] / "optical-disk-check/check.py"))
+    monitor = details_screen.monitor_for(guest)
+    screens = optical["DesktopScreens"](monitor, out, 45, app_digests={"surf.elf": digest(app)})
+    def log():
+        return serial.read_text(errors="replace")
+    def until(test, label):
+        wait_for(test, label, guest)
+    startup = log()
+    if ("long mode true" not in startup or "it is in SAFE" in startup
+            or image["measurement"] + " (measured; equal to the value the loader named)" not in startup
+            or sum(line.startswith("  pass ") for line in startup.splitlines()) != 71):
+        raise ValueError("Firmware-owned kernel measurement or startup checks differ")
+    screens.home("home")
+    monitor.key("spc")
+    screens.launcher("unattended-launcher", "surf.elf")
+    monitor.key("ctrl", "d")
+    details_screen.finish_session(monitor.call, until, log, out, public_check)
+    details_screen.power_off(monitor, guest)
+    if "ALL SELF-TESTS PASS." not in log() or sum(line.startswith("  pass ") for line in log().splitlines()) != 72:
+        raise ValueError("Firmware-owned kernel did not complete its final self-test")
+    (out / "power-events.json").write_text(json.dumps(monitor.events, indent=2) + "\n")
+    (out / "qemu-exit.txt").write_text(f"{guest.returncode}\n")
+
+
 def observe(work, out, ram, mode, image, kernel):
     out.mkdir()
     trace = out / "firmware.txt"
@@ -57,10 +86,10 @@ def observe(work, out, ram, mode, image, kernel):
     code = Path("/usr/share/OVMF/OVMF_CODE_4M.fd")
     variables = work / f"{ram}-{mode}.fd"
     shutil.copyfile("/usr/share/OVMF/OVMF_VARS_4M.fd", variables)
-    qmp, second, gate = (work / f"{ram}-{mode}-{s}" for s in ("q", "m", "g"))
+    second, gate = (work / f"{ram}-{mode}-{s}" for s in ("m", "g"))
     cmd = ["qemu-system-x86_64", "-machine", "q35", "-accel", "tcg", "-cpu", "max", "-m", str(ram), "-smp", "1",
            "-nic", "none", "-vga", "std", "-audiodev", "none,id=snd", "-device", "AC97,audiodev=snd", "-display", "none",
-           "-monitor", "none", "-qmp", f"unix:{qmp},server=on,wait=off",
+           "-monitor", "none", "-qmp", "stdio",
            "-chardev", f"socket,id=observations,path={second},server=on,wait=off", "-mon", "chardev=observations,mode=control",
            "-serial", "file:" + str(serial), "-serial", f"unix:{gate},server=on,wait=off",
            "-debugcon", "file:" + str(trace), "-global", "isa-debugcon.iobase=0xe9",
@@ -71,7 +100,7 @@ def observe(work, out, ram, mode, image, kernel):
     report = {"ram_mib": ram, "mode": mode, "ovmf_sha256": digest(code), "iso_sha256": image["iso_sha256"]}
     def log(path):
         return path.read_text(errors="replace") if path.exists() else ""
-    with (out / "qemu.stderr").open("wb") as stderr, subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stderr=stderr) as guest:
+    with (out / "qemu.stderr").open("wb") as stderr, subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr) as guest:
         try:
             wait_for(lambda: "await-host\n" in log(trace), "initial firmware map", guest)
             ranges = [(int(a, 16), int(b, 16)) for a, b in re.findall(r"^nvs=(\w+),(\w+)$", log(trace), re.M)]
@@ -133,16 +162,7 @@ def observe(work, out, ram, mode, image, kernel):
                         with ThreadPoolExecutor(max_workers=1) as pool:
                             later = pool.submit(at_stop)
                             try:
-                                exercise(
-                                    guest,
-                                    qmp,
-                                    serial,
-                                    out,
-                                    False,
-                                    image["measurement"],
-                                    False,
-                                    False,
-                                    True)
+                                exercise(guest, serial, out, image, work / "surf.elf")
                             finally:
                                 if not later.done() and "surf.elf ended STOPPED" not in log(serial):
                                     if guest.poll() is None:
@@ -207,13 +227,13 @@ if __name__ == "__main__":
     out = args.output.resolve()
     out.mkdir()
     sys.path.insert(0, str(distro / "audit/public-live-cd"))
-    from check import exercise
+    import check as public_check
     from check_register import check_register
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
         elf = kernel / "target/pcpos-kernel.elf32"
         desc = make(distro / "PCP-OS.iso", elf,
-                    kernel / "tools/measure.py", work, Path(__file__).resolve().parent)
+                    kernel / "tools/measure.py", work, Path(__file__).resolve().parent, details=True)
         # Preserve the exact input needed to independently derive the in-memory hashes.
         shutil.copyfile(elf, out / "kernel.elf32")
         desc["qemu_version"] = subprocess.check_output(
