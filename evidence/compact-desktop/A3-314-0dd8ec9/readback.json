@@ -1,0 +1,461 @@
+{
+  "os_source": "0dd8ec98d39736883ab39d08f08fa772ddf3cbf6",
+  "source_tree": "15c334de96315ee8da3c8d59c7b80aeeffefc2a4",
+  "kernel_sha256": "2dc277eabb5b3b7e974bf8a332d1fcb0d88aa2726ff7ea19992143e131df0d14",
+  "app_sha256": "46f4bbd5e4d754a78d9b018d15d9249f8dbce04fb536e6bc49f638104850d8b1",
+  "supervisor": "Hosted PCP OS Parrots all the way Down",
+  "first_register_attempt": "Two guest trials ended early after the first reader joined the leading zero of event 0 to a fully displayed 64-digit head. The two output frames, original reader and logs are retained. The retry respected visible row boundaries.",
+  "profiles": {
+    "320x200": {
+      "mode": "320x200",
+      "source": "0dd8ec98d39736883ab39d08f08fa772ddf3cbf6",
+      "measurement": "1e8640b7c5474d75213d8d3d4754625e9ba70a349d6090b929221623d808b252",
+      "kernel_sha256": "2dc277eabb5b3b7e974bf8a332d1fcb0d88aa2726ff7ea19992143e131df0d14",
+      "rows": [
+        [
+          0,
+          "POWER OFF"
+        ],
+        [
+          1,
+          "Switch PCP OS off?"
+        ],
+        [
+          2,
+          "The register is closed and"
+        ],
+        [
+          3,
+          "verified first. Files of"
+        ],
+        [
+          4,
+          "this session that were not"
+        ],
+        [
+          5,
+          "saved by a program are lost."
+        ],
+        [
+          8,
+          "Enter switch off"
+        ],
+        [
+          9,
+          "Esc go back"
+        ]
+      ],
+      "omitted_glyph_accepted": {
+        "not": false,
+        "lost": false,
+        "Enter": false,
+        "Esc": false
+      },
+      "power_sha256": "5474e738578e6a135e3a9dfb70948b4fb4e5eedd218e76a7569b38a83d554af2",
+      "home_restored": true,
+      "power_reopened": true,
+      "exit": 0,
+      "checks": 72,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      }
+    },
+    "344x480": {
+      "mode": "344x480",
+      "source": "0dd8ec98d39736883ab39d08f08fa772ddf3cbf6",
+      "measurement": "1e8640b7c5474d75213d8d3d4754625e9ba70a349d6090b929221623d808b252",
+      "kernel_sha256": "2dc277eabb5b3b7e974bf8a332d1fcb0d88aa2726ff7ea19992143e131df0d14",
+      "rows": [
+        [
+          0,
+          "POWER OFF"
+        ],
+        [
+          1,
+          "Switch PCP OS off?"
+        ],
+        [
+          2,
+          "The register is closed and"
+        ],
+        [
+          3,
+          "verified first. Files of this"
+        ],
+        [
+          4,
+          "session that were not saved by"
+        ],
+        [
+          5,
+          "a program are lost."
+        ],
+        [
+          22,
+          "Enter switch off"
+        ],
+        [
+          23,
+          "Esc go back"
+        ]
+      ],
+      "omitted_glyph_accepted": {
+        "not": false,
+        "lost": false,
+        "Enter": false,
+        "Esc": false
+      },
+      "power_sha256": "c7efeb6460cf20fc6b1090bc91da051f0e912137504be70a6f7fc8a4ce2a364d",
+      "home_restored": true,
+      "power_reopened": true,
+      "exit": 0,
+      "checks": 72,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      }
+    },
+    "352x480": {
+      "mode": "352x480",
+      "source": "0dd8ec98d39736883ab39d08f08fa772ddf3cbf6",
+      "measurement": "1e8640b7c5474d75213d8d3d4754625e9ba70a349d6090b929221623d808b252",
+      "kernel_sha256": "2dc277eabb5b3b7e974bf8a332d1fcb0d88aa2726ff7ea19992143e131df0d14",
+      "rows": [
+        [
+          1,
+          "POWER OFF"
+        ],
+        [
+          3,
+          "Switch PCP OS off?"
+        ],
+        [
+          5,
+          "The register is closed and"
+        ],
+        [
+          6,
+          "verified first. Files of this"
+        ],
+        [
+          7,
+          "session that were not saved by"
+        ],
+        [
+          8,
+          "a program are lost."
+        ],
+        [
+          22,
+          "Enter switch off    Esc go back"
+        ]
+      ],
+      "omitted_glyph_accepted": {
+        "not": false,
+        "lost": false,
+        "Enter": false,
+        "Esc": false
+      },
+      "power_sha256": "d331cfa772123d3125828ebb5d489cfe35b9ca397a793ad1b5ab09c3376da991",
+      "home_restored": true,
+      "power_reopened": true,
+      "exit": 0,
+      "checks": 72,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      }
+    },
+    "640x200": {
+      "mode": "640x200",
+      "source": "0dd8ec98d39736883ab39d08f08fa772ddf3cbf6",
+      "measurement": "1e8640b7c5474d75213d8d3d4754625e9ba70a349d6090b929221623d808b252",
+      "kernel_sha256": "2dc277eabb5b3b7e974bf8a332d1fcb0d88aa2726ff7ea19992143e131df0d14",
+      "rows": [
+        [
+          1,
+          "POWER OFF"
+        ],
+        [
+          3,
+          "Switch PCP OS off?"
+        ],
+        [
+          5,
+          "The register is closed and verified first. Files of this"
+        ],
+        [
+          6,
+          "session that were not saved by a program are lost."
+        ],
+        [
+          8,
+          "Enter switch off    Esc go back"
+        ]
+      ],
+      "omitted_glyph_accepted": {
+        "not": false,
+        "lost": false,
+        "Enter": false,
+        "Esc": false
+      },
+      "power_sha256": "9a8cc98f6d6912a1570a3a2c64d5e5991885bafd96ff3baec54649eaf18047ca",
+      "home_restored": true,
+      "power_reopened": true,
+      "exit": 0,
+      "checks": 72,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      }
+    },
+    "640x220": {
+      "mode": "640x220",
+      "source": "0dd8ec98d39736883ab39d08f08fa772ddf3cbf6",
+      "measurement": "1e8640b7c5474d75213d8d3d4754625e9ba70a349d6090b929221623d808b252",
+      "kernel_sha256": "2dc277eabb5b3b7e974bf8a332d1fcb0d88aa2726ff7ea19992143e131df0d14",
+      "rows": [
+        [
+          1,
+          "POWER OFF"
+        ],
+        [
+          3,
+          "Switch PCP OS off?"
+        ],
+        [
+          5,
+          "The register is closed and verified first. Files of this"
+        ],
+        [
+          6,
+          "session that were not saved by a program are lost."
+        ],
+        [
+          9,
+          "Enter switch off    Esc go back"
+        ]
+      ],
+      "omitted_glyph_accepted": {
+        "not": false,
+        "lost": false,
+        "Enter": false,
+        "Esc": false
+      },
+      "power_sha256": "92eec814bdf0ec66e44a6c2fd2694a920fddbed32b3022d495fe2aea97f24e48",
+      "home_restored": true,
+      "power_reopened": true,
+      "exit": 0,
+      "checks": 72,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      }
+    },
+    "640x480": {
+      "mode": "640x480",
+      "source": "0dd8ec98d39736883ab39d08f08fa772ddf3cbf6",
+      "measurement": "1e8640b7c5474d75213d8d3d4754625e9ba70a349d6090b929221623d808b252",
+      "kernel_sha256": "2dc277eabb5b3b7e974bf8a332d1fcb0d88aa2726ff7ea19992143e131df0d14",
+      "rows": [
+        [
+          1,
+          "POWER OFF"
+        ],
+        [
+          3,
+          "Switch PCP OS off?"
+        ],
+        [
+          5,
+          "The register is closed and verified first. Files of this"
+        ],
+        [
+          6,
+          "session that were not saved by a program are lost."
+        ],
+        [
+          22,
+          "Enter switch off    Esc go back"
+        ]
+      ],
+      "omitted_glyph_accepted": {
+        "not": false,
+        "lost": false,
+        "Enter": false,
+        "Esc": false
+      },
+      "power_sha256": "2aa6eabce23af8a476c9f38aa873db6c44e7e967e46beab0665be2f4f833d030",
+      "home_restored": true,
+      "power_reopened": true,
+      "exit": 0,
+      "checks": 72,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      }
+    },
+    "752x480": {
+      "mode": "752x480",
+      "source": "0dd8ec98d39736883ab39d08f08fa772ddf3cbf6",
+      "measurement": "1e8640b7c5474d75213d8d3d4754625e9ba70a349d6090b929221623d808b252",
+      "kernel_sha256": "2dc277eabb5b3b7e974bf8a332d1fcb0d88aa2726ff7ea19992143e131df0d14",
+      "rows": [
+        [
+          1,
+          "POWER OFF"
+        ],
+        [
+          3,
+          "Switch PCP OS off?"
+        ],
+        [
+          5,
+          "The register is closed and verified first. Files of this session that"
+        ],
+        [
+          6,
+          "were not saved by a program are lost."
+        ],
+        [
+          22,
+          "Enter switch off    Esc go back"
+        ]
+      ],
+      "omitted_glyph_accepted": {
+        "not": false,
+        "lost": false,
+        "Enter": false,
+        "Esc": false
+      },
+      "power_sha256": "e66a12f924f5cdcbdf24995872c53c27d492ab0413a82fb0f01658346fb20f79",
+      "home_restored": true,
+      "power_reopened": true,
+      "exit": 0,
+      "checks": 72,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      }
+    },
+    "760x460": {
+      "mode": "760x460",
+      "source": "0dd8ec98d39736883ab39d08f08fa772ddf3cbf6",
+      "measurement": "1e8640b7c5474d75213d8d3d4754625e9ba70a349d6090b929221623d808b252",
+      "kernel_sha256": "2dc277eabb5b3b7e974bf8a332d1fcb0d88aa2726ff7ea19992143e131df0d14",
+      "rows": [
+        [
+          1,
+          "POWER OFF"
+        ],
+        [
+          3,
+          "Switch PCP OS off?"
+        ],
+        [
+          5,
+          "The register is closed and verified first. Files of this session that"
+        ],
+        [
+          6,
+          "were not saved by a program are lost."
+        ],
+        [
+          21,
+          "Enter switch off    Esc go back"
+        ]
+      ],
+      "omitted_glyph_accepted": {
+        "not": false,
+        "lost": false,
+        "Enter": false,
+        "Esc": false
+      },
+      "power_sha256": "d538f776dfe5ed9518c5dade702aa8f53e848baed4896b1ff3ae76cd727b8484",
+      "home_restored": true,
+      "power_reopened": true,
+      "exit": 0,
+      "checks": 72,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      }
+    },
+    "800x600": {
+      "mode": "800x600",
+      "source": "0dd8ec98d39736883ab39d08f08fa772ddf3cbf6",
+      "measurement": "1e8640b7c5474d75213d8d3d4754625e9ba70a349d6090b929221623d808b252",
+      "kernel_sha256": "2dc277eabb5b3b7e974bf8a332d1fcb0d88aa2726ff7ea19992143e131df0d14",
+      "rows": [
+        [
+          1,
+          "POWER OFF"
+        ],
+        [
+          3,
+          "Switch PCP OS off?"
+        ],
+        [
+          5,
+          "The register is closed and verified first. Files of this session that were"
+        ],
+        [
+          6,
+          "not saved by a program are lost."
+        ],
+        [
+          28,
+          "Enter switch off    Esc go back"
+        ]
+      ],
+      "omitted_glyph_accepted": {
+        "not": false,
+        "lost": false,
+        "Enter": false,
+        "Esc": false
+      },
+      "power_sha256": "d8644632a11cc35c7733d7cdd65b1bba196eec080042c4f7ba597a19e4f91eca",
+      "home_restored": true,
+      "power_reopened": true,
+      "exit": 0,
+      "checks": 72,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      }
+    },
+    "register-320x200": {
+      "mode": "320x200",
+      "source": "0dd8ec98d39736883ab39d08f08fa772ddf3cbf6",
+      "kernel_measurement": "1e8640b7c5474d75213d8d3d4754625e9ba70a349d6090b929221623d808b252",
+      "title": "REGISTER: 42 events, intact",
+      "f5_prefix": "0537d516e8d896ec",
+      "f4_full": "0537d516e8d896ec63af2a552a888f69f9caf9ab1ed725ce1ebd1dda41a42d1f",
+      "count": 42,
+      "checks": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "home_restored_twice": true
+    },
+    "register-640x480": {
+      "mode": "640x480",
+      "source": "0dd8ec98d39736883ab39d08f08fa772ddf3cbf6",
+      "kernel_measurement": "1e8640b7c5474d75213d8d3d4754625e9ba70a349d6090b929221623d808b252",
+      "title": "THE KERNEL'S REGISTER: 42 events, chain intact",
+      "f5_prefix": "466e25d6325ca256",
+      "f4_full": "466e25d6325ca256af8ff22dc7391ed8f5c62c9f6e66cb6c361d65f81af436d9",
+      "count": 42,
+      "checks": 72,
+      "exit": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "home_restored_twice": true
+    }
+  }
+}
