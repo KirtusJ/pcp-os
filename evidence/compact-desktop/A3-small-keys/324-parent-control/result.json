@@ -1,0 +1,257 @@
+{
+  "parent": {
+    "stock_K1_failures": [
+      "320x200 K1: the letter r changed the desktop",
+      "320x200 K1: the letter p changed the desktop",
+      "320x200 K1: the letter v changed the desktop",
+      "320x200 K1: the letter k changed the desktop",
+      "320x200 K1: the letter f changed the desktop",
+      "320x200 K1: the letter d changed the list of programs",
+      "320x200 K1: the letter r changed the list of programs",
+      "320x200 K1: the letter p changed the list of programs",
+      "320x200 K1: the letter v changed the list of programs",
+      "320x200 K1: the letter k changed the list of programs"
+    ],
+    "other_stock_findings": [
+      "320x200 programs with alpha.elf chosen: P3: no Access row, or the keys are not whole on the last rows",
+      "320x200 programs with bravo.elf chosen: P3: no Access row, or the keys are not whole on the last rows"
+    ],
+    "K2_rejected_at": "details-1",
+    "K2_pages_accepted": null,
+    "invoked_frames": [
+      [
+        "home",
+        true,
+        "b0b50e7e3eabfdf6212355666a1ce1dbb8117c16d30325513b51a3d0a713fc09"
+      ],
+      [
+        "home-letter-d",
+        true,
+        "b0b50e7e3eabfdf6212355666a1ce1dbb8117c16d30325513b51a3d0a713fc09"
+      ],
+      [
+        "home-letter-r",
+        true,
+        "55226c50b610d8e97ee5ee2275ab79ae1089336f9b58737e468ba5ce3716bcb3"
+      ],
+      [
+        "home-letter-p",
+        true,
+        "5474e738578e6a135e3a9dfb70948b4fb4e5eedd218e76a7569b38a83d554af2"
+      ],
+      [
+        "home-letter-v",
+        true,
+        "d7427ccf9da328774b9434a7c808ca5c34dfd9c5eb90ba171e2fcca6802e308f"
+      ],
+      [
+        "home-letter-k",
+        true,
+        "d89232ce7a5c48dcb2eaacc5a82c0ddf950cee8a107564f32755e7c8b09c1863"
+      ],
+      [
+        "home-letter-f",
+        true,
+        "5c118941b588199309ee1ca4e334907cbe2b33bd96be3ad45498f036c53bdf64"
+      ],
+      [
+        "programs-alpha.elf",
+        true,
+        "8eb0b22790cf86d692f4762c465c105048479694499df61e93e4026e1f9b5165"
+      ],
+      [
+        "programs-bravo.elf",
+        true,
+        "659c2725f9a7b0096468ee1ef43a255c5f823265381603fd28ded2cd57cfaf06"
+      ],
+      [
+        "programs-letter-d",
+        true,
+        "8c7add04fa29c20992c3e556178f3ad49451654e023784cb99ddcc9c16ae7cef"
+      ],
+      [
+        "programs-letter-r",
+        true,
+        "55226c50b610d8e97ee5ee2275ab79ae1089336f9b58737e468ba5ce3716bcb3"
+      ],
+      [
+        "programs-letter-p",
+        true,
+        "5474e738578e6a135e3a9dfb70948b4fb4e5eedd218e76a7569b38a83d554af2"
+      ],
+      [
+        "programs-letter-v",
+        true,
+        "d7427ccf9da328774b9434a7c808ca5c34dfd9c5eb90ba171e2fcca6802e308f"
+      ],
+      [
+        "programs-letter-k",
+        true,
+        "43cc9031a57c21da1ea696383b34a45a0b472a0c0a8fee06133ea20ff1c58408"
+      ],
+      [
+        "programs-letter-f",
+        true,
+        "659c2725f9a7b0096468ee1ef43a255c5f823265381603fd28ded2cd57cfaf06"
+      ],
+      [
+        "details-1",
+        false,
+        "8c7add04fa29c20992c3e556178f3ad49451654e023784cb99ddcc9c16ae7cef"
+      ]
+    ]
+  },
+  "frozen": {
+    "stock_K1_failures": [],
+    "other_stock_findings": [],
+    "K2_rejected_at": null,
+    "K2_pages_accepted": 12,
+    "invoked_frames": [
+      [
+        "home",
+        true,
+        "b0b50e7e3eabfdf6212355666a1ce1dbb8117c16d30325513b51a3d0a713fc09"
+      ],
+      [
+        "home-letter-d",
+        true,
+        "b0b50e7e3eabfdf6212355666a1ce1dbb8117c16d30325513b51a3d0a713fc09"
+      ],
+      [
+        "home-letter-r",
+        true,
+        "b0b50e7e3eabfdf6212355666a1ce1dbb8117c16d30325513b51a3d0a713fc09"
+      ],
+      [
+        "home-letter-p",
+        true,
+        "b0b50e7e3eabfdf6212355666a1ce1dbb8117c16d30325513b51a3d0a713fc09"
+      ],
+      [
+        "home-letter-v",
+        true,
+        "b0b50e7e3eabfdf6212355666a1ce1dbb8117c16d30325513b51a3d0a713fc09"
+      ],
+      [
+        "home-letter-k",
+        true,
+        "b0b50e7e3eabfdf6212355666a1ce1dbb8117c16d30325513b51a3d0a713fc09"
+      ],
+      [
+        "home-letter-f",
+        true,
+        "b0b50e7e3eabfdf6212355666a1ce1dbb8117c16d30325513b51a3d0a713fc09"
+      ],
+      [
+        "programs-alpha.elf",
+        true,
+        "ee152a0a58dd6baac62d234a62586e4ce3a0e6be547e0f5a7b60d8085e306b51"
+      ],
+      [
+        "programs-bravo.elf",
+        true,
+        "deb8748b1c97f18573d11e84ac533eb4dfd6e61d00ca4b1f14879dda857576dc"
+      ],
+      [
+        "programs-letter-d",
+        true,
+        "deb8748b1c97f18573d11e84ac533eb4dfd6e61d00ca4b1f14879dda857576dc"
+      ],
+      [
+        "programs-letter-r",
+        true,
+        "deb8748b1c97f18573d11e84ac533eb4dfd6e61d00ca4b1f14879dda857576dc"
+      ],
+      [
+        "programs-letter-p",
+        true,
+        "deb8748b1c97f18573d11e84ac533eb4dfd6e61d00ca4b1f14879dda857576dc"
+      ],
+      [
+        "programs-letter-v",
+        true,
+        "deb8748b1c97f18573d11e84ac533eb4dfd6e61d00ca4b1f14879dda857576dc"
+      ],
+      [
+        "programs-letter-k",
+        true,
+        "deb8748b1c97f18573d11e84ac533eb4dfd6e61d00ca4b1f14879dda857576dc"
+      ],
+      [
+        "programs-letter-f",
+        true,
+        "deb8748b1c97f18573d11e84ac533eb4dfd6e61d00ca4b1f14879dda857576dc"
+      ],
+      [
+        "details-1",
+        true,
+        "56d1909e76960d61cf00fa1c306b6cc1c24657f9e1ece8757e6dc758a50b8d80"
+      ],
+      [
+        "details-2",
+        true,
+        "4746a05236a90e97104c1aed3b088676bd42217a1f3effb98841523eb40b55ff"
+      ],
+      [
+        "details-3",
+        true,
+        "26fe9f01201b54370bfccfa34dd376968106efb3464572640347f92d928e215f"
+      ],
+      [
+        "details-4",
+        true,
+        "31d208153a6c4955371d5e24a05ef1d64811779c65ba73d862c66a7d40d74a38"
+      ],
+      [
+        "details-5",
+        true,
+        "194696e958363531feafcc0fc2c0b76c072472c8db692698ed89f0633bee2901"
+      ],
+      [
+        "details-6",
+        true,
+        "f4c2637a7277000aca9322006aba51b44881235a1c3af0f7e7dc158bc96e06c1"
+      ],
+      [
+        "details-7",
+        true,
+        "90479271a579dada098aac0e591d67f7fd4fcf68971291a712460de2aba7afe4"
+      ],
+      [
+        "details-8",
+        true,
+        "7bad69ba221e667c57cc9bb15aa9572cdf826a6d6d3c41b76eaa1b764c2e1e5f"
+      ],
+      [
+        "details-9",
+        true,
+        "4d573ffdcd72bdaf69ff05878c09bf8ab8fedb7e4f7639d2244e316863cbdd4e"
+      ],
+      [
+        "details-10",
+        true,
+        "ea246cc3b283602dc8076d80f103f007fbc675b9aa7bdca31d1db73185a55dff"
+      ],
+      [
+        "details-11",
+        true,
+        "cbcc2f3f139879d4c63c78138c9ab83fb2746b06573058f77e63d2f16ae4a1fd"
+      ],
+      [
+        "details-12",
+        true,
+        "e9580f6844184412464211885256c4991e3de1feea93d4e92f970514cdb9554a"
+      ],
+      [
+        "details-13",
+        true,
+        "e9580f6844184412464211885256c4991e3de1feea93d4e92f970514cdb9554a"
+      ],
+      [
+        "details-left",
+        true,
+        "deb8748b1c97f18573d11e84ac533eb4dfd6e61d00ca4b1f14879dda857576dc"
+      ]
+    ]
+  }
+}
