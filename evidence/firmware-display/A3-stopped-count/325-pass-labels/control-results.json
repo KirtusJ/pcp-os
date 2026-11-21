@@ -1,0 +1,50 @@
+{
+  "normal": {
+    "intact_accepted": true,
+    "normal": 72,
+    "limited": 66,
+    "refused": [
+      "replace normal pass: the stop key ends a program that never yields, long before its budget",
+      "replace normal pass: a program the person stopped is STOPPED in the kernel's task table, as it is in what the kernel observed of it",
+      "replace normal pass: a program waiting in a read of the keyboard is woken by each key's interrupt and reads the keys in order: it idled until the first and exited 0 on the third",
+      "replace normal pass: the stop key ends a program that is asleep (for the longest sleep accepted: its deadline does not overflow) at once, and all its memory comes back",
+      "replace normal pass: the stop key ends a program that waits in a read of the keyboard; it had read Ctrl and Alt and was never handed Delete; all its memory comes back",
+      "replace normal pass: a stop key pressed before a program is started does not stop it",
+      "shared substitution in both runs: rejected batch returns the frames of every member",
+      "shared substitution in both runs: a program that sleeps 50 ms is woken at its millisecond: the processor idled 51 timer periods, no fewer and no more, and the sleep answered 0",
+      "shared substitution in both runs: a program under a name of 32 bytes is admitted and runs to its end",
+      "shared substitution in both runs: a program under a name of 33 bytes is refused admission as a task",
+      "shared substitution in both runs: a program that cannot be admitted as a task leaves no memory behind: as many frames are free after as before",
+      "substitute limited pass: the stop key ends a program that never yields, long before its budget",
+      "substitute limited pass: a program the person stopped is STOPPED in the kernel's task table, as it is in what the kernel observed of it",
+      "substitute limited pass: a program waiting in a read of the keyboard is woken by each key's interrupt and reads the keys in order: it idled until the first and exited 0 on the third",
+      "substitute limited pass: the stop key ends a program that is asleep (for the longest sleep accepted: its deadline does not overflow) at once, and all its memory comes back",
+      "substitute limited pass: the stop key ends a program that waits in a read of the keyboard; it had read Ctrl and Alt and was never handed Delete; all its memory comes back",
+      "substitute limited pass: a stop key pressed before a program is started does not stop it"
+    ]
+  },
+  "opt-in": {
+    "intact_accepted": true,
+    "normal": 73,
+    "limited": 67,
+    "refused": [
+      "replace normal pass: the stop key ends a program that never yields, long before its budget",
+      "replace normal pass: a program the person stopped is STOPPED in the kernel's task table, as it is in what the kernel observed of it",
+      "replace normal pass: a program waiting in a read of the keyboard is woken by each key's interrupt and reads the keys in order: it idled until the first and exited 0 on the third",
+      "replace normal pass: the stop key ends a program that is asleep (for the longest sleep accepted: its deadline does not overflow) at once, and all its memory comes back",
+      "replace normal pass: the stop key ends a program that waits in a read of the keyboard; it had read Ctrl and Alt and was never handed Delete; all its memory comes back",
+      "replace normal pass: a stop key pressed before a program is started does not stop it",
+      "shared substitution in both runs: rejected batch returns the frames of every member",
+      "shared substitution in both runs: a program that sleeps 50 ms is woken at its millisecond: the processor idled 51 timer periods, no fewer and no more, and the sleep answered 0",
+      "shared substitution in both runs: a program under a name of 32 bytes is admitted and runs to its end",
+      "shared substitution in both runs: a program under a name of 33 bytes is refused admission as a task",
+      "shared substitution in both runs: a program that cannot be admitted as a task leaves no memory behind: as many frames are free after as before",
+      "substitute limited pass: the stop key ends a program that never yields, long before its budget",
+      "substitute limited pass: a program the person stopped is STOPPED in the kernel's task table, as it is in what the kernel observed of it",
+      "substitute limited pass: a program waiting in a read of the keyboard is woken by each key's interrupt and reads the keys in order: it idled until the first and exited 0 on the third",
+      "substitute limited pass: the stop key ends a program that is asleep (for the longest sleep accepted: its deadline does not overflow) at once, and all its memory comes back",
+      "substitute limited pass: the stop key ends a program that waits in a read of the keyboard; it had read Ctrl and Alt and was never handed Delete; all its memory comes back",
+      "substitute limited pass: a stop key pressed before a program is started does not stop it"
+    ]
+  }
+}
