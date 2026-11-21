@@ -1349,15 +1349,17 @@ fn register_view(rec: &Record) {
     };
     // With room for a row of each event the screen is as it has always been: the count and the head of the
     // chain in the title, a row of headings, and an event to a row, a row that is too long going on under
-    // itself. On a narrower display the title is short, the count and the head are the first lines, and
-    // each event is a few short lines. Nothing is cut.
+    // itself. On a narrower display each event is a few short lines. Nothing is cut.
     let across = (cols as usize).saturating_sub(4).max(1);
     let full_title = format!("THE KERNEL'S REGISTER: {} events, chain intact, head {}", events.len(), head);
     let table = "seq  time                  actor     kind                 what";
     let wide = table.len() <= across;
     let mut lines: Vec<Line> = Vec::new();
-    if full_title.len() > across {
-        lines.extend(lines_of(2, &format!("{} events, chain intact", events.len()), SOFT));
+    // The title keeps the count and that the chain is intact in the longest wording that fits; the head
+    // of the chain, when the title cannot hold it, is the first lines, above the first event.
+    let titles = [full_title, format!("THE KERNEL'S REGISTER: {} events, chain intact", events.len()), format!("REGISTER: {} events, intact", events.len())];
+    let title = titles.iter().find(|t| t.len() <= across).cloned().unwrap_or_else(|| cut(&titles[2], across));
+    if title != titles[0] {
         lines.extend(wrapped(&format!("head {}", head), across).into_iter().map(|part| alloc::vec![(2, part, SOFT)]));
     }
     for e in events.iter() {
@@ -1379,7 +1381,6 @@ fn register_view(rec: &Record) {
             }
         }
     }
-    let title = if full_title.len() <= across { full_title } else { String::from("THE KERNEL'S REGISTER") };
     text_screen(&title, ui::TEAL, Some(table), &lines, "Up/Down scroll    Esc back", false, true);
 }
 

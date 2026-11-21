@@ -33,7 +33,7 @@ The list of programs, at 320 by 200, 220, 240 and 260 and, as the roomy control,
  P5 Down moves the choice from alpha.elf to bravo.elf and P1 to P4 hold again.
 
 The screens of text, at 320 by 200, 640 by 480 and 800 by 600, each opened from the desktop. A screen
-that says "Up/Down scroll" is read page by page with Down until its frame stops changing; "the pages"
+that says "Up/Down scroll" is read page by page with Down (the register with Up) until its frame stops changing; "the pages"
 below are the texts of those frames, each with its rows joined by single spaces.
  T1 F10: the first rows that hold anything are "POWER OFF" and "Switch PCP OS off?"; the last are
     "Enter switch off    Esc go back", or "Enter switch off" and "Esc go back" on two rows; the rows
@@ -43,7 +43,8 @@ below are the texts of those frames, each with its rows joined by single spaces.
  T3 F5: one page holds each of: the whole verification sentence with the number of self-tests the serial
     log reports; a line beginning "kernel "; "Register: <n> events, head <16 hex digits>..."; "The
     register's chain is intact."; "F4 shows every event of the register."
- T4 F4: the pages, with every space removed, hold "events,chainintact" and "head" followed by 64 hex digits.
+ T4 F4, which opens at the newest events and is read with Up: the pages, with every space removed, hold
+    "REGISTER:<n>events,chainintact" or "REGISTER:<n>events,intact", and "head" followed by 64 hex digits.
  T5 F3: rows 2 and 3, joined, are "Session files | cleared at power-off".
  T6 the desktop's row 3 is the verification sentence in one of the kernel's wordings, whole.
  T7 every one of these screens has, as its last row that holds anything, a row that says how to leave it
@@ -346,12 +347,12 @@ def text_trial(key, screen, passed, problems, results, mode):
     if not re.match(r"^  Verified(?: at start)?: all %d(?: self-tests(?: passed\.)?)?$" % passed, home[3]):
         found.append("T6: the desktop's row 3 reads %r" % home[3])
 
-    def pages(name, press, title):
+    def pages(name, press, title, move="down"):
         key(press)
         first, frame = screen(name + "-1", lambda rows, frame: any(title in row for row in rows))
         seen, frames = [first], [frame]
         while "Up/Down scroll" in " ".join(first) and len(seen) < 40:
-            key("down")
+            key(move)
             rows, frame = screen("%s-%d" % (name, len(seen) + 1), lambda rows, frame: True)
             if frame == frames[-1]:
                 break
@@ -378,8 +379,8 @@ def text_trial(key, screen, passed, problems, results, mode):
                           ("the way to the events", r"F4 shows every event of the register\.")):
         if not any(re.search(pattern, page) for page in verification):
             found.append("T3: %s is whole on no page" % what)
-    register = "".join("".join(rows).replace(" ", "") for rows in pages("register", "f4", "THE KERNEL'S REGISTER"))
-    if "events,chainintact" not in register or not re.search(r"head[0-9a-f]{64}", register):
+    register = "".join("".join(rows).replace(" ", "") for rows in pages("register", "f4", "REGISTER", "up"))
+    if not re.search(r"REGISTER:\d+events,(chain)?intact", register) or not re.search(r"head[0-9a-f]{64}", register):
         found.append("T4: the count or the whole head of the chain is not on the register's pages")
     key("f3")
     files, _ = screen("files", lambda rows, frame: any("FILES" in row for row in rows))
