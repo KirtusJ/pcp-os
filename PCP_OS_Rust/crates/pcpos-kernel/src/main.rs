@@ -496,22 +496,22 @@ const STOP_KEYS: [u8; 6] = [0x1D, 0x38, 0x53, 0xD3, 0xB8, 0x9D];
 /// Let whatever is left of a key script reach the controller and the keyboard's handler, then forget the keys and
 /// any stop they asked for. Called and left with interrupts off. Report a missed wake or unfinished script.
 fn script_drain() -> Result<(), &'static str> {
-    let woke_on_interrupt = dev::keyboard_script_finish();
+    dev::keyboard_script_finish();
     arch::interrupts_on();
-    let mut done = false;
     for _ in 0..200 {
-        if dev::keyboard_script_left() == 0 {
-            done = true;
+        if dev::keyboard_script_left() == 0 || dev::keyboard_script_stalled() {
             break;
         }
         arch::wait_until(arch::ticks() + 1);
     }
     arch::wait_until(arch::ticks() + 2); // the last byte's interrupt
     arch::interrupts_off();
+    // The outcome is read now, after the drain, so that a byte that could not be delivered during it counts.
+    let (woke_on_interrupt, delivered) = dev::keyboard_script_result();
     dev::keys_forget();
     let _ = dev::stop_requested();
-    if !done {
-        Err("the key script did not finish")
+    if !delivered {
+        Err("the key script was not delivered whole")
     } else if !woke_on_interrupt {
         Err("a key was queued but the reader was still idle on the next timer tick")
     } else {

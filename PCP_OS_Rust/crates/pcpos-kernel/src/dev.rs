@@ -578,13 +578,24 @@ pub fn keyboard_script(at: u64, bytes: &[u8], pacing: KeyPacing) {
 }
 
 /// Release any trailing key-up bytes after the test program exits so the modifiers return to rest.
-/// True if no blocked reader was left waiting for the timer to deliver an already queued key.
-pub fn keyboard_script_finish() -> bool {
+/// The program has ended, so the limit on it is lifted; what is left of the script may still be sent.
+pub fn keyboard_script_finish() {
     arch::without_interrupts(|| SCRIPT.with(|s| {
         s.pacing = KeyPacing::Timed;
         s.limit = 0;
-        !s.late_wake && !s.stalled
     }))
+}
+
+/// How the script went, read after it has been drained (B3: read before, a failure during the drain was
+/// missed): (no blocked reader was left waiting on the timer for a key already queued; every byte was
+/// delivered and nothing stalled).
+pub fn keyboard_script_result() -> (bool, bool) {
+    arch::without_interrupts(|| SCRIPT.with(|s| (!s.late_wake, !s.stalled && s.next == s.len)))
+}
+
+/// Whether the script has stopped sending because a byte could not be delivered or its test ran out of time.
+pub fn keyboard_script_stalled() -> bool {
+    arch::without_interrupts(|| SCRIPT.with(|s| s.stalled))
 }
 
 /// How many scan codes of the script have not been handed to the controller yet.
@@ -602,8 +613,11 @@ fn script_tick(ticks: u64) {
         if s.limit != 0 && ticks > s.limit {
             s.limit = 0;
             s.stalled = true;
-            s.len = s.next;
             STOP.store(true, Ordering::SeqCst);
+        }
+        // After a stall nothing more of the script is sent; what was not sent stays counted as not sent.
+        if s.stalled {
+            return;
         }
         // One byte a tick, and only when the controller holds nothing: neither a byte to be read nor one being taken.
         if s.next < s.len && ticks >= s.at && in8(0x64) & 3 == 0 {
@@ -636,7 +650,6 @@ fn script_tick(ticks: u64) {
                 // for it, nothing is written, the script ends there, and the test that waits on it fails.
                 if !controller_wait_write() {
                     s.stalled = true;
-                    s.len = s.next;
                     s.limit = 0;
                     STOP.store(true, Ordering::SeqCst);
                     return;
