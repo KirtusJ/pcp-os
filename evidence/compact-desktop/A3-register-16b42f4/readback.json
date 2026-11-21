@@ -1,0 +1,451 @@
+{
+  "commit": "16b42f4518af3b90dc41cfc734b96b8b7ca64459",
+  "compiler": "rustc 1.100.0 (0ef1bc386 2026-11-09)",
+  "emulation": "QEMU TCG, direct multiboot, single Queue Desk program, fresh guest per resolution",
+  "before_launch_events": 42,
+  "after_program_events": 45,
+  "closed_events": 47,
+  "method": "Decode the F4 and F5 displays before and after one completed Queue Desk task. Compare the count and visible digest on each view. Use the serial output and exit note to reconstruct the three task records. The two subsequent system-state records link the last full F4 head to the final digest printed during shutdown. Times and the spent-period field were reconstructed where no screen displayed them. Hash links are over sorted compact JSON without a trailing newline.",
+  "coverage": "At 320x200, 640x480, 1280x720, 1920x1080 and 2560x1440 all 64 digits were displayed and all five hash links reproduced. At 800x600 and 1024x768 only the marked 21- and 43-digit prefixes, the common F5 digits and the event counts were tested.",
+  "controls": "A pre-launch register paired with a post-launch verification, and the reverse, were rejected in all seven guests. At the five full-head sizes the replay changes the last hex digit of the last F4 head using a valid glyph. The visible F5 prefix stays the same but the recalculated shutdown digest disagrees.",
+  "replay_note": "The first offline last-digit control assumed the final 12 digits fit on one row. It stopped at 640x480. The corrected replay tracks the end of the wrapped field; original guest captures were preserved.",
+  "profiles": [
+    {
+      "mode": "1024x768",
+      "source": "16b42f4518af3b90dc41cfc734b96b8b7ca64459",
+      "measurement": "96f791a4db0276ecc589be5a986bbf7a4a307176ae95fdeaafd124a2f3a62e1d",
+      "kernel_sha256": "e43a36613f9b7baa265bf20546cf1f7082de66aaa32c942731caaa36fe7f65ec",
+      "program_sha256": "46f4bbd5e4d754a78d9b018d15d9249f8dbce04fb536e6bc49f638104850d8b1",
+      "passed": true,
+      "before": {
+        "register": {
+          "count": 42,
+          "head": "6111ba1e7dfdbedde08ef262b55da1dfd1fff48acc4",
+          "clipped": true
+        },
+        "verification": {
+          "count": 42,
+          "head": "6111ba1e7dfdbedd"
+        }
+      },
+      "after": {
+        "register": {
+          "count": 45,
+          "head": "c05f2fdb815542d31f017e29b93e14784e734310118",
+          "clipped": true
+        },
+        "verification": {
+          "count": 45,
+          "head": "c05f2fdb815542d3"
+        }
+      },
+      "stale_pair_accepted": false,
+      "exit_code": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "closed": {
+        "count": 47,
+        "head": "02a92e3ea4d3d2b2327c918079eb05515e84c0f32b6ca3348f91f6461b5e88a1"
+      },
+      "checks": 72
+    },
+    {
+      "mode": "1280x720",
+      "source": "16b42f4518af3b90dc41cfc734b96b8b7ca64459",
+      "measurement": "96f791a4db0276ecc589be5a986bbf7a4a307176ae95fdeaafd124a2f3a62e1d",
+      "kernel_sha256": "e43a36613f9b7baa265bf20546cf1f7082de66aaa32c942731caaa36fe7f65ec",
+      "program_sha256": "46f4bbd5e4d754a78d9b018d15d9249f8dbce04fb536e6bc49f638104850d8b1",
+      "passed": true,
+      "before": {
+        "register": {
+          "count": 42,
+          "head": "b3e21727a3ee040cafdd8b7947f407a39b8273072aaf505c47ea9e6225591316",
+          "clipped": false
+        },
+        "verification": {
+          "count": 42,
+          "head": "b3e21727a3ee040c"
+        }
+      },
+      "after": {
+        "register": {
+          "count": 45,
+          "head": "af8f16069f338b8a880604aba90a826778bc475dcc9635f929686a8773dcf1a7",
+          "clipped": false
+        },
+        "verification": {
+          "count": 45,
+          "head": "af8f16069f338b8a"
+        }
+      },
+      "stale_pair_accepted": false,
+      "exit_code": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "closed": {
+        "count": 47,
+        "head": "41c64a22565139d631565a74aa6d01cdeff751ef492dc4de487200dad93296e3"
+      },
+      "closing_records": [
+        {
+          "actor": "host",
+          "auth": "HOST",
+          "body": {
+            "event": "SHUTDOWN",
+            "reason": "end of the session",
+            "from": "OPERATIONAL",
+            "to": "STOPPING"
+          },
+          "kind": "SYSTEM_STATE",
+          "prev": "af8f16069f338b8a880604aba90a826778bc475dcc9635f929686a8773dcf1a7",
+          "seq": 45,
+          "ts": "2026-11-21T12:00:04Z"
+        },
+        {
+          "actor": "host",
+          "auth": "HOST",
+          "body": {
+            "event": "STOPPED_OK",
+            "reason": "stopped in order",
+            "from": "STOPPING",
+            "to": "STOPPED"
+          },
+          "kind": "SYSTEM_STATE",
+          "prev": "4220193b3aa315aaa55d4642fdfb0af588136f5f76ae014c6cdc83d92504eeb1",
+          "seq": 46,
+          "ts": "2026-11-21T12:00:04Z"
+        }
+      ],
+      "checks": 72
+    },
+    {
+      "mode": "1920x1080",
+      "source": "16b42f4518af3b90dc41cfc734b96b8b7ca64459",
+      "measurement": "96f791a4db0276ecc589be5a986bbf7a4a307176ae95fdeaafd124a2f3a62e1d",
+      "kernel_sha256": "e43a36613f9b7baa265bf20546cf1f7082de66aaa32c942731caaa36fe7f65ec",
+      "program_sha256": "46f4bbd5e4d754a78d9b018d15d9249f8dbce04fb536e6bc49f638104850d8b1",
+      "passed": true,
+      "before": {
+        "register": {
+          "count": 42,
+          "head": "5e388904940022b6381fb95ad2959d0fed4d625332ecc537bdd7fe784aec1dd7",
+          "clipped": false
+        },
+        "verification": {
+          "count": 42,
+          "head": "5e388904940022b6"
+        }
+      },
+      "after": {
+        "register": {
+          "count": 45,
+          "head": "ed812ebf128cc0445e1c73f581586395ca89ab00f66feaf0590365007250f7f2",
+          "clipped": false
+        },
+        "verification": {
+          "count": 45,
+          "head": "ed812ebf128cc044"
+        }
+      },
+      "stale_pair_accepted": false,
+      "exit_code": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "closed": {
+        "count": 47,
+        "head": "defedbff4d711547943d04a37cc950772d7a0092264fd8836648096e89f47212"
+      },
+      "closing_records": [
+        {
+          "actor": "host",
+          "auth": "HOST",
+          "body": {
+            "event": "SHUTDOWN",
+            "reason": "end of the session",
+            "from": "OPERATIONAL",
+            "to": "STOPPING"
+          },
+          "kind": "SYSTEM_STATE",
+          "prev": "ed812ebf128cc0445e1c73f581586395ca89ab00f66feaf0590365007250f7f2",
+          "seq": 45,
+          "ts": "2026-11-21T12:00:07Z"
+        },
+        {
+          "actor": "host",
+          "auth": "HOST",
+          "body": {
+            "event": "STOPPED_OK",
+            "reason": "stopped in order",
+            "from": "STOPPING",
+            "to": "STOPPED"
+          },
+          "kind": "SYSTEM_STATE",
+          "prev": "7a5c473e6015c2f2815ddfaccccd40f4b818583296991a1d30f6d7d6be7c58c9",
+          "seq": 46,
+          "ts": "2026-11-21T12:00:07Z"
+        }
+      ],
+      "checks": 72
+    },
+    {
+      "mode": "2560x1440",
+      "source": "16b42f4518af3b90dc41cfc734b96b8b7ca64459",
+      "measurement": "96f791a4db0276ecc589be5a986bbf7a4a307176ae95fdeaafd124a2f3a62e1d",
+      "kernel_sha256": "e43a36613f9b7baa265bf20546cf1f7082de66aaa32c942731caaa36fe7f65ec",
+      "program_sha256": "46f4bbd5e4d754a78d9b018d15d9249f8dbce04fb536e6bc49f638104850d8b1",
+      "passed": true,
+      "before": {
+        "register": {
+          "count": 42,
+          "head": "d3e73f397af43bf206e37af9723150e77cce7dc12ab644c859920eb4491a4716",
+          "clipped": false
+        },
+        "verification": {
+          "count": 42,
+          "head": "d3e73f397af43bf2"
+        }
+      },
+      "after": {
+        "register": {
+          "count": 45,
+          "head": "b04ce9d080d95a5b2aad65f21558462b7506f6571a585acc3fa8bd3991081d6b",
+          "clipped": false
+        },
+        "verification": {
+          "count": 45,
+          "head": "b04ce9d080d95a5b"
+        }
+      },
+      "stale_pair_accepted": false,
+      "exit_code": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "closed": {
+        "count": 47,
+        "head": "83ac1d5bffa4a72334db007229ee2c5957b4b720b669f4cf6da6da197da4fcdf"
+      },
+      "closing_records": [
+        {
+          "actor": "host",
+          "auth": "HOST",
+          "body": {
+            "event": "SHUTDOWN",
+            "reason": "end of the session",
+            "from": "OPERATIONAL",
+            "to": "STOPPING"
+          },
+          "kind": "SYSTEM_STATE",
+          "prev": "b04ce9d080d95a5b2aad65f21558462b7506f6571a585acc3fa8bd3991081d6b",
+          "seq": 45,
+          "ts": "2026-11-21T12:00:10Z"
+        },
+        {
+          "actor": "host",
+          "auth": "HOST",
+          "body": {
+            "event": "STOPPED_OK",
+            "reason": "stopped in order",
+            "from": "STOPPING",
+            "to": "STOPPED"
+          },
+          "kind": "SYSTEM_STATE",
+          "prev": "6071a9fa18ff40b88426606da64eacdd40e1dfd89df3b199fd8d5a84cc0b7b95",
+          "seq": 46,
+          "ts": "2026-11-21T12:00:10Z"
+        }
+      ],
+      "checks": 72
+    },
+    {
+      "mode": "320x200",
+      "source": "16b42f4518af3b90dc41cfc734b96b8b7ca64459",
+      "measurement": "96f791a4db0276ecc589be5a986bbf7a4a307176ae95fdeaafd124a2f3a62e1d",
+      "kernel_sha256": "e43a36613f9b7baa265bf20546cf1f7082de66aaa32c942731caaa36fe7f65ec",
+      "program_sha256": "46f4bbd5e4d754a78d9b018d15d9249f8dbce04fb536e6bc49f638104850d8b1",
+      "passed": true,
+      "before": {
+        "register": {
+          "count": 42,
+          "head": "1020685939f13c82d1f3415f6225cb7cdf47022d926551ede9b158b5c35a408e",
+          "clipped": false
+        },
+        "verification": {
+          "count": 42,
+          "head": "1020685939f13c82"
+        }
+      },
+      "after": {
+        "register": {
+          "count": 45,
+          "head": "7d01bdb5da79c317405c09bb319bf59cf22650ac84ff3cd99cc032a0361d8f4b",
+          "clipped": false
+        },
+        "verification": {
+          "count": 45,
+          "head": "7d01bdb5da79c317"
+        }
+      },
+      "stale_pair_accepted": false,
+      "exit_code": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "closed": {
+        "count": 47,
+        "head": "a8e7e6c0edb1513584ff814a4ae8c9a165da780e8dc1893a7e42e42d46120acc"
+      },
+      "closing_records": [
+        {
+          "actor": "host",
+          "auth": "HOST",
+          "body": {
+            "event": "SHUTDOWN",
+            "reason": "end of the session",
+            "from": "OPERATIONAL",
+            "to": "STOPPING"
+          },
+          "kind": "SYSTEM_STATE",
+          "prev": "7d01bdb5da79c317405c09bb319bf59cf22650ac84ff3cd99cc032a0361d8f4b",
+          "seq": 45,
+          "ts": "2026-11-21T12:00:22Z"
+        },
+        {
+          "actor": "host",
+          "auth": "HOST",
+          "body": {
+            "event": "STOPPED_OK",
+            "reason": "stopped in order",
+            "from": "STOPPING",
+            "to": "STOPPED"
+          },
+          "kind": "SYSTEM_STATE",
+          "prev": "d9aeafa0cae2aa0a2627ccc99718919bfda6ceafbed9035b6ee8eb98417c93c5",
+          "seq": 46,
+          "ts": "2026-11-21T12:00:22Z"
+        }
+      ],
+      "checks": 72
+    },
+    {
+      "mode": "640x480",
+      "source": "16b42f4518af3b90dc41cfc734b96b8b7ca64459",
+      "measurement": "96f791a4db0276ecc589be5a986bbf7a4a307176ae95fdeaafd124a2f3a62e1d",
+      "kernel_sha256": "e43a36613f9b7baa265bf20546cf1f7082de66aaa32c942731caaa36fe7f65ec",
+      "program_sha256": "46f4bbd5e4d754a78d9b018d15d9249f8dbce04fb536e6bc49f638104850d8b1",
+      "passed": true,
+      "before": {
+        "register": {
+          "count": 42,
+          "head": "a0a66e2558293ea6971f4b57c0b66fe6db56e199e8faeea280cbe9080ce62d71",
+          "clipped": false
+        },
+        "verification": {
+          "count": 42,
+          "head": "a0a66e2558293ea6"
+        }
+      },
+      "after": {
+        "register": {
+          "count": 45,
+          "head": "f7441cbc968da599b52c0be652eefe429ad5b3878106c522992b98fb398a7919",
+          "clipped": false
+        },
+        "verification": {
+          "count": 45,
+          "head": "f7441cbc968da599"
+        }
+      },
+      "stale_pair_accepted": false,
+      "exit_code": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "closed": {
+        "count": 47,
+        "head": "e55be5f98d3415b38d97e147f0b6633e0f0e7d3aa487e9f10b4784301dde8b80"
+      },
+      "closing_records": [
+        {
+          "actor": "host",
+          "auth": "HOST",
+          "body": {
+            "event": "SHUTDOWN",
+            "reason": "end of the session",
+            "from": "OPERATIONAL",
+            "to": "STOPPING"
+          },
+          "kind": "SYSTEM_STATE",
+          "prev": "f7441cbc968da599b52c0be652eefe429ad5b3878106c522992b98fb398a7919",
+          "seq": 45,
+          "ts": "2026-11-21T12:00:09Z"
+        },
+        {
+          "actor": "host",
+          "auth": "HOST",
+          "body": {
+            "event": "STOPPED_OK",
+            "reason": "stopped in order",
+            "from": "STOPPING",
+            "to": "STOPPED"
+          },
+          "kind": "SYSTEM_STATE",
+          "prev": "5e5cb19f4a267b885c125495878fbf68d568e2316c88f0fc901ba4524ebb5ece",
+          "seq": 46,
+          "ts": "2026-11-21T12:00:09Z"
+        }
+      ],
+      "checks": 72
+    },
+    {
+      "mode": "800x600",
+      "source": "16b42f4518af3b90dc41cfc734b96b8b7ca64459",
+      "measurement": "96f791a4db0276ecc589be5a986bbf7a4a307176ae95fdeaafd124a2f3a62e1d",
+      "kernel_sha256": "e43a36613f9b7baa265bf20546cf1f7082de66aaa32c942731caaa36fe7f65ec",
+      "program_sha256": "46f4bbd5e4d754a78d9b018d15d9249f8dbce04fb536e6bc49f638104850d8b1",
+      "passed": true,
+      "before": {
+        "register": {
+          "count": 42,
+          "head": "7e2e1647c597a19fa8bf1",
+          "clipped": true
+        },
+        "verification": {
+          "count": 42,
+          "head": "7e2e1647c597a19f"
+        }
+      },
+      "after": {
+        "register": {
+          "count": 45,
+          "head": "1fb77559d3fd3e095b47f",
+          "clipped": true
+        },
+        "verification": {
+          "count": 45,
+          "head": "1fb77559d3fd3e09"
+        }
+      },
+      "stale_pair_accepted": false,
+      "exit_code": 0,
+      "shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "closed": {
+        "count": 47,
+        "head": "18bcd725bf735cb766472b5c6cc936068be69a314e2700349b7fa6f3e6aa132a"
+      },
+      "checks": 72
+    }
+  ]
+}
