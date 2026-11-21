@@ -5,7 +5,6 @@ use crate::{
     log, user,
 };
 use alloc::format;
-use alloc::vec::Vec;
 
 type Frame = [u8; 60];
 const READY: u8 = 1;
@@ -107,12 +106,7 @@ fn launch(image: &[u8], n: u8) -> Result<u32, &'static str> {
         grants: user::Grants::default(),
         budget: 50,
     };
-    let world = user::World {
-        files: Vec::new(),
-        store: Vec::new(),
-        epoch_at_start: 0,
-        unanswered: Vec::new(),
-    };
+    let world = user::empty_world();
     let before = user::frames_free();
     let (child, world) = arch::without_interrupts(|| user::run_program(&program, world));
     let p = child?;

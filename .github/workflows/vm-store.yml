@@ -40,6 +40,10 @@ jobs:
           (cd store/apps/parrots-all-the-way-down/guest && cargo build --locked --release --target x86_64-unknown-none)
           python3 -B examples/vm-store/check_queue.py "$RUNNER_TEMP/boots/kernel.elf" \
             "$CARGO_TARGET_DIR/x86_64-unknown-none/release/rdesk" "$RUNNER_TEMP/queue"
+      - name: Compile the worker with VM storage enabled
+        run: |
+          PCPOS_KERNEL_STAGE="$RUNNER_TEMP/build" PCPOS_KERNEL_FEATURES="vm-store,virtio-worker-probe" \
+            sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
       - name: Preserve the disk, guest programs, kernel, and serial evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
