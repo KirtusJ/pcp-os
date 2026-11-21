@@ -94,6 +94,7 @@ jobs:
           cd PCP_OS_Rust/crates/pcpos-kernel
           PCPOS_KERNEL_STAGE="$RUNNER_TEMP/default-kernel" sh run.sh build
           cp target/pcpos-kernel.elf32 "$RUNNER_TEMP/default.elf32"
+          python3 -IB tests/no_serial.py "$RUNNER_TEMP/default.elf32"
           PCPOS_KERNEL_STAGE="$RUNNER_TEMP/no-replay-kernel" PCPOS_KERNEL_FEATURES=no-key-replay-demo sh run.sh build
           cp target/pcpos-kernel.elf32 "$RUNNER_TEMP/no-replay.elf32"
           PCPOS_KERNEL_STAGE="$RUNNER_TEMP/lost-key-kernel" PCPOS_KERNEL_FEATURES=lost-key-demo sh run.sh build
