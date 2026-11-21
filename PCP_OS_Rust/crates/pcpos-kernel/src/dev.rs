@@ -307,6 +307,19 @@ static KEYBOARD: arch::Single<Keyboard> = arch::Single::new(Keyboard { present: 
                                                                          extended: false, skip: 0, ctrl: false, alt: false, enter: [false; 2], dropped: 0 });
 /// Set when the person presses Ctrl, Alt and Delete together: the kernel's own key, which no program can take.
 static STOP: AtomicBool = AtomicBool::new(false);
+/// How many times the stop chord has been seen on the keyboard since the start. A self-test that says a
+/// person's key stopped a program asks this, so that a stop made by the tests' own time limit is never
+/// credited to a key (B3).
+static CHORDS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+pub fn stop_chords() -> u32 {
+    CHORDS.load(Ordering::SeqCst)
+}
+
+/// Whether a stop has been asked for and not yet taken, without taking it.
+pub fn stop_pending() -> bool {
+    STOP.load(Ordering::SeqCst)
+}
 /// The byte the replay probe is waiting to get back, with bit 8 set while it waits; and whether it came.
 static PROBE: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 static PROBE_HIT: AtomicBool = AtomicBool::new(false);
@@ -453,7 +466,10 @@ fn keyboard_byte(k: &mut Keyboard, byte: u8) {
                 0x1D => k.ctrl = !key.released,
                 0x38 => k.alt = !key.released,
                 0x1C => k.enter[key.extended as usize] = !key.released,
-                0x53 if !key.released && k.ctrl && k.alt => STOP.store(true, Ordering::SeqCst),
+                0x53 if !key.released && k.ctrl && k.alt => {
+                    CHORDS.fetch_add(1, Ordering::SeqCst);
+                    STOP.store(true, Ordering::SeqCst);
+                }
                 _ => {}
             }
             key.ctrl = k.ctrl;
