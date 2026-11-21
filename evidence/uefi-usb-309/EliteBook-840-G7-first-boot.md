@@ -35,7 +35,13 @@ The USB-only guest booted the same image as the normal guest. QEMU listed the US
 
 On the earlier `d92f5f6` build the replay-disabled profile passed 58 at startup and 59 after closure. It skipped 13 checks, and the stopped screen showed the pre-closure count. The new runs supersede those results for the revised kernel. [Earlier evidence](B3-UEFI-keyboard-replay-d92f5f6.tar.xz)
 
-Counting six fewer passes can still hide a missing admission check if a different pass takes its place. Draft #325 checks each pass label and its multiplicity. It accepted the intact logs and rejected all five altered pairs that the previous reader accepted. [Draft checker](https://github.com/KirtusJ/pcp-os/pull/325)
+Counting six fewer passes can still hide a missing admission check if a different pass takes its place. The checker integrated in #325 checks each pass label and its multiplicity. It accepted the intact logs and rejected all five altered pairs that the previous reader accepted. [Integrated checker](https://github.com/KirtusJ/pcp-os/pull/325)
+
+## When the intact USB returns to firmware
+
+B3 booted the same intact read-only USB in four Q35/OVMF guests with USB-only input. With the CPU hypervisor flag withheld, OVMF invoked the USB executable and received `Unsupported` before the first loader trace or kernel handoff. With the bootable internal NVMe listed second, OVMF then invoked its diagnostic EFI executable, which also returned `Unsupported`. OVMF reached its shell after 22 internal reads totaling 270,336 bytes. With the attached NVMe omitted from the boot list, OVMF reached the same shell with zero internal reads.
+
+With the flag present, both controls reached the kernel and completed 66 checks. The internal disk recorded 12 reads when listed second and zero when omitted. All four runs preserved both media hashes and recorded zero internal writes, flushes or discards. The stopped screens seen under direct kernel boot cannot be reached by this USB when its loader refuses entry. The EliteBook’s own boot order and fallback behavior remain unmeasured. [Original firmware, serial, framebuffer and block-counter records](B3-UEFI-intact-USB-fallback-8395a86.tar.xz)
 
 ## What remains before a physical trial
 
