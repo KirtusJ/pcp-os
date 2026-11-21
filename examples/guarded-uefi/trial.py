@@ -1,6 +1,5 @@
 """Compare a refused public ELF with a separately measured Q35/OVMF kernel trial."""
 import argparse
-import hashlib
 import json
 from pathlib import Path
 import re
@@ -66,7 +65,7 @@ halt
     return cd
 
 
-def trial(iso, kernel, measurement, out):
+def trial(iso, kernel, measurement, out, ram):
     out.mkdir()
     with tempfile.TemporaryDirectory() as temp:
         work = Path(temp)
@@ -77,14 +76,14 @@ def trial(iso, kernel, measurement, out):
         shutil.copyfile("/usr/share/OVMF/OVMF_VARS_4M.fd", variables)
         monitor = work / "qmp.sock"
         serial = out / "serial.txt"
-        cmd = ["qemu-system-x86_64", "-machine", "q35", "-accel", "tcg", "-cpu", "max", "-m", "256M",
+        cmd = ["qemu-system-x86_64", "-machine", "q35", "-accel", "tcg", "-cpu", "max", "-m", str(ram),
                "-smp", "1", "-vga", "std", "-nic", "none", "-display", "none", "-monitor", "none",
                "-serial", "stdio", "-qmp", f"unix:{monitor},server=on,wait=off", "-audiodev", "none,id=snd",
                "-device", "AC97,audiodev=snd", "-drive", f"if=pflash,unit=0,format=raw,readonly=on,file={code}",
                "-drive", f"if=pflash,unit=1,format=raw,file={variables}", "-boot", "order=d,strict=on",
                "-cdrom", str(cd), "-icount", "shift=3,align=off,sleep=off"]
         report = {"source_iso": digest(iso), "elf": digest(root / "kernel.elf32"), "measurement": measurement,
-                  "firmware_sha256": digest(code), "cd_sha256": digest(cd), "command": cmd, "admitted": False}
+                  "ram_mib": ram, "firmware_sha256": digest(code), "cd_sha256": digest(cd), "command": cmd, "admitted": False}
         def log():
             return serial.read_text(errors="replace") if serial.exists() else ""
         with (out / "qemu.stderr").open("wb") as err, subprocess.Popen(
@@ -175,7 +174,52 @@ def trial(iso, kernel, measurement, out):
                             or report["nvs_before"] != report["nvs_at_launcher"]
                             or measurement + " (measured; equal" not in startup):
                         raise RuntimeError("Guarded handoff did not satisfy startup, placement and NVS checks")
-                    call("send-key", keys=[{"type":"qcode","data":"p"}], **{"hold-time":80})
+                    pool = re.search(r"memory for programs: (\d+) frames of 4 KiB, (0x[\da-f]+)\.\.(0x[\da-f]+)", startup)
+                    if not pool:
+                        raise RuntimeError("Missing measured frame pool")
+                    first, end = int(pool[2], 16), int(pool[3], 16)
+                    occupied = pages + list(report["loaded_modules"].values())
+                    if (end - first != int(pool[1]) * 4096 or end <= first or conflicts([(first, end)], memory)
+                            or any(first < hi and lo < end for lo, hi in occupied)):
+                        raise RuntimeError("Invalid program frame pool placement")
+                    report["pool"] = [first, end]
+                    def press(*keys):
+                        call("send-key", keys=[{"type": "qcode", "data": k} for k in keys], **{"hold-time": 70})
+                    def tap(key):
+                        call("input-send-event", events=[
+                            {"type":"key","data":{"down":down,"key":{"type":"qcode","data":key}}}
+                            for down in (True,False)])
+                    def frame(label, regions, reference=None):
+                        path = out / (label + ".ppm")
+                        original = (out / (reference + ".ppm")).read_bytes() if reference else None
+                        def matches():
+                            call("screendump", filename=str(path))
+                            raw = path.read_bytes()
+                            return has_regions(raw, regions) and (original is None or raw == original)
+                        until(matches, label, vm)
+                    frame("ready", (LAUNCHER_FOOTER,))
+                    press("ret")
+                    until(lambda: "SURFBIRD media ready" in log(), "media menu", vm)
+                    press("spc")
+                    until(lambda: "SURFBIRD media drained" in log() and "surf.elf ended DONE" in log(), "normal exit", vm)
+                    frame("after-playback", (LAUNCHER_FOOTER,))
+                    press("ret")
+                    until(lambda: log().count("SURFBIRD media ready") == 2, "second launch", vm)
+                    press("ctrl", "alt", "delete")
+                    until(lambda: "surf.elf ended STOPPED" in log(), "keyboard Stop", vm)
+                    frame("after-stop", (LAUNCHER_FOOTER,))
+                    tap("r")
+                    frame("register-latest", (REGISTER_FOOTER, LATEST_ROWS))
+                    tap("up")
+                    frame("register-earlier", (REGISTER_FOOTER, EARLIER_ROWS))
+                    tap("down")
+                    frame("register-restored", (REGISTER_FOOTER, LATEST_ROWS), "register-latest")
+                    tap("esc")
+                    frame("after-register", (LAUNCHER_FOOTER,), "after-stop")
+                    report["nvs_before_shutdown"] = nvs_hashes()
+                    if report["nvs_before_shutdown"] != report["nvs_before"]:
+                        raise RuntimeError("Firmware NVS changed during the interactive session")
+                    press("p")
                     vm.wait(timeout=20)
                     for line in io:
                         e = json.loads(line)
@@ -198,6 +242,9 @@ if __name__ == "__main__":
     p.add_argument("out", type=Path)
     args = p.parse_args()
     sys.path.insert(0, str(args.distribution.resolve() / "audit/public-live-cd/uefi-probe"))
+    sys.path.insert(0, str(args.distribution.resolve() / "audit/public-live-cd"))
+    from check import has_regions, LAUNCHER_FOOTER, REGISTER_FOOTER, LATEST_ROWS, EARLIER_ROWS
+    from check_register import check_register
     from inventory import BEGIN, END, KERNEL_SHA, SOURCE_SHA, conflicts, digest, load_ranges, memory_ranges
     iso = args.distribution.resolve() / "PCP-OS.iso"
     if digest(iso) != SOURCE_SHA:
@@ -207,5 +254,9 @@ if __name__ == "__main__":
     measured = subprocess.check_output([sys.executable, kernel_dir / "tools/measure.py", candidate], text=True).strip()
     out = args.out.resolve()
     out.mkdir()
-    trial(iso, None, "0232c02a8946d66216da0ac65953a246ce3d41d7a966ae31aa83c3335b3259e3", out / "public")
-    trial(iso, candidate, measured, out / "candidate")
+    for ram in (128, 256):
+        trial(iso, None, "0232c02a8946d66216da0ac65953a246ce3d41d7a966ae31aa83c3335b3259e3",
+              out / f"public-{ram}", ram)
+        destination = out / f"candidate-{ram}"
+        trial(iso, candidate, measured, destination, ram)
+        check_register(kernel_dir / "src/font.rs", destination)
