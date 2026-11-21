@@ -1,0 +1,30 @@
+{
+  "default-1920x1080": {
+    "startup": 71,
+    "final": 72,
+    "F5_pages": 1,
+    "skipped_reason_visible": false,
+    "saved_label": "keys"
+  },
+  "default-320x200": {
+    "startup": 71,
+    "final": 72,
+    "F5_pages": 4,
+    "skipped_reason_visible": false,
+    "saved_label": "keys"
+  },
+  "demo-1920x1080": {
+    "startup": 58,
+    "final": 59,
+    "F5_pages": 1,
+    "skipped_reason_visible": true,
+    "saved_label": "keys"
+  },
+  "demo-320x200": {
+    "startup": 58,
+    "final": 59,
+    "F5_pages": 5,
+    "skipped_reason_visible": true,
+    "saved_label": "keys"
+  }
+}
