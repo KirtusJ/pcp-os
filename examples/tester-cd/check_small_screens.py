@@ -48,7 +48,8 @@ below are the texts of those frames, each with its rows joined by single spaces.
     or, only where the display holds the table (66 columns) but not its whole title (800 across), by
     exactly the digits the title has room for and "..": there the whole head is not on the screen, as it
     was not before, and the title now says that it is cut.
- T8 F5: below the label "The whole head of the register's chain:", rows that are nothing but hex digits hold
+ T8 F5: below the whole label "The whole head of the register's chain:" (on one row, or broken between its
+    words), rows that are nothing but hex digits hold
     64 of them on one page, and they begin with the 16 the same screen shows after "head".
  T5 F3: rows 2 and 3, joined, are "Session files | cleared at power-off".
  T6 the desktop's row 3 is the verification sentence in one of the kernel's wordings, whole.
@@ -73,7 +74,7 @@ The exit code of such a guest is recorded and not judged.
 In Settings, S6: a key that does nothing leaves the settled frame as it was.
 
 The check proves its own reading on a good frame of each kind (for the text screens: the warning with
-"not" taken out, and a key's explanation with its last word taken out): for Settings, the keys' line written over
+"not" taken out, a key's explanation with its last word taken out, and the whole head with its last digit erased): for Settings, the keys' line written over
 a widget's row, and a state mark changed; for the list, the verification row emptied, and the chosen row
 emptied. Each must be refused.
 
@@ -331,8 +332,16 @@ def list_trial(key, screen, roomy, passed, problems, results, mode):
     key("esc")
 
 
+# The label above the whole head, whole, on one row or broken between words onto more (B3: at 320 across it must wrap).
+LABEL = r"[ \n]".join(re.escape(word) for word in "The whole head of the register's chain:".split())
 WARNING = "The register is closed and verified first. Files of this session that were not saved by a program are lost."
 LEAVE = re.compile(r"(^|  )(Esc back|Esc go back|Any key goes back)$")
+
+
+def whole_heads(pages):
+    """Every run of hex-only rows that follows the whole label on one page, joined."""
+    return {m[1].replace("\n", "") for rows in pages
+            for m in re.finditer(LABEL + r"\n((?:[0-9a-f]+\n)+)", "\n".join(row.strip() for row in rows) + "\n")}
 
 
 def joined(rows):
@@ -415,11 +424,22 @@ def text_trial(key, screen, passed, problems, results, mode, graphic=False):
         if not any(re.search(pattern, page) for page in verification):
             found.append("T3: %s is whole on no page" % what)
     verification_rows = pages("verification-again", "f5", "VERIFICATION")
-    heads = {m[1].replace("\n", "") for rows in verification_rows
-             for m in re.finditer(r"The whole head of the register's chain:\n((?:[0-9a-f]+\n)+)", "\n".join(row.strip() for row in rows) + "\n")}
+    heads = whole_heads(verification_rows)
     prefixes = {m[1] for page in verification for m in re.finditer(r"head ([0-9a-f]{16})\.\.\.", page)}
     if len(heads) != 1 or len(next(iter(heads))) != 64 or {next(iter(heads))[:16]} != prefixes:
         found.append("T8: F5 does not hold one whole head of 64 digits that begins with the 16 it shows above: %r %r" % (sorted(heads), sorted(prefixes)))
+    results["whole_head"] = sorted(heads)
+    # The control: the last digit of the head taken off its row. No head of 64 may then be read.
+    digit_rows = [(p, i) for p, rows in enumerate(verification_rows) for i, row in enumerate(rows)
+                  if heads and row.strip() and next(iter(heads)).endswith(row.strip()) and re.fullmatch(r"[0-9a-f]+", row.strip())]
+    if not digit_rows:
+        problems.append("%s: no row to make the erased-digit control from" % mode)
+    else:
+        p, i = digit_rows[0]
+        erased = [list(rows) for rows in verification_rows]
+        erased[p][i] = erased[p][i].rstrip()[:-1]
+        if any(len(h) == 64 for h in whole_heads([erased[p]])):
+            problems.append("%s control accepted: a head with its last digit erased" % mode)
     register_pages = pages("register", "f4", "REGISTER", "up")
     register = "".join("".join(rows).replace(" ", "") for rows in register_pages)
     # The whole head must be on the screen unless the display holds the table (62 characters and the two
