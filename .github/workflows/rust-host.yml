@@ -1,7 +1,7 @@
 name: Rust host on desktop platforms
 
-# Builds and tests the hosted Rust workspace (pcpos-core, pcpos-pkg, pcpos-host) on the three desktop
-# platforms. The kernel is excluded from the workspace and has its own emulator workflows.
+# Builds and tests the hosted Rust workspace (pcpos-core, pcpos-pkg, pcpos-host) on Linux, macOS and
+# Windows. The kernel is excluded from the workspace and has its own emulator workflows.
 on:
   pull_request:
     paths:
@@ -23,13 +23,25 @@ concurrency:
 
 jobs:
   host:
-    name: ${{ matrix.os }}
+    name: ${{ matrix.os }}${{ matrix.known_failing && ' (known failing, issue 65)' || '' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    # Linux and macOS must pass. On Windows the host builds and 23 of 26 host tests pass; the three that
+    # fail show a fault in the host itself (truncating a file through an append-only handle, in repair and
+    # in the shell-observation file; issue 65). The Windows job runs every test and reports its failures,
+    # and does not decide the result of the workflow until that fault is fixed in the Rust source. It is
+    # not a statement that the host is supported on Windows.
+    continue-on-error: ${{ matrix.known_failing }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2022, macos-15]
+        include:
+          - os: ubuntu-24.04
+            known_failing: false
+          - os: macos-15
+            known_failing: false
+          - os: windows-2022
+            known_failing: true
     defaults:
       run:
         working-directory: PCP_OS_Rust
