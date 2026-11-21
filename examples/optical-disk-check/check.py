@@ -5,7 +5,6 @@ Requires Python 3, qemu-system-x86_64 with SeaBIOS.
 The only disk this program writes is a new ordinary file in a temporary directory.
 """
 import argparse
-from collections import Counter
 import hashlib
 import json
 import os
@@ -213,29 +212,13 @@ class DesktopScreens:
         self.register_problems = reader['register_problems']
         self.monitor, self.directory, self.timeout = monitor, directory, timeout
 
-    def dock_row(self, frame):
-        # The dock centres its labels on five-pixel increments. The normal reader
-        # handles the ten-pixel grid; read the other alignment on the label row.
-        _, size, _, pixels = frame.split(b'\n', 3)
-        width, height = map(int, size.split())
-        y = height // 20 * 20 - 60
-        letters = []
-        for x in range(5, width - 9, 10):
-            cell = [pixels[i:i+3] for dy in range(20) for dx in range(10)
-                    for i in [3 * ((y + dy) * width + x + dx)]]
-            ground = Counter(cell).most_common(1)[0][0]
-            letters.append(self.glyphs.get(tuple(pixel != ground for pixel in cell), '?'))
-        return ''.join(letters)
-
-    def wait(self, name, predicate, dock=False):
+    def wait(self, name, predicate):
         capture = self.directory / (name + '.ppm')
 
         def inspect():
             self.monitor.call('screendump', filename=str(capture))
             frame = capture.read_bytes()
             rows = self.read(frame, self.glyphs)
-            if rows and dock:
-                rows.append(self.dock_row(frame))
             return rows if rows and predicate(rows) else None
 
         return wait_for(inspect, 'waiting for ' + name + ' framebuffer', self.timeout)
@@ -247,7 +230,7 @@ class DesktopScreens:
             compact = any('PCP OS | DESKTOP' in row for row in rows)
             return programs and (corner or compact) and not any('may use:' in row for row in rows)
 
-        return self.wait(name, visible, dock=True)
+        return self.wait(name, visible)
 
     def verification(self, prefix):
         self.monitor.key('v')
