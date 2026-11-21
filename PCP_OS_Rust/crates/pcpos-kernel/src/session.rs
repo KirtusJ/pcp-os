@@ -1367,6 +1367,51 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
     at(2, rows - 1, "Ctrl+Alt+Delete stops a running program and returns here. No program can take that key.", SOFT, PANEL);
 }
 
+/// The last screen on a machine this kernel cannot switch off: that it has stopped, whether it verified
+/// itself, why nothing could be chosen if nothing could, and what the person does now. The display is
+/// cleared first, so that nothing a firmware or a program left is read as part of it, and every sentence
+/// is whole on a display of any size. Nothing is waited for: the processor is halted after it.
+pub fn stopped_screen(start: &Start, failed: u32) {
+    use ui::{at, GROUND, SOFT, TEXT};
+    let (cols, rows) = ui::grid();
+    let across = (cols as usize).saturating_sub(4).max(1);
+    // Each thing to say, with how soon it is given up on a display with too few rows (0: never). What
+    // the person must do is never given up: it is the one thing they cannot find out any other way.
+    let mut parts: Vec<(u8, String, u32)> = Vec::new();
+    parts.push((0, String::from("PCP OS has stopped."), ui::AMBER));
+    parts.push((3, String::new(), TEXT));
+    parts.push((1, if failed != 0 { format!("NOT VERIFIED: {} self-test(s) failed.", failed) } else { format!("Verified: all {} self-tests it ran passed.", start.passed) },
+                if failed != 0 { ui::BAD } else { ui::GOOD }));
+    if let Some(why) = start.not_run.filter(|_| failed == 0) {
+        parts.push((2, format!("Not run: the tests of keys, sleep and stopping a program, because {}.", why), SOFT));
+    }
+    if start.display.is_some() && !start.keyboard {
+        parts.push((3, String::new(), TEXT));
+        parts.push((1, String::from("No keyboard this kernel can use answered: it drives PS/2 keyboards only."), TEXT));
+    }
+    parts.push((3, String::new(), TEXT));
+    parts.push((2, String::from("Nothing is running and nothing more will be written."), TEXT));
+    parts.push((0, String::from("This kernel cannot switch the computer off. Hold its power button until it goes dark."), TEXT));
+    let lines_of_parts = |parts: &[(u8, String, u32)]| -> Vec<(String, u32)> {
+        parts.iter().flat_map(|(_, text, colour)| if text.is_empty() { alloc::vec![(String::new(), *colour)] } else {
+            wrapped_words(text, across).into_iter().map(|part| (part, *colour)).collect()
+        }).collect()
+    };
+    // Give up, in turn, the empty rows, then what is least needed, until the rest fits.
+    for giving_up in [3u8, 2, 1] {
+        if lines_of_parts(&parts).len() <= rows as usize {
+            break;
+        }
+        parts.retain(|(rank, _, _)| *rank != giving_up);
+    }
+    let lines = lines_of_parts(&parts);
+    ui::clear(GROUND);
+    let first = if rows as usize > lines.len() + 2 { 1 } else { 0 };
+    for (n, (line, colour)) in lines.iter().enumerate().take(rows as usize) {
+        at(2, first + n as u32, line, *colour, GROUND);
+    }
+}
+
 /// The kernel's register, newest events last, a screen at a time.
 fn register_view(rec: &Record) {
     use ui::{at, GROUND, SOFT, TEXT};

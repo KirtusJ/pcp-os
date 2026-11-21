@@ -881,8 +881,7 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     // On hardware this kernel has no way to switch the machine off, and says so instead of leaving the
     // person to wonder whether it is still working.
     if !arch::emulated() && dev::display().is_some() {
-        ui::at(2, 4, "PCP OS has stopped. Nothing is running and nothing more will be written.", ui::TEXT, ui::GROUND);
-        ui::at(2, 5, "This kernel cannot switch the computer off. Hold its power button until it goes dark.", ui::TEXT, ui::GROUND);
+        session::stopped_screen(&start, failed);
     }
     arch::stop(failed == 0)
 }
