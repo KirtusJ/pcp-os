@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise a published PCP OS optical image with a writable, disposable IDE disk.
+"""Exercise a PCP OS optical image with a writable, disposable IDE disk.
 
 Requires Python 3, qemu-system-x86_64 with SeaBIOS.
 The only disk this program writes is a new ordinary file in a temporary directory.
@@ -23,7 +23,10 @@ FAT_SECTORS = 64
 ROOT_SECTORS = 32
 DATA_SECTOR = 1 + 2 * FAT_SECTORS + ROOT_SECTORS
 BLOCK_OFFSET = (FIRST + DATA_SECTOR) * SECTOR
-KERNEL = '0232c02a8946d66216da0ac65953a246ce3d41d7a966ae31aa83c3335b3259e3'
+KERNELS = {
+    'published': '0232c02a8946d66216da0ac65953a246ce3d41d7a966ae31aa83c3335b3259e3',
+    'keyboard-01': 'a9be6b1599bb10eead1344ae4a2ca53ec978074ae9aef1d30e8da10f04d044f3',
+}
 
 
 def digest(data):
@@ -143,14 +146,14 @@ def frame(monitor, directory, name, timeout, register=False):
     wait_for(inspect, f'waiting for {name} framebuffer', timeout)
 
 
-def exercise(q, evidence, timeout, result):
+def exercise(q, evidence, timeout, result, kernel):
     serial = evidence / 'serial.log'
 
     def sees(text, count=1):
         wait_for(lambda: serial.read_text(errors='replace').count(text) >= count, text, timeout)
 
     q.call('cont')
-    sees(KERNEL + ' (measured; equal to the value the loader named)')
+    sees(kernel + ' (measured; equal to the value the loader named)')
     frame(q, evidence, 'launcher', timeout)
     if sum(line.startswith('  pass ') for line in serial.read_text().splitlines()) != 71:
         raise ValueError('expected 71 serial startup passes')
@@ -186,9 +189,11 @@ def run(args, root, baseline, machine, control):
     disk = root / (case + '.raw')
     disk.write_bytes(baseline)
     serial = evidence / 'serial.log'
-    cmd = [args.qemu, '-machine', machine, '-accel', 'tcg', '-cpu', 'max', '-m', '256M',
+    profile = (['-cpu', 'qemu64', '-m', '64M'] if args.tester_profile else
+               ['-cpu', 'max', '-m', '256M', '-icount', 'shift=3,align=off,sleep=off'])
+    cmd = [args.qemu, '-machine', machine, '-accel', 'tcg', *profile,
            '-smp', '1', '-nic', 'none', '-display', 'none', '-qmp', 'stdio',
-           '-icount', 'shift=3,align=off,sleep=off', '-audiodev', 'none,id=snd',
+           '-audiodev', 'none,id=snd',
            '-device', 'AC97,audiodev=snd', '-serial', 'file:' + str(serial),
            '-boot', 'order=d,strict=on', '-no-shutdown', '-S',
            '-drive', 'id=sentinel,if=ide,index=0,format=raw,snapshot=off,file=' + str(disk),
@@ -212,7 +217,7 @@ def run(args, root, baseline, machine, control):
                 command = f'qemu-io sentinel "write -q -P 0x5a {BLOCK_OFFSET} 512"'
                 result['write_response'] = q.call('human-monitor-command', **{'command-line': command})
             else:
-                exercise(q, evidence, args.timeout, result)
+                exercise(q, evidence, args.timeout, result, KERNELS[args.kernel])
             result['at_end'] = q.disk_stats()
             result['events'] = q.events
             q.call('quit')
@@ -255,6 +260,9 @@ def main():
     p.add_argument('iso', type=Path)
     p.add_argument('output', type=Path, help='new evidence directory')
     p.add_argument('--sha256', required=True, help='expected SHA-256 obtained from a trusted reference')
+    p.add_argument('--kernel', choices=KERNELS, default='published', help='expected measured kernel')
+    p.add_argument('--tester-profile', action='store_true',
+                   help='use qemu64, 64 MiB and the ordinary QEMU clock')
     p.add_argument('--qemu', default='qemu-system-x86_64')
     p.add_argument('--firmware', type=Path)
     p.add_argument('--timeout', type=float, default=35)
