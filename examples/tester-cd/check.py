@@ -8,7 +8,8 @@ kernel must measure as the value in the receipt, pass every startup self-test, s
 the keyboard and see it end DONE, start it again and stop it with the kernel's Stop key, show the register,
 and power off when asked. The guest has no disk and no network device. The register screen is read cell by
 cell with the kernel's own font and must show an intact chain and the two demo tasks ending DONE and STOPPED.
-The launcher and Surfbird screens are kept as evidence and are not compared. Every other assertion is on the
+After two Escape presses the launcher must still respond and reopen the same register. The Surfbird screen
+is kept as evidence. Every other assertion is on the
 serial log, QEMU's own events and its exit status.
 
 This is one emulator on one host. It is not a test of a physical machine, of UEFI firmware or of any other
@@ -159,18 +160,33 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs):
         key("ctrl", "alt", "delete")
         wait("surf.elf ended STOPPED")
         key("r")
-        rows = None
-        end = time.monotonic() + timeout
-        while time.monotonic() < end:
-            time.sleep(0.5)
-            rpc("screendump", filename=str(out / "register.ppm"))
-            rows = read_screen((out / "register.ppm").read_bytes(), glyphs)
-            if rows and not register_problems(rows):
-                break
-        (out / "register.txt").write_text("\n".join(rows or []) + "\n")
+        def wait_screen(name, matches):
+            path = out / (name + ".ppm")
+            end = time.monotonic() + timeout
+            while time.monotonic() < end:
+                time.sleep(0.25)
+                if guest.poll() is not None:
+                    raise RuntimeError("guest powered off before " + name)
+                rpc("screendump", filename=str(path))
+                rows = read_screen(path.read_bytes(), glyphs)
+                if rows and matches(rows):
+                    return rows
+            raise TimeoutError(name + " did not appear")
+
+        def launcher_visible(rows):
+            status = f"Verified at start: all {STARTUP_CHECKS} self-tests passed."
+            return any(status in row for row in rows)
+
+        rows = wait_screen("register", lambda view: not register_problems(view))
+        (out / "register.txt").write_text("\n".join(rows) + "\n")
         result["register_problems"] = register_problems(rows)
         key("esc")
-        time.sleep(1)
+        wait_screen("back-at-launcher", launcher_visible)
+        key("esc")
+        key("r")
+        wait_screen("reopened-register", lambda view: view == rows)
+        key("esc")
+        wait_screen("launcher-before-poweroff", launcher_visible)
         key("p")
         wait("ALL SELF-TESTS PASS.")
         try:
