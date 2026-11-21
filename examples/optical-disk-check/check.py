@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import select
 import struct
 import subprocess
@@ -27,6 +28,13 @@ KERNELS = {
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def kernel_measurement(value):
+    measurement = KERNELS.get(value, value)
+    if re.fullmatch(r'[0-9a-f]{64}', measurement):
+        return measurement
+    raise argparse.ArgumentTypeError('expected published, keyboard-01 or a 64-digit lowercase hex kernel measurement')
 
 
 def write_fat16(disk, sector_bytes, first, volume_sectors, fat_sectors):
@@ -256,7 +264,8 @@ def run(args, root, baseline, marker_offset, machine, control):
            '-trace', 'enable=ide_sector_write']
     if args.firmware:
         cmd += ['-L', str(args.firmware)]
-    result = {'case': case, 'iso_sha256': args.sha256, 'before_sha256': digest(baseline),
+    result = {'case': case, 'iso_sha256': args.sha256, 'kernel_measurement': args.kernel,
+              'before_sha256': digest(baseline),
               'qemu': args.qemu_version, 'argv': cmd, 'logical_sector_bytes': sector_bytes}
     with (evidence / 'qemu.stderr').open('wb') as err:
         vm = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err)
@@ -272,7 +281,7 @@ def run(args, root, baseline, marker_offset, machine, control):
                 command = f'qemu-io sentinel "write -q -P 0x5a {marker_offset} {sector_bytes}"'
                 result['write_response'] = q.call('human-monitor-command', **{'command-line': command})
             else:
-                exercise(q, evidence, args.timeout, result, KERNELS[args.kernel])
+                exercise(q, evidence, args.timeout, result, args.kernel)
             result['at_end'] = q.disk_stats()
             result['events'] = q.events
             q.call('quit')
@@ -315,7 +324,8 @@ def main():
     p.add_argument('iso', type=Path)
     p.add_argument('output', type=Path, help='new evidence directory')
     p.add_argument('--sha256', required=True, help='expected SHA-256 obtained from a trusted reference')
-    p.add_argument('--kernel', choices=KERNELS, default='published', help='expected measured kernel')
+    p.add_argument('--kernel', type=kernel_measurement, default='published', metavar='NAME_OR_MEASUREMENT',
+                   help='published (default), keyboard-01, or the expected kernel measurement in lowercase hex')
     p.add_argument('--tester-profile', action='store_true',
                    help='use qemu64, 64 MiB and the ordinary QEMU clock')
     p.add_argument('--nvme-sector-size', choices=(512, 4096), type=int,
