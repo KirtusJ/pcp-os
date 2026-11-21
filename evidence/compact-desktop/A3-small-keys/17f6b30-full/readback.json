@@ -1,0 +1,239 @@
+{
+  "commit": "17f6b30fda94fd217823bc0437e905d420aa1cc4",
+  "tree": "0f354d4eb86445b74e79984cdeafc97f1f1bc19a",
+  "media": {
+    "single": {
+      "iso_sha256": "c8577004ab04882f4a17848c27180abff7ddfee59bc062f1c52a7d41d7f2a02c",
+      "kernel_measurement": "c5f76645bafccb00565e1812b9dcc6185a4d704db289a4c60b517e11717c2bb0",
+      "payload_sha256": {
+        "kernel.elf32": "ff284d8ae5489f22b59de07ca4c96cf551a9c306311fa4c1761757675eac182c",
+        "surf.elf": "943d2622cfe28d6c4220635d7a28bedf325fede584254639b3165dd767a17ec3"
+      }
+    },
+    "queue": {
+      "iso_sha256": "11cc112332d564e266771b1d80a2444471aad7eadee177b93c4d00b5d5628368",
+      "kernel_measurement": "c5f76645bafccb00565e1812b9dcc6185a4d704db289a4c60b517e11717c2bb0",
+      "payload_sha256": {
+        "kernel.elf32": "ff284d8ae5489f22b59de07ca4c96cf551a9c306311fa4c1761757675eac182c",
+        "rdesk.elf": "a7684bf04234a61b408f2d050ecd71cd27a8fa3d80a2e571be46e45342e7b37c",
+        "surf.elf": "943d2622cfe28d6c4220635d7a28bedf325fede584254639b3165dd767a17ec3"
+      }
+    }
+  },
+  "optical": {
+    "single": {
+      "pc-counted": {
+        "checks": 72,
+        "startup": 71,
+        "exit_code": 0,
+        "guest_shutdown": true
+      },
+      "pc-ordinary": {
+        "checks": 72,
+        "startup": 71,
+        "exit_code": 0,
+        "guest_shutdown": true
+      },
+      "q35-counted": {
+        "checks": 72,
+        "startup": 71,
+        "exit_code": 0,
+        "guest_shutdown": true
+      },
+      "q35-ordinary": {
+        "checks": 72,
+        "startup": 71,
+        "exit_code": 0,
+        "guest_shutdown": true
+      }
+    },
+    "queue": {
+      "pc-counted": {
+        "checks": 72,
+        "startup": 71,
+        "exit_code": 0,
+        "guest_shutdown": true
+      },
+      "pc-ordinary": {
+        "checks": 72,
+        "startup": 71,
+        "exit_code": 0,
+        "guest_shutdown": true
+      },
+      "q35-counted": {
+        "checks": 72,
+        "startup": 71,
+        "exit_code": 0,
+        "guest_shutdown": true
+      },
+      "q35-ordinary": {
+        "checks": 72,
+        "startup": 71,
+        "exit_code": 0,
+        "guest_shutdown": true
+      }
+    }
+  },
+  "screen_cases": {
+    "320x200": {
+      "status": "passed",
+      "input": "separate four-size run",
+      "frames": 128
+    },
+    "failed-320x200": {
+      "status": "passed",
+      "input": "separate four-size run",
+      "frames": 4
+    },
+    "320x220": {
+      "status": "passed",
+      "input": "separate four-size run",
+      "frames": 43
+    },
+    "320x240": {
+      "status": "passed",
+      "input": "separate four-size run",
+      "frames": 41
+    },
+    "320x260": {
+      "status": "passed",
+      "input": "separate four-size run",
+      "frames": 41
+    },
+    "1280x720": {
+      "status": "passed",
+      "input": "exact-commit media",
+      "frames": 18
+    },
+    "1920x1080": {
+      "status": "passed",
+      "input": "exact-commit media",
+      "frames": 17
+    },
+    "2560x1440": {
+      "status": "passed",
+      "input": "exact-commit media",
+      "frames": 17
+    },
+    "320x280": {
+      "status": "passed",
+      "input": "exact-commit media",
+      "frames": 21
+    },
+    "320x480": {
+      "status": "passed",
+      "input": "exact-commit media",
+      "frames": 21
+    },
+    "640x240": {
+      "status": "passed",
+      "input": "exact-commit media",
+      "frames": 21
+    },
+    "640x260": {
+      "status": "passed",
+      "input": "exact-commit media",
+      "frames": 21
+    },
+    "640x480": {
+      "status": "passed",
+      "input": "exact-commit media",
+      "frames": 58
+    },
+    "failed-640x480": {
+      "status": "passed",
+      "input": "exact-commit media",
+      "frames": 4
+    },
+    "800x600": {
+      "status": "passed",
+      "input": "exact-commit media",
+      "frames": 17
+    }
+  },
+  "total_screen_frames": 472,
+  "pin_runs": {
+    "1280x720": {
+      "register": [
+        43,
+        46,
+        49,
+        51
+      ],
+      "queue_file_bytes": 2064,
+      "activity_rows_visible": 2,
+      "widget_rows_reported_hidden": 0,
+      "native_checks": 72,
+      "pixel_verified_label": "opal"
+    },
+    "1920x1080": {
+      "register": [
+        43,
+        46,
+        49,
+        51
+      ],
+      "queue_file_bytes": 2064,
+      "activity_rows_visible": 2,
+      "widget_rows_reported_hidden": 0,
+      "native_checks": 72,
+      "pixel_verified_label": "opal"
+    },
+    "2560x1440": {
+      "register": [
+        43,
+        46,
+        49,
+        51
+      ],
+      "queue_file_bytes": 2064,
+      "activity_rows_visible": 2,
+      "widget_rows_reported_hidden": 0,
+      "native_checks": 72,
+      "pixel_verified_label": "opal"
+    },
+    "320x200": {
+      "register": [
+        43,
+        46,
+        49,
+        51
+      ],
+      "queue_file_bytes": 2064,
+      "activity_rows_visible": 0,
+      "widget_rows_reported_hidden": 2,
+      "native_checks": 72,
+      "pixel_verified_label": "opal"
+    },
+    "320x480": {
+      "register": [
+        43,
+        46,
+        49,
+        51
+      ],
+      "queue_file_bytes": 2064,
+      "activity_rows_visible": 2,
+      "widget_rows_reported_hidden": 0,
+      "native_checks": 72,
+      "pixel_verified_label": "opal"
+    },
+    "640x480": {
+      "register": [
+        43,
+        46,
+        49,
+        51
+      ],
+      "queue_file_bytes": 2064,
+      "activity_rows_visible": 2,
+      "widget_rows_reported_hidden": 0,
+      "native_checks": 72,
+      "pixel_verified_label": "opal"
+    }
+  },
+  "setup": "Both optical images were built from the unmodified named tree with Rust 1.97.0 and the pinned Limine loader. The tracked checker ran on PC and Q35 with ordinary and instruction-counted clocks, using stdio QMP. The 9 newly tested healthy screen sizes plus 640x480 failed start complement the previous four 320-wide sizes and failed 320x200. The previous run used the same checker and byte-identical kernel and Surfbird. The two optical images also contain identical kernels and Surfbird.",
+  "previous_four_sizes": "https://github.com/KirtusJ/pcp-os/tree/48fc3543d96a628ee39e8858f7a8e9e62ff161b9/evidence/compact-desktop/A3-small-keys/17f6b30",
+  "pin_tests": "Six additional QEMU PC guests used the measured kernel and two ELF files from the optional tester ISO in RAM. They pinned rdesk.elf to Home, cancelled F10, started the pin, saved a request, inspected parrots.queue in Files, relaunched the pin, restored the same label, finished the request, and deleted the pin. Enter then reopened Programs with the prior application selection. Every case returned its desktop to the requested 1x dimensions after the app used its own 800x480 surface.",
+  "replay": "Extract the archive, verify SHA256SUMS, then run python3 -IB replay_pins.py <17f6b30 checkout> pins. Check both optical summary.json files and the stock per-geometry result.json files. All tests are virtual; no PC firmware or hardware compatibility is inferred."
+}
