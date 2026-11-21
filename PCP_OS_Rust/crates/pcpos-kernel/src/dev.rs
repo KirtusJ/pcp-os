@@ -154,7 +154,7 @@ fn dispi_write(index: u16, value: u16) {
 }
 
 /// Find a display and take it over. Returns what was found, in words, for the start-up report.
-pub fn display_init(bus: &[BusDevice], loader: Option<arch::LoaderDisplay>) -> Option<Display> {
+pub fn display_init(bus: &[BusDevice], loader: Option<arch::LoaderDisplay>, requested: Option<(u32, u32)>) -> Option<Display> {
     // The Bochs interface: a display-class device of one of the two makers that implement it, answering with a known version.
     let adapter = bus.iter().find(|d| d.class == 3 && ((d.vendor == 0x1234 && d.device == 0x1111) || (d.vendor == 0x80EE && d.device == 0xBEEF)));
     if let Some(d) = adapter {
@@ -166,7 +166,15 @@ pub fn display_init(bus: &[BusDevice], loader: Option<arch::LoaderDisplay>) -> O
             if mapped >= 4 << 20 && arch::map_device(memory, mapped) {
                 let display = Display { kind: DisplayKind::Bochs, width: 0, height: 0, pitch: 0, pages: 2, memory, mapped, shown: 0 };
                 arch::without_interrupts(|| DISPLAY.with(|s| *s = Some(display)));
-                return display_set(1024, 768).or_else(|| display_set(800, 600)).or_else(|| display_set(640, 480));
+                let (w, h) = requested.unwrap_or((1920, 1080));
+                if let Some(display) = display_set(w, h) {
+                    return Some(display);
+                }
+                for (width, height) in [(1920, 1080), (1280, 720), (1024, 768), (800, 600), (640, 480)] {
+                    if let Some(display) = display_set(width, height) {
+                        return Some(display);
+                    }
+                }
             }
         }
     }
@@ -196,8 +204,10 @@ pub fn display_set(width: u32, height: u32) -> Option<Display> {
             if d.kind != DisplayKind::Bochs {
                 return if d.width == width && d.height == height { Some(*d) } else { None };
             }
-            let bytes = width as usize * height as usize * 4 * 2;
-            if !(320..=2560).contains(&width) || !(200..=1600).contains(&height) || width % 8 != 0 || bytes > d.mapped {
+            if !(320..=2560).contains(&width) || !(200..=1600).contains(&height) || width % 8 != 0 {
+                return None;
+            }
+            if width as usize * height as usize * 4 * 2 > d.mapped {
                 return None;
             }
             dispi_write(4, 0);
@@ -270,6 +280,8 @@ pub struct Key {
     pub code: u8,
     pub extended: bool,
     pub released: bool,
+    /// Whether a Ctrl key was held when this key was pressed or released.
+    pub ctrl: bool,
 }
 
 struct Keyboard {
@@ -282,12 +294,15 @@ struct Keyboard {
     skip: u8,
     ctrl: bool,
     alt: bool,
+    /// Whether each Enter key is down now, by its last press or release that was seen: the main one, and
+    /// the one on the number pad.
+    enter: [bool; 2],
     /// Events dropped because nothing took them in time.
     pub dropped: u64,
 }
 
-static KEYBOARD: arch::Single<Keyboard> = arch::Single::new(Keyboard { present: false, events: [Key { code: 0, extended: false, released: false }; 256], head: 0, count: 0,
-                                                                         extended: false, skip: 0, ctrl: false, alt: false, dropped: 0 });
+static KEYBOARD: arch::Single<Keyboard> = arch::Single::new(Keyboard { present: false, events: [Key { code: 0, extended: false, released: false, ctrl: false }; 256], head: 0, count: 0,
+                                                                         extended: false, skip: 0, ctrl: false, alt: false, enter: [false; 2], dropped: 0 });
 /// Set when the person presses Ctrl, Alt and Delete together: the kernel's own key, which no program can take.
 static STOP: AtomicBool = AtomicBool::new(false);
 
@@ -353,14 +368,16 @@ fn keyboard_byte(k: &mut Keyboard, byte: u8) {
         0xE1 => k.skip = 2, // the Pause key sends a sequence of its own, which is passed over
         0xFA | 0xFE | 0xEE | 0x00 | 0xFF => {} // acknowledgements and errors from the keyboard, not keys
         _ => {
-            let key = Key { code: byte & 0x7F, extended: k.extended, released: byte & 0x80 != 0 };
+            let mut key = Key { code: byte & 0x7F, extended: k.extended, released: byte & 0x80 != 0, ctrl: false };
             k.extended = false;
             match key.code {
                 0x1D => k.ctrl = !key.released,
                 0x38 => k.alt = !key.released,
+                0x1C => k.enter[key.extended as usize] = !key.released,
                 0x53 if !key.released && k.ctrl && k.alt => STOP.store(true, Ordering::SeqCst),
                 _ => {}
             }
+            key.ctrl = k.ctrl;
             if k.count == k.events.len() {
                 k.head = (k.head + 1) % k.events.len(); // the oldest is lost
                 k.count -= 1;
@@ -465,6 +482,17 @@ fn script_tick(ticks: u64) {
             s.next += 1;
         }
     })
+}
+
+/// Forget every key event that is waiting and say, as of that same moment, whether each Enter key is down:
+/// (the main one, the one on the number pad). Taken together with interrupts off, so that every event taken
+/// afterwards is later than the answer and none is counted twice.
+pub fn keys_forget_enter() -> (bool, bool) {
+    arch::without_interrupts(|| KEYBOARD.with(|k| {
+        k.head = 0;
+        k.count = 0;
+        (k.enter[0], k.enter[1])
+    }))
 }
 
 /// The oldest key event not yet taken, if any.

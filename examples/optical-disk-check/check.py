@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import select
 import struct
 import subprocess
@@ -17,6 +18,9 @@ import tempfile
 import time
 import uuid
 import zlib
+
+SCREEN = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'tester-cd/check.py'))
+launcher_grants = SCREEN['launcher_grants']
 
 PARTITION_GUID = uuid.UUID('32802589-a96c-4a24-8fa4-de349d70cb05')
 MARKER = b"PCP OS disk-preservation test. Keep this file across cold boots.\r\n"
@@ -201,7 +205,96 @@ def frame(monitor, directory, name, timeout, register=False):
     wait_for(inspect, f'waiting for {name} framebuffer', timeout)
 
 
-def exercise(q, evidence, timeout, result, kernel):
+def selected_program(rows, frame, program, permissions, digest=None):
+    _, size, _, pixels = frame.split(b'\n', 3)
+    width = int(size.split()[0])
+    if SCREEN['selected_entry_visible'](rows, width, program, digest, permissions):
+        return True
+    if len(rows) < 8 or 'Enter open' not in rows[-2]:
+        return False
+    if permissions == ('console only',):
+        base = 'console only'
+    elif 'sound' in permissions:
+        base = 'console, display, keyboard, files, store, sound'
+    else:
+        base = 'console, display, keyboard, files and store'
+    access = ['  Access: ' + base]
+    for optional in ('raw Ethernet frames', 'second serial port'):
+        access.append('  Access: ' + optional if optional in permissions else '')
+    if rows[-7:-4] != access:
+        return False
+    # In the compact layout the font reader reports the 3x20 teal strip as
+    # an unknown glyph in column 2. Check its pixels on the named row.
+    marked = [i for i in range(5, len(rows) - 7) if rows[i].startswith('  ?')]
+    if len(marked) != 1 or rows[marked[0]] != '  ?' + program:
+        return False
+    strip = bytes.fromhex('41bad7') * 3
+    for y in range(marked[0] * 20, (marked[0] + 1) * 20):
+        start = (y * width + 20) * 3
+        if pixels[start:start + len(strip)] != strip:
+            return False
+    return True
+
+
+class DesktopScreens:
+    """Read the desktop kernel's framebuffer with its own font. Legacy CDs keep their recorded pixel checks."""
+    def __init__(self, monitor, directory, timeout, *, sound=True, app_digests=None, command_line=""):
+        self.permissions = launcher_grants(sound=sound, command_line=command_line)
+        self.app_digests = dict(app_digests or {})
+        self.read = SCREEN['read_screen']
+        self.glyphs = SCREEN['kernel_glyphs']()
+        self.verification_screen = SCREEN['verification_screen']
+        self.register_problems = SCREEN['register_problems']
+        self.monitor, self.directory, self.timeout = monitor, directory, timeout
+
+    def wait(self, name, predicate):
+        return self.wait_frame(name, lambda rows, frame: predicate(rows))
+
+    def wait_frame(self, name, predicate):
+        capture = self.directory / (name + '.ppm')
+
+        def inspect():
+            self.monitor.call('screendump', filename=str(capture))
+            frame = capture.read_bytes()
+            rows = self.read(frame, self.glyphs)
+            return rows if rows and predicate(rows, frame) else None
+
+        return wait_for(inspect, 'waiting for ' + name + ' framebuffer', self.timeout)
+
+    def home(self, name):
+        def visible(rows):
+            programs = any('Programs' in row for row in rows)
+            corner = any(re.search(r'\bverified[ ?]*$', row) for row in rows)
+            compact = any('PCP OS | DESKTOP' in row for row in rows)
+            return programs and (corner or compact) and not any('may use:' in row for row in rows)
+
+        return self.wait(name, visible)
+
+    def verification(self, prefix):
+        self.monitor.key('f5')
+        self.wait(prefix + '-verification', self.verification_screen)
+        self.monitor.key('esc')
+        self.home(prefix + '-after-verification')
+
+    def launcher(self, name, program):
+        return self.wait_frame(name, lambda rows, frame: selected_program(
+            rows, frame, program, self.permissions, self.app_digests.get(program)))
+
+    def power_off_from_launcher(self, prefix, program):
+        def question(rows):
+            lines = {row.strip() for row in rows}
+            return {'POWER OFF', 'Switch PCP OS off?', 'Enter switch off    Esc go back'} <= lines
+
+        self.monitor.key('f10')
+        self.wait(prefix + '-question', question)
+        self.monitor.key('esc')
+        self.launcher(prefix + '-cancelled', program)
+        self.monitor.key('f10')
+        self.wait(prefix + '-question-again', question)
+        self.monitor.key('ret')
+
+
+def exercise(q, evidence, timeout, result, kernel, iso):
     serial = evidence / 'serial.log'
 
     def sees(text, count=1):
@@ -209,7 +302,36 @@ def exercise(q, evidence, timeout, result, kernel):
 
     q.call('cont')
     sees(kernel + ' (measured; equal to the value the loader named)')
-    frame(q, evidence, 'launcher', timeout)
+    # These tests also replay two pinned, launcher-first optical releases. An
+    # old release must still match both of its original pixel regions.
+    def first_surface():
+        if re.search(r'^desktop: [0-9]+x[0-9]+ at [0-9]+x UI scale', serial.read_text(), re.M):
+            return 'desktop'
+        capture = evidence / 'launcher.ppm'
+        q.call('screendump', filename=str(capture))
+        return 'legacy' if matches_frame(capture.read_bytes(), (VERIFIED, LAUNCHER_KEYS)) else None
+
+    surface = wait_for(first_surface, 'waiting for the initial optical screen', timeout)
+    desktop = None
+    if surface == 'desktop':
+        command = re.search(r'^command line: (.*)$', serial.read_text(), re.M)
+        if not command:
+            raise ValueError('missing optical boot command line')
+        builder = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'tester-cd/build.py'))
+        app = builder['read_back'](iso.read_bytes())['surf.elf']
+        desktop = DesktopScreens(q, evidence, timeout, command_line=command[1],
+                                 app_digests={'surf.elf': digest(app)})
+        desktop.home('home')
+        desktop.verification('home')
+        q.key('spc')
+        desktop.launcher('launcher', 'surf.elf')
+
+    def launcher(name):
+        if desktop:
+            desktop.launcher(name, 'surf.elf')
+        else:
+            frame(q, evidence, name, timeout)
+
     if sum(line.startswith('  pass ') for line in serial.read_text().splitlines()) != 71:
         raise ValueError('expected 71 serial startup passes')
     result['at_launcher'] = q.disk_stats()
@@ -218,18 +340,24 @@ def exercise(q, evidence, timeout, result, kernel):
     q.key('spc')
     sees('SURFBIRD media drained')
     sees('surf.elf ended DONE: exit 0')
-    frame(q, evidence, 'after-playback', timeout)
+    launcher('after-playback')
     q.key('ret')
     sees('SURFBIRD media ready', 2)
     q.key('ctrl', 'alt', 'delete')
     sees('surf.elf ended STOPPED')
-    frame(q, evidence, 'after-stop', timeout)
-    q.key('r')
-    frame(q, evidence, 'register', timeout, register=True)
+    launcher('after-stop')
+    q.key('f4' if desktop else 'r')
+    if desktop:
+        desktop.wait('register', lambda rows: not desktop.register_problems(rows))
+    else:
+        frame(q, evidence, 'register', timeout, register=True)
     q.key('esc')
-    frame(q, evidence, 'returned', timeout)
+    launcher('returned')
     result['before_poweroff'] = q.disk_stats()
-    q.key('p')
+    if desktop:
+        desktop.power_off_from_launcher('power', 'surf.elf')
+    else:
+        q.key('p')
     sees("the kernel's register of its own start, verification and stop verifies and replays without a problem")
     sees('ALL SELF-TESTS PASS.')
     wait_for(lambda: q.call('query-status')['status'] == 'shutdown', 'guest shutdown', timeout)
@@ -281,7 +409,7 @@ def run(args, root, baseline, marker_offset, machine, control):
                 command = f'qemu-io sentinel "write -q -P 0x5a {marker_offset} {sector_bytes}"'
                 result['write_response'] = q.call('human-monitor-command', **{'command-line': command})
             else:
-                exercise(q, evidence, args.timeout, result, args.kernel)
+                exercise(q, evidence, args.timeout, result, args.kernel, args.iso)
             result['at_end'] = q.disk_stats()
             result['events'] = q.events
             q.call('quit')

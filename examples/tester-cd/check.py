@@ -23,6 +23,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import socket
 import subprocess
 import sys
@@ -41,28 +42,115 @@ def kernel_glyphs():
 
 
 def read_screen(ppm, glyphs):
-    """Every text row of a 1024 by 768 kernel screen, read cell by cell against the kernel's own font.
-    A cell that is no character of the font reads as '?'."""
-    header = b"P6\n1024 768\n255\n"
-    if not ppm.startswith(header) or len(ppm) != len(header) + 1024 * 768 * 3:
+    """Every text row of a kernel screen of any size, read cell by cell against the kernel's own font, on
+    the 10 by 20 grid that starts at the top-left corner. A cell that is no character of the font reads as '?'."""
+    try:
+        magic, size, depth, pixels = ppm.split(b"\n", 3)
+        width, height = (int(n) for n in size.split())
+    except ValueError:
         return None
-    pixels = ppm[len(header):]
-    ground = collections.Counter(pixels[i:i + 3] for i in range(0, len(pixels), 3 * 97)).most_common(1)[0][0]
+    if magic != b"P6" or depth != b"255" or len(pixels) != width * height * 3 or width < 640 or height < 480:
+        return None
     rows = []
-    for row in range(38):
+    for row in range(height // 20):
         text = ""
-        for column in range(102):
-            inked = tuple(pixels[at:at + 3] != ground for y in range(20) for x in range(10)
-                          for at in (((row * 20 + y) * 1024 + column * 10 + x) * 3,))
-            text += glyphs.get(inked, "?")
+        for column in range(width // 10):
+            cell = [pixels[at:at + 3] for y in range(20) for x in range(10)
+                    for at in (((row * 20 + y) * width + column * 10 + x) * 3,)]
+            # The ground is taken cell by cell (its commonest colour), so that text on a bar or a panel of
+            # another colour than the screen's is read too. Where the ground under a cell is shaded and
+            # not flat, the cell matches no character and reads as '?'.
+            ground = collections.Counter(cell).most_common(1)[0][0]
+            text += glyphs.get(tuple(pixel != ground for pixel in cell), "?")
         rows.append(text.rstrip())
     return rows
+
+
+def verification_screen(rows):
+    """Read the F5 view at the text cells drawn by verification_view."""
+    if not rows or len(rows) < 12 or rows[1] != "  VERIFICATION":
+        return False
+    if rows[3].startswith("  NOT VERIFIED:"):
+        raise RuntimeError(rows[3].strip())
+    if rows[7] == "  The register's chain does NOT verify.":
+        raise RuntimeError(rows[7].strip())
+    return (rows[3] == f"  Verified at start: all {STARTUP_CHECKS} self-tests passed."
+            and re.fullmatch(r"  Register: [1-9][0-9]* events, head [0-9a-f]{16}\.\.\.", rows[6]) is not None
+            and rows[7] == "  The register's chain is intact."
+            and rows[9] == "  F4 shows every event of the register."
+            and rows[-2] == "  Any key goes back")
+
+
+def launcher_grants(*, sound, command_line="", digest=None, features=()):
+    """Expected permissions from the fixture's devices, boot policy and selected image."""
+    options = collections.defaultdict(list)
+    for word in command_line.split():
+        key, equals, value = word.partition("=")
+        if equals:
+            options[key].append(value)
+    if options["grant"][:1] == ["none"]:
+        return ("console only",)
+    permissions = ["display", "keyboard"]
+    if sound:
+        permissions.append("sound")
+    permissions.extend(("loader files", "store"))
+    if (digest and "guest-ethernet" in features and options["net_image"] == [digest]
+            and "none" not in options["grant"]):
+        permissions.append("raw Ethernet frames")
+    if digest and "game-link" in features and options["link_image"][:1] == [digest]:
+        permissions.append("second serial port")
+    return tuple(permissions)
+
+
+def launcher_boot_profile(log):
+    """The command, display width and driven audio devices from this boot's serial log."""
+    command = re.search(r"^command line: ([^\r\n]*)", log, re.MULTILINE)
+    display = re.search(r"^display: [^,\r\n]+, (\d+)x\d+,", log, re.MULTILINE)
+    if not command or not display:
+        raise ValueError("the boot log is missing its command line or display mode")
+    sound = "sound: an AC'97 device," in log or "music: an FM synthesiser of the AdLib kind answered" in log
+    return command[1], int(display[1]), sound
+
+
+def selected_entry_visible(rows, width, program, digest, access):
+    """Read only the selected plate's interior; artifacts in the background are outside the entry."""
+    left = width // 200
+    columns = min(width * 47 // 100, 1100) // 10
+    interior = [row[left + 1:left + columns - 1].rstrip() for row in rows]
+    marked = [i for i, row in enumerate(interior) if row.startswith(" > ")]
+    if len(marked) != 1:
+        return False
+    i = marked[0]
+    if not digest or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        return False
+    size = r"(?:[0-9]+ KiB|[1-9]\.[0-9] MiB|[1-9][0-9]+ MiB)"
+    identity = r" > " + re.escape(program) + r" +" + size + r" +SHA-256 " + digest[:16] + r"\.\.\."
+    if not re.fullmatch(identity, interior[i]):
+        return False
+    # The renderer wraps before a whole permission and retains the separating comma.
+    lines = []
+    line = "may use:"
+    for n, permission in enumerate(access):
+        part = (" " if n == 0 else ", ") + permission
+        if n and len(line) + len(part) > columns - 6:
+            lines.append("   " + line + ",")
+            line = "         " + permission
+        else:
+            line += part
+    lines.append("   " + line)
+    after = i + 1 + len(lines)
+    if interior[i + 1:after] != lines:
+        return False
+    if interior[after:after + 1] == ["   pinned to the desktop"]:
+        after += 1
+    # The next row is the plate edge. A surplus continuation is still a false disclosure.
+    return after < len(interior) and not interior[after].strip(" ?")
 
 
 def register_problems(rows):
     """What the register screen must show after one played and one stopped demo."""
     if rows is None:
-        return ["the register screen was not a whole 1024 by 768 frame"]
+        return ["the register screen was not a whole frame"]
     problems = []
     if any("?" in row for row in rows):
         problems.append("the register screen holds a cell that is no character of the kernel's font")
@@ -127,7 +215,8 @@ def exercise_queue(key, wait, screen, out):
     wait("rdesk.elf ended DONE: exit 0", 3)
 
 
-def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queue_desk):
+def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, app_digests, kernel_features):
+    queue_desk = "rdesk.elf" in app_digests
     out.mkdir()
     serial, sock = out / "serial.txt", out / "qmp.sock"
     cmd = [qemu, "-machine", machine, "-accel", "tcg", "-cpu", "qemu64", "-m", "64M", "-boot", "order=d", "-cdrom", str(iso),
@@ -196,19 +285,9 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
         wait(measurement + " (measured; equal to the value the loader named)")
         wait("leaves no memory behind")
         seen = log()
+        command_line, width, sound = launcher_boot_profile(seen)
         result["startup_pass_lines"] = sum(line.startswith("  pass ") for line in seen.splitlines())
         result["startup_fail_lines"] = sum(line.lower().startswith("  fail") for line in seen.splitlines())
-        screen("launcher")
-        key("ret")
-        wait("SURFBIRD media ready")
-        screen("surfbird")
-        key("spc")
-        wait("surf.elf ended DONE: exit 0")
-        key("ret")
-        wait("SURFBIRD media ready", 2)
-        key("ctrl", "alt", "delete")
-        wait("surf.elf ended STOPPED")
-        key("r")
         def wait_screen(name, matches):
             path = out / (name + ".ppm")
             end = time.monotonic() + timeout
@@ -222,29 +301,157 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
                     return rows
             raise TimeoutError(name + " did not appear")
 
-        def launcher_visible(rows):
-            status = f"Verified at start: all {STARTUP_CHECKS} self-tests passed."
-            return any(status in row for row in rows)
+        def corner_verified(rows):
+            """The small word in the corner of every desktop surface when the kernel verified itself."""
+            return any("verified" in row for row in rows) and not any("NOT VERIFIED" in row for row in rows)
 
+        def home_visible(rows):
+            """The desktop: its dock, whose first place is all the programs, and the corner word."""
+            return corner_verified(rows) and any("Programs" in row for row in rows) and any("keys" in row for row in rows) and not any("may use:" in row for row in rows)
+
+        def launcher_list_visible(rows, selected_program="surf.elf"):
+            """The launcher: a chosen program with what it may use, and the corner word."""
+            digest = app_digests[selected_program]
+            access = launcher_grants(sound=sound, command_line=command_line, digest=digest, features=kernel_features)
+            return corner_verified(rows) and selected_entry_visible(rows, width, selected_program, digest, access)
+
+        def home_activity(rows):
+            """The outcomes on the desktop's activity widget, oldest first."""
+            return [word for row in rows if "surf.elf" in row for word in ("DONE", "STOPPED") if " " + word + " " in row]
+
+        def placed(rows):
+            """Whether anything the person can place is on the desktop: a shortcut or a widget."""
+            text = "\n".join(rows)
+            return any(word in text for word in ("surf.elf", "RECENT ACTIVITY", "THIS MACHINE", "SESSION"))
+
+        # The first screen is the desktop, and it is empty: nothing is on it that the person did not put
+        # there. Enter opens the launcher. Each screen must be recognised as itself and not as the other.
+        home = wait_screen("home", home_visible)
+        if launcher_list_visible(home) or placed(home):
+            raise RuntimeError("the first desktop was not empty")
+        # The programs are on a bar across the foot of the desktop by default, with the word on it; the
+        # settings change it to the dock in the middle, where the word is in the corner on a row of its own, and back.
+        def one_row(view, pinned=None):
+            return any("Programs" in row and "verified" in row and (pinned is None or f" {pinned} " in row)
+                       for row in view)
+        if not one_row(home):
+            raise RuntimeError("the first desktop did not have the bar across its foot")
+        def setting(view, mark, name):
+            return any("SETTINGS" in row for row in view) and any(mark + "   " + name in row for row in view)
+        for step, (down, bar, dock, same_row) in enumerate([("down", "( )", "(o)", False), ("up", "(o)", "( )", True)]):
+            key("f2")
+            wait_screen(f"settings-{step}", lambda view: any("SETTINGS" in row for row in view))
+            key(down)
+            key("ret")
+            wait_screen(f"settings-set-{step}", lambda view: setting(view, bar, "A bar across the screen") and setting(view, dock, "A dock in the middle"))
+            key("esc")
+            wait_screen(f"home-form-{step}", lambda view: home_visible(view) and one_row(view) == same_row)
+        # F5 opens the verification view. The startup sentence alone also appears on compact Home.
+        key("f5")
+        wait_screen("verification", verification_screen)
+        key("esc")
+        wait_screen("home-again", home_visible)
+        # The person turns on the activity widget, then opens the launcher and places a shortcut.
+        key("f2")
+        wait_screen("widgets", lambda view: any("Widgets on the desktop" in row for row in view))
+        key("down")
+        key("down")
+        key("ret")
+        wait_screen("widget-on", lambda view: any("[on]  Recent activity" in row for row in view))
+        key("esc")
+        wait_screen("home-with-widget", lambda view: home_visible(view) and any("RECENT ACTIVITY" in row for row in view) and not home_activity(view))
+        key("ret")
+        listed = wait_screen("launcher", launcher_list_visible)
+        if home_visible(listed):
+            raise RuntimeError("the launcher was also recognised as the desktop")
+        # A letter alone pins nothing; Ctrl with P does.
+        key("s")
+        key("p")
+        time.sleep(1)
+        screen("launcher-letters")
+        if any("pinned to the desktop" in row for row in read_screen((out / "launcher-letters.ppm").read_bytes(), glyphs) or []):
+            raise RuntimeError("a letter alone pinned a program")
+        key("ctrl", "p")
+        wait_screen("launcher-with-shortcut", lambda view: launcher_list_visible(view) and any("pinned to the desktop" in row for row in view))
+        key("ret")
+        wait("SURFBIRD media ready")
+        screen("surfbird")
+        key("spc")
+        wait("surf.elf ended DONE: exit 0")
+        key("ret")
+        wait("SURFBIRD media ready", 2)
+        key("ctrl", "alt", "delete")
+        wait("surf.elf ended STOPPED")
+        key("f4")
         rows = wait_screen("register", lambda view: not register_problems(view))
         (out / "register.txt").write_text("\n".join(rows) + "\n")
         result["register_problems"] = register_problems(rows)
         key("esc")
-        wait_screen("back-at-launcher", launcher_visible)
+        wait_screen("back-at-launcher", launcher_list_visible)
+        # Esc leaves the launcher for the desktop and does not power off; the desktop now shows, from the
+        # register, the program that finished and the one that was stopped.
         key("esc")
-        key("r")
+        after = wait_screen("home-after-run", lambda view: home_visible(view) and not launcher_list_visible(view))
+        result["home_activity"] = home_activity(after)
+        key("f4")
         wait_screen("reopened-register", lambda view: view == rows)
         key("esc")
-        wait_screen("launcher-before-poweroff", launcher_visible)
+        wait_screen("home-before-poweroff", lambda view: home_visible(view) and any("surf.elf" in row for row in view))
         if queue_desk:
+            key("spc")
+            wait_screen("launcher-before-queue", launcher_list_visible)
             exercise_queue(key, wait, screen, out)
-            wait_screen("launcher-after-queue", launcher_visible)
-        key("p")
+            wait_screen("launcher-after-queue", lambda view: launcher_list_visible(view, "rdesk.elf"))
+        # Nothing stops the machine at one press. Letters do nothing on the desktop, P among them; F10 asks,
+        # Esc goes back to the same desktop, and only Enter pressed at the question switches off.
+        if queue_desk:
+            key("esc")
+        # The bar draws the pinned Surfbird after Programs. Wait for that label before remembering the frame.
+        before_letters = wait_screen("home-before-letters", lambda view: home_visible(view) and one_row(view, pinned="surf.elf"))
+        for letter in "prvwfskd":
+            key(letter)
+        time.sleep(1)
+        wait_screen("home-after-letters", lambda view: view == before_letters)
+        key("f10")
+        wait_screen("power-question", lambda view: any("POWER OFF" in row for row in view) and any("Enter switch off    Esc go back" in row for row in view))
+        key("esc")
+        wait_screen("home-after-refusal", lambda view: view == before_letters)
+        if "ALL SELF-TESTS PASS." in (out / "serial.txt").read_text(errors="replace"):
+            raise RuntimeError("the kernel began to stop before the question was answered")
+        # An Enter that is already held when the question appears is not an answer, however often it repeats
+        # (A3's finding). Enter goes down and stays down: it opens the launcher. F10 asks. The held key's
+        # repeats must leave the question standing. Only after Enter has come up does a press switch off.
+        def enter(down, which="ret"):
+            rpc("input-send-event", events=[{"type": "key", "data": {"down": down, "key": {"type": "qcode", "data": which}}}])
+        enter(True)
+        selected = "rdesk.elf" if queue_desk else "surf.elf"
+        wait_screen("launcher-with-enter-held", lambda view: launcher_list_visible(view, selected))
+        key("f10")
+        wait_screen("power-question-enter-held", lambda view: any("POWER OFF" in row for row in view))
+        for _ in range(3):
+            enter(True)
+            time.sleep(0.3)
+        # The number pad's Enter goes down as well; then the main one is let go. The one still held repeats.
+        # Letting one go must not make the other's repeats an answer (A3's and B3's second finding).
+        enter(True, "kp_enter")
+        time.sleep(0.3)
+        enter(False)
+        time.sleep(0.3)
+        for _ in range(3):
+            enter(True, "kp_enter")
+            time.sleep(0.3)
+        time.sleep(1)
+        held = wait_screen("power-question-after-repeats", lambda view: any("POWER OFF" in row for row in view))
+        if "ALL SELF-TESTS PASS." in (out / "serial.txt").read_text(errors="replace") or not held:
+            raise RuntimeError("a held Enter answered the power question")
+        enter(False, "kp_enter")
+        time.sleep(0.5)
+        key("ret")
         wait("ALL SELF-TESTS PASS.")
         try:
             result["exit_code"] = guest.wait(timeout=40)
         except subprocess.TimeoutExpired:
-            raise RuntimeError("the guest did not power off after P")
+            raise RuntimeError("the guest did not power off after F10 and Enter")
         while not any(e.get("event") == "SHUTDOWN" for e in events):
             line = stream.readline()
             if not line:
@@ -265,6 +472,8 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
         if result["final_pass_lines"] != STARTUP_CHECKS + 1:
             problems.append("expected one more passing check at power off (the kernel's register of itself), counted %d in all" % result["final_pass_lines"])
         problems += result["register_problems"]
+        if result.get("home_activity") != ["DONE", "STOPPED"]:
+            problems.append("the desktop did not show the two runs ending DONE then STOPPED: %s" % result.get("home_activity"))
         if result["guest_ethernet_compiled_in"]:
             problems.append("guest Ethernet is compiled into a CD that is meant to have none")
         if result["exit_code"] != 0 or not result["shutdown"] or result["shutdown"].get("guest") is not True:
@@ -293,18 +502,21 @@ def main():
     parser.add_argument("--queue-desk", action="store_true", help="require the second app and its saved queue")
     args = parser.parse_args()
     receipt = json.loads((args.built / "receipt.json").read_text())
-    queue_desk = "rdesk.elf" in receipt.get("on_disc", receipt.get("files", {}))
-    if args.queue_desk and not queue_desk:
-        sys.exit("the receipt has no queue desk")
     iso = (args.built / "pcp-os-tester.iso").resolve(strict=True)
-    if hashlib.sha256(iso.read_bytes()).hexdigest() != receipt["iso_sha256"]:
+    image = iso.read_bytes()
+    if hashlib.sha256(image).hexdigest() != receipt["iso_sha256"]:
         sys.exit("the ISO is not the one its receipt describes")
+    files = runpy.run_path(str(Path(__file__).with_name("build.py")))["read_back"](image)
+    app_digests = {name: hashlib.sha256(data).hexdigest() for name, data in files.items() if name.endswith(".elf")}
+    if args.queue_desk and "rdesk.elf" not in app_digests:
+        sys.exit("the CD has no queue desk")
+    kernel_features = set(re.split(r"[, ]+", receipt.get("kernel_features", "default")))
     evidence = args.evidence.resolve()
     evidence.mkdir(parents=True, exist_ok=False)
     glyphs = kernel_glyphs()
     version = subprocess.check_output([args.qemu, "--version"], text=True).splitlines()[0]
     results = [session(args.qemu, iso, evidence / ("%s-%s" % (machine, "counted" if counted else "ordinary")), machine, counted,
-                       receipt["kernel_measurement"], args.timeout, glyphs, queue_desk)
+                       receipt["kernel_measurement"], args.timeout, glyphs, app_digests, kernel_features)
                for machine in ("pc", "q35") for counted in (False, True)]
     summary = {"iso_sha256": receipt["iso_sha256"], "source_commit": receipt["source_commit"], "kernel_measurement": receipt["kernel_measurement"],
                "qemu": version, "host": " ".join(os.uname()[i] for i in (0, 2, 4)), "passed": all(r["passed"] for r in results),

@@ -1,0 +1,2 @@
+not admitted in the PCP register (no task limits set by the person); recorded by the runner only
+T        OK  exit=0 timeout=False 246.7s files=2

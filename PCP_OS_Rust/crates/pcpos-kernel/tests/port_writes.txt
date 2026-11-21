@@ -1,0 +1,86 @@
+# Rust port-writing calls matched by tests/port_writes.py, grouped by file, function and port expression:
+# file | function | port as written | when it runs.
+# A new write must be read by a person and added here with when it runs before the check passes.
+# UNGUARDED marks a write made on hardware before the kernel knows what is at the port: each is a known
+# open item, not an approval.
+# Assembly reviewed separately: boot.s:unsupported writes its message to COM1 if long mode or NX is
+# unavailable. The boot.s user-mode port test attempts a COM1 write and is expected to fault.
+# Virtio shared queues require exactly one matching legacy virtio-net PCI function, a valid I/O BAR
+# and bus mastering initially off. Callers are explicit boot fixtures (main.rs) or a guest-ethernet
+# program admitted by ethernet_grant. Guest access requires a single matching net_image on the exact
+# command line and no grant=none. These optional features are absent from the default build.
+# For game-link, a matching link_image and a non-console-only launch select the COM2 initialization
+# probe. Its scratch-register write precedes readback. Only a successful readback enables configuration.
+
+arch.rs | cmos | 0x70 | always; the clock's index port, on every PC; the top bit is written clear
+arch.rs | exception_entry | 0x20 | always; end-of-interrupt to the two interrupt controllers every PC has or emulates
+arch.rs | exception_entry | 0xA0 | always; end-of-interrupt to the two interrupt controllers every PC has or emulates
+arch.rs | exception_entry | port | always; end-of-interrupt to the two interrupt controllers every PC has or emulates
+arch.rs | game_link_init | p | game-link COM2 selection, after successful scratch-register readback
+arch.rs | game_link_init | p + 1 | game-link COM2 selection, after successful scratch-register readback
+arch.rs | game_link_init | p + 2 | game-link COM2 selection, after successful scratch-register readback
+arch.rs | game_link_init | p + 3 | game-link COM2 selection, after successful scratch-register readback
+arch.rs | game_link_init | p + 4 | game-link COM2 selection, after successful scratch-register readback
+arch.rs | game_link_init | p + 7 | game-link COM2 selection: write the scratch register before UART presence is known
+arch.rs | game_link_write | GAME_UART | game-link, writable COM2 handle, process append capability and transmitter ready
+arch.rs | interrupt_line_on | port | always; the interrupt controllers' mask ports
+arch.rs | interrupts_init | 0x40 | always; the interrupt controllers and the interval timer
+arch.rs | interrupts_init | 0x43 | always; the interrupt controllers and the interval timer
+arch.rs | interrupts_init | port | always; the interrupt controllers and the interval timer
+arch.rs | serial_init | COM1 | always, UNGUARDED: the first serial port at its usual address, written before anything is known to be there
+arch.rs | serial_init | COM1 + 1 | always, UNGUARDED: the first serial port at its usual address, written before anything is known to be there
+arch.rs | serial_init | COM1 + 2 | always, UNGUARDED: the first serial port at its usual address, written before anything is known to be there
+arch.rs | serial_init | COM1 + 3 | always, UNGUARDED: the first serial port at its usual address, written before anything is known to be there
+arch.rs | serial_init | COM1 + 4 | always, UNGUARDED: the first serial port at its usual address, written before anything is known to be there
+arch.rs | serial_put | COM1 | always, UNGUARDED: as serial_init; every line of the report is written here
+arch.rs | stop | 0x4004 | emulator only (CPUID hypervisor bit): the emulators' exit and power ports
+arch.rs | stop | 0x604 | emulator only (CPUID hypervisor bit): the emulators' exit and power ports
+arch.rs | stop | 0xB004 | emulator only (CPUID hypervisor bit): the emulators' exit and power ports
+arch.rs | stop | 0xf4 | emulator only (CPUID hypervisor bit): the emulators' exit and power ports
+dev.rs | bus_read | 0xCF8 | always; the address port of the device bus's configuration space, on every PC
+dev.rs | bus_write | 0xCF8 | only for a device found on the bus by its identity (the sound device); configuration space
+dev.rs | bus_write | 0xCFC | only for a device found on the bus by its identity (the sound device); configuration space
+dev.rs | dispi_read | DISPI_INDEX | only after a Bochs display was found on the bus by its identity
+dev.rs | dispi_write | DISPI_DATA | only after a Bochs display was found on the bus by its identity
+dev.rs | dispi_write | DISPI_INDEX | only after a Bochs display was found on the bus by its identity
+dev.rs | fm_register | 0x388 | emulator only: fm_init is called only under an emulator and later writes need the device to have answered
+dev.rs | fm_register | 0x389 | emulator only: fm_init is called only under an emulator and later writes need the device to have answered
+dev.rs | keyboard_init | 0x60 | only after the keyboard controller's status port did not read as absent
+dev.rs | keyboard_init | 0x64 | only after the keyboard controller's status port did not read as absent
+dev.rs | script_tick | 0x60 | self-tests, UNGUARDED on hardware: asks the keyboard controller to replay scan codes (command 0xD2); a controller that lacks the command fails those self-tests
+dev.rs | script_tick | 0x64 | self-tests, UNGUARDED on hardware: asks the keyboard controller to replay scan codes (command 0xD2); a controller that lacks the command fails those self-tests
+dev.rs | sound_init | engine + 0x10 | only after the AC'97 device was found on the bus by its identity; ports from its own registers
+dev.rs | sound_init | engine + 0x16 | only after the AC'97 device was found on the bus by its identity; ports from its own registers
+dev.rs | sound_init | engine + 0x1B | only after the AC'97 device was found on the bus by its identity; ports from its own registers
+dev.rs | sound_init | engine + 0x2C | only after the AC'97 device was found on the bus by its identity; ports from its own registers
+dev.rs | sound_init | mixer | only after the AC'97 device was found on the bus by its identity; ports from its own registers
+dev.rs | sound_init | mixer + 0x02 | only after the AC'97 device was found on the bus by its identity; ports from its own registers
+dev.rs | sound_init | mixer + 0x18 | only after the AC'97 device was found on the bus by its identity; ports from its own registers
+dev.rs | sound_quiet | s.engine + 0x10 | only after sound_init succeeded
+dev.rs | sound_quiet | s.engine + 0x16 | only after sound_init succeeded
+dev.rs | sound_quiet | s.engine + 0x1B | only after sound_init succeeded
+dev.rs | sound_write | s.engine + 0x15 | only after sound_init succeeded
+dev.rs | sound_write | s.engine + 0x1B | only after sound_init succeeded
+dev.rs | waiting | self.engine + 0x16 | only after sound_init succeeded
+dev/store_disk.rs | issue | BASE + 2 | vm-store: after controller-ready polling; issue IDENTIFY and mount reads before mount succeeds, or checkpoint writes and flushes after mount
+dev/store_disk.rs | issue | BASE + 3 | vm-store: after controller-ready polling; issue IDENTIFY and mount reads before mount succeeds, or checkpoint writes and flushes after mount
+dev/store_disk.rs | issue | BASE + 4 | vm-store: after controller-ready polling; issue IDENTIFY and mount reads before mount succeeds, or checkpoint writes and flushes after mount
+dev/store_disk.rs | issue | BASE + 5 | vm-store: after controller-ready polling; issue IDENTIFY and mount reads before mount succeeds, or checkpoint writes and flushes after mount
+dev/store_disk.rs | issue | BASE + 6 | vm-store: select the controller for IDENTIFY before the serial, geometry or volume marker is known; also for reads, checkpoint writes and flushes
+dev/store_disk.rs | issue | BASE + 7 | vm-store: after controller-ready polling; issue IDENTIFY and mount reads before mount succeeds, or checkpoint writes and flushes after mount
+dev/store_disk.rs | issue | CONTROL | vm-store: select the controller for IDENTIFY before the serial, geometry or volume marker is known; also for reads, checkpoint writes and flushes
+dev/store_disk.rs | write | BASE | vm-store: checkpoint sector data on the mounted IDE volume, after write-command admission and data-ready
+dev/virtio_tx.rs | exchange | io + 18 | virtio TX, reply or register boot fixture, using checked shared queues
+dev/virtio_tx.rs | inspect | io + 14 | shared virtio queues for a selected boot fixture or a hash-granted guest-ethernet program
+dev/virtio_tx.rs | install | io + 14 | shared virtio queues for a selected boot fixture or a hash-granted guest-ethernet program
+dev/virtio_tx.rs | install | io + 8 | shared virtio queues for a selected boot fixture or a hash-granted guest-ethernet program
+dev/virtio_tx.rs | pci_command | 0xcf8 | shared virtio queues for a selected boot fixture or a hash-granted guest-ethernet program
+dev/virtio_tx.rs | pci_command | 0xcfc | shared virtio queues for a selected boot fixture or a hash-granted guest-ethernet program
+dev/virtio_tx.rs | publish | io + 16 | virtio TX, reply or register boot fixture, using checked shared queues
+dev/virtio_tx.rs | reset | io + 18 | shared virtio queues for a selected boot fixture or a hash-granted guest-ethernet program
+dev/virtio_tx.rs | with_queues | io + 18 | shared virtio queues for a selected boot fixture or a hash-granted guest-ethernet program
+dev/virtio_tx.rs | with_queues | io + 4 | shared virtio queues for a selected boot fixture or a hash-granted guest-ethernet program
+dev/virtio_tx/guest.rs | during | io + 18 | guest-ethernet: queues of the hash-granted program; driver setup or queue notification
+dev/virtio_tx/guest.rs | post | io + 16 | guest-ethernet: queues of the hash-granted program; driver setup or queue notification
+dev/virtio_tx/worker_link.rs | connected | io + 18 | virtio-worker-probe: selected worker-director or worker-receiver boot fixture, using checked shared queues
+dev/virtio_tx/worker_link.rs | post | io + 16 | virtio-worker-probe: selected worker-director or worker-receiver boot fixture, using checked shared queues

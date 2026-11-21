@@ -99,17 +99,26 @@ pub fn serial_put(byte: u8) {
     outb(COM1, byte);
 }
 
-/// Stop the machine. Under QEMU with the exit device this ends the emulator with a status; otherwise it halts.
+/// Whether the processor says it is run by an emulator or a hypervisor (CPUID leaf 1, ECX bit 31). Hardware
+/// never sets this bit; QEMU, Bochs and VirtualBox do unless told not to.
+pub fn emulated() -> bool {
+    // Safety: CPUID leaf 1 exists on every 64-bit processor and reading it changes nothing.
+    unsafe { core::arch::x86_64::__cpuid(1).ecx & (1 << 31) != 0 }
+}
+
+/// Stop the machine. Under an emulator with the exit device this ends the emulator with a status, and
+/// otherwise its power device is asked to switch off. On hardware none of those ports is written: they are
+/// not a power interface there and what answers at them is not known, so the processor is only halted.
 pub fn stop(ok: bool) -> ! {
-    outb(0xf4, if ok { 0x10 } else { 0x11 });
-    // Where there is no exit device, ask the emulator's power device to switch off. These three ports are
-    // the ones QEMU, Bochs and VirtualBox answer; on hardware they are not a power interface, and the
-    // processor is halted below either way.
-    // Safety: writes to power-management ports that do nothing where no such device exists.
-    unsafe {
-        port_out16(0x604, 0x2000);
-        port_out16(0xB004, 0x2000);
-        port_out16(0x4004, 0x3400);
+    if emulated() {
+        outb(0xf4, if ok { 0x10 } else { 0x11 });
+        // Safety: these three ports are the ones QEMU, Bochs and VirtualBox answer for power, and the
+        // processor has said it is emulated.
+        unsafe {
+            port_out16(0x604, 0x2000);
+            port_out16(0xB004, 0x2000);
+            port_out16(0x4004, 0x3400);
+        }
     }
     loop {
         // Safety: halting the processor with interrupts disabled touches no memory.
@@ -1353,8 +1362,11 @@ pub fn probe_execute_at(frame: usize) -> Probe {
     probe(|| unsafe { probe_exec(frame as *const u8) })
 }
 
+/// One register of the machine's clock. The index is written with its top bit clear, as is usual: that
+/// bit masks the non-maskable interrupt, and this kernel leaves it able to arrive (it has a handler for it)
+/// instead of switching it off for good as a side effect of reading the time.
 fn cmos(reg: u8) -> u8 {
-    outb(0x70, reg | 0x80);
+    outb(0x70, reg & 0x7F);
     inb(0x71)
 }
 

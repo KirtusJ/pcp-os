@@ -1,0 +1,32 @@
+{
+ "tool": "async_run.py",
+ "plan": "plan.json",
+ "plan_sha256": "f60dd6e651cc39e0b71d05225c5c96d23282ecf8a277d7d6981e6995b67c047e",
+ "width": 1,
+ "tasks": [
+  {
+   "id": "T",
+   "argv": [
+    "python3",
+    "/home/user/pcp-os/PCP_OS_Rust/crates/pcpos-kernel/tests/port_writes.py"
+   ],
+   "exit": 0,
+   "expect_exit": 0,
+   "timed_out": false,
+   "seconds": 0.05,
+   "ended_as_expected": true,
+   "copied_in": [],
+   "files": {
+    "STDERR.txt": {
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "bytes": 0
+    },
+    "STDOUT.txt": {
+     "sha256": "de01aef1b2ef5d6a25849d447e3ec79eb1aaa00b0c90d44c8e3e164a73237eb0",
+     "bytes": 56
+    }
+   }
+  }
+ ],
+ "all_ended_as_expected": true
+}

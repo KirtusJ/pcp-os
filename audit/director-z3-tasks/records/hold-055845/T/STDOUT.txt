@@ -1,0 +1,10 @@
+  "kernel_measurement": "240710d4376140009e7924d9c0c7e8c534fe5ac890cf35d40699149333ffcfa1",
+  "iso_bytes": 2578432,
+  "iso_sha256": "3a7c83868a24055fc7148cb55a5d0fb6d8fd6a16b5551ffe70c42d9ddf0e3978"
+}
+pc   ordinary            passed
+pc   instruction-counted passed
+q35  ordinary            passed
+q35  instruction-counted passed
+  "iso_sha256": "610a9200565affdc9e386ce935390620e0cf4ad15d277781a4a8e318d80b5144"
+}

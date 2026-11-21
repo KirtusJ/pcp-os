@@ -1,0 +1,1 @@
+{"tasks": [{"id": "T", "argv": ["bash", "-c", "echo hello; exit 0"], "timeout": 30, "expect_exit": 0}], "width": 1}

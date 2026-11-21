@@ -229,8 +229,9 @@ def main():
     readme = ("PCP OS tester CD | x86-64, legacy BIOS | built from source\n"
               "Source: KirtusJ/pcp-os commit %s, tree %s%s\n"
               "Kernel features: default (no guest Ethernet). Running-image measurement: %s\n"
-              "Boot it as a virtual CD with no disk attached. Enter starts the Surfbird demo, Space plays, Ctrl+Alt+Delete\n"
-              "returns to the launcher, P powers off. Nothing is kept after power off.\n"
+              "Boot it as a virtual CD with no disk attached. Enter opens the programs and starts the Surfbird demo, Space\n"
+              "plays, Ctrl+Alt+Delete returns to the launcher. F1 lists the keys. F10 asks to power off and Enter\n"
+              "confirms. Nothing is kept after power off.\n"
               "Loader: Limine v10.8.5 (limine.txt). Third-party notices: notices.txt. Rights: notice.md.\n"
               % (commit, source_tree, " with uncommitted changes" if changed else "", measurement)).encode()
     files = {"kernel.elf32": kernel, "surf.elf": surf, "clip.ppm": (media / "clip.ppm").read_bytes(), "clip.wav": (media / "clip.wav").read_bytes(),

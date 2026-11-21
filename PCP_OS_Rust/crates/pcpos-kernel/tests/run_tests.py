@@ -19,13 +19,14 @@ RESULTS = []
 ONLY = os.environ.get("PCPOS_TESTS_ONLY")   # run only the tests whose name contains this: for use while working, not for a record
 
 class Machine:
-    def __init__(self, name, modules=(), append="", cpu="max", sound=False, display=True):
+    def __init__(self, name, modules=(), append="", cpu="max", sound=False, display=True, vram_mib=None):
         self.dir = OUT / name
         if self.dir.exists(): shutil.rmtree(self.dir)
         self.dir.mkdir(parents=True)
         self.serial = self.dir / "serial.log"; self.wav = self.dir / "sound.wav"
         cmd = ["qemu-system-x86_64", "-cpu", cpu, "-m", "256M", "-kernel", str(KERNEL), "-display", "none", "-vga", "std" if display else "none",
                "-serial", "file:" + str(self.serial), "-no-reboot", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-qmp", "unix:qmp,server=on,wait=off"]
+        if vram_mib is not None: cmd += ["-global", f"VGA.vgamem_mb={vram_mib}"]
         if modules: cmd += ["-initrd", ",".join(str(m) for m in modules)]
         if append: cmd += ["-append", append]
         if sound: cmd += ["-audiodev", "wav,id=snd0,path=%s" % self.wav, "-device", "AC97,audiodev=snd0", "-device", "adlib,audiodev=snd0"]
@@ -139,11 +140,22 @@ def _(ck):
 @test("with a display and a keyboard and nothing to run, the kernel shows its menu and switches off when asked")
 def _(ck):
     m = Machine("menu_only"); ck("devices were found", m.wait_log("music:", 60)); time.sleep(1.5)
-    im = m.picture("menu"); ck("the menu is drawn: 1024 by 768 with the emblem's colours", im.size == (1024, 768) and colours(im) > 20, (im.size, colours(im)))
-    m.key("r"); time.sleep(0.8); reg = m.picture("register"); ck("R shows the register", differ(im, reg) > 0.02, differ(im, reg))
-    m.key("esc"); time.sleep(0.5); m.key("p"); rc, log = m.end(30); verdict(ck, rc, log)
+    im = m.picture("menu"); ck("the desktop is drawn at 1920 by 1080 with the emblem's colours", im.size == (1920, 1080) and colours(im) > 20, (im.size, colours(im)))
+    m.key("f4"); time.sleep(0.8); reg = m.picture("register"); ck("F4 shows the register", differ(im, reg) > 0.02, differ(im, reg))
+    m.key("esc"); time.sleep(0.5); m.key("f10"); time.sleep(1.0); m.key("ret"); rc, log = m.end(30); verdict(ck, rc, log)
 
 # ---- programs that are not Doom ------------------------------------------------------------------------------
+@test("the desktop negotiates two-page modes and a separate UI scale")
+def _(ck):
+    for mb, size, scale in [(32, (2560, 1440), 2), (4, (800, 600), 1)]:
+        m = Machine(f"desktop_{mb}MiB", append="desktop=2560x1440 ui_scale=2", vram_mib=mb)
+        marker = f"desktop: {size[0]}x{size[1]} at {scale}x UI scale"
+        ck(f"{mb} MiB reports its actual mode and scale", m.wait_log(marker, 60))
+        time.sleep(1.5)
+        image = m.picture("desktop")
+        ck(f"{mb} MiB guest framebuffer", image.size == size and colours(image) > 20, image.size)
+        m.key("f10"); time.sleep(1.0); m.key("ret"); rc, log = m.end(30); verdict(ck, rc, log)
+
 @test("a C program built with an ordinary compiler and C library runs with every grant: 32 checks of its own")
 def _(ck):
     m = Machine("probe_granted", modules=["%s granted" % PROBE], append="auto=probe.elf"); rc, log = m.end(60); verdict(ck, rc, log)
@@ -210,6 +222,7 @@ def _(ck):
     e = ended(log, "doom.elf")
     try: secs = int(e.split(" after ")[1].split(" s")[0]); shown = int(e.split(" frames shown")[0].split()[-1]); idle = int(e.split("idled ")[1].split("%")[0]); dry = int(e.split("ran out of sound ")[1].split()[0])
     except Exception: secs = shown = idle = 0; dry = -1
+    ck("it ended DONE, not by a fault", e.startswith("doom.elf ended DONE"), e[:200])
     ck("it ran between 61 and 67 seconds (2134 tics at 35 a second is 61 s; the rest is start and the melt)", 61 <= secs <= 67, e[:160])
     ck("at least 35 pictures a second were shown", secs and shown / secs >= 35, (shown, secs))
     ck("the processor was idle more than half the time", idle > 50, idle)
@@ -220,7 +233,8 @@ def _(ck):
 def _(ck):
     m = Machine("play", modules=[DOOM, SHAREWARE], sound=True)
     ck("the kernel found display, keyboard, sound and music", m.wait_log("music: an FM synthesiser", 60), m.log()[-300:]); time.sleep(1.5)
-    menu = m.picture("1_menu"); ck("the kernel's menu lists the program", colours(menu) > 20 and menu.size == (1024, 768))
+    menu = m.picture("1_menu"); ck("the kernel's menu lists the program", colours(menu) > 20 and menu.size == (1920, 1080))
+    m.key("ret"); time.sleep(1.5)   # the desktop is empty: Enter opens the launcher, and Enter there starts the program
     m.key("ret"); ck("Enter starts it", m.wait_log("doom on PCP OS: display 640x400", 30)); time.sleep(7)
     title = m.picture("2_title"); ck("the game draws at 640 by 400 with many colours", title.size == (640, 400) and colours(title) > 100, (title.size, colours(title)))
     for k in ("esc", "ret", "ret", "ret"): m.key(k); time.sleep(0.7)
@@ -238,7 +252,7 @@ def _(ck):
     m.key("f3"); time.sleep(0.6); m.key("ret"); time.sleep(2.5); loaded = m.picture("10_loaded")
     ck("after loading, the view is the saved one and not the later one", differ(saved, loaded) < differ(moved, loaded) and differ(saved, loaded) < 0.25, (differ(saved, loaded), differ(moved, loaded)))
     m.key("ctrl", "alt", "delete"); time.sleep(2.0)
-    back = m.picture("11_back"); ck("Ctrl+Alt+Delete returns to the kernel's menu", back.size == (1024, 768) and "stopped by the person" in m.log(), back.size)
+    back = m.picture("11_back"); ck("Ctrl+Alt+Delete returns to the desktop mode", back.size == menu.size and "stopped by the person" in m.log(), back.size)
     e1 = ended(m.log(), "doom.elf"); ck("the stopped run is recorded STOPPED and left the saved game in the store", "ended STOPPED" in e1 and "the store holds 1 file(s)" in e1, e1[-120:])
     m.key("ret"); time.sleep(8); again = m.picture("12_again"); ck("it starts again in the same session", again.size == (640, 400) and colours(again) > 100)
     for k in ("esc", "up", "ret"): m.key(k); time.sleep(0.6)
@@ -247,7 +261,7 @@ def _(ck):
     ck("quitting from the game's own menu ends it DONE (exit 0)", "doom.elf ended DONE: exit 0" in second, ended(second, "doom.elf")[:120])
     # (The engine as doomgeneric builds it does not write its settings file: that code is compiled out there.)
     e2 = ended(second, "doom.elf"); ck("the saved game is still in the store after the second run: the store lasts from one program to the next", "the store holds 1 file(s)" in e2, e2[-80:])
-    time.sleep(1.0); m.key("p"); rc, log = m.end(30); verdict(ck, rc, log)
+    time.sleep(1.0); m.key("f10"); time.sleep(1.0); m.key("ret"); rc, log = m.end(30); verdict(ck, rc, log)
     lev = sound_by_second(m.wav); loud = sum(1 for v in lev if v > 200)
     ck("sound was produced for most of the time the game ran", loud >= 20, lev)
     dry = [int(l.split("ran out of sound ")[1].split()[0]) for l in log.splitlines() if "ran out of sound" in l]
@@ -263,7 +277,7 @@ def _(ck):
     for n in range(4):
         time.sleep((60 if QUICK else 240) / 4); pics.append(m.picture("soak_%d" % n))
     ck("the picture keeps changing", all(differ(pics[i], pics[i + 1]) > 0.05 for i in range(3)), [differ(pics[i], pics[i + 1]) for i in range(3)])
-    m.key("ctrl", "alt", "delete"); time.sleep(2); m.key("p"); rc, log = m.end(30); verdict(ck, rc, log)
+    m.key("ctrl", "alt", "delete"); time.sleep(2); m.key("f10"); time.sleep(1.0); m.key("ret"); rc, log = m.end(30); verdict(ck, rc, log)
     e = ended(log, "doom.elf"); ck("its memory all came back", " free before and " in e and e.split(" free before and ")[0].split()[-1] == e.split(" free before and ")[1].split()[0], e[-160:])
     try: idle = int(e.split("idled ")[1].split("%")[0]); shown = int(e.split(" frames shown")[0].split()[-1]); secs = int(e.split(" after ")[1].split(" s")[0])
     except Exception: idle = shown = secs = 0
