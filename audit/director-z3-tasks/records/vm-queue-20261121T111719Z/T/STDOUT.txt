@@ -1,0 +1,5 @@
+warning: `pcpos-kernel` (bin "pcpos-kernel") generated 10 warnings (run `cargo fix --bin "pcpos-kernel" -p pcpos-kernel` to apply 3 suggestions)
+    Finished `release` profile [optimized] target(s) in 23.01s
+    Finished `release` profile [optimized] target(s) in 7.68s
+save Disk save cold morning
+restore Queue restored cold morning

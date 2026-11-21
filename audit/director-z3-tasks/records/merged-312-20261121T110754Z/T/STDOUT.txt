@@ -1,0 +1,30 @@
+cec306de3b0eec55632c0f7c7f547714765c1c67
+72 port writes in the source, 72 reviewed, 0 problem(s)
+  "kernel_measurement": "af5bd63c1008b70713d613ed962b131ffb689a18d61b739b1379193b27b0c0ed",
+  "iso_bytes": 2584576,
+  "iso_sha256": "918d9c04d25b8a95d7bf7ff6ac29c3e99cd30155c144c207e0d5198fd7bb3db7"
+}
+pc   ordinary            passed
+pc   instruction-counted passed
+q35  ordinary            passed
+q35  instruction-counted passed
+pc-ordinary/launcher.ppm: original accepted; rejected erased suffix, forged console-only policy, surplus grant, malformed size
+pc-counted/launcher.ppm: original accepted; rejected erased suffix, forged console-only policy, surplus grant, malformed size
+q35-ordinary/launcher.ppm: original accepted; rejected erased suffix, forged console-only policy, surplus grant, malformed size
+q35-counted/launcher.ppm: original accepted; rejected erased suffix, forged console-only policy, surplus grant, malformed size
+  "kernel_measurement": "af5bd63c1008b70713d613ed962b131ffb689a18d61b739b1379193b27b0c0ed",
+  "iso_bytes": 2639872,
+  "iso_sha256": "861df6f202fa87381565e33185adff27a4dda37d8df8f893c8dc5f3b52827419"
+}
+pc   ordinary            passed
+pc   instruction-counted passed
+q35  ordinary            passed
+q35  instruction-counted passed
+pc-ordinary/launcher.ppm: original accepted; rejected erased suffix, forged console-only policy, surplus grant, malformed size, second selected marker
+pc-ordinary/launcher-after-queue.ppm: original accepted; rejected erased suffix, forged console-only policy, surplus grant, malformed size, second selected marker
+pc-counted/launcher.ppm: original accepted; rejected erased suffix, forged console-only policy, surplus grant, malformed size, second selected marker
+pc-counted/launcher-after-queue.ppm: original accepted; rejected erased suffix, forged console-only policy, surplus grant, malformed size, second selected marker
+q35-ordinary/launcher.ppm: original accepted; rejected erased suffix, forged console-only policy, surplus grant, malformed size, second selected marker
+q35-ordinary/launcher-after-queue.ppm: original accepted; rejected erased suffix, forged console-only policy, surplus grant, malformed size, second selected marker
+q35-counted/launcher.ppm: original accepted; rejected erased suffix, forged console-only policy, surplus grant, malformed size, second selected marker
+q35-counted/launcher-after-queue.ppm: original accepted; rejected erased suffix, forged console-only policy, surplus grant, malformed size, second selected marker

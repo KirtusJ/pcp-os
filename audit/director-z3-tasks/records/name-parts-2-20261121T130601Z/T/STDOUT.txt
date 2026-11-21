@@ -1,0 +1,25 @@
+72 port writes in the source, 72 reviewed, 0 problem(s)
+  "kernel_measurement": "b0c151a9618138830f64432567558e8140b67b3aebcf343a58d0f5743a509212",
+  "iso_bytes": 2598912,
+  "iso_sha256": "ab77670d509638a1fd21134521ecdce115e66ea3be828150fc8930e81537e6db"
+}
+640x480  {'first_pin_row_4': 'Places 1 to 12 of 15', 'last_pin_row_4': 'Places 4 to 15 of 15', 'controls_refused': ['another program named', 'the keys overwritten', 'the size and digest replaced by the keys'], 'widget_lines': ['memory 106 MiB, 106 MiB free', 'Session files | cleared at power-off'], 'exit_code': 0}
+320x200  {'first_pin_row_4': 'Place 2/15', 'last_pin_row_4': 'Place 15/15', 'exit_code': 0}
+refused-640x480 {'said': ['Not started: the program could not be admitted as a task', 'a-name-of-forty-characters-in-all-xxxx.elf could not be star', 'ted: the program could not be admitted as a task.'], 'exit_code': 0}
+aliases-320x200 {'parts': [['aaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'aaAzzzzzzzzzzzzzzzzzzzzzzzzz', 'zzzz.elf'], ['aaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'aaBzzzzzzzzzzzzzzzzzzzzzzzzz', 'zzzz.elf']], 'differ_in_part': [2], 'exit_code': 0}
+passed
+pc   ordinary            passed
+pc   instruction-counted passed
+q35  ordinary            passed
+q35  instruction-counted passed
+q35-counted/launcher.ppm: original accepted; rejected erased suffix, forged console-only policy, surplus grant, malformed size
+  "kernel_measurement": "b0c151a9618138830f64432567558e8140b67b3aebcf343a58d0f5743a509212",
+  "iso_bytes": 2654208,
+  "iso_sha256": "19cf4b10c322506c09a77588f6573331eb08591e1a03ab2c6d5e20ceafa83e3a"
+}
+pc   ordinary            passed
+pc   instruction-counted passed
+q35  ordinary            passed
+q35  instruction-counted passed
+save Disk save cold morning
+restore Queue restored cold morning

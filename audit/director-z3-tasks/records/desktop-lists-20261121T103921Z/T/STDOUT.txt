@@ -1,0 +1,17 @@
+72 port writes in the source, 72 reviewed, 0 problem(s)
+  "kernel_measurement": "af5bd63c1008b70713d613ed962b131ffb689a18d61b739b1379193b27b0c0ed",
+  "iso_bytes": 2584576,
+  "iso_sha256": "9b655cf6b7702e23852cbeda4bd99bdc643f3809e4c87dbe229e374d0e370aff"
+}
+pc   ordinary            passed
+pc   instruction-counted passed
+q35  ordinary            passed
+q35  instruction-counted passed
+  "kernel_measurement": "af5bd63c1008b70713d613ed962b131ffb689a18d61b739b1379193b27b0c0ed",
+  "iso_bytes": 2639872,
+  "iso_sha256": "89be9eb5e624f37d0946faadf5c86926314a265e642778ddc045f5fd4f55d0ff"
+}
+pc   ordinary            passed
+pc   instruction-counted passed
+q35  ordinary            passed
+q35  instruction-counted passed

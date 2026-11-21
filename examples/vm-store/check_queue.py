@@ -109,7 +109,7 @@ def main(args):
                     desktop.home("restore-home")
                     desktop.verification("restore-home")
                     monitor.key("f3")
-                    desktop.wait("restore-files", lambda rows: any("FILES: 1 file(s), 3 KiB" in row for row in rows)
+                    desktop.wait("restore-files", lambda rows: any("FILES: showing 1 to 1 of 1, 3 KiB" in row for row in rows)
                                  and any("VM files | saved when an app syncs" in row for row in rows)
                                  and any("parrots.queue" in row and "3 KiB" in row for row in rows))
                     monitor.key("esc")
