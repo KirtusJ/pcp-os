@@ -1,0 +1,7 @@
+T        OK  exit=0 timeout=False 802.28s files=2
+pcpos mcp: serving registers under /home/user/pcp-os/audit/director-z3-tasks as participant DirectorZ3 (person directing the work: KirtusJustus)
+RELEASED T24
+WRITTEN as event 53: TASK_RELEASED by DirectorZ3 (HOST)
+head 287468cdc7cf151241e478a12385a6dfcb85c9e8906059f1d30b63033d0b61d0
+previous head 8aebdb3d061e83e4dfa57bf0fe1368de48d94dd1f0ecacd59c1b8e737e17d603
+

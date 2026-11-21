@@ -582,25 +582,43 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
             let list_rows = (1 + left).min(places);
             let first = (place + 1).saturating_sub(list_rows);
             let mut notes: Vec<String> = Vec::new();
-            let narrow = across < 40;
-            if list_rows < places { notes.push(if narrow { format!("Place {}/{}", place + 1, places) } else { format!("Places {} to {} of {}", first + 1, first + list_rows, places) }); }
-            if name_pages > 1 { notes.push(if narrow { format!("name {}/{} <- ->", name_page + 1, name_pages) } else { format!("name part {} of {}: Left/Right", name_page + 1, name_pages) }); }
-            // How many widget lines had no room is never the part that is cut (B3): where row 4 cannot hold
-            // it beside the place and the name's part, it has the last row of the display, below the keys.
-            let hidden = if widgets_shown < widget_lines.len() { Some(format!("{} widget line(s) not shown", widget_lines.len() - widgets_shown)) } else { None };
-            if let Some(count) = hidden {
-                if notes.join(" | ").chars().count() + 3 + count.chars().count() <= across || notes.is_empty() {
-                    notes.push(count);
-                } else {
-                    at(2, rows - 1, &cut(&count, across), SOFT, GROUND);
+            // Row 4 says which places are shown and which part of the name, in the longest wording that fits
+            // the row it has: the width decides, not a class of display (A3 found a width where the long
+            // wording was cut and the short one would have fitted). A wording is never cut where a shorter
+            // one says the same; the arrows and the numbers are the last things to go.
+            let _ = &mut notes;
+            let paged = name_pages > 1;
+            let windowed = list_rows < places;
+            let (at_place, of, part, parts) = (place + 1, places, name_page + 1, name_pages);
+            let mut wordings: Vec<String> = Vec::new();
+            match (windowed, paged) {
+                (true, true) => {
+                    wordings.push(format!("Places {} to {} of {} | name part {} of {}: Left/Right", first + 1, first + list_rows, of, part, parts));
+                    wordings.push(format!("Place {}/{} | name {}/{} <- ->", at_place, of, part, parts));
+                    wordings.push(format!("{}/{} | name {}/{} <- ->", at_place, of, part, parts));
+                    wordings.push(format!("{}/{} | {}/{} <- ->", at_place, of, part, parts));
                 }
+                (true, false) => {
+                    wordings.push(format!("Places {} to {} of {}", first + 1, first + list_rows, of));
+                    wordings.push(format!("Place {}/{}", at_place, of));
+                }
+                (false, true) => {
+                    wordings.push(format!("name part {} of {}: Left/Right", part, parts));
+                    wordings.push(format!("name {}/{} <- ->", part, parts));
+                    wordings.push(format!("{}/{} <- ->", part, parts));
+                }
+                (false, false) => {}
             }
-            // A place or a part count of more digits can make the short form too long as well; then the word
-            // 'Place' gives way, and after it the word 'name', before either arrow or any number does.
-            let mut line = notes.join(" | ");
-            if line.chars().count() > across && narrow { line = line.replacen("Place ", "", 1); }
-            if line.chars().count() > across && narrow { line = line.replacen("name ", "", 1); }
-            if !notes.is_empty() { at(2, 4, &cut(&line, across), SOFT, GROUND); }
+            let fits = |text: &String| text.chars().count() <= across;
+            let mut line = wordings.iter().find(|w| fits(w)).or(wordings.last()).cloned().unwrap_or_default();
+            // How many widget lines had no room is never the part that is cut (B3): where row 4 cannot hold
+            // it beside the rest, it has the last row of the display, below the keys.
+            if widgets_shown < widget_lines.len() {
+                let count = format!("{} widget line(s) not shown", widget_lines.len() - widgets_shown);
+                let both = if line.is_empty() { count.clone() } else { format!("{} | {}", line, count) };
+                if fits(&both) { line = both; } else { at(2, rows - 1, &cut(&count, across), SOFT, GROUND); }
+            }
+            if !line.is_empty() { at(2, 4, &cut(&line, across), SOFT, GROUND); }
             let mut row = 5;
             for i in first..first + list_rows {
                 let ground = if i == place { ui::PANEL } else { GROUND };

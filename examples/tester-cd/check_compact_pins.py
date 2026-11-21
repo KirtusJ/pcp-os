@@ -83,9 +83,10 @@ def home_problems(rows, chosen, places, facts, wide, widgets=()):
         elif len(listed) != int(note[2]) - int(note[1]) + 1:
             problems.append("the list has %d rows and row 4 says %s to %s" % (len(listed), note[1], note[2]))
     else:
-        # A row of 28 characters says it shortly: which place is chosen of how many.
-        if rows[4].strip() != "Place %d/%d" % (chosen + 1, places) or len(listed) != 1:
-            problems.append("row 4 should read 'Place %d/%d' over one row of the list: %r, %r" % (chosen + 1, places, rows[4], listed))
+        # Ten rows show one row of the list: the chosen place, and row 4 says which of how many.
+        want = "Places %d to %d of %d" % (chosen + 1, chosen + 1, places)
+        if rows[4].strip() != want or len(listed) != 1:
+            problems.append("row 4 should read %r over one row of the list: %r, %r" % (want, rows[4], listed))
     below = [row.strip() for row in rows[5 + len(listed):keys]]
     text = [row for row in below if row]
     wanted = (["Enter starts"] if wide else []) + [name, facts if wide else facts[:len(facts)]] + list(widgets)
@@ -359,6 +360,31 @@ def main():
         results["ten-parts-320x200"]["exit_code"] = guest.wait(timeout=40)
     except Exception as error:
         problems.append("ten-parts-320x200: %s" % error)
+    finally:
+        if guest.poll() is None:
+            guest.kill()
+        stream.close()
+    # A width between the two (A3's case): at 440 by 200 the long wording of row 4 does not fit and the
+    # short one does. It must be the short one, whole, with both arrows, not the long one cut.
+    out = evidence / "w440"
+    rpc, key, screen, guest, stream = boot(args.qemu, folder / "kernel.elf32", folder, receipt["kernel_measurement"], "440x200", out, glyphs, args.timeout, programs=aliases)
+    try:
+        seen = []
+        for part in (1, 2):
+            if part > 1:
+                key("right")
+            rows = screen("part%d" % part, lambda rows, part=part: rows[4].strip() == "Place 2/3 | name %d/2 <- ->" % part)
+            body = [row.strip() for row in rows[5:len(rows) - 2] if row.strip()]
+            seen.append(body[1] if len(body) == 3 else "")
+        if "".join(seen) != aliases[0]:
+            problems.append("w440: the parts join to %r" % "".join(seen))
+        results["w440"] = {"row_4": ["Place 2/3 | name 1/2 <- ->", "Place 2/3 | name 2/2 <- ->"], "joined_equals_name": "".join(seen) == aliases[0]}
+        key("f10")
+        screen("power-question", lambda rows: any("POWER OFF" in row for row in rows))
+        key("ret")
+        results["w440"]["exit_code"] = guest.wait(timeout=40)
+    except Exception as error:
+        problems.append("w440: %s" % error)
     finally:
         if guest.poll() is None:
             guest.kill()
