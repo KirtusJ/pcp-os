@@ -83,8 +83,12 @@ def home_problems(rows, chosen, places, facts, wide, widgets=()):
         problems.append("below the list: %r, expected %r" % (text, wanted))
     if not wide:
         # At 320 by 200 a row holds 28 characters: the size and digest are cut and say so with "..".
-        if len(text) != 2 or text[0] != name or not (text[1] == facts or (text[1].endswith("..") and facts.startswith(text[1][:-2]))):
-            problems.append("below the list: %r, expected the name and the facts, cut visibly if cut" % text)
+        # At 320 by 200 a row holds 28 characters: the size, then as many of the digest's first sixteen
+        # digits as fit (at least eight), then "..".
+        size, digest = facts.split("   ")[0], facts.split("SHA-256 ")[1][:16]
+        short = re.fullmatch(re.escape(size) + r" sha ([0-9a-f]{8,16})\.\.", text[1]) if len(text) == 2 else None
+        if len(text) != 2 or text[0] != name or not (text[1] == facts or (short and digest.startswith(short[1]))):
+            problems.append("below the list: %r, expected the name and the size and digest, cut visibly if cut" % text)
     if wide and rows[keys - 1].strip():
         problems.append("the row above the keys is not blank: %r" % rows[keys - 1])
     return problems
@@ -237,14 +241,18 @@ def main():
     out = evidence / "refused-640x480"
     rpc, key, screen, guest, stream = boot(args.qemu, folder / "kernel.elf32", folder, receipt["kernel_measurement"], "640x480", out, glyphs, args.timeout, programs=[long_name])
     try:
-        def identity(rows):
+        refusal = "Not started: the program could not be admitted as a task"
+
+        def identity(rows, caption):
             text = [row.strip() for row in rows]
-            return "Enter starts" in text and long_name in text and facts in text and rows[len(rows) - 2].strip() == KEYS_WIDE
-        before = screen("before-enter", identity)
+            return caption in text and long_name in text and facts in text and rows[len(rows) - 2].strip() == KEYS_WIDE
+        before = screen("before-enter", lambda rows: identity(rows, "Enter starts"))
         if any("could not be started" in row for row in before):
             problems.append("refused: the desktop spoke of a start before Enter")
         key("ret")
-        after = screen("after-enter", lambda rows: identity(rows) and "could not be started: the program could not be admitted as a task" in "".join(row[2:] for row in rows))
+        # The card stops saying 'Enter starts' and says why not, and the message is there in full as well.
+        after = screen("after-enter", lambda rows: identity(rows, refusal) and not any(row.strip() == "Enter starts" for row in rows)
+                       and "could not be started: the program could not be admitted as a task" in "".join(row[2:] for row in rows))
         results["refused-640x480"] = {"said": [row.strip() for row in after if row not in before and row.strip()]}
         key("f10")
         screen("power-question", lambda rows: any("POWER OFF" in row for row in rows))
