@@ -19,6 +19,7 @@ mod worker_wire;
 #[cfg(feature = "virtio-register-probe")]
 mod register_wire;
 mod session;
+mod regular;
 mod sys;
 mod ui;
 #[cfg(feature = "vm-store")]
@@ -524,7 +525,7 @@ fn script_drain() -> Result<(), &'static str> {
 fn asynchronous(failed: &mut u32) {
     use dev::KeyPacing::{BlockedRead, Sleeping, Timed};
     use user::{End, Grants, Program, Start, World};
-    let world = || World { files: alloc::vec::Vec::new(), store: alloc::vec::Vec::new(),
+    let world = || World { files: alloc::vec::Vec::new(), store: Default::default(),
         #[cfg(feature = "vm-store")] volume: None, epoch_at_start: 0, unanswered: alloc::vec::Vec::new() };
     let grants = Grants { console: true, keys: true, ..Grants::default() };
     let loaded = |name: &str, args: &[&str], keys: &[u8], after: u64, pacing| -> (Result<user::Process, &'static str>, usize, usize, u64) {
