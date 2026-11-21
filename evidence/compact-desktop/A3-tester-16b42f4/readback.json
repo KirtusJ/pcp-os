@@ -1,0 +1,311 @@
+{
+  "source_commit": "16b42f4518af3b90dc41cfc734b96b8b7ca64459",
+  "source_tree": "5be8d61fa6b23bebfc7b778375a1c60a5f77df44",
+  "tester": {
+    "format": "pcp-os-tester-cd/1",
+    "source_commit": "16b42f4518af3b90dc41cfc734b96b8b7ca64459",
+    "source_tree": "5be8d61fa6b23bebfc7b778375a1c60a5f77df44",
+    "uncommitted_changes": false,
+    "toolchain": "1.97.0",
+    "rustc": {
+      "binary": "rustc",
+      "commit-hash": "2d8144b7880597b6e6d3dfd63a9a9efae3f533d3",
+      "commit-date": "2026-07-07",
+      "host": "x86_64-unknown-linux-gnu",
+      "release": "1.97.0",
+      "LLVM version": "22.1.6"
+    },
+    "kernel_features": "default",
+    "guest_features": "local-media",
+    "kernel_measurement": "beedae58ac595d8f6933418ddc2fe609ef54b73aa3c99d6d78797845ab5130b1",
+    "iso_bytes": 2623488,
+    "iso_sha256": "5180c45be42da4a49ecfc76e2c3d62dc64fb8b61eb7719a104b41aee0cbc7467",
+    "inputs": {
+      "clip.ppm": {
+        "bytes": 111008,
+        "sha256": "f6a1d9a0702f472f5b02cf0a528586e6d4447acbad2bd92eb0fc6d70eea4df4d"
+      },
+      "clip.wav": {
+        "bytes": 614444,
+        "sha256": "70ca6a81bc6f94db7d14a61630ff02c517d20a65c31273b16ff02e233018e244"
+      },
+      "kernel.elf32": {
+        "bytes": 1008848,
+        "sha256": "a4594f102d066a25898281a31ec2cb547824da400d386513c4f960deda11c0f6"
+      },
+      "limine-bios-cd.bin": {
+        "bytes": 24576,
+        "sha256": "913b56f2a70679049ea2f18c5b5e5902ce488131d76a036ca363c7beb4d8f657"
+      },
+      "limine-bios.sys": {
+        "bytes": 252052,
+        "sha256": "34dd9fb6e706d78e920f9e3a403addcab66647ebe78d282d6c11eb6f1ffa5788"
+      },
+      "limine.conf": {
+        "bytes": 346,
+        "sha256": "0e77f6e6149dd4de5abe6d3058d988878e15e1531c3c6af618ecfd654b2f6557"
+      },
+      "limine.txt": {
+        "bytes": 1297,
+        "sha256": "f174b8ff78f6f8982a1fc992668f8486eb8cf598f6938923c22e9bb50f8338a8"
+      },
+      "notice.md": {
+        "bytes": 3036,
+        "sha256": "329d287bf2bac528afc035145886284908ecd139958223c6cff6477e7372e609"
+      },
+      "notices.txt": {
+        "bytes": 97786,
+        "sha256": "ecb290508bd085e335eeda54a3f9c2616632c8b7affb5422543dbbc5e5e94601"
+      },
+      "readme.txt": {
+        "bytes": 655,
+        "sha256": "7b5d9350da240128159e8cc2453a0667c3d9059274937e83861a8b0bb1b83cfe"
+      },
+      "surf.elf": {
+        "bytes": 119808,
+        "sha256": "943d2622cfe28d6c4220635d7a28bedf325fede584254639b3165dd767a17ec3"
+      }
+    },
+    "on_disc": {
+      "boot.cat": {
+        "bytes": 2048,
+        "sha256": "f366797d31b1e4655b7cc8fc8c53ec80b1789f60452b5af2f752877417293cb2"
+      },
+      "clip.ppm": {
+        "bytes": 111008,
+        "sha256": "f6a1d9a0702f472f5b02cf0a528586e6d4447acbad2bd92eb0fc6d70eea4df4d"
+      },
+      "clip.wav": {
+        "bytes": 614444,
+        "sha256": "70ca6a81bc6f94db7d14a61630ff02c517d20a65c31273b16ff02e233018e244"
+      },
+      "kernel.elf32": {
+        "bytes": 1008848,
+        "sha256": "a4594f102d066a25898281a31ec2cb547824da400d386513c4f960deda11c0f6"
+      },
+      "limine-bios-cd.bin": {
+        "bytes": 24576,
+        "sha256": "925bf591ffbaee2f1f6335e580be54405e57a7851172612fe455a3a07b26a89c"
+      },
+      "limine-bios.sys": {
+        "bytes": 252052,
+        "sha256": "34dd9fb6e706d78e920f9e3a403addcab66647ebe78d282d6c11eb6f1ffa5788"
+      },
+      "limine.conf": {
+        "bytes": 346,
+        "sha256": "0e77f6e6149dd4de5abe6d3058d988878e15e1531c3c6af618ecfd654b2f6557"
+      },
+      "limine.txt": {
+        "bytes": 1297,
+        "sha256": "f174b8ff78f6f8982a1fc992668f8486eb8cf598f6938923c22e9bb50f8338a8"
+      },
+      "notice.md": {
+        "bytes": 3036,
+        "sha256": "329d287bf2bac528afc035145886284908ecd139958223c6cff6477e7372e609"
+      },
+      "notices.txt": {
+        "bytes": 97786,
+        "sha256": "ecb290508bd085e335eeda54a3f9c2616632c8b7affb5422543dbbc5e5e94601"
+      },
+      "readme.txt": {
+        "bytes": 655,
+        "sha256": "7b5d9350da240128159e8cc2453a0667c3d9059274937e83861a8b0bb1b83cfe"
+      },
+      "surf.elf": {
+        "bytes": 119808,
+        "sha256": "943d2622cfe28d6c4220635d7a28bedf325fede584254639b3165dd767a17ec3"
+      }
+    },
+    "written_by_mastering": [
+      "boot.cat",
+      "limine-bios-cd.bin"
+    ],
+    "third_party_crates_compiled_in": [
+      "block-buffer 0.10.4",
+      "cfg-if 1.0.5",
+      "cpufeatures 0.2.17",
+      "crypto-common 0.1.7",
+      "digest 0.10.7",
+      "generic-array 0.14.7",
+      "sha2 0.10.9",
+      "typenum 1.20.1",
+      "version_check 0.9.5"
+    ]
+  },
+  "tools": "QEMU emulator version 10.0.13 (Debian 1:10.0.13+ds-0+deb13u1)",
+  "small_desktop": {
+    "1280x720": {
+      "frames": 16,
+      "final_checks": 72,
+      "exit": 0
+    },
+    "1920x1080": {
+      "frames": 15,
+      "final_checks": 72,
+      "exit": 0
+    },
+    "2560x1440": {
+      "frames": 15,
+      "final_checks": 72,
+      "exit": 0
+    },
+    "320x200": {
+      "frames": 93,
+      "final_checks": 72,
+      "exit": 0
+    },
+    "320x220": {
+      "frames": 16,
+      "final_checks": 72,
+      "exit": 0
+    },
+    "320x240": {
+      "frames": 16,
+      "final_checks": 72,
+      "exit": 0
+    },
+    "320x260": {
+      "frames": 16,
+      "final_checks": 72,
+      "exit": 0
+    },
+    "320x280": {
+      "frames": 14,
+      "final_checks": 72,
+      "exit": 0
+    },
+    "320x480": {
+      "frames": 14,
+      "final_checks": 72,
+      "exit": 0
+    },
+    "640x240": {
+      "frames": 14,
+      "final_checks": 72,
+      "exit": 0
+    },
+    "640x260": {
+      "frames": 14,
+      "final_checks": 72,
+      "exit": 0
+    },
+    "640x480": {
+      "frames": 43,
+      "final_checks": 72,
+      "exit": 0
+    },
+    "800x600": {
+      "frames": 15,
+      "final_checks": 72,
+      "exit": 0
+    }
+  },
+  "primary_checks": "The source CD was built from clean source with Rust 1.97.0 and the pinned Limine loader. Four optical boots used the new ISO. The 13 geometry tests read the measured kernel and Surfbird from that ISO and booted them directly, as the checker specifies.",
+  "source_f5": {
+    "1024x768": {
+      "passed": true,
+      "boot": "direct-kernel",
+      "exit": 0,
+      "geometry": "1024x768"
+    },
+    "800x600": {
+      "passed": true,
+      "boot": "optical",
+      "exit": 0,
+      "geometry": "800x600"
+    }
+  },
+  "optical": [
+    {
+      "machine": "pc",
+      "clock": "ordinary",
+      "passed": true,
+      "startup_pass_lines": 71,
+      "final_pass_lines": 72,
+      "register_problems": [],
+      "exit_code": 0,
+      "problems": []
+    },
+    {
+      "machine": "pc",
+      "clock": "instruction-counted",
+      "passed": true,
+      "startup_pass_lines": 71,
+      "final_pass_lines": 72,
+      "register_problems": [],
+      "exit_code": 0,
+      "problems": []
+    },
+    {
+      "machine": "q35",
+      "clock": "ordinary",
+      "passed": true,
+      "startup_pass_lines": 71,
+      "final_pass_lines": 72,
+      "register_problems": [],
+      "exit_code": 0,
+      "problems": []
+    },
+    {
+      "machine": "q35",
+      "clock": "instruction-counted",
+      "passed": true,
+      "startup_pass_lines": 71,
+      "final_pass_lines": 72,
+      "register_problems": [],
+      "exit_code": 0,
+      "problems": []
+    }
+  ],
+  "host_exceptions": "An initial build began before Rust sources were fully installed. It failed. The complete installation and clean subsequent build succeeded. Initial QEMU runs using Unix monitor sockets stopped before boot because the host refused the socket. The repeats used QMP over subprocess pipes. The 13 desktop sizes ran in parallel groups, preserving all checker predicates, key timing and screen capture logic. The two compact F5 cases used the unchanged source checker.",
+  "wrong_measurement_cases": {
+    "1280x720": {
+      "explicit_disabled_notice_before_enter": true,
+      "visible_register_count_before_and_after_enter": [
+        6,
+        6
+      ],
+      "closed_events": 8,
+      "launched_tasks": 0
+    },
+    "1920x1080": {
+      "explicit_disabled_notice_before_enter": true,
+      "visible_register_count_before_and_after_enter": [
+        6,
+        6
+      ],
+      "closed_events": 8,
+      "launched_tasks": 0
+    },
+    "2560x1440": {
+      "explicit_disabled_notice_before_enter": true,
+      "visible_register_count_before_and_after_enter": [
+        6,
+        6
+      ],
+      "closed_events": 8,
+      "launched_tasks": 0
+    },
+    "320x200": {
+      "explicit_disabled_notice_before_enter": false,
+      "visible_register_count_before_and_after_enter": [
+        6,
+        6
+      ],
+      "closed_events": 8,
+      "launched_tasks": 0
+    },
+    "640x480": {
+      "explicit_disabled_notice_before_enter": false,
+      "visible_register_count_before_and_after_enter": [
+        6,
+        6
+      ],
+      "closed_events": 8,
+      "launched_tasks": 0
+    }
+  },
+  "wrong_measurement_note": "Fresh direct boots from the tester ISO kernel and Surfbird; each guest received one deliberately incorrect hex digit in its expected kernel digest. The three full desktop sizes stated that programs were disabled. At 320x200 and 640x480 the small launcher omitted the explicit notice before Enter. At 320x200 the refusal explanation after Enter ended in \u201cand sta..\u201d. All five refused the launch and the displayed register count stayed at six before the two shutdown records.",
+  "limitations": "All observations are from emulators. Physical keyboards, intermediate-width full register access, and a full 2x desktop are outside these cases.",
+  "total_matrix_frames": 301
+}
