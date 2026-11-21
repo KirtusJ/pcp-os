@@ -337,8 +337,8 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
         # An Enter that is already held when the question appears is not an answer, however often it repeats
         # (A3's finding). Enter goes down and stays down: it opens the launcher. F10 asks. The held key's
         # repeats must leave the question standing. Only after Enter has come up does a press switch off.
-        def enter(down):
-            rpc("input-send-event", events=[{"type": "key", "data": {"down": down, "key": {"type": "qcode", "data": "ret"}}}])
+        def enter(down, which="ret"):
+            rpc("input-send-event", events=[{"type": "key", "data": {"down": down, "key": {"type": "qcode", "data": which}}}])
         enter(True)
         wait_screen("launcher-with-enter-held", launcher_list_visible)
         key("f10")
@@ -346,11 +346,20 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
         for _ in range(3):
             enter(True)
             time.sleep(0.3)
+        # The number pad's Enter goes down as well; then the main one is let go. The one still held repeats.
+        # Letting one go must not make the other's repeats an answer (A3's and B3's second finding).
+        enter(True, "kp_enter")
+        time.sleep(0.3)
+        enter(False)
+        time.sleep(0.3)
+        for _ in range(3):
+            enter(True, "kp_enter")
+            time.sleep(0.3)
         time.sleep(1)
         held = wait_screen("power-question-after-repeats", lambda view: any("POWER OFF" in row for row in view))
         if "ALL SELF-TESTS PASS." in (out / "serial.txt").read_text(errors="replace") or not held:
             raise RuntimeError("a held Enter answered the power question")
-        enter(False)
+        enter(False, "kp_enter")
         time.sleep(0.5)
         key("ret")
         wait("ALL SELF-TESTS PASS.")
