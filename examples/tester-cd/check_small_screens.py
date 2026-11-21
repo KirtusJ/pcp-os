@@ -56,8 +56,8 @@ below are the texts of those frames, each with its rows joined by single spaces.
 The sizes most displays have, 1280 by 720, 1920 by 1080 and 2560 by 1440 (owner, 21 November 2026), where
 the desktop is the full one: T1 to T5 and T7 as above with the full desktop's keys, and in place of T6:
  G1 the last three rows of the desktop hold "Programs", "F1 keys" and "verified";
- G2 in the programs, one row ends with the sentence "Choose one[ to start]. Each runs with only what it
-    is granted." and ends inside its plate; a row says what the chosen program may use; Esc gives the
+ G2 in the programs, one row holds the sentence "Choose one[ to start]. Each runs with only what it
+    is granted." and it ends inside its plate; a row says what the chosen program may use; Esc gives the
     desktop as it was.
 
 The check proves its own reading on a good frame of each kind (for the text screens: the warning with
@@ -405,9 +405,11 @@ def text_trial(key, screen, passed, problems, results, mode, graphic=False):
         edge = (width // 200 * 10 + min(width * 47 // 100, 1100) // 10 * 10) // 10
         key("ret")
         programs, _ = screen("programs", lambda rows, frame: any("> " + PROGRAMS[0] in row for row in rows))
-        note = [row for row in programs if "Each runs with only what it is granted." in row]
-        if len(note) != 1 or not re.search(r"Choose one( to start)?\. Each runs with only what it is granted\.$", note[0]) or len(note[0]) > edge - 1:
-            found.append("G2: the sentence above the programs reads %r and its plate ends at column %d" % (note, edge))
+        # A row of the full desktop also holds cells that are no character (a plate's edge, the field's rings).
+        note = [m for row in programs for m in re.finditer(r"Choose one( to start)?\. Each runs with only what it is granted\.", row)]
+        if len(note) != 1 or note[0].end() > edge - 1:
+            found.append("G2: the sentence above the programs is on %d rows, or ends at column %s of a plate that ends at %d"
+                         % (len(note), [m.end() for m in note], edge))
         if not any("may use: " in row for row in programs):
             found.append("G2: the chosen program's grants are not shown")
         key("esc")
