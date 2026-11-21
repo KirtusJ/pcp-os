@@ -145,15 +145,10 @@ fn a_register_is_never_reached_through_a_link_or_outside_the_served_directory() 
         assert!(err, "{bad}: {text}");
     }
     // A register with a second name is not served: a write through one name would be a write to the other.
-    // The host counts names only where the system reports the count to safe code, which today is Unix
-    // (issue 65): on Windows this refusal does not exist yet, so it is not asserted there.
-    #[cfg(unix)]
-    {
-        let own = dir("own");
-        assert!(!tool(&own, "acr_begin", "{}").1);
-        fs::hard_link(own.join(REG), own.join("other.jsonl")).unwrap();
-        assert!(tool(&own, "acr_status", "{}").0.contains("more than one name"));
-    }
+    let own = dir("own");
+    assert!(!tool(&own, "acr_begin", "{}").1);
+    fs::hard_link(own.join(REG), own.join("other.jsonl")).unwrap();
+    assert!(tool(&own, "acr_status", "{}").0.contains("more than one name"));
 }
 
 #[test]
