@@ -1,0 +1,66 @@
+{
+  "source": "15917575b9e205e9042da2840492751945f32fff",
+  "tree": "5553028dbc6a1601e092fd36fc4c1175650c4f3f",
+  "runs": {
+    "last14": {
+      "pins": 14,
+      "place": 15,
+      "length": 64,
+      "verdict": "ALL SELF-TESTS PASS. Present: user mode and preemptive processes; programs loaded from the loader's files; a display, a keyboard, sound and music where the machine has ones this kernel drives. Not present: storage that outlasts power, a mouse, network, a second processor.",
+      "register_refused": false,
+      "exit": 0,
+      "first_paged_row": "Place 15/15 | name 1/3 <- ->",
+      "last_paged_row": "Place 15/15 | name 3/3 <- ->",
+      "last_rows_by_count": {
+        "0": "",
+        "1": "1 widget line(s) not shown",
+        "2": "2 widget line(s) not shown"
+      }
+    },
+    "last16": {
+      "pins": 16,
+      "place": 17,
+      "length": 64,
+      "verdict": "ALL SELF-TESTS PASS. Present: user mode and preemptive processes; programs loaded from the loader's files; a display, a keyboard, sound and music where the machine has ones this kernel drives. Not present: storage that outlasts power, a mouse, network, a second processor.",
+      "register_refused": false,
+      "exit": 0,
+      "first_paged_row": "Place 17/17 | name 1/3 <- ->",
+      "last_paged_row": "Place 17/17 | name 3/3 <- ->",
+      "last_rows_by_count": {
+        "0": "",
+        "1": "1 widget line(s) not shown",
+        "2": "2 widget line(s) not shown"
+      }
+    },
+    "wide255": {
+      "pins": 16,
+      "place": 17,
+      "length": 255,
+      "verdict": "1 SELF-TEST(S) FAILED",
+      "register_refused": true,
+      "exit": 0,
+      "first_paged_row": "Place 17/17 | name 1/10 <-..",
+      "last_paged_row": "Place 17/17 | name 10/10 <..",
+      "last_rows_by_count": {
+        "0": "",
+        "1": "1 widget line(s) not shown",
+        "2": "2 widget line(s) not shown"
+      }
+    },
+    "extended-255-local": {
+      "pins": 16,
+      "place": 17,
+      "length": 255,
+      "verdict": "1 SELF-TEST(S) FAILED",
+      "register_refused": true,
+      "exit": 0,
+      "first_paged_row": "Place 17/17 | name 1/10 <-..",
+      "last_paged_row": "Place 17/17 | name 10/10 <..",
+      "last_rows_by_count": {
+        "0": "",
+        "1": "1 widget line(s) not shown",
+        "2": "2 widget line(s) not shown"
+      }
+    }
+  }
+}

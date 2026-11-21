@@ -1,0 +1,255 @@
+{
+  "source": "15917575b9e205e9042da2840492751945f32fff",
+  "tree": "5553028dbc6a1601e092fd36fc4c1175650c4f3f",
+  "hosted_kernel_sha256": "c42a6e6f823b0a27606cfc83e0ab1760cf1f5d2f0a8527ed07bab0805fc22cfa",
+  "modes": {
+    "320x200": {
+      "checks": 101,
+      "launches": [
+        {
+          "name": "matching-prefix-matching-pr2.elf",
+          "pages": [
+            "matching-prefix-matching-pr2",
+            ".elf"
+          ],
+          "outcome": "ran and exited 0",
+          "visible_digest": "53 KiB sha 46f4bbd5e4d754a..",
+          "refusal_rows": []
+        },
+        {
+          "name": "matching-prefix-matching-pre3.elf",
+          "pages": [
+            "matching-prefix-matching-pre",
+            "3.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB sha 46f4bbd5e4d754a..",
+          "refusal_rows": [
+            "???  Not started: not admitted"
+          ]
+        },
+        {
+          "name": "matching-prefix-matching-prefix-matching-prefix-matching-p3.elf",
+          "pages": [
+            "matching-prefix-matching-pre",
+            "fix-matching-prefix-matching",
+            "-p3.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB sha 46f4bbd5e4d754a..",
+          "refusal_rows": [
+            "???  Not started: not admitted"
+          ]
+        },
+        {
+          "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaAzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf",
+          "pages": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "aaAzzzzzzzzzzzzzzzzzzzzzzzzz",
+            "zzzz.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB sha 46f4bbd5e4d754a..",
+          "refusal_rows": [
+            "???  Not started: not admitted"
+          ]
+        },
+        {
+          "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaBzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf",
+          "pages": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "aaBzzzzzzzzzzzzzzzzzzzzzzzzz",
+            "zzzz.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB sha 46f4bbd5e4d754a..",
+          "refusal_rows": [
+            "???  Not started: not admitted"
+          ]
+        }
+      ],
+      "self_tests": 72,
+      "exit": 0
+    },
+    "640x480": {
+      "checks": 44,
+      "launches": [
+        {
+          "name": "matching-prefix-matching-pr2.elf",
+          "pages": [
+            "matching-prefix-matching-pr2.elf"
+          ],
+          "outcome": "ran and exited 0",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": []
+        },
+        {
+          "name": "matching-prefix-matching-pre3.elf",
+          "pages": [
+            "matching-prefix-matching-pre3.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "Not started: the program could not be admitted as a task"
+          ]
+        },
+        {
+          "name": "matching-prefix-matching-prefix-matching-prefix-matching-p3.elf",
+          "pages": [
+            "matching-prefix-matching-prefix-matching-prefix-matching-p3.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "Not started: the program could not be admitted as a task"
+          ]
+        },
+        {
+          "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaAzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf",
+          "pages": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaAzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "Not started: the program could not be admitted as a task"
+          ]
+        },
+        {
+          "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaBzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf",
+          "pages": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaBzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "Not started: the program could not be admitted as a task"
+          ]
+        }
+      ],
+      "self_tests": 72,
+      "exit": 0
+    },
+    "bar": {
+      "checks": 44,
+      "launches": [
+        {
+          "name": "matching-prefix-matching-pr2.elf",
+          "pages": [
+            "matching-prefix-matching-pr2.elf"
+          ],
+          "outcome": "ran and exited 0",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": []
+        },
+        {
+          "name": "matching-prefix-matching-pre3.elf",
+          "pages": [
+            "matching-prefix-matching-pre3.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "?                 ??         ? Not started: the program could not be admitted as a task ?              ????                                                    ????"
+          ]
+        },
+        {
+          "name": "matching-prefix-matching-prefix-matching-prefix-matching-p3.elf",
+          "pages": [
+            "matching-prefix-matching-prefix-matching-prefix-matching-p3.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "?                 ??                  ??        ? Not started: the program could not be admitted as a task        ?                                            ????"
+          ]
+        },
+        {
+          "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaAzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf",
+          "pages": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaAzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "?                 ??                  ??                 ??        ? Not started: the program could not be admitted as a task         ?                        ????"
+          ]
+        },
+        {
+          "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaBzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf",
+          "pages": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaBzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "?                 ??                  ??                 ??                   ???     ? Not started: the program could not be admitted as a task         ?     ????"
+          ]
+        }
+      ],
+      "self_tests": 72,
+      "exit": 0
+    },
+    "dock": {
+      "checks": 44,
+      "launches": [
+        {
+          "name": "matching-prefix-matching-pr2.elf",
+          "pages": [
+            "matching-prefix-matching-pr2.elf"
+          ],
+          "outcome": "ran and exited 0",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": []
+        },
+        {
+          "name": "matching-prefix-matching-pre3.elf",
+          "pages": [
+            "matching-prefix-matching-pre3.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "??                 ?                 ??                  ??               ? Not started: the program could not be admitted as a task ?                                  ???"
+          ]
+        },
+        {
+          "name": "matching-prefix-matching-prefix-matching-prefix-matching-p3.elf",
+          "pages": [
+            "matching-prefix-matching-prefix-matching-prefix-matching-p3.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "??                 ?                 ??                  ??                  ??         ? Not started: the program could not be admitted as a task        ?             ???"
+          ]
+        },
+        {
+          "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaAzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf",
+          "pages": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaAzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "??                 ?                 ??                  ??                  ??                   ??? ? Not started: the program could not be admitted as a task         ??"
+          ]
+        },
+        {
+          "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaBzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf",
+          "pages": [
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaBzzzzzzzzzzzzzzzzzzzzzzzzzzzzz.elf"
+          ],
+          "outcome": "refused",
+          "visible_digest": "53 KiB   SHA-256 46f4bbd5e4d754a7...",
+          "refusal_rows": [
+            "??                 ?                 ??                  ??                  ??                   ???             ? Not started: the program could not be admitted as a task         ?"
+          ]
+        }
+      ],
+      "self_tests": 72,
+      "exit": 0
+    }
+  }
+}
