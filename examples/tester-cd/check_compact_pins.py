@@ -11,6 +11,10 @@ It pins every one, then requires, with the first pin chosen and with the last:
 - the row of the keys is intact, and nothing else is on it or on the row above it at 640 by 480;
 - with two widgets turned on, their lines are shown too and the identity is still whole.
 
+A last boot at 640 by 480 has one program under a name of forty characters, which the kernel refuses to
+admit as a task (its self-tests say so for 33 bytes). Enter on its pin must leave, on the desktop, the
+words that it could not be started, with its identity still whole (A3's finding: the refusal was silent).
+
 It also proves its own reading: three altered copies of a good screen must be refused (the identity's
 size-and-digest row replaced by the keys, which is the defect B3 found; the wrong program named; the keys
 row overwritten).
@@ -86,11 +90,12 @@ def home_problems(rows, chosen, places, facts, wide, widgets=()):
     return problems
 
 
-def boot(qemu, kernel, folder, measurement, mode, out, glyphs, timeout):
+def boot(qemu, kernel, folder, measurement, mode, out, glyphs, timeout, programs=None):
+    programs = programs or PROGRAMS
     out.mkdir(parents=True)
     serial, sock = out / "serial.txt", out / "qmp.sock"
     cmd = [qemu, "-machine", "pc", "-accel", "tcg", "-cpu", "qemu64", "-m", "128M", "-kernel", str(kernel),
-           "-initrd", ",".join(PROGRAMS), "-append", "image=%s desktop=%s" % (measurement, mode), "-vga", "std", "-nic", "none",
+           "-initrd", ",".join(programs), "-append", "image=%s desktop=%s" % (measurement, mode), "-vga", "std", "-nic", "none",
            "-display", "none", "-monitor", "none", "-qmp", "unix:%s,server=on,wait=off" % sock, "-serial", "file:%s" % serial, "-no-reboot"]
     guest = subprocess.Popen(cmd, cwd=folder, stdout=subprocess.DEVNULL, stderr=(out / "qemu-stderr.txt").open("wb"))
     try:
@@ -143,7 +148,7 @@ def boot(qemu, kernel, folder, measurement, mode, out, glyphs, timeout):
             raise RuntimeError("the running kernel did not measure as the receipt says")
         screen("home-empty", lambda rows: any("Programs" in row for row in rows[5:]))
         key("ret")
-        for _ in PROGRAMS:
+        for _ in programs:
             key("ctrl", "p")
             key("down")
         key("esc")
@@ -226,6 +231,33 @@ def main():
         log = (out / "serial.txt").read_text(errors="replace")
         if "ALL SELF-TESTS PASS." not in log:
             problems.append(mode + ": the kernel did not finish with all its self-tests passing")
+    # The refused program: one pin, chosen, Enter; the desktop must say what happened.
+    long_name = "a-name-of-forty-characters-in-all-xxxx.elf"
+    (folder / long_name).write_bytes(surf)
+    out = evidence / "refused-640x480"
+    rpc, key, screen, guest, stream = boot(args.qemu, folder / "kernel.elf32", folder, receipt["kernel_measurement"], "640x480", out, glyphs, args.timeout, programs=[long_name])
+    try:
+        def identity(rows):
+            text = [row.strip() for row in rows]
+            return "Enter starts" in text and long_name in text and facts in text and rows[len(rows) - 2].strip() == KEYS_WIDE
+        before = screen("before-enter", identity)
+        if any("could not be started" in row for row in before):
+            problems.append("refused: the desktop spoke of a start before Enter")
+        key("ret")
+        after = screen("after-enter", lambda rows: identity(rows) and "could not be started: the program could not be admitted as a task" in "".join(row[2:] for row in rows))
+        results["refused-640x480"] = {"said": [row.strip() for row in after if row not in before and row.strip()]}
+        key("f10")
+        screen("power-question", lambda rows: any("POWER OFF" in row for row in rows))
+        key("ret")
+        results["refused-640x480"]["exit_code"] = guest.wait(timeout=40)
+    except Exception as error:
+        problems.append("refused-640x480: %s" % error)
+    finally:
+        if guest.poll() is None:
+            guest.kill()
+        stream.close()
+    if long_name + " could not be started: the program could not be admitted as a task" not in (out / "serial.txt").read_text(errors="replace"):
+        problems.append("refused-640x480: the serial log does not record the refusal")
     summary = {"kernel_measurement": receipt["kernel_measurement"], "programs": len(PROGRAMS), "results": results, "problems": problems, "passed": not problems}
     (evidence / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     for mode in results:

@@ -527,8 +527,9 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
                       else { format!("Verified at start: all {} self-tests passed.", start.passed) }, if safe { BAD } else { GOOD }, GROUND);
             // The rows between the heading and the keys are shared out so that nothing is drawn over
             // anything else and nothing that is left out is left out in silence (after B3's windowed list).
-            // First what must be there: one row of the list, holding the chosen place, and for a chosen
-            // pin its whole name and its size and digest. Then, as far as the rows go: a blank row above
+            // First what must be there: one row of the list, holding the chosen place, for a chosen pin
+            // its whole name and its size and digest, and what the last program left to say (up to three
+            // rows). Then, as far as the rows go: a blank row above
             // the keys, the words 'Enter starts', a blank row above them, the widgets' lines, and more
             // rows of the list. Row 4 says which places are shown of how many, and how many widget lines
             // had no room. Every place is reached by moving the choice: the list follows it.
@@ -546,6 +547,11 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
             let name_rows = if chosen_pin.is_some() { name.len().min(left.saturating_sub(1).max(1)) } else { 0 };
             let facts = chosen_pin.is_some() && left > name_rows;
             left = left.saturating_sub(name_rows + facts as usize);
+            // What the last program left to say, or why one was not started, comes next: a person who
+            // pressed Enter and sees the desktop again must be told what happened.
+            let said = wrapped(message.lines().next().unwrap_or(""), across);
+            let said_rows = if message.is_empty() { 0 } else { said.len().min(3).min(left) };
+            left -= said_rows;
             fn take(left: &mut usize, want: bool) -> bool { let got = want && *left > 0; if got { *left -= 1; } got }
             let gap_keys = take(&mut left, true);
             let caption = take(&mut left, chosen_pin.is_some());
@@ -574,6 +580,10 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
                     row += 1;
                 }
                 if facts { at(2, row, &cut(&format!("{}   SHA-256 {}...", size_text(p.image.len()), &p.digest[..16]), across), SOFT, GROUND); row += 1; }
+            }
+            for (n, line) in said.iter().enumerate().take(said_rows) {
+                at(2, row, &if n + 1 == said_rows && said.len() > said_rows { cut(&format!("{}...", line), line.chars().count()) } else { line.clone() }, ui::AMBER, GROUND);
+                row += 1;
             }
             row += gap_widgets as u32;
             for line in widget_lines.iter().take(widgets_shown) {
