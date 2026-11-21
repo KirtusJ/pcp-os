@@ -95,6 +95,25 @@ fn in_use(name: &str) -> PathBuf {
     root
 }
 
+/// A symbolic link made with the platform's own call, so that a test of "a link is not followed" runs on
+/// every platform the host is built for. On Windows this needs Developer Mode or an elevated process.
+#[cfg(unix)]
+fn link_to_file(target: &std::path::Path, link: &std::path::Path) {
+    std::os::unix::fs::symlink(target, link).unwrap();
+}
+#[cfg(unix)]
+fn link_to_dir(target: &std::path::Path, link: &std::path::Path) {
+    std::os::unix::fs::symlink(target, link).unwrap();
+}
+#[cfg(windows)]
+fn link_to_file(target: &std::path::Path, link: &std::path::Path) {
+    std::os::windows::fs::symlink_file(target, link).expect("creating a symbolic link on Windows needs Developer Mode or an elevated process");
+}
+#[cfg(windows)]
+fn link_to_dir(target: &std::path::Path, link: &std::path::Path) {
+    std::os::windows::fs::symlink_dir(target, link).expect("creating a symbolic link on Windows needs Developer Mode or an elevated process");
+}
+
 #[cfg(unix)]
 #[test]
 fn a_register_is_never_reached_through_a_link_or_outside_the_served_directory() {
@@ -603,8 +622,8 @@ fn an_artifact_s_digest_is_the_server_s_own_reading_of_a_file_inside_the_served_
     let outside = dir("artifact-outside");
     fs::write(root.join("target.txt"), b"the target\n").unwrap();
     fs::write(outside.join("secret.txt"), b"elsewhere\n").unwrap();
-    std::os::unix::fs::symlink(outside.join("secret.txt"), root.join("link.txt")).unwrap();
-    std::os::unix::fs::symlink(&outside, root.join("away")).unwrap();
+    link_to_file(&outside.join("secret.txt"), &root.join("link.txt"));
+    link_to_dir(&outside, &root.join("away"));
     tool(&root, "acr_begin", "{}");
     let (r, err) = tool(&root, "acr_artifact", r#"{"path":"target.txt","name":"target"}"#);
     assert!(!err && r.contains(&sha256_hex(b"the target\n")), "{r}");
