@@ -11,6 +11,7 @@ extern crate alloc;
 
 mod arch;
 mod dev;
+mod desktop;
 mod exec;
 mod font;
 mod mem;
