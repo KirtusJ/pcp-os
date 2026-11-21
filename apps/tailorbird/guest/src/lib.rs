@@ -215,7 +215,7 @@ pub struct PendingSubmit {
 pub struct Ui {
     /// This launch’s display preference. The desktop mode stays owned by the kernel.
     pub compact_view: bool,
-    /// Local presentation revision for F6 pointer-capture invalidation.
+    /// Local presentation/accepted mode-commit revision for pointer fencing.
     /// Not a trusted OS display-geometry or input-device generation.
     pub(crate) view_epoch: u64,
     pub input: Text<INPUT_LIMIT>,
@@ -542,6 +542,10 @@ impl Ui {
                 true
             }
             BackendEvent::ModeCommitted(mode) if self.connected => {
+                // Every accepted service mode receipt, even a same-mode update,
+                // invalidates a pointer Down held against the earlier view.
+                // Saturation disables future pointer capture, never wraps.
+                self.view_epoch = self.view_epoch.saturating_add(1);
                 let requested = self.mode_pending;
                 self.mode = mode;
                 self.mode_pending = None;
