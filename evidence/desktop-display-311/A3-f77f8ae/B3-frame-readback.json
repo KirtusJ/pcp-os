@@ -1,0 +1,71 @@
+{
+  "archive_url": "https://github.com/KirtusJ/pcp-os/blob/263ba1c13ca8bb6447941a3650c9b948c766935f/evidence/desktop-display-311/B3-compact-small-and-widgets-f77f8ae.zip",
+  "archive_git_blob": "34497ab03be5538df82ba57a8dcefd230fda015a",
+  "input_producer": "B3",
+  "frames": [
+    {
+      "source_revision": "04a2954c5296cce90106d32d2d358392a3271efa",
+      "kernel_sha256": "541c0ecea03db58b6987312e6e99800f1935803792ffb034ddd03f6db61a3090",
+      "frame": "z3-widget-baseline/widgets-seven.ppm",
+      "frame_sha256": "5bb3e0e05e0eed162858f4e2c7f49362a0a971dafa0b09ec313ac647ad6a822d",
+      "decoded_rows": [
+        "   ??",
+        "  ???? PCP OS | DESKTOP",
+        "  ???",
+        "  Verified at start: all 71 self-tests passed.",
+        "",
+        "   Programs",
+        "   PINNED program-01-AAAAAAAAAAAAAAAAAAAAAA..",
+        "   PINNED program-02.elf",
+        "   PINNED program-03.elf",
+        "   PINNED program-04.elf",
+        "   PINNED program-05.elf",
+        "   PINNED program-06.elf",
+        "   PINNED program-07.elf",
+        "",
+        "  Enter starts",
+        "  program-01-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA-TAIL",
+        "  .elf",
+        "  53 KiB   SHA-256 46f4bbd5e4d754a7...",
+        "",
+        "  11:56:34 DONE program-02.elf",
+        "  11:56:35 DONE program-02.elf",
+        "  11:56:36 DONE program-02.elf",
+        "  Up/Down choose   Enter open   F1 keys   F10 off",
+        "  memory 234 MiB, 234 MiB free"
+      ]
+    },
+    {
+      "source_revision": "f77f8aef17b2da9f69e2d6538af7868946b1d553",
+      "kernel_sha256": "ef76e0d80e97e1d9a1c111d0cfe634b4c6c081b8c59e0241285390f66b86fa79",
+      "frame": "z3-widget-candidate/widgets-seven.ppm",
+      "frame_sha256": "df8c533cde7490f315a8471277659c2f5509fb5af0302543268ec2eba5570f83",
+      "decoded_rows": [
+        "   ??",
+        "  ???? PCP OS | DESKTOP",
+        "  ???",
+        "  Verified at start: all 71 self-tests passed.",
+        "",
+        "   Programs",
+        "   PINNED program-01-AAAAAAAAAAAAAAAAAAAAAA..",
+        "   PINNED program-02.elf",
+        "   PINNED program-03.elf",
+        "   PINNED program-04.elf",
+        "   PINNED program-05.elf",
+        "   PINNED program-06.elf",
+        "   PINNED program-07.elf",
+        "",
+        "  Enter starts",
+        "  program-01-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA-TAIL",
+        "  .elf",
+        "  53 KiB   SHA-256 46f4bbd5e4d754a7...",
+        "",
+        "  11:56:55 DONE program-02.elf",
+        "  11:56:56 DONE program-02.elf",
+        "",
+        "  Up/Down choose   Enter open   F1 keys   F10 off",
+        ""
+      ]
+    }
+  ]
+}

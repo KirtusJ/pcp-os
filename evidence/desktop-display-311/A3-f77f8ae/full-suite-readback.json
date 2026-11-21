@@ -1,0 +1,36 @@
+{
+  "source": "f77f8aef17b2da9f69e2d6538af7868946b1d553",
+  "source_tree": "6679d1f00936c39011b5bdc6b3ba73416c71fd13",
+  "kernel_sha256": "7d1c7b9a97e32d6e0662b33cbfde84a16f9487bb386f974d39019678dd827123",
+  "kernel_measurement": "624950554217ca97b58c2ae6d3c30d6aa90345f4a45c9ada29a581c3754d5cb4",
+  "origin": "GitHub Actions run 44901276095, both tester CDs",
+  "start": "2026-11-21T12:01:47Z",
+  "end": "2026-11-21T12:10:56Z",
+  "command": "PCPOS_ADAPTER_CHECKOUT=\"$PWD/source\" python3 -u run_stdio.py \"$PWD/kernel.elf32\" \"$PWD/programs\" \"$PWD/data\" \"$PWD/full\"",
+  "suite_mode": "full, with PCPOS_TESTS_ONLY unset and no quick argument",
+  "native_groups": [
+    19,
+    20
+  ],
+  "assertions": [
+    107,
+    108
+  ],
+  "exit": 1,
+  "failed": [
+    {
+      "group": "Doom at the speed of play: a recorded demo of 2134 game tics plays for 61 seconds by the clock",
+      "assertion": "it ended DONE, not by a fault",
+      "detail": "doom.elf ended FAILED: ended by the kernel: the processor refused an act of the program (exception 14, error 0x6, address 0xffffefeff8, instruction 0x800044d5db) after 62 s; 185136 system calls; 4300 "
+    }
+  ],
+  "serial_files": 26,
+  "demo_outcomes": [
+    "doom.elf ended FAILED: ended by the kernel: the processor refused an act of the program (exception 14, error 0x6, address 0xffffefeff8, instruction 0x800044d5db) after 62 s; 185136 system calls; 4300 frames shown (68.9 a second); the processor idled 72% of the time; 63424 ms of sound played, the device ran out of sound 0 time(s); 9883 music register writes so far, the latest 28 ms late; 2791 pages at the end, 500 of them the display's, 0 both writable and executable; 2304 frames given back, 58863 free before and 58863 after; the store holds 0 file(s), 0 bytes"
+  ],
+  "soak_outcomes": [
+    "doom.elf ended STOPPED: stopped by the person with Ctrl+Alt+Delete after 238 s; 681608 system calls; 16565 frames shown (69.4 a second); the processor idled 70% of the time; 241034 ms of sound played, the device ran out of sound 0 time(s); 129879 music register writes so far, the latest 47 ms late; 2884 pages at the end, 500 of them the display's, 0 both writable and executable; 2405 frames given back, 52719 free before and 52719 after; the store holds 0 file(s), 0 bytes"
+  ],
+  "results_sha256": "024e534303f30ccf992d552def8e71c4219515047cf368cb70d58708f55d383b",
+  "emulator": "QEMU emulator version 10.0.13 (Debian 1:10.0.13+ds-0+deb13u1)"
+}
