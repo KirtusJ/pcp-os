@@ -52,7 +52,7 @@ python3 examples/optical-disk-check/check.py images/no-write-candidate.iso candi
 
 For a source-built BIOS CD with the same launcher and local media, pass the expected kernel measurement from its build manifest as `--kernel`. You can also compute it from the independently built kernel with `python3 PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py /path/to/kernel.elf32`. The checker compares this value with the measurement reported during boot. The separate `--sha256` argument pins the entire ISO.
 
-On a desktop-first source CD the checker reads Home, presses Space, and verifies the selected Surfbird row before starting it. It reads the verified register after playback and a keyboard stop. The source CD workflow runs this sequence with disposable PC and Q35 IDE disks and Q35 NVMe disks with 512-byte and 4096-byte sectors.
+On a desktop-first source CD the checker reads Home, opens verification with V, returns to the Programs dock, presses Space, and verifies the selected Surfbird row before starting it. It reads the verified register after playback and a keyboard stop. The source CD workflow runs this sequence with disposable PC and Q35 IDE disks and Q35 NVMe disks with 512-byte and 4096-byte sectors.
 
 For the pinned launcher-first images, the framebuffer check compares the released 1024×768 verified-launcher row and keyboard footer, then the distinct register footer. The probe also requires the measured kernel for the selected input. To reproduce the combined candidate checks, extract the pinned keyboard-01 ISO, build from it and pass `--kernel keyboard-01` and the appropriate image digest to the checker. Add `--tester-profile` to exercise the ordinary clock.
 

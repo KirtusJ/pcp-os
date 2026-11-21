@@ -5,16 +5,19 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from unittest.mock import patch
+
+import details_screen
 
 
 def run(distribution, kernel, out):
     tools = distribution / "audit/public-live-cd"
     sys.path.insert(0, str(tools / "candidates/keyboard-01"))
     from candidate import check_boot_table, digest, extract, inspect_catalog, measure
-    from check import IMAGE_SHA, ISO_SHA, check
+    import check as public_session
     from check_register import check_register
     source = distribution / "PCP-OS.iso"
-    if digest(source) != ISO_SHA:
+    if digest(source) != public_session.ISO_SHA:
         raise ValueError("Unexpected source CD")
     elf = kernel / "target/pcpos-kernel.elf32"
     measurement = measure(kernel / "tools", elf)
@@ -23,11 +26,11 @@ def run(distribution, kernel, out):
         work = Path(tmp)
         original, rebuilt = work / "original", work / "rebuilt"
         extract(source, original)
-        key = ("image=" + IMAGE_SHA).encode()
+        key = ("image=" + public_session.IMAGE_SHA).encode()
         config = (original / "limine.conf").read_bytes()
-        if config.count(key) != 1 or measurement == IMAGE_SHA:
+        if config.count(key) != 1 or measurement == public_session.IMAGE_SHA:
             raise ValueError("Expected one measured grant and a newly built kernel")
-        config = config.replace(key, ("image=" + measurement).encode())
+        config = config.replace(key, f"image={measurement} {details_screen.OPTIONS}".encode())
         conf = work / "limine.conf"
         conf.write_bytes(config)
         cd = work / "default.iso"
@@ -49,11 +52,14 @@ def run(distribution, kernel, out):
             raise ValueError("Changed Limine boot code outside its optical table")
         for image, tree, payload in ((source, original, a), (cd, rebuilt, b)):
             inspect_catalog(image, (tree / "boot.cat").read_bytes(), check_boot_table(image, payload))
-        receipt = {"source_iso": ISO_SHA, "test_iso": digest(cd), "elf": digest(elf), "measurement": measurement}
+        receipt = {"source_iso": public_session.ISO_SHA, "display_options": details_screen.OPTIONS, "test_iso": digest(cd), "elf": digest(elf), "measurement": measurement}
         (out / "image.json").write_text(json.dumps(receipt, indent=2) + "\n")
         session = out / "session"
-        check(cd, session, expected_iso=receipt["test_iso"], expected_image=measurement, debug_exit=False,
-              check_register=True)
+        # The pinned distribution checker has a module-level expected footer. Scope the
+        # source kernel's reference to this candidate run; keep all its register and shutdown checks.
+        with patch.object(public_session, "LAUNCHER_FOOTER", details_screen.FOOTER):
+            public_session.check(cd, session, expected_iso=receipt["test_iso"], expected_image=measurement,
+                                 debug_exit=False, check_register=True)
         check_register(kernel / "src/font.rs", session)
 
 

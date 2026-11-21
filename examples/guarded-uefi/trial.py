@@ -11,6 +11,8 @@ import tempfile
 import threading
 import time
 
+import details_screen
+
 MODULES = ("surf.elf", "clip.ppm", "clip.wav")
 EXPECTED_MODULES = ("b87f1185f86961ff8afdb21315c811f0c071c474d09737613146be46cbb98b34",
                     "f6a1d9a0702f472f5b02cf0a528586e6d4447acbad2bd92eb0fc6d70eea4df4d",
@@ -39,6 +41,7 @@ def prepare(iso, kernel, measurement, root, work):
         raise ValueError("Changed demo modules")
     if not kernel and digest(root / "kernel.elf32") != KERNEL_SHA:
         raise ValueError("Changed published kernel")
+    options = " " + details_screen.OPTIONS if kernel else ""
     cfg = f"""serial --unit=0 --speed=115200
 terminal_input serial
 terminal_output serial
@@ -49,7 +52,7 @@ echo {END}
 echo AWAIT-PLACEMENT
 read decision
 if [ "x$decision" = "xALLOW" ]; then
-    if multiboot /kernel.elf32 image={measurement}; then
+    if multiboot /kernel.elf32 image={measurement}{options}; then
         module /surf.elf surf.elf
         module /clip.ppm clip.ppm
         module /clip.wav clip.wav
@@ -156,9 +159,10 @@ def trial(iso, kernel, measurement, out, ram):
                         words = subprocess.check_output(["tesseract", screen, "stdout", "--psm", "6"],
                                                         text=True, stderr=subprocess.DEVNULL, timeout=10)
                         (out / "launcher.txt").write_text(words)
-                        return "power off" in words.lower() and "files from the loader" in words.lower()
+                        return has_regions(screen.read_bytes(), (details_screen.FOOTER,)) and "files from the loader" in words.lower()
                     until(launcher, "graphical launcher", vm)
                     startup = log()
+                    report["display_options"] = details_screen.OPTIONS
                     report["nvs_at_launcher"] = nvs_hashes()
                     report["startup_passes"] = sum(s.startswith("  pass ") for s in startup.splitlines())
                     report["failed"] = [s.strip() for s in startup.splitlines() if s.startswith("  FAIL ")]
@@ -197,17 +201,17 @@ def trial(iso, kernel, measurement, out, ram):
                             raw = path.read_bytes()
                             return has_regions(raw, regions) and (original is None or raw == original)
                         until(matches, label, vm)
-                    frame("ready", (LAUNCHER_FOOTER,))
+                    frame("ready", (details_screen.FOOTER,))
                     press("ret")
                     until(lambda: "SURFBIRD media ready" in log(), "media menu", vm)
                     press("spc")
                     until(lambda: "SURFBIRD media drained" in log() and "surf.elf ended DONE" in log(), "normal exit", vm)
-                    frame("after-playback", (LAUNCHER_FOOTER,))
+                    frame("after-playback", (details_screen.FOOTER,))
                     press("ret")
                     until(lambda: log().count("SURFBIRD media ready") == 2, "second launch", vm)
                     press("ctrl", "alt", "delete")
                     until(lambda: "surf.elf ended STOPPED" in log(), "keyboard Stop", vm)
-                    frame("after-stop", (LAUNCHER_FOOTER,))
+                    frame("after-stop", (details_screen.FOOTER,))
                     tap("r")
                     frame("register-latest", (REGISTER_FOOTER, LATEST_ROWS))
                     tap("up")
@@ -215,7 +219,7 @@ def trial(iso, kernel, measurement, out, ram):
                     tap("down")
                     frame("register-restored", (REGISTER_FOOTER, LATEST_ROWS), "register-latest")
                     tap("esc")
-                    frame("after-register", (LAUNCHER_FOOTER,), "after-stop")
+                    frame("after-register", (details_screen.FOOTER,), "after-stop")
                     report["nvs_before_shutdown"] = nvs_hashes()
                     if report["nvs_before_shutdown"] != report["nvs_before"]:
                         raise RuntimeError("Firmware NVS changed during the interactive session")
@@ -243,7 +247,7 @@ if __name__ == "__main__":
     args = p.parse_args()
     sys.path.insert(0, str(args.distribution.resolve() / "audit/public-live-cd/uefi-probe"))
     sys.path.insert(0, str(args.distribution.resolve() / "audit/public-live-cd"))
-    from check import has_regions, LAUNCHER_FOOTER, REGISTER_FOOTER, LATEST_ROWS, EARLIER_ROWS
+    from check import has_regions, REGISTER_FOOTER, LATEST_ROWS, EARLIER_ROWS
     from check_register import check_register
     from inventory import BEGIN, END, KERNEL_SHA, SOURCE_SHA, conflicts, digest, load_ranges, memory_ranges
     iso = args.distribution.resolve() / "PCP-OS.iso"

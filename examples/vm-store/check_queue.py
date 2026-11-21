@@ -106,6 +106,7 @@ def main(args):
                 if boot == "restore":
                     desktop = optical["DesktopScreens"](monitor, out, args.timeout)
                     desktop.home("restore-home")
+                    desktop.verification("restore-home")
                     monitor.key("f")
                     desktop.wait("restore-files", lambda rows: any("FILES: 1 file(s), 3 KiB" in row for row in rows)
                                  and any("VM files | saved when an app syncs" in row for row in rows)
