@@ -23,25 +23,13 @@ concurrency:
 
 jobs:
   host:
-    name: ${{ matrix.os }}${{ matrix.known_failing && ' (known failing, issue 65)' || '' }}
+    name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
-    # Linux and macOS must pass. On Windows the host builds and 23 of 26 host tests pass; the three that
-    # fail show a fault in the host itself (truncating a file through an append-only handle, in repair and
-    # in the shell-observation file; issue 65). The Windows job runs every test and reports its failures,
-    # and does not decide the result of the workflow until that fault is fixed in the Rust source. It is
-    # not a statement that the host is supported on Windows.
-    continue-on-error: ${{ matrix.known_failing }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-24.04
-            known_failing: false
-          - os: macos-15
-            known_failing: false
-          - os: windows-2022
-            known_failing: true
+        os: [ubuntu-24.04, macos-15, windows-2022]
     defaults:
       run:
         working-directory: PCP_OS_Rust
@@ -65,6 +53,28 @@ jobs:
           cargo run --locked --release --bin pcpos-vectors -- vectors
           git diff --exit-code -- vectors
       - name: Run the workspace tests
+        if: runner.os != 'Windows'
         run: cargo test --locked --release --workspace
+      # On Windows three host tests fail because of a fault in the host itself (issue 65: repair and the
+      # shell-observation writer shorten a file through a handle opened for append). Every other test is
+      # required here, so a new failure, a compiler error or changed vectors still fail the job. The three
+      # are then run by name in a step that reports its result without deciding the job. When the host is
+      # fixed, delete both Windows steps and the condition above. This is not a statement that the host
+      # is supported on Windows.
+      - name: Run the workspace tests except the three known Windows failures
+        if: runner.os == 'Windows'
+        run: >
+          cargo test --locked --release --workspace --
+          --skip what_the_audit_of_november_2026_broke_stays_fixed
+          --skip a_check_is_what_the_host_saw_run_or_it_says_it_is_a_report
+          --skip a_report_that_does_not_say_in_the_host_s_form_whether_the_command_finished_is_not_kept
+      - name: Run the three known Windows failures and report them (issue 65)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: >
+          cargo test --locked --release -p pcpos-host --test host --
+          what_the_audit_of_november_2026_broke_stays_fixed
+          a_check_is_what_the_host_saw_run_or_it_says_it_is_a_report
+          a_report_that_does_not_say_in_the_host_s_form_whether_the_command_finished_is_not_kept
       - name: List the instruments in the built program
         run: cargo run --locked --release --bin pcpos -- instrument list
