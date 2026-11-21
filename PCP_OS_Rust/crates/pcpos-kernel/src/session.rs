@@ -218,7 +218,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     let graphic = display.width >= 1280 && display.height >= 720 && ui::scale() == 1;
     // How many places the desktop has for the way to all the programs and what is pinned. Every place
     // can be reached and is drawn; a pin for which there is no place is refused, and said to be.
-    let room = if graphic { foot_room(display.width) } else { compact_room(&programs) };
+    let room = if graphic { foot_room(display.width) } else { programs.len() + 1 };
     arch::interrupts_on();
     dev::keys_forget();
     loop {
@@ -525,41 +525,65 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
             at(7, 1, "PCP OS | DESKTOP", TEXT, GROUND);
             at(2, 3, &if safe { format!("NOT VERIFIED: {} of {} self-tests failed.", start.failed, start.passed + start.failed) }
                       else { format!("Verified at start: all {} self-tests passed.", start.passed) }, if safe { BAD } else { GOOD }, GROUND);
+            // The rows between the heading and the keys are shared out so that nothing is drawn over
+            // anything else and nothing that is left out is left out in silence (after B3's windowed list).
+            // First what must be there: one row of the list, holding the chosen place, and for a chosen
+            // pin its whole name and its size and digest. Then, as far as the rows go: a blank row above
+            // the keys, the words 'Enter starts', a blank row above them, the widgets' lines, and more
+            // rows of the list. Row 4 says which places are shown of how many, and how many widget lines
+            // had no room. Every place is reached by moving the choice: the list follows it.
+            let (cols, _) = ui::grid();
+            let across = (cols as usize).saturating_sub(4).max(1);
+            let chosen_pin = place.checked_sub(1).and_then(|at| shortcuts.get(at)).map(|i| &programs[*i]);
+            let name: Vec<String> = chosen_pin.map(|p| wrapped(&p.name, across)).unwrap_or_default();
+            let mut widget_lines: Vec<String> = recent.iter().map(|(time, name, outcome, _)| format!("{} {} {}", time, outcome, name)).collect();
+            if widgets[1] { widget_lines.push(format!("memory {} MiB, {} MiB free", pool * 4 / 1024, free * 4 / 1024)); }
+            if widgets[2] { widget_lines.push(String::from(files_line)); }
+            let places = shortcuts.len() + 1;
+            let body = (rows as usize).saturating_sub(7);
+            let mut left = body.saturating_sub(1);
+            // The name gives way only when the display has fewer rows than the name alone needs, and says so.
+            let name_rows = if chosen_pin.is_some() { name.len().min(left.saturating_sub(1).max(1)) } else { 0 };
+            let facts = chosen_pin.is_some() && left > name_rows;
+            left = left.saturating_sub(name_rows + facts as usize);
+            fn take(left: &mut usize, want: bool) -> bool { let got = want && *left > 0; if got { *left -= 1; } got }
+            let gap_keys = take(&mut left, true);
+            let caption = take(&mut left, chosen_pin.is_some());
+            let gap_identity = take(&mut left, chosen_pin.is_some());
+            let gap_widgets = !widget_lines.is_empty() && left >= 2 && take(&mut left, true);
+            let widgets_shown = if gap_widgets { widget_lines.len().min(left) } else { 0 };
+            left -= widgets_shown;
+            let list_rows = (1 + left).min(places);
+            let first = (place + 1).saturating_sub(list_rows);
+            let mut notes: Vec<String> = Vec::new();
+            if list_rows < places { notes.push(format!("Places {} to {} of {}", first + 1, first + list_rows, places)); }
+            if widgets_shown < widget_lines.len() { notes.push(format!("{} widget line(s) not shown", widget_lines.len() - widgets_shown)); }
+            if !notes.is_empty() { at(2, 4, &cut(&notes.join(" | "), across), SOFT, GROUND); }
             let mut row = 5;
-            for i in 0..=shortcuts.len() {
+            for i in first..first + list_rows {
                 let ground = if i == place { ui::PANEL } else { GROUND };
-                ui::fill(2 * ui::CELL_W, row * ui::CELL_H, 44 * ui::CELL_W, ui::CELL_H, ground);
-                at(3, row, &if i == 0 { String::from("Programs") } else { cut(&format!("PINNED {}", programs[shortcuts[i - 1]].name), 42) }, TEXT, ground);
+                ui::fill(2 * ui::CELL_W, row * ui::CELL_H, (across as u32).min(44) * ui::CELL_W, ui::CELL_H, ground);
+                at(3, row, &if i == 0 { String::from("Programs") } else { cut(&format!("PINNED {}", programs[shortcuts[i - 1]].name), across.min(42)) }, TEXT, ground);
                 row += 1;
             }
-            // Which program Enter will start, in full: a row has room for only so much of a name. The rows
-            // down to the keys are kept for it (see `compact_room`); nothing below is drawn over the keys.
-            let floor = rows.saturating_sub(4);
-            if let Some(p) = place.checked_sub(1).and_then(|at| shortcuts.get(at)).map(|i| &programs[*i]) {
-                let (cols, _) = ui::grid();
-                row += 1;
-                at(2, row, "Enter starts", GOOD, GROUND);
-                let name = wrapped(&p.name, (cols as usize).saturating_sub(4));
-                // With only two places kept and a name of very many rows, the name gives way and says so.
-                let fits = (floor.saturating_sub(row + 1)).max(1) as usize;
-                for (n, line) in name.iter().enumerate().take(fits) {
+            if let Some(p) = chosen_pin {
+                row += gap_identity as u32;
+                if caption { at(2, row, "Enter starts", GOOD, GROUND); row += 1; }
+                for (n, line) in name.iter().enumerate().take(name_rows) {
+                    at(2, row, &if n + 1 == name_rows && name.len() > name_rows { cut(&format!("{}...", line), line.chars().count()) } else { line.clone() }, TEXT, GROUND);
                     row += 1;
-                    at(2, row, &if n + 1 == fits && name.len() > fits { cut(&format!("{}...", line), line.chars().count()) } else { line.clone() }, TEXT, GROUND);
                 }
-                row += 1;
-                at(2, row, &format!("{}   SHA-256 {}...", size_text(p.image.len()), &p.digest[..16]), SOFT, GROUND);
+                if facts { at(2, row, &cut(&format!("{}   SHA-256 {}...", size_text(p.image.len()), &p.digest[..16]), across), SOFT, GROUND); row += 1; }
+            }
+            row += gap_widgets as u32;
+            for line in widget_lines.iter().take(widgets_shown) {
+                at(2, row, &cut(line, across), SOFT, GROUND);
                 row += 1;
             }
-            for (time, name, outcome, _) in recent.iter() {
-                if row + 1 <= floor { at(2, row + 1, &format!("{} {} {}", time, outcome, name), SOFT, GROUND); }
-                row += 1;
-            }
-            if widgets[1] {
-                if row + 2 <= floor { at(2, row + 2, &format!("memory {} MiB, {} MiB free", pool * 4 / 1024, free * 4 / 1024), SOFT, GROUND); }
-                row += 1;
-            }
-            if widgets[2] && row + 3 <= floor { at(2, row + 3, files_line, SOFT, GROUND); }
-            at(2, rows - 2, "Up/Down choose   Enter open   F1 keys   F10 off", TEXT, GROUND);
+            let _ = gap_keys;
+            // On a display too narrow for the whole line, the keys that open the list of keys and that
+            // stop the machine are the ones kept.
+            at(2, rows - 2, if across >= 47 { "Up/Down choose   Enter open   F1 keys   F10 off" } else { "Enter open  F1 keys  F10 off" }, TEXT, GROUND);
             return;
         }
     };
@@ -877,17 +901,6 @@ fn wait_chord() -> (u8, bool, bool) {
             None => arch::wait_for_interrupt(),
         }
     }
-}
-
-/// How many places the small-display desktop has. Its rows are: five of heading, one for each place, then
-/// for the chosen pin a blank row, 'Enter starts', its name on as many rows as the longest name of any
-/// program needs, and its size and digest; then a blank row and the keys. Every place it admits leaves
-/// room for all of that, so the chosen pin's identity is never drawn over.
-fn compact_room(programs: &[Entry]) -> usize {
-    let (cols, rows) = ui::grid();
-    let across = (cols as usize).saturating_sub(4).max(1);
-    let longest = programs.iter().map(|p| (p.name.chars().count() + across - 1) / across).max().unwrap_or(1).max(1);
-    (rows as usize).saturating_sub(11 + longest).max(2)
 }
 
 /// How many places the foot of the desktop has, in either form, for a display this wide: the way to all

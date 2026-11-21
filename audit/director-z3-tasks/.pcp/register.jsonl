@@ -24,3 +24,5 @@
 {"actor":"DirectorZ3","auth":"HOST","body":{"id":"T9"},"kind":"TASK_RELEASED","prev":"ad10bed1eaf264e998502eb89159a41f001f05b2ab3d3e38eea0e7a0986b91e5","seq":23,"ts":"2026-11-21T11:26:27Z"}
 {"actor":"DirectorZ3","auth":"HOST","body":{"depth":0,"id":"T10","label":"compact-identity","parent":null},"kind":"TASK_ADMITTED","prev":"53d3446667e0e9d10c2709f2d33b6a24ffeba7cccef78beacbf8b25fc9f4b1c3","seq":24,"ts":"2026-11-21T11:43:37Z"}
 {"actor":"DirectorZ3","auth":"HOST","body":{"id":"T10"},"kind":"TASK_RELEASED","prev":"cc94a972aa06eadf2db023ee50caffa71e1ae953c47d3b9adbda5e3225ec2a63","seq":25,"ts":"2026-11-21T11:53:48Z"}
+{"actor":"DirectorZ3","auth":"HOST","body":{"depth":0,"id":"T11","label":"compact-window","parent":null},"kind":"TASK_ADMITTED","prev":"aa3698e9ec246944a9da26e3e7a82b048375993dd7b866b34b68fe8be10087c3","seq":26,"ts":"2026-11-21T12:04:06Z"}
+{"actor":"DirectorZ3","auth":"HOST","body":{"id":"T11"},"kind":"TASK_RELEASED","prev":"8ccad6990dbf9c2a3d2a0d6d54e7a5c5b43b8ef598535638bfdbebd6431e4324","seq":27,"ts":"2026-11-21T12:15:58Z"}
