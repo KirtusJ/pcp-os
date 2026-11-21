@@ -18,7 +18,13 @@ Predicates, fixed before the first run. Each kernel is booted in QEMU with `then
  R3 the demonstration kernel passes exactly six fewer self-tests than the default kernel: the six that
     press keys, and no other (B3 found that the first form of this left out seven that press none).
 
-Usage: replay_probe.py <default kernel.elf32> <demonstration kernel.elf32> [--qemu qemu-system-x86_64]
+ R4 (with a third kernel, built with `lost-key-demo`: the probe is answered and every scripted key is then
+    lost) the kernel ends inside the time limit, not with exit code 33, does not say ALL SELF-TESTS PASS,
+    and has a line beginning "  FAIL" for at least one of the six key-dependent checks: a lost key fails
+    a test and does not leave the machine waiting for ever.
+
+Usage: replay_probe.py <default kernel.elf32> <demonstration kernel.elf32> [--lost-keys <kernel.elf32>]
+                       [--qemu qemu-system-x86_64]
 """
 import argparse
 from collections import Counter
@@ -84,6 +90,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("default", type=Path)
     parser.add_argument("demonstration", type=Path)
+    parser.add_argument("--lost-keys", type=Path)
     parser.add_argument("--qemu", default="qemu-system-x86_64")
     parser.add_argument("--timeout", type=float, default=120)
     args = parser.parse_args()
@@ -99,6 +106,14 @@ def main():
     if demo_code != 33 or "ALL SELF-TESTS PASS" not in demo_log or any(line.startswith("  FAIL") for line in demo_log.splitlines()) or NOT_RUN not in demo_log.splitlines():
         problems.append("R2: the demonstration kernel ended with %r after %d passes" % (demo_code, demo_passed))
     problems.extend(coverage_problems(pass_inventory(log), pass_inventory(demo_log)))
+    if args.lost_keys:
+        try:
+            lost_code, lost_log, _ = boot(args.qemu, args.lost_keys, args.timeout)
+            failed = [line[len("  FAIL "):] for line in lost_log.splitlines() if line.startswith("  FAIL ")]
+            if lost_code == 33 or "ALL SELF-TESTS PASS" in lost_log or not any(name in KEY_CHECKS for name in failed):
+                problems.append("R4: with lost keys the kernel ended with %r and failed %r" % (lost_code, failed))
+        except subprocess.TimeoutExpired:
+            problems.append("R4: with lost keys the kernel did not end inside %d s" % args.timeout)
     for problem in problems:
         print("FAILED", problem)
     if problems:

@@ -555,12 +555,14 @@ struct Script {
     late_wake: bool,
     /// The controller did not become ready for a byte's parameter: the byte was not sent and the script was ended.
     stalled: bool,
+    /// The tick after which a program still running under this script is stopped: zero if none is set.
+    limit: u64,
     bytes: [u8; 8],
     len: usize,
     next: usize,
 }
 
-static SCRIPT: arch::Single<Script> = arch::Single::new(Script { at: 0, pacing: KeyPacing::Timed, late_wake: false, stalled: false, bytes: [0; 8], len: 0, next: 0 });
+static SCRIPT: arch::Single<Script> = arch::Single::new(Script { at: 0, pacing: KeyPacing::Timed, late_wake: false, stalled: false, limit: 0, bytes: [0; 8], len: 0, next: 0 });
 
 /// For the kernel's self-tests, which have nobody at the keyboard: from timer tick `at`, hand the controller one
 /// of these scan codes (at most eight) per eligible tick, with its command "put this byte in the output buffer as if the
@@ -570,7 +572,8 @@ pub fn keyboard_script(at: u64, bytes: &[u8], pacing: KeyPacing) {
     arch::without_interrupts(|| SCRIPT.with(|s| {
         let n = bytes.len().min(s.bytes.len());
         s.bytes[..n].copy_from_slice(&bytes[..n]);
-        *s = Script { at, pacing, late_wake: false, stalled: false, bytes: s.bytes, len: n, next: 0 };
+        // A test that presses keys ends within five seconds of its first key or is ended: see `script_tick`.
+        *s = Script { at, pacing, late_wake: false, stalled: false, limit: if n == 0 { 0 } else { at + 5000 }, bytes: s.bytes, len: n, next: 0 };
     }))
 }
 
@@ -579,6 +582,7 @@ pub fn keyboard_script(at: u64, bytes: &[u8], pacing: KeyPacing) {
 pub fn keyboard_script_finish() -> bool {
     arch::without_interrupts(|| SCRIPT.with(|s| {
         s.pacing = KeyPacing::Timed;
+        s.limit = 0;
         !s.late_wake && !s.stalled
     }))
 }
@@ -591,6 +595,16 @@ pub fn keyboard_script_left() -> usize {
 /// Entered from `tick`, with interrupts off.
 fn script_tick(ticks: u64) {
     SCRIPT.with(|s| {
+        // A program that waits for a key which never comes would wait for ever, and the machine would
+        // never reach its desktop. If a scripted key could not be delivered, or the test is still
+        // running five seconds after its first key was due, the program is stopped as the stop key
+        // would stop it, and the test that started it fails instead of hanging (B3's question).
+        if s.limit != 0 && ticks > s.limit {
+            s.limit = 0;
+            s.stalled = true;
+            s.len = s.next;
+            STOP.store(true, Ordering::SeqCst);
+        }
         // One byte a tick, and only when the controller holds nothing: neither a byte to be read nor one being taken.
         if s.next < s.len && ticks >= s.at && in8(0x64) & 3 == 0 {
             if let KeyPacing::Sleeping { idle_ticks, timeout } = s.pacing {
@@ -609,16 +623,27 @@ fn script_tick(ticks: u64) {
                     return;
                 }
             }
-            out8(0x64, 0xD2);
-            // A byte is counted as sent only if it was sent (B3): if the controller does not become ready
-            // for it, nothing is written, the script ends there, and the test that waits on it fails.
-            if !controller_wait_write() {
-                s.stalled = true;
-                s.len = s.next;
+            // The demonstration of a controller that loses keys: the byte is counted and never written.
+            #[cfg(feature = "lost-key-demo")]
+            {
+                s.next += 1;
                 return;
             }
-            out8(0x60, s.bytes[s.next]);
-            s.next += 1;
+            #[cfg(not(feature = "lost-key-demo"))]
+            {
+                out8(0x64, 0xD2);
+                // A byte is counted as sent only if it was sent (B3): if the controller does not become ready
+                // for it, nothing is written, the script ends there, and the test that waits on it fails.
+                if !controller_wait_write() {
+                    s.stalled = true;
+                    s.len = s.next;
+                    s.limit = 0;
+                    STOP.store(true, Ordering::SeqCst);
+                    return;
+                }
+                out8(0x60, s.bytes[s.next]);
+                s.next += 1;
+            }
         }
     })
 }

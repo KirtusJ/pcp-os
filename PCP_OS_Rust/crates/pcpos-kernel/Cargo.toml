@@ -21,6 +21,7 @@ virtio-rx-probe = ["virtio-tx-probe"] # one TX challenge and one RX completion o
 virtio-register-probe = ["virtio-rx-probe"] # receive two bounded application attempts in one guest
 virtio-worker-probe = ["virtio-rx-probe"] # two isolated guests and one allowlisted user process
 no-key-replay-demo = []    # behave as a keyboard controller that does not replay keys: shows what a laptop's may do
+lost-key-demo = []         # the controller answers the replay probe and then loses every scripted key: shows that a test fails and does not hang
 fault-demo = []            # after the self-tests, fault on purpose to show that an unexpected exception is reported and stops the kernel
 
 overflow-demo = []         # after the self-tests, exhaust the stack on purpose to show that it is reported
