@@ -23,14 +23,19 @@ Firmware may select another boot option after a refusal. That fallback is part o
 
 ## Reading the check count
 
-Two Q35/OVMF virtual USB boots of working kernel `d92f5f6` produced the following counts. Both guests received F5 and F10 keyboard input. The demonstration feature simulates a controller that cannot replay test keystrokes. The laptop’s response to the probe is unknown.
+B3 built working kernel `be2d4dd42521b6d49f7cdc3ab0d39682db6f22d3` and tested three Q35/OVMF USB configurations. The laptop’s actual keyboard and response to the replay probe are unmeasured.
 
-| Keyboard replay profile | Passed at startup on F5 and serial | Passed after register closure on serial |
-|---|---:|---:|
-| Default QEMU controller | 71 | 72 |
-| Replay disabled by the demonstration feature | 58 | 59 |
+| Virtual configuration | Passed before register closure | Passed after closure on serial | Interaction |
+|---|---:|---:|---|
+| Normal PS/2 controller | 71 | 72 | F5 showed 71. F10 and Enter confirmed shutdown. |
+| PS/2 controller with test replay suppressed | 65 | 66 | F5 explained the six key-dependent checks that did not run. F10 and Enter confirmed shutdown. |
+| PS/2 controller absent, USB keyboard attached | 65 | 66 | The kernel reported no keyboard controller, passed over the desktop and requested guest shutdown. The observer sent zero keystrokes. |
 
-The demo omitted 13 checks. Six covered rejected batches, task-name length or memory recovery after refused admission. F5 described only keys, sleep and stopping a program. The default USB checker refused the 58-pass run at Home. Adjusting its expected count alone allowed an erased skip explanation to pass the screen check. A reader for the hardware candidate needs to check the reason and the expected coverage for that build. A3 also found that this revision’s stopped screen shows the startup count after register closure. [B3’s original captures, serials and offline replay](B3-UEFI-keyboard-replay-d92f5f6.tar.xz) · [A3’s stopped-screen result](https://github.com/KirtusJ/pcp-os/issues/309#issuecomment-7067996506)
+The USB-only guest booted the same image as the normal guest. QEMU listed the USB keyboard and mass-storage device. The seven checks for group rejection, sleep, admission and memory recovery ran in every profile. All three preserved the removable image and internal disk. The four stopped screens in a separate virtual PC test showed 72, 66, 66 and 66, each matching final serial. [B3’s original frames, serials and replay](B3-UEFI-keyboard-be2d4dd.tar.xz)
+
+On the earlier `d92f5f6` build the replay-disabled profile passed 58 at startup and 59 after closure. It skipped 13 checks, and the stopped screen showed the pre-closure count. The new runs supersede those results for the revised kernel. [Earlier evidence](B3-UEFI-keyboard-replay-d92f5f6.tar.xz)
+
+Counting six fewer passes can still hide a missing admission check if a different pass takes its place. Draft #325 checks each pass label and its multiplicity. It accepted the intact logs and rejected all five altered pairs that the previous reader accepted. [Draft checker](https://github.com/KirtusJ/pcp-os/pull/325)
 
 ## What remains before a physical trial
 
