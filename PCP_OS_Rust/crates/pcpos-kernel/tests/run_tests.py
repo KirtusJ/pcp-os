@@ -144,10 +144,10 @@ def _(ck):
     m.key("esc"); time.sleep(0.5); m.key("p"); rc, log = m.end(30); verdict(ck, rc, log)
 
 # ---- programs that are not Doom ------------------------------------------------------------------------------
-@test("a C program built with an ordinary compiler and C library runs with every grant: 26 checks of its own")
+@test("a C program built with an ordinary compiler and C library runs with every grant: 32 checks of its own")
 def _(ck):
     m = Machine("probe_granted", modules=["%s granted" % PROBE], append="auto=probe.elf"); rc, log = m.end(60); verdict(ck, rc, log)
-    ck("every one of its checks is ok", log.count("\nok  ") == 26 and "probe: 0 failure(s)" in log, [l for l in log.splitlines() if l.startswith("FAIL")])
+    ck("every one of its checks is ok", log.count("\nok  ") == 32 and "probe: 0 failure(s)" in log, [l for l in log.splitlines() if l.startswith("FAIL")])
     e = ended(log, "probe.elf"); ck("it ended DONE and all its memory came back", e.startswith("probe.elf ended DONE") and "0 both writable and executable" in e, e[:200])
 
 @test("the same program with no grant but the console is refused every device and file: 18 checks")
