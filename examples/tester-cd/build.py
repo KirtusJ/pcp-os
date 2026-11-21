@@ -83,8 +83,9 @@ def third_party(manifest, features, env):
     return found
 
 
-def notices(crates):
-    lines = ["Third-party components compiled into this CD's kernel and Surfbird program", "",
+def notices(crates, queue_desk=False):
+    programs = "kernel, Surfbird and queue desk" if queue_desk else "kernel and Surfbird program"
+    lines = ["Third-party components compiled into this CD's " + programs, "",
              "The loader is Limine; its license is limine.txt. PCP OS itself is proprietary; see notice.md.", ""]
     for (name, version), (license, _) in sorted(crates.items()):
         lines.append("%s %s | %s" % (name, version, license))
@@ -136,6 +137,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("limine", type=Path, help="checkout of the pinned Limine binary release")
     parser.add_argument("output", type=Path, help="new directory for the ISO and its receipt")
+    parser.add_argument("--queue-desk", action="store_true", help="also build the native queue desk as the second launcher application")
     args = parser.parse_args()
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
@@ -205,6 +207,18 @@ def main():
     load(GUEST / "replay_local_media.py", "replay_local_media").make_media(media, 0)
 
     crates = {**third_party(KERNEL / "Cargo.toml", "", env), **third_party(GUEST / "Cargo.toml", "local-media", env)}
+    if args.queue_desk:
+        # The desk's core uses pcpos-core from the private Rust workspace.
+        root = rust.parent
+        app = Path("store/apps/parrots-all-the-way-down")
+        for part in (app / "core", app / "guest", Path("store/native/guest")):
+            shutil.copytree(REPO / part, root / part, ignore=skip)
+        desk = root / app / "guest"
+        run("cargo", "build", "--locked", "--release", "--target", "x86_64-unknown-none",
+            "--config", "target.x86_64-unknown-none.rustflags=['--remap-path-prefix=%s=pcpos']" % work,
+            cwd=desk, env=env)
+        desk_elf = (desk / "target/x86_64-unknown-none/release/rdesk").read_bytes()
+        crates.update(third_party(desk / "Cargo.toml", "", env))
     config = ("timeout: 0\n\n/PCP OS\n    protocol: multiboot1\n    path: boot():/kernel.elf32\n    cmdline: image=%s\n"
               "    module_path: boot():/surf.elf\n    module_string: surf.elf\n"
               "    module_path: boot():/clip.ppm\n    module_string: clip.ppm\n"
@@ -218,8 +232,14 @@ def main():
               % (commit, " with uncommitted changes" if changed else "", measurement)).encode()
     files = {"kernel.elf32": kernel, "surf.elf": surf, "clip.ppm": (media / "clip.ppm").read_bytes(), "clip.wav": (media / "clip.wav").read_bytes(),
              "limine-bios.sys": loader["limine-bios.sys"], "limine-bios-cd.bin": loader["limine-bios-cd.bin"], "limine.txt": loader["LICENSE"],
-             "limine.conf": config, "readme.txt": readme, "notices.txt": notices(crates),
+             "limine.conf": config, "readme.txt": readme, "notices.txt": notices(crates, args.queue_desk),
              "notice.md": (REPO / "PCP_OS_Rust" / "NOTICE.md").read_bytes()}
+
+    if args.queue_desk:
+        files["rdesk.elf"] = desk_elf
+        files["limine.conf"] += b"    module_path: boot():/rdesk.elf\n    module_string: rdesk.elf\n"
+        files["readme.txt"] += (b"Down selects the queue desk. Enter opens it. N creates a request. Type a label and press Enter.\n"
+                                b"Esc returns to the launcher. Reopening the desk restores this boot's queue.\n")
 
     images = []
     for attempt in ("first", "second"):

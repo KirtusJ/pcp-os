@@ -78,7 +78,49 @@ def register_problems(rows):
     return problems
 
 
-def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs):
+def check_desk_label(ppm, label):
+    # The selected queue row uses the guest's lowercase bitmap font over green.
+    header = b"P6\n800 480\n255\n"
+    if not ppm.startswith(header) or len(ppm) != len(header) + 800 * 480 * 3:
+        raise ValueError("unexpected queue desk display mode")
+    source = (REPO / "store/apps/parrots-all-the-way-down/guest/src/screen.rs").read_text()
+    table = ast.literal_eval(source.split("const LOWER:", 1)[1].split("= ", 1)[1].split("];", 1)[0] + "]")
+    pixels = memoryview(ppm)[len(header):]
+    for index, ch in enumerate(label):
+        for y, bits in enumerate(table[ord(ch) - ord("a")]):
+            for x in range(6):
+                at = 3 * ((160 + y) * 800 + 73 + index * 6 + x)
+                ink = x < 5 and bits & (16 >> x)
+                if pixels[at:at + 3] != (b"\xff\xfc\xf0" if ink else b"\x21\x66\x47"):
+                    raise ValueError("the selected queue row did not display " + label)
+
+
+def exercise_queue(key, wait, screen, out):
+    key("down")
+    time.sleep(.2)
+    key("ret")
+    wait("PARROTS QUEUE total=0 active=0 selected=0 state=NONE store=New queue")
+    label = "notes"
+    for code in ("n", *label, "ret"):
+        key(code)
+        time.sleep(.2)
+    wait("PARROTS QUEUE total=1 active=1 selected=1 state=ACTIVE store=Session save")
+    screen("queue-saved")
+    check_desk_label((out / "queue-saved.ppm").read_bytes(), label)
+    key("esc")
+    wait("rdesk.elf ended DONE: exit 0")
+    time.sleep(.5)
+    key("ret")
+    wait("PARROTS QUEUE total=1 active=1 selected=1 state=ACTIVE store=Queue restored")
+    screen("queue-restored")
+    check_desk_label((out / "queue-restored.ppm").read_bytes(), label)
+    key("f")
+    wait("PARROTS QUEUE total=1 active=0 selected=1 state=FINISHED store=Session save")
+    key("esc")
+    wait("rdesk.elf ended DONE: exit 0", 2)
+
+
+def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queue_desk):
     out.mkdir()
     serial, sock = out / "serial.txt", out / "qmp.sock"
     cmd = [qemu, "-machine", machine, "-accel", "tcg", "-cpu", "qemu64", "-m", "64M", "-boot", "order=d", "-cdrom", str(iso),
@@ -187,6 +229,9 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs):
         wait_screen("reopened-register", lambda view: view == rows)
         key("esc")
         wait_screen("launcher-before-poweroff", launcher_visible)
+        if queue_desk:
+            exercise_queue(key, wait, screen, out)
+            wait_screen("launcher-after-queue", launcher_visible)
         key("p")
         wait("ALL SELF-TESTS PASS.")
         try:
@@ -238,8 +283,11 @@ def main():
     parser.add_argument("evidence", type=Path, help="new directory for serial logs, screens and results")
     parser.add_argument("--qemu", default="qemu-system-x86_64")
     parser.add_argument("--timeout", type=float, default=90, help="seconds to wait for each expected line")
+    parser.add_argument("--queue-desk", action="store_true", help="require the second app and its saved queue")
     args = parser.parse_args()
     receipt = json.loads((args.built / "receipt.json").read_text())
+    if args.queue_desk and "rdesk.elf" not in receipt.get("on_disc", {}):
+        sys.exit("the receipt has no queue desk")
     iso = (args.built / "pcp-os-tester.iso").resolve(strict=True)
     if hashlib.sha256(iso.read_bytes()).hexdigest() != receipt["iso_sha256"]:
         sys.exit("the ISO is not the one its receipt describes")
@@ -248,7 +296,7 @@ def main():
     glyphs = kernel_glyphs()
     version = subprocess.check_output([args.qemu, "--version"], text=True).splitlines()[0]
     results = [session(args.qemu, iso, evidence / ("%s-%s" % (machine, "counted" if counted else "ordinary")), machine, counted,
-                       receipt["kernel_measurement"], args.timeout, glyphs)
+                       receipt["kernel_measurement"], args.timeout, glyphs, args.queue_desk)
                for machine in ("pc", "q35") for counted in (False, True)]
     summary = {"iso_sha256": receipt["iso_sha256"], "source_commit": receipt["source_commit"], "kernel_measurement": receipt["kernel_measurement"],
                "qemu": version, "host": " ".join(os.uname()[i] for i in (0, 2, 4)), "passed": all(r["passed"] for r in results),
