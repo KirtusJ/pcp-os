@@ -363,6 +363,10 @@ fn confined_open(root: &Path, given: &str, access: Access, create: bool, single_
     {
         // The same two checks as on Unix, from the opened handle: one name only, and the name still refers
         // to the object that was opened (the volume and the file's index on it are its identity).
+        // The index read here is the 64-bit one. On NTFS it identifies a file on its volume. On ReFS
+        // Microsoft does not guarantee it unique (the full identity there is 128 bits, FILE_ID_INFO), so on
+        // ReFS two different files could compare equal and this recheck is weaker than on NTFS or on Unix.
+        // It never refuses a file wrongly; it can only fail to notice a swap. See issue 65.
         use std::os::windows::fs::OpenOptionsExt;
         let opened = winapi_util::file::information(&file).map_err(|e| format!("{given}: {e}"))?;
         if single_name && opened.number_of_links() != 1 {
