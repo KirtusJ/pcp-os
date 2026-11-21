@@ -1,0 +1,58 @@
+name: Rust host on desktop platforms
+
+# Builds and tests the hosted Rust workspace (pcpos-core, pcpos-pkg, pcpos-host) on the three desktop
+# platforms. The kernel is excluded from the workspace and has its own emulator workflows.
+on:
+  pull_request:
+    paths:
+      - 'PCP_OS_Rust/**'
+      - '.github/workflows/rust-host.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'PCP_OS_Rust/**'
+      - '.github/workflows/rust-host.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-host-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  host:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-14]
+    defaults:
+      run:
+        working-directory: PCP_OS_Rust
+        shell: bash
+    env:
+      CARGO_TERM_COLOR: never
+      RUST_TOOLCHAIN: '1.97.0'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install the toolchain the source was last checked with
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --no-self-update
+          rustup default "$RUST_TOOLCHAIN"
+          rustc --version --verbose
+      - name: Build the host programs from the lock file
+        run: cargo build --locked --release
+      - name: Regenerate the published vectors and require the tracked files unchanged
+        run: |
+          cargo run --locked --release --bin pcpos-vectors -- vectors
+          git diff --exit-code -- vectors
+      - name: Run the workspace tests
+        run: cargo test --locked --release --workspace
+      - name: List the instruments in the built program
+        run: cargo run --locked --release --bin pcpos -- instrument list
