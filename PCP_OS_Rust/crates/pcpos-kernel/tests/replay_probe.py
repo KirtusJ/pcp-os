@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """The kernel on a keyboard controller that does not replay keys (issue 309).
 
-The self-tests of keys, sleep and stopping a program press keys by asking the keyboard controller to
-replay them (its command 0xD2). An emulated controller does. A laptop's is a program in its embedded
-controller and need not; a kernel that assumed it did would wait for a key that never comes, or call a
-healthy machine unverified. The kernel therefore asks first, with one byte, and where the answer is no it
-does not run those tests and says so.
+Six self-tests ask the keyboard controller to replay keystrokes using command 0xD2. The QEMU
+controller supports it. When the probe reports that replay is unavailable on a verified kernel,
+the kernel skips those six, explains why, and runs the seven other checks in the same group.
 
 No emulator here lacks the command, so the second kernel is built with the feature `no-key-replay-demo`,
 which makes the question answer no without touching a port. This shows what the kernel does with that
@@ -23,11 +21,52 @@ Predicates, fixed before the first run. Each kernel is booted in QEMU with `then
 Usage: replay_probe.py <default kernel.elf32> <demonstration kernel.elf32> [--qemu qemu-system-x86_64]
 """
 import argparse
+from collections import Counter
 from pathlib import Path
 import subprocess
 import sys
 
 NOT_RUN = "the self-tests that press keys were not run: this keyboard controller does not replay keys for a test"
+
+# The two builds differ only in whether the controller replays scripted keys.
+# Use the full pass labels so an unrelated pass cannot replace a missing check.
+KEY_CHECKS = (
+    "the stop key ends a program that never yields, long before its budget",
+    "a program the person stopped is STOPPED in the kernel's task table, as it is in what the kernel observed of it",
+    "a program waiting in a read of the keyboard is woken by each key's interrupt and reads the keys in order: it idled until the first and exited 0 on the third",
+    "the stop key ends a program that is asleep (for the longest sleep accepted: its deadline does not overflow) at once, and all its memory comes back",
+    "the stop key ends a program that waits in a read of the keyboard; it had read Ctrl and Alt and was never handed Delete; all its memory comes back",
+    "a stop key pressed before a program is started does not stop it",
+)
+REPLAY_INDEPENDENT = {
+    "rejected batch returns the frames of every member": 3,
+    "a program that sleeps 50 ms is woken at its millisecond: the processor idled 51 timer periods, no fewer and no more, and the sleep answered 0": 1,
+    "a program under a name of 32 bytes is admitted and runs to its end": 1,
+    "a program under a name of 33 bytes is refused admission as a task": 1,
+    "a program that cannot be admitted as a task leaves no memory behind: as many frames are free after as before": 1,
+}
+
+
+def pass_inventory(log):
+    return Counter(line.removeprefix("  pass ") for line in log.splitlines()
+                   if line.startswith("  pass "))
+
+
+def coverage_problems(normal, limited):
+    problems = []
+    for name, expected in REPLAY_INDEPENDENT.items():
+        if normal[name] != expected or limited[name] != expected:
+            problems.append(f"R3: expected {expected} of {name!r} in each run, "
+                            f"saw {normal[name]} with replay and {limited[name]} without")
+    for name in KEY_CHECKS:
+        if limited[name]:
+            problems.append(f"R3: the run without replay reported a key-dependent pass: {name!r}")
+    expected_normal = limited + Counter(KEY_CHECKS)
+    for label, difference in (("missing with replay", expected_normal - normal),
+                              ("extra with replay", normal - expected_normal)):
+        if difference:
+            problems.append(f"R3: {label}: {dict(difference)}")
+    return problems
 
 
 def boot(qemu, kernel, timeout):
@@ -59,8 +98,7 @@ def main():
         demo_code, demo_log, demo_passed = None, "", 0
     if demo_code != 33 or "ALL SELF-TESTS PASS" not in demo_log or any(line.startswith("  FAIL") for line in demo_log.splitlines()) or NOT_RUN not in demo_log.splitlines():
         problems.append("R2: the demonstration kernel ended with %r after %d passes" % (demo_code, demo_passed))
-    if demo_passed != passed - 6:
-        problems.append("R3: %d passes without replay against %d with it" % (demo_passed, passed))
+    problems.extend(coverage_problems(pass_inventory(log), pass_inventory(demo_log)))
     for problem in problems:
         print("FAILED", problem)
     if problems:
