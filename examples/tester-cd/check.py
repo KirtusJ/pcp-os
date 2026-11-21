@@ -221,13 +221,17 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
             status = f"Verified at start: all {STARTUP_CHECKS} self-tests passed."
             return any(status in row for row in rows)
 
+        def corner_verified(rows):
+            """The small word in the corner of every desktop surface when the kernel verified itself."""
+            return any(row.rstrip().endswith("verified") and "NOT VERIFIED" not in row for row in rows)
+
         def home_visible(rows):
-            """The desktop: the status sentence and, on the same bar, the desktop's way to the programs and to its keys."""
-            return any(startup_verified([row]) and "programs" in row and "keys" in row for row in rows)
+            """The desktop: its dock, whose first place is all the programs, and the corner word."""
+            return corner_verified(rows) and any("Programs" in row for row in rows) and any("keys" in row for row in rows) and not any("may use:" in row for row in rows)
 
         def launcher_list_visible(rows, selected_program="surf.elf"):
-            """The launcher: the status sentence and a chosen program with what it may use."""
-            return startup_verified(rows) and any(
+            """The launcher: a chosen program with what it may use, and the corner word."""
+            return corner_verified(rows) and any(
                 f"> {selected_program} " in row and "may use:" in grants
                 for row, grants in zip(rows, rows[1:])
             )
@@ -246,6 +250,11 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
         home = wait_screen("home", home_visible)
         if launcher_list_visible(home) or placed(home):
             raise RuntimeError("the first desktop was not empty")
+        # The corner says one word; V says the whole of it, in the sentence every kernel screen has used.
+        key("v")
+        wait_screen("verification", startup_verified)
+        key("esc")
+        wait_screen("home-again", home_visible)
         # The person turns on the activity widget, then opens the launcher and places a shortcut.
         key("w")
         wait_screen("widgets", lambda view: any("WIDGETS ON THE DESKTOP" in row for row in view))
@@ -257,7 +266,7 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
         if home_visible(listed):
             raise RuntimeError("the launcher was also recognised as the desktop")
         key("s")
-        wait_screen("launcher-with-shortcut", lambda view: launcher_list_visible(view) and any("on the desktop" in row for row in view))
+        wait_screen("launcher-with-shortcut", lambda view: launcher_list_visible(view) and any("in the dock" in row for row in view))
         key("ret")
         wait("SURFBIRD media ready")
         screen("surfbird")
