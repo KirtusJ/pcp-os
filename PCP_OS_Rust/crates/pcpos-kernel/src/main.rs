@@ -496,22 +496,22 @@ const STOP_KEYS: [u8; 6] = [0x1D, 0x38, 0x53, 0xD3, 0xB8, 0x9D];
 /// Let whatever is left of a key script reach the controller and the keyboard's handler, then forget the keys and
 /// any stop they asked for. Called and left with interrupts off. Report a missed wake or unfinished script.
 fn script_drain() -> Result<(), &'static str> {
-    let woke_on_interrupt = dev::keyboard_script_finish();
+    dev::keyboard_script_finish();
     arch::interrupts_on();
-    let mut done = false;
     for _ in 0..200 {
-        if dev::keyboard_script_left() == 0 {
-            done = true;
+        if dev::keyboard_script_left() == 0 || dev::keyboard_script_stalled() {
             break;
         }
         arch::wait_until(arch::ticks() + 1);
     }
     arch::wait_until(arch::ticks() + 2); // the last byte's interrupt
     arch::interrupts_off();
+    // The outcome is read now, after the drain, so that a byte that could not be delivered during it counts.
+    let (woke_on_interrupt, delivered) = dev::keyboard_script_result();
     dev::keys_forget();
     let _ = dev::stop_requested();
-    if !done {
-        Err("the key script did not finish")
+    if !delivered {
+        Err("the key script was not delivered whole")
     } else if !woke_on_interrupt {
         Err("a key was queued but the reader was still idle on the next timer tick")
     } else {
@@ -558,15 +558,19 @@ fn asynchronous(failed: &mut u32, replays: bool) {
     // The tests that press keys are run only where the controller replays them (see `dev::keyboard_replays`).
     if replays {
     // 1. The stop key while a program runs. The program never yields and never ends; its budget is far away.
+    // A stop is credited to the stop key only if the chord was seen on the keyboard during the test: the
+    // tests' own time limit also stops a program, and that is no person's key (B3).
+    let chords = dev::stop_chords();
     dev::keyboard_script(arch::ticks() + 5, &STOP_KEYS, Timed);
     let t0 = arch::ticks();
     let procs = user::run(&[Start { name: "hog", console: true, budget: 100_000 }]);
     let took = arch::ticks() - t0;
     let drained = script_drain().is_ok();
+    let keyed = dev::stop_chords() > chords;
     let (end, settled) = procs.as_ref().and_then(|p| p.first()).map(|p| (p.end, p.settled)).unwrap_or((None, None));
     say!("  note stop key while running: end {:?}, task {:?}, after {} timer periods", end, settled, took);
-    check("the stop key ends a program that never yields, long before its budget", drained && end == Some(End::Stopped) && took < 100, failed);
-    check("a program the person stopped is STOPPED in the kernel's task table, as it is in what the kernel observed of it", settled == Some(Task::Stopped), failed);
+    check("the stop key ends a program that never yields, long before its budget", drained && keyed && end == Some(End::Stopped) && took < 100, failed);
+    check("a program the person stopped is STOPPED in the kernel's task table, as it is in what the kernel observed of it", keyed && settled == Some(Task::Stopped), failed);
     }
 
     // 2. Sleep and wake. 50 ms is 50,000,000 ns; a tick is 999,847 ns; the deadline is the tick of the call plus
@@ -592,22 +596,28 @@ fn asynchronous(failed: &mut u32, replays: bool) {
     const SLEEP_IDLE_TICKS: u64 = 10;
     const STOP_TIMEOUT: u64 = 100;
     let pacing = Sleeping { idle_ticks: SLEEP_IDLE_TICKS, timeout: STOP_TIMEOUT };
+    let chords = dev::stop_chords();
     let (r, free0, free1, took) = loaded("sleeper_long", &["sleeper_long"], &STOP_KEYS, 0, pacing);
+    let keyed = dev::stop_chords() > chords;
     let (end, idle, calls, settled) = r.as_ref().map(|p| (p.end, p.idle, p.calls, p.settled)).unwrap_or((None, 0, 0, None));
     say!("  note stop key while asleep: {:?}, end {:?}, idle {} of {} timer periods, syscall count {}, free frames {} before and {} after, task {:?}",
          r.as_ref().err(), end, idle, took, calls, free0, free1, settled);
     check("the stop key ends a program that is asleep (for the longest sleep accepted: its deadline does not overflow) at once, and all its memory comes back",
-          end == Some(End::Stopped) && settled == Some(Task::Stopped) && idle >= SLEEP_IDLE_TICKS && took < STOP_TIMEOUT && calls == 1 && free0 == free1, failed);
+          keyed && end == Some(End::Stopped) && settled == Some(Task::Stopped) && idle >= SLEEP_IDLE_TICKS && took < STOP_TIMEOUT && calls == 1 && free0 == free1, failed);
 
     // 5. The stop key while a program waits in a read of the keyboard. Ctrl and Alt wake it and it waits again; Delete ends it.
     // Six calls: open, and three reads that wait, of which the first two are made again and answered with Ctrl and with Alt.
+    let chords = dev::stop_chords();
     let (r, free0, free1, took) = loaded("key_reader", &["key_reader", "stop"], &STOP_KEYS, 10, BlockedRead);
+    let keyed = dev::stop_chords() > chords;
     let (end, idle, calls) = r.as_ref().map(|p| (p.end, p.idle, p.calls)).unwrap_or((None, 0, 0));
     say!("  note stop key while waiting for a key: {:?}, end {:?}, idle {} of {} timer periods, {} calls", r.as_ref().err(), end, idle, took, calls);
     check("the stop key ends a program that waits in a read of the keyboard; it had read Ctrl and Alt and was never handed Delete; all its memory comes back",
-          end == Some(End::Stopped) && idle >= 3 && took < 100 && calls == 6 && free0 == free1, failed);
+          keyed && end == Some(End::Stopped) && idle >= 3 && took < 100 && calls == 6 && free0 == free1, failed);
 
-    // 6. A stop asked for before a program exists is not a stop of it.
+    // 6. A stop asked for before a program exists is not a stop of it. The check means something only if
+    // the chord did arrive and the stop was still waiting when the program was started (B3).
+    let chords = dev::stop_chords();
     arch::interrupts_on();
     dev::keyboard_script(arch::ticks(), &STOP_KEYS, Timed);
     for _ in 0..200 {
@@ -618,9 +628,10 @@ fn asynchronous(failed: &mut u32, replays: bool) {
     }
     arch::wait_until(arch::ticks() + 2);
     arch::interrupts_off();
+    let stale = dev::stop_chords() > chords && dev::stop_pending();
     let (r, free0, free1, _) = loaded("sleeper", &["sleeper"], &[], 0, Timed);
     let end = r.as_ref().map(|p| p.end).unwrap_or(None);
-    check("a stop key pressed before a program is started does not stop it", end == Some(End::Exited(0)) && free0 == free1, failed);
+    check("a stop key pressed before a program is started does not stop it", stale && end == Some(End::Exited(0)) && free0 == free1, failed);
     }
 
     // 7. A name the task table refuses as a label (33 bytes; it takes 32). The program must be refused, with the
@@ -780,8 +791,14 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
         Some(d) => say!("display: {:?}, {}x{}, {} page(s), {} KiB of its memory mapped at {:#x}", d.kind, d.width, d.height, d.pages, d.mapped / 1024, d.memory),
         None => say!("display: none this kernel can drive"),
     }
-    let keyboard = dev::keyboard_init();
-    say!("keyboard: {}", if keyboard { "a PS/2 controller answered" } else { "no controller" });
+    let keyboard_start = dev::keyboard_init();
+    let keyboard = keyboard_start == dev::KeyboardStart::Ready;
+    say!("keyboard: {}", match keyboard_start {
+        dev::KeyboardStart::Ready => "a PS/2 controller answered",
+        dev::KeyboardStart::Absent => "no controller",
+        dev::KeyboardStart::ControllerBusy => "a controller is there but did not take its set-up in time; it is not used",
+        dev::KeyboardStart::NoAcknowledgement => "the controller is set up but the keyboard did not acknowledge; it is not used",
+    });
     let sound = dev::sound_init(&bus);
     say!("sound: {}", if sound { "an AC'97 device, 48000 pairs of 16-bit samples a second" } else { "no device this kernel drives" });
     // The FM synthesiser is looked for only under an emulator. Looking means writing to its usual ports
@@ -809,7 +826,11 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
         replays
     };
     let not_run = if replays { None } else if failed != 0 { Some("the kernel did not verify itself") }
-                  else if !keyboard { Some("there is no keyboard controller") }
+                  else if !keyboard { Some(match keyboard_start {
+                      dev::KeyboardStart::Absent => "there is no keyboard controller",
+                      dev::KeyboardStart::ControllerBusy => "the keyboard controller did not take its set-up",
+                      _ => "the keyboard did not acknowledge",
+                  }) }
                   else { Some("this keyboard controller does not replay keys for a test") };
     if failed == 0 {
         asynchronous(&mut failed, replays);
@@ -855,7 +876,13 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     if failed != 0 && rec.state().system() == Some(System::Operational) {
         system_event(&mut rec, "INTEGRITY_FAULT", "a self-test failed after initial verification", &mut failed);
     }
-    let start = session::Start { boot: &boot, display, keyboard, not_run, sound: sound || music, passed: PASSED.load(core::sync::atomic::Ordering::Relaxed), failed, tasks: 14, version: env!("CARGO_PKG_VERSION") };
+    let no_keyboard = match keyboard_start {
+        dev::KeyboardStart::Ready => None,
+        dev::KeyboardStart::Absent => Some("No keyboard controller answered. This kernel drives PS/2 keyboards only."),
+        dev::KeyboardStart::ControllerBusy => Some("The keyboard controller did not take its set-up in time; the keyboard is not used."),
+        dev::KeyboardStart::NoAcknowledgement => Some("The keyboard did not acknowledge, so it is not used."),
+    };
+    let start = session::Start { boot: &boot, display, keyboard, no_keyboard, not_run, sound: sound || music, passed: PASSED.load(core::sync::atomic::Ordering::Relaxed), failed, tasks: 14, version: env!("CARGO_PKG_VERSION") };
     let _tasks = session::run(&mut rec, &start, &mut failed);
     system_event(&mut rec, "SHUTDOWN", "end of the session", &mut failed);
     system_event(&mut rec, "STOPPED_OK", "stopped in order", &mut failed);

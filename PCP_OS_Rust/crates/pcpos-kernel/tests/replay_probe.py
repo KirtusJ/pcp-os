@@ -18,9 +18,14 @@ Predicates, fixed before the first run. Each kernel is booted in QEMU with `then
  R3 the demonstration kernel passes exactly six fewer self-tests than the default kernel: the six that
     press keys, and no other (B3 found that the first form of this left out seven that press none).
 
-Usage: replay_probe.py <default kernel.elf32> <demonstration kernel.elf32> [--qemu qemu-system-x86_64]
+ R4 the lost-key kernel closes its register and exits with code 35. All six key checks fail exactly
+    once. All other pass labels match the no-replay control, and the final failure count agrees.
+
+Usage: replay_probe.py <default kernel.elf32> <demonstration kernel.elf32> [--lost-keys <kernel.elf32>]
+                       [--qemu qemu-system-x86_64]
 """
 import argparse
+import re
 from collections import Counter
 from pathlib import Path
 import subprocess
@@ -69,6 +74,31 @@ def coverage_problems(normal, limited):
     return problems
 
 
+def lost_key_problems(code, log, independent_passes):
+    lines = log.splitlines()
+    problems = []
+    if code != 35:
+        problems.append(f"R4: expected the guest self-test failure exit 35, got {code}")
+    failures = Counter(line.removeprefix("  FAIL ") for line in lines if line.startswith("  FAIL "))
+    if failures != Counter(KEY_CHECKS):
+        problems.append(f"R4: expected one failure for each key check, got {dict(failures)}")
+    if any(line.startswith("the self-tests that press keys were not run:") for line in lines):
+        problems.append("R4: the kernel says it skipped the key checks that should have failed")
+    passes = pass_inventory(log)
+    if passes != independent_passes:
+        problems.append(f"R4: missing independent passes {dict(independent_passes - passes)}, "
+                        f"unexpected passes {dict(passes - independent_passes)}")
+    closed = "  pass the kernel's register of its own start, verification and stop verifies and replays without a problem"
+    heads = [i for i, line in enumerate(lines) if re.fullmatch(r"kernel register: [1-9][0-9]* events, head [0-9a-f]{64}", line)]
+    if lines.count(closed) != 1 or len(heads) != 1 or lines.index(closed) >= heads[0]:
+        problems.append("R4: the verified register closure and its final head are missing or out of order")
+    expected = f"{len(KEY_CHECKS)} SELF-TEST(S) FAILED"
+    verdicts = [line for line in lines if line.endswith(" SELF-TEST(S) FAILED") or "ALL SELF-TESTS PASS" in line]
+    if verdicts != [expected] or not lines or lines[-1] != expected:
+        problems.append(f"R4: expected one final verdict {expected!r}, got {verdicts}")
+    return problems
+
+
 def boot(qemu, kernel, timeout):
     measure = Path(__file__).resolve().parents[1] / "tools" / "measure.py"
     digest = subprocess.check_output([sys.executable, str(measure), str(kernel)], text=True).strip()
@@ -84,6 +114,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("default", type=Path)
     parser.add_argument("demonstration", type=Path)
+    parser.add_argument("--lost-keys", type=Path)
     parser.add_argument("--qemu", default="qemu-system-x86_64")
     parser.add_argument("--timeout", type=float, default=120)
     args = parser.parse_args()
@@ -99,6 +130,12 @@ def main():
     if demo_code != 33 or "ALL SELF-TESTS PASS" not in demo_log or any(line.startswith("  FAIL") for line in demo_log.splitlines()) or NOT_RUN not in demo_log.splitlines():
         problems.append("R2: the demonstration kernel ended with %r after %d passes" % (demo_code, demo_passed))
     problems.extend(coverage_problems(pass_inventory(log), pass_inventory(demo_log)))
+    if args.lost_keys:
+        try:
+            lost_code, lost_log, _ = boot(args.qemu, args.lost_keys, args.timeout)
+            problems.extend(lost_key_problems(lost_code, lost_log, pass_inventory(demo_log)))
+        except subprocess.TimeoutExpired:
+            problems.append("R4: with lost keys the kernel did not end inside %d s" % args.timeout)
     for problem in problems:
         print("FAILED", problem)
     if problems:

@@ -47,13 +47,13 @@ arch.rs | stop | 0xf4 | emulator only (CPUID hypervisor bit): the emulators' exi
 dev.rs | bus_read | 0xCF8 | always; the address port of the device bus's configuration space, on every PC
 dev.rs | bus_write | 0xCF8 | only for a device found on the bus by its identity (the sound device); configuration space
 dev.rs | bus_write | 0xCFC | only for a device found on the bus by its identity (the sound device); configuration space
+dev.rs | controller_command | 0x64 | keyboard_init only: one controller command, written only after the controller showed it could take one
 dev.rs | dispi_read | DISPI_INDEX | only after a Bochs display was found on the bus by its identity
 dev.rs | dispi_write | DISPI_DATA | only after a Bochs display was found on the bus by its identity
 dev.rs | dispi_write | DISPI_INDEX | only after a Bochs display was found on the bus by its identity
 dev.rs | fm_register | 0x388 | emulator only: fm_init is called only under an emulator and later writes need the device to have answered
 dev.rs | fm_register | 0x389 | emulator only: fm_init is called only under an emulator and later writes need the device to have answered
-dev.rs | keyboard_init | 0x60 | only after the keyboard controller's status port did not read as absent
-dev.rs | keyboard_init | 0x64 | only after the keyboard controller's status port did not read as absent
+dev.rs | keyboard_init_on_ports | 0x60 | only after the status port did not read as absent, and each byte only after the controller showed it could take one: the configuration byte, then 0xF4 to the keyboard (at most three times)
 dev.rs | keyboard_replays | 0x60 | once at start, after a keyboard controller answered and the kernel verified itself: the probe byte 0xF4 after command 0xD2; if a controller passes it to the keyboard instead, it is the command the keyboard is already obeying
 dev.rs | keyboard_replays | 0x64 | once at start, after a keyboard controller answered and the kernel verified itself: command 0xD2, to learn whether the controller replays a byte
 dev.rs | script_tick | 0x60 | self-tests, only after keyboard_replays found that this controller replays (command 0xD2)

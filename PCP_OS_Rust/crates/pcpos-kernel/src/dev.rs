@@ -307,6 +307,19 @@ static KEYBOARD: arch::Single<Keyboard> = arch::Single::new(Keyboard { present: 
                                                                          extended: false, skip: 0, ctrl: false, alt: false, enter: [false; 2], dropped: 0 });
 /// Set when the person presses Ctrl, Alt and Delete together: the kernel's own key, which no program can take.
 static STOP: AtomicBool = AtomicBool::new(false);
+/// How many times the stop chord has been seen on the keyboard since the start. A self-test that says a
+/// person's key stopped a program asks this, so that a stop made by the tests' own time limit is never
+/// credited to a key (B3).
+static CHORDS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+pub fn stop_chords() -> u32 {
+    CHORDS.load(Ordering::SeqCst)
+}
+
+/// Whether a stop has been asked for and not yet taken, without taking it.
+pub fn stop_pending() -> bool {
+    STOP.load(Ordering::SeqCst)
+}
 /// The byte the replay probe is waiting to get back, with bit 8 set while it waits; and whether it came.
 static PROBE: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 static PROBE_HIT: AtomicBool = AtomicBool::new(false);
@@ -328,40 +341,125 @@ fn controller_read() -> Option<u8> {
     None
 }
 
-/// Prepare the keyboard controller and let the keyboard interrupt. Returns whether a controller answered.
-pub fn keyboard_init() -> bool {
+/// What became of preparing the keyboard.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum KeyboardStart {
+    /// The controller took every command and the keyboard acknowledged: keys will arrive.
+    Ready,
+    /// The status port read as nothing there.
+    Absent,
+    /// A controller is there but did not take a command, or did not give its configuration, in time.
+    ControllerBusy,
+    /// The controller is set up but the keyboard did not acknowledge being told to send keys.
+    NoAcknowledgement,
+}
+
+/// One command to the controller, sent only once it is ready to take it.
+fn controller_command(command: u8) -> bool {
+    controller_wait_write() && { out8(0x64, command); true }
+}
+
+/// The keyboard's answer to a command: its acknowledgement (0xFA) or its request to be sent the byte
+/// again (0xFE), if one comes within one budget of polls. Anything else that arrives meanwhile is taken
+/// off the controller and passed over: a byte from the second port (status bit 5), a byte marked with a
+/// time-out or parity error (bits 6 and 7), a key somebody pressed. A stream of such bytes uses up the
+/// same budget and ends as no answer (A3: the first form gave up at the first unrelated byte and left a
+/// genuine acknowledgement unread behind it).
+fn keyboard_answer() -> Option<u8> {
+    for _ in 0..100_000 {
+        let status = in8(0x64);
+        if status & 1 != 0 {
+            let byte = in8(0x60);
+            if status & 0xE0 == 0 && (byte == 0xFA || byte == 0xFE) {
+                return Some(byte);
+            }
+        }
+    }
+    None
+}
+
+/// Prepare the keyboard controller and let the keyboard interrupt.
+///
+/// Every byte is written only after the controller has shown that it can take one; a wait that runs out
+/// ends the attempt, and nothing further is written except the one command that turns the keyboard's
+/// port back on, if the controller will take it, so that a machine is not left with a keyboard this
+/// kernel switched off. The keyboard's interrupt is let through only after the keyboard has
+/// acknowledged (0xFA) being told to send keys; a keyboard that asks for the byte again (0xFE) is
+/// asked twice more and no oftener (A3 and B3 found that the first form of this wrote after a wait had
+/// run out and let the interrupt through whatever the keyboard answered).
+pub fn keyboard_init() -> KeyboardStart {
+    // The demonstrations of the two refusals no emulator here produces: the outcome without any port touched,
+    // so that what the kernel then says and shows can be seen in a guest.
+    #[cfg(feature = "keyboard-busy-demo")]
+    return KeyboardStart::ControllerBusy;
+    #[cfg(feature = "keyboard-silent-demo")]
+    return KeyboardStart::NoAcknowledgement;
+    #[cfg(not(any(feature = "keyboard-busy-demo", feature = "keyboard-silent-demo")))]
+    keyboard_init_on_ports()
+}
+
+#[cfg_attr(any(feature = "keyboard-busy-demo", feature = "keyboard-silent-demo"), allow(dead_code))]
+fn keyboard_init_on_ports() -> KeyboardStart {
     // A machine with no controller reads all ones from its status port.
     if in8(0x64) == 0xFF {
-        return false;
+        return KeyboardStart::Absent;
     }
-    controller_wait_write();
-    out8(0x64, 0xAD); // first port off while it is set up
-    controller_wait_write();
-    out8(0x64, 0xA7); // second port off: there is no driver for a mouse
-    for _ in 0..64 {
-        if in8(0x64) & 1 == 0 {
-            break;
+    if !controller_command(0xAD) { // first port off while it is set up
+        return KeyboardStart::ControllerBusy;
+    }
+    let set_up = || -> bool {
+        if !controller_command(0xA7) { // second port off: there is no driver for a mouse
+            return false;
         }
-        in8(0x60);
-    }
-    controller_wait_write();
-    out8(0x64, 0x20);
-    let config = match controller_read() {
-        Some(c) => c,
-        None => return false,
+        for _ in 0..64 {
+            if in8(0x64) & 1 == 0 {
+                break;
+            }
+            in8(0x60);
+        }
+        if !controller_command(0x20) {
+            return false;
+        }
+        let config = match controller_read() {
+            Some(c) => c,
+            None => return false,
+        };
+        if !controller_command(0x60) || !controller_wait_write() {
+            return false;
+        }
+        // Interrupt for the keyboard, translation to the first scan code set, no interrupt for the second port, keyboard clock on.
+        out8(0x60, (config | 0x01 | 0x40) & !0x02 & !0x10);
+        true
     };
-    controller_wait_write();
-    out8(0x64, 0x60);
-    controller_wait_write();
-    out8(0x60, (config | 0x01 | 0x40) & !0x02 & !0x10); // interrupt for the keyboard, translation to the first scan code set, no interrupt for the second port, keyboard clock on
-    controller_wait_write();
-    out8(0x64, 0xAE);
-    controller_wait_write();
-    out8(0x60, 0xF4); // the keyboard itself: begin sending keys
-    let _ = controller_read(); // its acknowledgement
+    let configured = set_up();
+    // The keyboard's port back on, whether or not the rest was done.
+    let enabled = controller_command(0xAE);
+    if !configured || !enabled {
+        return KeyboardStart::ControllerBusy;
+    }
+    // The keyboard itself: begin sending keys. Its answer is read here, with its interrupt still masked.
+    let mut acknowledged = false;
+    for _ in 0..3 {
+        if !controller_wait_write() {
+            return KeyboardStart::ControllerBusy;
+        }
+        out8(0x60, 0xF4);
+        // Only the keyboard's own unmarked 0xFA or 0xFE is an answer; see `keyboard_answer`.
+        match keyboard_answer() {
+            Some(0xFA) => {
+                acknowledged = true;
+                break;
+            }
+            Some(0xFE) => continue,
+            _ => break,
+        }
+    }
+    if !acknowledged {
+        return KeyboardStart::NoAcknowledgement;
+    }
     arch::without_interrupts(|| KEYBOARD.with(|k| k.present = true));
     arch::interrupt_line_on(1);
-    true
+    KeyboardStart::Ready
 }
 
 fn keyboard_byte(k: &mut Keyboard, byte: u8) {
@@ -380,7 +478,10 @@ fn keyboard_byte(k: &mut Keyboard, byte: u8) {
                 0x1D => k.ctrl = !key.released,
                 0x38 => k.alt = !key.released,
                 0x1C => k.enter[key.extended as usize] = !key.released,
-                0x53 if !key.released && k.ctrl && k.alt => STOP.store(true, Ordering::SeqCst),
+                0x53 if !key.released && k.ctrl && k.alt => {
+                    CHORDS.fetch_add(1, Ordering::SeqCst);
+                    STOP.store(true, Ordering::SeqCst);
+                }
                 _ => {}
             }
             key.ctrl = k.ctrl;
@@ -406,7 +507,10 @@ pub fn interrupt(line: u8) {
                     break;
                 }
                 let byte = in8(0x60);
-                if status & 0x20 == 0 {
+                // Only the keyboard's own byte, received whole, is used: one from the second port (bit 5)
+                // or marked with a time-out or a parity error (bits 6 and 7) is taken off the controller
+                // and dropped, before it can answer the replay probe or be read as a key (A3).
+                if status & 0xE0 == 0 {
                     // The byte the replay probe sent comes back here if the controller replays; it is not a key.
                     if PROBE.load(Ordering::SeqCst) == 0x100 | byte as u32 {
                         PROBE.store(0, Ordering::SeqCst);
@@ -484,12 +588,16 @@ struct Script {
     pacing: KeyPacing,
     /// A key reached the queue but the idle reader was still waiting on the next timer interrupt.
     late_wake: bool,
+    /// The controller did not become ready for a byte's parameter: the byte was not sent and the script was ended.
+    stalled: bool,
+    /// The tick after which a program still running under this script is stopped: zero if none is set.
+    limit: u64,
     bytes: [u8; 8],
     len: usize,
     next: usize,
 }
 
-static SCRIPT: arch::Single<Script> = arch::Single::new(Script { at: 0, pacing: KeyPacing::Timed, late_wake: false, bytes: [0; 8], len: 0, next: 0 });
+static SCRIPT: arch::Single<Script> = arch::Single::new(Script { at: 0, pacing: KeyPacing::Timed, late_wake: false, stalled: false, limit: 0, bytes: [0; 8], len: 0, next: 0 });
 
 /// For the kernel's self-tests, which have nobody at the keyboard: from timer tick `at`, hand the controller one
 /// of these scan codes (at most eight) per eligible tick, with its command "put this byte in the output buffer as if the
@@ -499,17 +607,30 @@ pub fn keyboard_script(at: u64, bytes: &[u8], pacing: KeyPacing) {
     arch::without_interrupts(|| SCRIPT.with(|s| {
         let n = bytes.len().min(s.bytes.len());
         s.bytes[..n].copy_from_slice(&bytes[..n]);
-        *s = Script { at, pacing, late_wake: false, bytes: s.bytes, len: n, next: 0 };
+        // A test that presses keys ends within five seconds of its first key or is ended: see `script_tick`.
+        *s = Script { at, pacing, late_wake: false, stalled: false, limit: if n == 0 { 0 } else { at + 5000 }, bytes: s.bytes, len: n, next: 0 };
     }))
 }
 
 /// Release any trailing key-up bytes after the test program exits so the modifiers return to rest.
-/// True if no blocked reader was left waiting for the timer to deliver an already queued key.
-pub fn keyboard_script_finish() -> bool {
+/// The program has ended, so the limit on it is lifted; what is left of the script may still be sent.
+pub fn keyboard_script_finish() {
     arch::without_interrupts(|| SCRIPT.with(|s| {
         s.pacing = KeyPacing::Timed;
-        !s.late_wake
+        s.limit = 0;
     }))
+}
+
+/// How the script went, read after it has been drained (B3: read before, a failure during the drain was
+/// missed): (no blocked reader was left waiting on the timer for a key already queued; every byte was
+/// delivered and nothing stalled).
+pub fn keyboard_script_result() -> (bool, bool) {
+    arch::without_interrupts(|| SCRIPT.with(|s| (!s.late_wake, !s.stalled && s.next == s.len)))
+}
+
+/// Whether the script has stopped sending because a byte could not be delivered or its test ran out of time.
+pub fn keyboard_script_stalled() -> bool {
+    arch::without_interrupts(|| SCRIPT.with(|s| s.stalled))
 }
 
 /// How many scan codes of the script have not been handed to the controller yet.
@@ -520,6 +641,19 @@ pub fn keyboard_script_left() -> usize {
 /// Entered from `tick`, with interrupts off.
 fn script_tick(ticks: u64) {
     SCRIPT.with(|s| {
+        // A program that waits for a key which never comes would wait for ever, and the machine would
+        // never reach its desktop. If a scripted key could not be delivered, or the test is still
+        // running five seconds after its first key was due, the program is stopped as the stop key
+        // would stop it, and the test that started it fails instead of hanging (B3's question).
+        if s.limit != 0 && ticks > s.limit {
+            s.limit = 0;
+            s.stalled = true;
+            STOP.store(true, Ordering::SeqCst);
+        }
+        // After a stall nothing more of the script is sent; what was not sent stays counted as not sent.
+        if s.stalled {
+            return;
+        }
         // One byte a tick, and only when the controller holds nothing: neither a byte to be read nor one being taken.
         if s.next < s.len && ticks >= s.at && in8(0x64) & 3 == 0 {
             if let KeyPacing::Sleeping { idle_ticks, timeout } = s.pacing {
@@ -538,10 +672,26 @@ fn script_tick(ticks: u64) {
                     return;
                 }
             }
-            out8(0x64, 0xD2);
-            controller_wait_write();
-            out8(0x60, s.bytes[s.next]);
-            s.next += 1;
+            // The demonstration of a controller that loses keys: the byte is counted and never written.
+            #[cfg(feature = "lost-key-demo")]
+            {
+                s.next += 1;
+                return;
+            }
+            #[cfg(not(feature = "lost-key-demo"))]
+            {
+                out8(0x64, 0xD2);
+                // A byte is counted as sent only if it was sent (B3): if the controller does not become ready
+                // for it, nothing is written, the script ends there, and the test that waits on it fails.
+                if !controller_wait_write() {
+                    s.stalled = true;
+                    s.limit = 0;
+                    STOP.store(true, Ordering::SeqCst);
+                    return;
+                }
+                out8(0x60, s.bytes[s.next]);
+                s.next += 1;
+            }
         }
     })
 }
