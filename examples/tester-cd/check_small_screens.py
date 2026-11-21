@@ -351,7 +351,7 @@ def text_trial(key, screen, passed, problems, results, mode):
         key(press)
         first, frame = screen(name + "-1", lambda rows, frame: any(title in row for row in rows))
         seen, frames = [first], [frame]
-        while "Up/Down scroll" in " ".join(first) and len(seen) < 40:
+        while "Up/Down scroll" in " ".join(first) and len(seen) < 150:
             key(move)
             rows, frame = screen("%s-%d" % (name, len(seen) + 1), lambda rows, frame: True)
             if frame == frames[-1]:
