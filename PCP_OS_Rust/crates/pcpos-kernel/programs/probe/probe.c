@@ -89,6 +89,47 @@ static void check_open_failures(void)
     unlink("after-close.txt");
 }
 
+static int same_bytes(int fd, const char *expected)
+{
+    char buffer[16];
+    size_t n = strlen(expected);
+    return lseek(fd, 0, SEEK_SET) == 0 && read(fd, buffer, sizeof buffer) == (ssize_t)n
+           && memcmp(buffer, expected, n) == 0;
+}
+
+static void check_file_identity(void)
+{
+    const char *source = "draft.txt", *dest = "saved.txt";
+    int draft = open(source, O_CREAT | O_EXCL | O_RDWR, 0600);
+    int old = open(dest, O_CREAT | O_EXCL | O_RDWR | O_APPEND, 0600);
+    int ready = draft >= 0 && old >= 0 && write(draft, "draft", 5) == 5 && write(old, "old", 3) == 3;
+    int moved = ready && rename(source, dest) == 0;
+    check("rename keeps the source descriptor attached to its bytes", moved && same_bytes(draft, "draft"));
+    check("replacement keeps the previous destination open", moved && same_bytes(old, "old"));
+
+    struct stat st;
+    check("the replaced file has size three and zero names", fstat(old, &st) == 0 && st.st_size == 3 && st.st_nlink == 0);
+    int saved = open(dest, O_RDWR);
+    int appended = write(old, "!", 1) == 1;
+    check("appending to the replaced file leaves the named file alone",
+          appended && same_bytes(old, "old!") && same_bytes(saved, "draft"));
+
+    int removed = unlink(dest) == 0 && access(dest, F_OK) == -1 && errno == ENOENT;
+    int fresh = open(dest, O_CREAT | O_EXCL | O_RDWR, 0600);
+    int new_bytes = fresh >= 0 && write(fresh, "new", 3) == 3;
+    int edited = lseek(draft, 0, SEEK_END) == 5 && write(draft, "!", 1) == 1;
+    check("open descriptors share the unlinked file after its name is reused",
+          removed && new_bytes && edited && same_bytes(saved, "draft!") && same_bytes(fresh, "new"));
+    check("the reused name and unlinked descriptor report their own link counts",
+          fstat(saved, &st) == 0 && st.st_size == 6 && st.st_nlink == 0 &&
+          stat(dest, &st) == 0 && st.st_size == 3 && st.st_nlink == 1);
+    if (draft >= 0) close(draft);
+    if (old >= 0) close(old);
+    if (saved >= 0) close(saved);
+    if (fresh >= 0) close(fresh);
+    unlink(dest);
+}
+
 int main(int argc, char **argv)
 {
     int granted = argc > 1 && strcmp(argv[1], "granted") == 0;
@@ -144,6 +185,7 @@ int main(int argc, char **argv)
     int self = open("/probe.elf", O_RDONLY);
     if (granted) {
         check_open_failures();
+        check_file_identity();
         unsigned char magic[4] = { 0 };
         check("a file from the loader can be read", self >= 0 && read(self, magic, 4) == 4 && magic[0] == 0x7f && magic[1] == 'E');
         errno = 0;
