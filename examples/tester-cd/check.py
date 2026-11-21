@@ -23,6 +23,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import socket
 import subprocess
 import sys
@@ -65,6 +66,20 @@ def read_screen(ppm, glyphs):
     return rows
 
 
+def verification_visible(rows):
+    """Read the F5 page. Compact Home also displays the startup verdict at row 3."""
+    if not rows or len(rows) < 10 or rows[1] != "  VERIFICATION":
+        return False
+    if re.fullmatch(r"  NOT VERIFIED: [0-9]+ of [0-9]+ self-tests failed\.", rows[3]):
+        raise RuntimeError("F5 reports " + rows[3].strip())
+    if rows[7] == "  The register's chain does NOT verify.":
+        raise RuntimeError("F5 reports " + rows[7].strip())
+    return (rows[3] == f"  Verified at start: all {STARTUP_CHECKS} self-tests passed."
+            and re.fullmatch(r"  Register: [1-9][0-9]* events, head [0-9a-f]{16}\.\.\.", rows[6]) is not None
+            and rows[7] == "  The register's chain is intact."
+            and rows[-2] == "  Any key goes back")
+
+
 def register_problems(rows):
     """What the register screen must show after one played and one stopped demo."""
     if rows is None:
@@ -82,6 +97,73 @@ def register_problems(rows):
     elif [ended.get(task) for task in started] != ["DONE", "STOPPED"]:
         problems.append("expected the two surf.elf tasks to end DONE then STOPPED, read %s" % [ended.get(task) for task in started])
     return problems
+
+
+def program_access(command_line, sound, kernel_features, digest):
+    """The permissions draw_desktop discloses for this exact executable and boot profile."""
+    options = command_line.split()
+    if next((word for word in options if word.startswith("grant=")), None) == "grant=none":
+        return ["console only"]
+    access = ["display", "keyboard"]
+    if sound:
+        access.append("sound")
+    access.extend(["loader files", "store"])
+    net_pins = [word for word in options if word.startswith("net_image=")]
+    if "guest-ethernet" in kernel_features and "grant=none" not in options and net_pins == ["net_image=" + digest]:
+        access.append("raw Ethernet frames")
+    link_pin = next((word for word in options if word.startswith("link_image=")), None)
+    if "game-link" in kernel_features and link_pin == "link_image=" + digest:
+        access.append("second serial port")
+    return access
+
+
+def selected_entry_visible(rows, width, program, digest, access):
+    """Read only the selected plate's interior; artifacts in the background are outside the entry."""
+    left = width // 200
+    columns = min(width * 47 // 100, 1100) // 10
+    interior = [row[left + 1:left + columns - 1].rstrip() for row in rows]
+    marked = [i for i, row in enumerate(interior) if row.startswith(" > ")]
+    if len(marked) != 1:
+        return False
+    i = marked[0]
+    identity = r" > " + re.escape(program) + r" +[0-9]+(?:\.[0-9]+)? (?:KiB|MiB) +SHA-256 " + digest[:16] + r"\.\.\."
+    if not re.fullmatch(identity, interior[i]):
+        return False
+    # The renderer wraps before a whole permission and retains the separating comma.
+    lines = []
+    line = "may use:"
+    for n, permission in enumerate(access):
+        part = (" " if n == 0 else ", ") + permission
+        if n and len(line) + len(part) > columns - 6:
+            lines.append("   " + line + ",")
+            line = "         " + permission
+        else:
+            line += part
+    lines.append("   " + line)
+    after = i + 1 + len(lines)
+    if interior[i + 1:after] != lines:
+        return False
+    if interior[after:after + 1] == ["   pinned to the desktop"]:
+        after += 1
+    # The next row is the plate edge. A surplus continuation is still a false disclosure.
+    return after < len(interior) and not interior[after].strip(" ?")
+
+
+def erase_grant_suffix(ppm, row):
+    """Make a host-only negative from a real P6 by erasing the suffix on the selected grant row."""
+    header, size, depth, data = ppm.split(b"\n", 3)
+    width = int(size.split()[0])
+    left = width // 200
+    # Retain "may use: display" and erase through the last cell inside the plate. Use
+    # the selected plate's own background pixel from the blank space before the label.
+    start = (left + 4 + len("may use: display")) * 10
+    end = (left + min(width * 47 // 100, 1100) // 10 - 1) * 10
+    changed = bytearray(data)
+    for y in range(row * 20, (row + 1) * 20):
+        base = y * width * 3
+        sample = base + (left + 3) * 10 * 3
+        changed[base + start * 3:base + end * 3] = data[sample:sample + 3] * (end - start)
+    return b"\n".join((header, size, depth, changed))
 
 
 def check_desk_label(ppm, label):
@@ -133,12 +215,17 @@ def exercise_queue(key, wait, screen, out):
     wait("rdesk.elf ended DONE: exit 0", 3)
 
 
-def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queue_desk):
+def optical_command(qemu, iso, machine, serial, qmp):
+    return [qemu, "-machine", machine, "-accel", "tcg", "-cpu", "qemu64", "-m", "64M", "-boot", "order=d", "-cdrom", str(iso),
+            "-vga", "std", "-nic", "none", "-audiodev", "none,id=snd0", "-device", "AC97,audiodev=snd0", "-display", "none",
+            "-monitor", "none", "-qmp", qmp, "-serial", "file:%s" % serial]
+
+
+def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, app_digests, kernel_features):
+    queue_desk = "rdesk.elf" in app_digests
     out.mkdir()
     serial, sock = out / "serial.txt", out / "qmp.sock"
-    cmd = [qemu, "-machine", machine, "-accel", "tcg", "-cpu", "qemu64", "-m", "64M", "-boot", "order=d", "-cdrom", str(iso),
-           "-vga", "std", "-nic", "none", "-audiodev", "none,id=snd0", "-device", "AC97,audiodev=snd0", "-display", "none",
-           "-monitor", "none", "-qmp", "unix:%s,server=on,wait=off" % sock, "-serial", "file:%s" % serial]
+    cmd = optical_command(qemu, iso, machine, serial, "unix:%s,server=on,wait=off" % sock)
     if counted:
         cmd += ["-icount", "shift=3,align=off,sleep=off"]
     result = {"machine": machine, "clock": "instruction-counted" if counted else "ordinary", "argv": cmd}
@@ -202,6 +289,12 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
         wait(measurement + " (measured; equal to the value the loader named)")
         wait("leaves no memory behind")
         seen = log()
+        command = re.search(r"^command line: ([^\r\n]*)", seen, re.MULTILINE)
+        display = re.search(r"^display: [^,\r\n]+, (\d+)x\d+,", seen, re.MULTILINE)
+        if not command or not display:
+            raise ValueError("the boot log is missing its command line or display mode")
+        width = int(display[1])
+        sound = "sound: an AC'97 device," in seen or "music: an FM synthesiser of the AdLib kind answered" in seen
         result["startup_pass_lines"] = sum(line.startswith("  pass ") for line in seen.splitlines())
         result["startup_fail_lines"] = sum(line.lower().startswith("  fail") for line in seen.splitlines())
         def wait_screen(name, matches):
@@ -217,10 +310,6 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
                     return rows
             raise TimeoutError(name + " did not appear")
 
-        def startup_verified(rows):
-            status = f"Verified at start: all {STARTUP_CHECKS} self-tests passed."
-            return any(status in row for row in rows)
-
         def corner_verified(rows):
             """The small word in the corner of every desktop surface when the kernel verified itself."""
             return any("verified" in row for row in rows) and not any("NOT VERIFIED" in row for row in rows)
@@ -231,13 +320,16 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
 
         def launcher_list_visible(rows, selected_program="surf.elf"):
             """The launcher: a chosen program with what it may use, and the corner word."""
-            if not corner_verified(rows):
-                return False
-            for entry, grants in zip(rows, rows[1:]):
-                marker = entry.find(f"> {selected_program} ")
-                if marker >= 0 and re.match(r"may use: (?:display|console only)\b", grants[marker + 2:]):
-                    return True
-            return False
+            digest = app_digests[selected_program]
+            access = program_access(command[1], sound, kernel_features, digest)
+            return corner_verified(rows) and selected_entry_visible(rows, width, selected_program, digest, access)
+
+        def check_grant_control(name, rows, program):
+            marker = next(i for i, row in enumerate(rows) if f"> {program} " in row)
+            altered = erase_grant_suffix((out / (name + ".ppm")).read_bytes(), marker + 1)
+            if launcher_list_visible(read_screen(altered, glyphs), program):
+                raise RuntimeError("the launcher check accepted erased grants for " + program)
+            result.setdefault("erased_grant_suffix_rejected", []).append(program)
 
         def home_activity(rows):
             """The outcomes on the desktop's activity widget, oldest first."""
@@ -269,12 +361,12 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
             key("ret")
             wait_screen(f"settings-set-{step}", lambda view: setting(view, bar, "A bar across the screen") and setting(view, dock, "A dock in the middle"))
             key("esc")
-            wait_screen(f"home-form-{step}", lambda view: home_visible(view) and one_row(view) == same_row)
-        # The corner says one word; V says the whole of it, in the sentence every kernel screen has used.
+            before_f5 = wait_screen(f"home-form-{step}", lambda view: home_visible(view) and one_row(view) == same_row)
+        # F5 shows the startup verdict and the register together. Esc restores the original desktop.
         key("f5")
-        wait_screen("verification", startup_verified)
+        wait_screen("verification", verification_visible)
         key("esc")
-        wait_screen("home-again", home_visible)
+        wait_screen("home-again", lambda view: view == before_f5)
         # The person turns on the activity widget, then opens the launcher and places a shortcut.
         key("f2")
         wait_screen("widgets", lambda view: any("Widgets on the desktop" in row for row in view))
@@ -286,6 +378,7 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
         wait_screen("home-with-widget", lambda view: home_visible(view) and any("RECENT ACTIVITY" in row for row in view) and not home_activity(view))
         key("ret")
         listed = wait_screen("launcher", launcher_list_visible)
+        check_grant_control("launcher", listed, "surf.elf")
         if home_visible(listed):
             raise RuntimeError("the launcher was also recognised as the desktop")
         # A letter alone pins nothing; Ctrl with P does.
@@ -325,7 +418,8 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
             key("spc")
             wait_screen("launcher-before-queue", launcher_list_visible)
             exercise_queue(key, wait, screen, out)
-            wait_screen("launcher-after-queue", lambda view: launcher_list_visible(view, "rdesk.elf"))
+            desk = wait_screen("launcher-after-queue", lambda view: launcher_list_visible(view, "rdesk.elf"))
+            check_grant_control("launcher-after-queue", desk, "rdesk.elf")
         # Nothing stops the machine at one press. Letters do nothing on the desktop, P among them; F10 asks,
         # Esc goes back to the same desktop, and only Enter pressed at the question switches off.
         if queue_desk:
@@ -430,14 +524,19 @@ def main():
     if args.queue_desk and not queue_desk:
         sys.exit("the receipt has no queue desk")
     iso = (args.built / "pcp-os-tester.iso").resolve(strict=True)
-    if hashlib.sha256(iso.read_bytes()).hexdigest() != receipt["iso_sha256"]:
+    image = iso.read_bytes()
+    if hashlib.sha256(image).hexdigest() != receipt["iso_sha256"]:
         sys.exit("the ISO is not the one its receipt describes")
+    files = runpy.run_path(str(Path(__file__).with_name("build.py")))["read_back"](image)
+    programs = ["surf.elf", "rdesk.elf"] if queue_desk else ["surf.elf"]
+    app_digests = {name: hashlib.sha256(files[name]).hexdigest() for name in programs}
+    kernel_features = set(re.split(r"[, ]+", receipt.get("kernel_features", "default")))
     evidence = args.evidence.resolve()
     evidence.mkdir(parents=True, exist_ok=False)
     glyphs = kernel_glyphs()
     version = subprocess.check_output([args.qemu, "--version"], text=True).splitlines()[0]
     results = [session(args.qemu, iso, evidence / ("%s-%s" % (machine, "counted" if counted else "ordinary")), machine, counted,
-                       receipt["kernel_measurement"], args.timeout, glyphs, queue_desk)
+                       receipt["kernel_measurement"], args.timeout, glyphs, app_digests, kernel_features)
                for machine in ("pc", "q35") for counted in (False, True)]
     summary = {"iso_sha256": receipt["iso_sha256"], "source_commit": receipt["source_commit"], "kernel_measurement": receipt["kernel_measurement"],
                "qemu": version, "host": " ".join(os.uname()[i] for i in (0, 2, 4)), "passed": all(r["passed"] for r in results),

@@ -6,6 +6,7 @@ on:
   pull_request:
     paths:
       - 'examples/tester-cd/**'
+      - 'examples/optical-disk-check/check.py'
       - 'PCP_OS_Rust/crates/pcpos-kernel/**'
       - 'PCP_OS_Rust/crates/pcpos-core/**'
       - 'apps/surfbird/guest/**'
@@ -17,6 +18,7 @@ on:
     branches: [master]
     paths:
       - 'examples/tester-cd/**'
+      - 'examples/optical-disk-check/check.py'
       - 'PCP_OS_Rust/crates/pcpos-kernel/**'
       - 'PCP_OS_Rust/crates/pcpos-core/**'
       - 'apps/surfbird/guest/**'
@@ -73,6 +75,9 @@ jobs:
           cat "$RUNNER_TEMP/first/receipt.json"
       - name: Boot it on pc and q35, on both clocks
         run: python3 -B examples/tester-cd/check.py ${{ matrix.option }} "$RUNNER_TEMP/first" "$RUNNER_TEMP/evidence"
+      - name: Verify F5 and return to Home at 800 by 600
+        if: matrix.option == ''
+        run: python3 -B examples/tester-cd/check_compact.py "$RUNNER_TEMP/first" "$RUNNER_TEMP/evidence/compact-f5"
       - name: Keep the receipt and the evidence, including a failed case
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
