@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import select
 import struct
 import subprocess
@@ -201,6 +202,41 @@ def frame(monitor, directory, name, timeout, register=False):
     wait_for(inspect, f'waiting for {name} framebuffer', timeout)
 
 
+class DesktopScreens:
+    """Read the desktop kernel's framebuffer with its own font. Legacy CDs keep their recorded pixel checks."""
+    def __init__(self, monitor, directory, timeout):
+        reader = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'tester-cd/check.py'))
+        self.read = reader['read_screen']
+        self.glyphs = reader['kernel_glyphs']()
+        self.startup_checks = reader['STARTUP_CHECKS']
+        self.register_problems = reader['register_problems']
+        self.monitor, self.directory, self.timeout = monitor, directory, timeout
+
+    def wait(self, name, predicate):
+        capture = self.directory / (name + '.ppm')
+
+        def inspect():
+            self.monitor.call('screendump', filename=str(capture))
+            rows = self.read(capture.read_bytes(), self.glyphs)
+            return rows if rows and predicate(rows) else None
+
+        return wait_for(inspect, 'waiting for ' + name + ' framebuffer', self.timeout)
+
+    def home(self, name):
+        status = f'Verified at start: all {self.startup_checks} self-tests passed.'
+        return self.wait(name, lambda rows: any(status in row for row in rows)
+                         and any('widgets' in row and 'files' in row for row in rows))
+
+    def launcher(self, name, program):
+        # The large layout marks the selected row with ">". Compact mode uses a
+        # coloured row, the program name and an "Access:" line.
+        return self.wait(name, lambda rows: (any('> ' + program in row for row in rows)
+                                             and any('may use:' in row for row in rows))
+                         or (any(row.strip(' ?') == program for row in rows)
+                             and any('Access:' in row for row in rows)
+                             and any('Enter open' in row for row in rows)))
+
+
 def exercise(q, evidence, timeout, result, kernel):
     serial = evidence / 'serial.log'
 
@@ -209,7 +245,28 @@ def exercise(q, evidence, timeout, result, kernel):
 
     q.call('cont')
     sees(kernel + ' (measured; equal to the value the loader named)')
-    frame(q, evidence, 'launcher', timeout)
+    # These tests also replay two pinned, launcher-first optical releases. An
+    # old release must still match both of its original pixel regions.
+    def first_surface():
+        if re.search(r'^desktop: [0-9]+x[0-9]+ at [0-9]+x UI scale', serial.read_text(), re.M):
+            return 'desktop'
+        capture = evidence / 'launcher.ppm'
+        q.call('screendump', filename=str(capture))
+        return 'legacy' if matches_frame(capture.read_bytes(), (VERIFIED, LAUNCHER_KEYS)) else None
+
+    surface = wait_for(first_surface, 'waiting for the initial optical screen', timeout)
+    desktop = DesktopScreens(q, evidence, timeout) if surface == 'desktop' else None
+    if desktop:
+        desktop.home('home')
+        q.key('spc')
+        desktop.launcher('launcher', 'surf.elf')
+
+    def launcher(name):
+        if desktop:
+            desktop.launcher(name, 'surf.elf')
+        else:
+            frame(q, evidence, name, timeout)
+
     if sum(line.startswith('  pass ') for line in serial.read_text().splitlines()) != 71:
         raise ValueError('expected 71 serial startup passes')
     result['at_launcher'] = q.disk_stats()
@@ -218,16 +275,19 @@ def exercise(q, evidence, timeout, result, kernel):
     q.key('spc')
     sees('SURFBIRD media drained')
     sees('surf.elf ended DONE: exit 0')
-    frame(q, evidence, 'after-playback', timeout)
+    launcher('after-playback')
     q.key('ret')
     sees('SURFBIRD media ready', 2)
     q.key('ctrl', 'alt', 'delete')
     sees('surf.elf ended STOPPED')
-    frame(q, evidence, 'after-stop', timeout)
+    launcher('after-stop')
     q.key('r')
-    frame(q, evidence, 'register', timeout, register=True)
+    if desktop:
+        desktop.wait('register', lambda rows: not desktop.register_problems(rows))
+    else:
+        frame(q, evidence, 'register', timeout, register=True)
     q.key('esc')
-    frame(q, evidence, 'returned', timeout)
+    launcher('returned')
     result['before_poweroff'] = q.disk_stats()
     q.key('p')
     sees("the kernel's register of its own start, verification and stop verifies and replays without a problem")

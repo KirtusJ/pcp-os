@@ -28,9 +28,9 @@ queue="$CARGO_TARGET_DIR/x86_64-unknown-none/release/rdesk"
 python3 examples/vm-store/check_queue.py "$kernel" "$queue" vm-queue-results
 ```
 
-This check types `cold morning` in the graphical queue, verifies the label and **Disk save** in the framebuffer, exits the program and waits for power-off. A new QEMU process opens the same volume. The checker reads **Queue restored** and the label from that screen, decodes the journal and compares the two disk images byte-for-byte. The automated keyboard and framebuffer replay uses QMP on a POSIX host.
+This check types `cold morning` in the graphical queue, verifies the label and **Disk save** in the framebuffer, exits the program and waits for power-off. A new QEMU process opens the same volume. From the desktop, the checker opens Files and reads the saved queue’s name, displayed size and volume status. It then opens the launcher with Space and starts the queue. The checker reads **Queue restored** and the label from that screen, decodes the journal and compares the two disk images byte-for-byte. The automated keyboard and framebuffer replay uses QMP on a POSIX host.
 
-To type your own entry, supply the built `rdesk` as the program in the next section. Start it with Enter at the launcher, press N, type a label, then press Enter and look for **Disk save**. Escape returns to the launcher, where P powers off. Relaunch the same VM directory to reopen your queue.
+To type your own entry, supply the built `rdesk` as the program in the next section. From the desktop, press Space to open the launcher and Enter to start the queue, press N, type a label, then press Enter and look for **Disk save**. Escape returns to the launcher, where P powers off. Relaunch the same VM directory to reopen your queue.
 
 ## Attach a new volume to a guest program
 

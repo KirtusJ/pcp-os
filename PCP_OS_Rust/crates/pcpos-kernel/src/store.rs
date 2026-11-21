@@ -1,11 +1,10 @@
 //! A bounded durable snapshot of the existing writable namespace. Sector zero
 //! is an immutable format marker. Two 129-sector slots each hold a checksummed
 //! commit sector followed by up to 64 KiB of serialized file names and bytes.
-use crate::dev::store_disk as disk;
+use crate::{dev::store_disk as disk, regular::Files};
 use alloc::{string::String, vec::Vec};
 use pcpos_core::sha256;
 
-type Files = Vec<(String, Vec<u8>)>;
 const MARKER: &[u8] = b"PCPOS USER STORE 2\n";
 const COMMIT: &[u8; 8] = b"PCPSLOT1";
 const LIMIT: usize = 128 * 512;
@@ -33,16 +32,16 @@ fn valid_name(name: &str) -> bool {
 }
 
 fn decode(mut bytes: &[u8]) -> Option<Files> {
-    let mut files = Vec::new();
+    let mut files = Files::default();
     while !bytes.is_empty() {
         let name_len = u16::from_le_bytes(bytes.get(..2)?.try_into().ok()?) as usize;
         let data_len = u32::from_le_bytes(bytes.get(2..6)?.try_into().ok()?) as usize;
         let name = core::str::from_utf8(bytes.get(6..6 + name_len)?).ok()?;
-        if files.len() == 256 || !valid_name(name) || files.iter().any(|(n, _)| n == name) {
+        if files.len() == 256 || !valid_name(name) || files.named(name).is_some() {
             return None;
         }
         let end = 6 + name_len + data_len;
-        files.push((String::from(name), bytes.get(6 + name_len..end)?.to_vec()));
+        files.insert(String::from(name), bytes.get(6 + name_len..end)?.to_vec());
         bytes = &bytes[end..];
     }
     Some(files)
@@ -130,14 +129,15 @@ impl Volume {
             return Err(Failure::Full);
         }
         let mut bytes = Vec::new();
-        for (name, data) in files {
+        for (name, file) in files.iter() {
+            let data = file.bytes();
             if !valid_name(name) || 6 + name.len() + data.len() > LIMIT - bytes.len() {
                 return Err(Failure::Full);
             }
             bytes.extend_from_slice(&(name.len() as u16).to_le_bytes());
             bytes.extend_from_slice(&(data.len() as u32).to_le_bytes());
             bytes.extend_from_slice(name.as_bytes());
-            bytes.extend_from_slice(data);
+            bytes.extend_from_slice(&data);
         }
         let next = self.generation.checked_add(1).ok_or(Failure::Full)?;
         let slot = 1 - self.slot;

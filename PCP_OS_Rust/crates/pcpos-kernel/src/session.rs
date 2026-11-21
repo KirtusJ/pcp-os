@@ -100,7 +100,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
         }
     }
     let (y, mo, d, h, mi, s) = arch::clock();
-    let mut world = World { files: files.iter().map(|f| (f.0.clone(), f.1)).collect(), store: Vec::new(),
+    let mut world = World { files: files.iter().map(|f| (f.0.clone(), f.1)).collect(), store: Default::default(),
         #[cfg(feature = "vm-store")] volume: None,
                             epoch_at_start: epoch(y, mo, d, h, mi, s).saturating_sub(arch::ticks() / arch::TICKS_PER_SECOND), unanswered: Vec::new() };
     let line = start.boot.command_line.as_str();
@@ -328,7 +328,7 @@ fn recent_tasks(rec: &Record, programs: &[Entry], most: usize) -> Vec<(String, S
 /// what the person has put there: shortcuts to programs, one of them chosen, and widgets. With nothing placed
 /// it is empty. On a display under 1280 by 720 the same things are said as plain lines.
 #[allow(clippy::too_many_arguments)]
-fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize], place: usize, widgets: &[bool; 3], store: &[(String, Vec<u8>)], mounted: bool, run: u32, message: &str) {
+fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize], place: usize, widgets: &[bool; 3], store: &crate::regular::Files, mounted: bool, run: u32, message: &str) {
     use ui::{label, label_width, AMBER, BAD, GOOD, SOFT, TEAL, TEXT};
     let safe = start.failed != 0;
     let recent = if widgets[0] { recent_tasks(rec, programs, 3) } else { Vec::new() };
@@ -463,14 +463,14 @@ fn widgets_view(widgets: &mut [bool; 3]) {
 }
 
 /// The files programs have written, by name and size. Esc or Enter goes back.
-fn files_view(store: &[(String, Vec<u8>)], mounted: bool) {
+fn files_view(store: &crate::regular::Files, mounted: bool) {
     use ui::{at, GROUND, SOFT, TEXT};
     let (cols, rows) = ui::grid();
     ui::clear(GROUND);
     let total: usize = store.iter().map(|f| f.1.len()).sum();
     at(2, 1, &format!("FILES: {} file(s), {}", store.len(), size_text(total)), ui::TEAL, GROUND);
     at(2, 2, if mounted { "VM files | saved when an app syncs" } else { "Session files | cleared at power-off" }, SOFT, GROUND);
-    if store.is_empty() {
+    if store.len() == 0 {
         at(2, 4, "No program has written a file.", SOFT, GROUND);
     }
     for (n, (name, bytes)) in store.iter().take(rows.saturating_sub(8) as usize).enumerate() {

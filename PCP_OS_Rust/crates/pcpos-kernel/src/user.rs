@@ -143,8 +143,8 @@ impl Process {
 pub struct World {
     /// The loader's files by name.
     pub files: Vec<(String, &'static [u8])>,
-    /// Files programs wrote, by name. They are in the kernel's memory and are gone when the machine is switched off.
-    pub store: Vec<(String, Vec<u8>)>,
+    /// The live writable namespace. With a mounted VM volume, fsync checkpoints its named files.
+    pub store: crate::regular::Files,
     #[cfg(feature = "vm-store")]
     pub volume: Option<crate::store::Volume>,
     /// Seconds since 1970 when the tick count was zero, by the machine's clock.
@@ -192,7 +192,7 @@ fn new_table(world: World) -> Table {
 }
 
 pub(crate) fn empty_world() -> World {
-    World { files: Vec::new(), store: Vec::new(),
+    World { files: Vec::new(), store: Default::default(),
         #[cfg(feature = "vm-store")] volume: None, epoch_at_start: 0, unanswered: Vec::new() }
 }
 
