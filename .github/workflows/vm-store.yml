@@ -1,0 +1,77 @@
+name: VM file persistence
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'examples/vm-store/**'
+      - 'PCP_OS_Rust/crates/pcpos-kernel/**'
+      - 'PCP_OS_Rust/crates/pcpos-core/**'
+      - 'examples/optical-disk-check/check.py'
+      - 'store/apps/parrots-all-the-way-down/guest/**'
+      - 'store/apps/parrots-all-the-way-down/core/**'
+      - 'store/native/guest/**'
+      - '.github/workflows/vm-store.yml'
+permissions:
+  contents: read
+jobs:
+  cold-boots:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      RUSTUP_TOOLCHAIN: 1.97.0
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install the kernel and VM tools
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y --no-install-recommends qemu-system-x86 seabios clang binutils lld musl-tools
+          rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --no-self-update -c rust-src -t x86_64-unknown-none
+      - name: Build the opt-in kernel and run isolated cold boots
+        run: |
+          kernel=PCP_OS_Rust/crates/pcpos-kernel
+          PCPOS_KERNEL_STAGE="$RUNNER_TEMP/build" PCPOS_KERNEL_FEATURES=vm-store sh "$kernel/run.sh" build
+          python3 -B examples/vm-store/check.py "$kernel/target/pcpos-kernel.elf32" "$RUNNER_TEMP/boots"
+      - name: Run the granted file API probe
+        run: |
+          kernel="$GITHUB_WORKSPACE/PCP_OS_Rust/crates/pcpos-kernel"
+          cd "$RUNNER_TEMP/boots"
+          sh "$kernel/programs/probe/build.sh" "$PWD/probe.elf"
+          measurement=$(python3 "$kernel/tools/measure.py" kernel.elf)
+          status=0
+          qemu-system-x86_64 -machine pc -accel tcg -cpu max -m 256M -display none -vga std \
+            -nic none -monitor none -no-reboot -kernel kernel.elf -initrd "probe.elf granted" \
+            -append "auto=probe.elf then=off image=$measurement" -serial file:file-api.serial \
+            -device isa-debug-exit,iobase=0xf4,iosize=4 || status=$?
+          test "$status" = 33
+          grep -Fq "probe: 0 failure(s)" file-api.serial
+          grep -Fq "probe.elf ended DONE: exit 0" file-api.serial
+          test "$(grep -c '^ok  ' file-api.serial)" = 26
+      - name: Save a queue entry from the keyboard and reopen it after power-off
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/queue-target
+        run: |
+          (cd store/apps/parrots-all-the-way-down/guest && cargo build --locked --release --target x86_64-unknown-none)
+          python3 -B examples/vm-store/check_queue.py "$RUNNER_TEMP/boots/kernel.elf" \
+            "$CARGO_TARGET_DIR/x86_64-unknown-none/release/rdesk" "$RUNNER_TEMP/queue"
+      - name: Compile the worker with VM storage enabled
+        run: |
+          PCPOS_KERNEL_STAGE="$RUNNER_TEMP/build" PCPOS_KERNEL_FEATURES="vm-store,virtio-worker-probe" \
+            sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+      - name: Preserve the disk, guest programs, kernel, and serial evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: vm-store-cold-boots
+          path: ${{ runner.temp }}/boots
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Preserve the two queue screens, journals, binaries and serial logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: vm-store-queue
+          path: ${{ runner.temp }}/queue
+          if-no-files-found: warn
+          retention-days: 14

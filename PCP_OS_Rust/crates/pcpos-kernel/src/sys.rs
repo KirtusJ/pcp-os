@@ -19,11 +19,14 @@ use pcpos_core::cap::{CapSpace, Rights};
 
 const EPERM: i64 = 1;
 const ENOENT: i64 = 2;
+#[cfg(feature = "vm-store")]
+const EIO: i64 = 5;
 const EBADF: i64 = 9;
 const EAGAIN: i64 = 11;
 const ENOMEM: i64 = 12;
 const EACCES: i64 = 13;
 const EFAULT: i64 = 14;
+const EEXIST: i64 = 17;
 const EINVAL: i64 = 22;
 const EMFILE: i64 = 24;
 const ENOTTY: i64 = 25;
@@ -209,11 +212,12 @@ fn open(p: &mut Process, caps: &CapSpace, world: &mut World, path: u64, flags: u
         Err(e) => return e,
     };
     let (writing, create, truncate) = (flags & 3 != 0, flags & 0x40 != 0, flags & 0x200 != 0);
-    let node = match lookup(p, caps, world, &path) {
+    let (node, is_new) = match lookup(p, caps, world, &path) {
+        Ok(_) if create && flags & 0x80 != 0 => return err(EEXIST), // O_CREAT | O_EXCL
         #[cfg(feature = "guest-ethernet")]
         Ok(Node::Ethernet) if flags & 3 != 2 => return err(EINVAL), // raw packet sessions require O_RDWR
         Ok(Node::File(_)) if writing => return err(EACCES), // the loader's files are read and never written
-        Ok(n) => n,
+        Ok(n) => (n, false),
         Err(e) if e == err(ENOENT) && create => {
             let name = match name_of(&path) {
                 Some(n) if !n.is_empty() && !n.starts_with("dev/") && n.len() <= 200 => n,
@@ -225,37 +229,38 @@ fn open(p: &mut Process, caps: &CapSpace, world: &mut World, path: u64, flags: u
             if world.store.len() >= 256 {
                 return err(ENOSPC);
             }
-            world.store.push((name.clone(), Vec::new()));
-            Node::Stored(name)
+            (Node::Stored(name), true)
         }
         Err(e) => return e,
     };
-    if let Node::Stored(name) = &node {
-        if writing && !p.holds(caps, Object::Store, Rights::APPEND) {
-            return err(EACCES);
-        }
-        if writing && truncate {
-            if let Some(f) = world.store.iter_mut().find(|f| &f.0 == name) {
-                f.1 = Vec::new();
-            }
-        }
+    if writing && matches!(node, Node::Stored(_)) && !p.holds(caps, Object::Store, Rights::APPEND) {
+        return err(EACCES);
     }
     let linux = match p.linux.as_mut() {
         Some(l) => l,
         None => return err(ENOSYS),
     };
-    let entry = Open { node, position: 0, nonblocking: flags & 0x800 != 0, writable: writing, append: flags & 0x400 != 0 };
-    match linux.files.iter().position(|f| f.is_none()) {
-        Some(fd) => {
-            linux.files[fd] = Some(entry);
-            fd as u64
-        }
-        None if linux.files.len() < MAX_FILES => {
-            linux.files.push(Some(entry));
-            (linux.files.len() - 1) as u64
-        }
-        None => err(EMFILE),
+    let fd = linux.files.iter().position(Option::is_none).unwrap_or(linux.files.len());
+    if fd >= MAX_FILES {
+        return err(EMFILE);
     }
+    // All refusal paths precede the creation or truncation of a stored file.
+    if let Node::Stored(name) = &node {
+        if is_new {
+            world.store.push((name.clone(), Vec::new()));
+        } else if writing && truncate {
+            if let Some(f) = world.store.iter_mut().find(|f| &f.0 == name) {
+                f.1 = Vec::new();
+            }
+        }
+    }
+    let entry = Some(Open { node, position: 0, nonblocking: flags & 0x800 != 0, writable: writing, append: flags & 0x400 != 0 });
+    if fd == linux.files.len() {
+        linux.files.push(entry);
+    } else {
+        linux.files[fd] = entry;
+    }
+    fd as u64
 }
 
 fn file(p: &Process, fd: u64) -> Option<Open> {
@@ -815,6 +820,22 @@ pub fn call(t: &mut Table, i: usize, frame: &Frame) -> Outcome {
             },
             None => err(EBADF),
         }),
+        #[cfg(feature = "vm-store")]
+        74 => {
+            let Some(volume) = world.volume.as_mut() else { return ret(err(ENOSYS)); };
+            match file(p, a[0]) {
+                None => return ret(err(EBADF)),
+                Some(open) if !matches!(open.node, Node::Stored(_) | Node::Directory) =>
+                    return ret(err(EINVAL)),
+                _ => {}
+            }
+            if !p.holds(caps, Object::Store, Rights::APPEND) { return ret(err(EACCES)); }
+            ret(match volume.commit(&world.store) {
+                Ok(()) => 0,
+                Err(crate::store::Failure::Full) => err(ENOSPC),
+                Err(crate::store::Failure::Io) => err(EIO),
+            })
+        }
         79 => ret(if a[1] >= 2 && put(p, a[0], b"/\0") { 2 } else { err(EINVAL) }),
         82 => {
             // rename: of a file in the store.

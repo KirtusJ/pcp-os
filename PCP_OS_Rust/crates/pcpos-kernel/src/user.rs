@@ -145,6 +145,8 @@ pub struct World {
     pub files: Vec<(String, &'static [u8])>,
     /// Files programs wrote, by name. They are in the kernel's memory and are gone when the machine is switched off.
     pub store: Vec<(String, Vec<u8>)>,
+    #[cfg(feature = "vm-store")]
+    pub volume: Option<crate::store::Volume>,
     /// Seconds since 1970 when the tick count was zero, by the machine's clock.
     pub epoch_at_start: u64,
     /// Calls a program made that this kernel does not answer: (number, times).
@@ -189,8 +191,9 @@ fn new_table(world: World) -> Table {
     Table { procs: Vec::new(), current: None, kernel: None, tasks: TaskTable::new(), caps: CapSpace::new(64), fpu_owner: None, fs_loaded: 0, world, idle: 0 }
 }
 
-fn empty_world() -> World {
-    World { files: Vec::new(), store: Vec::new(), epoch_at_start: 0, unanswered: Vec::new() }
+pub(crate) fn empty_world() -> World {
+    World { files: Vec::new(), store: Vec::new(),
+        #[cfg(feature = "vm-store")] volume: None, epoch_at_start: 0, unanswered: Vec::new() }
 }
 
 impl Table {

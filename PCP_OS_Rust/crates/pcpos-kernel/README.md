@@ -18,6 +18,8 @@ Use the arrows to choose a program and Enter to open it. The desktop shows the s
 
 **Capabilities.** Each of `/dev/fb0` (display), `/dev/kbd` (keyboard), `/dev/audio` (sampled sound), `/dev/fm` (music synthesiser), the clock and the store is reached only by a process whose session granted it. The grants of each program are listed in the launcher before it is started. `grant=none` on the kernel's command line starts programs with the console alone; the probe program then counts 18 refusals and exits cleanly.
 
+The optional [VM file store](../../../examples/vm-store/README.md) saves the writable namespace when a guest calls `fsync` on an explicitly mounted QEMU IDE data file. The default kernel uses RAM.
+
 **Drivers** (`dev.rs`).
 - *Display.* The Bochs/QEMU display adapter, found by scanning the PCI bus; its memory is mapped writable and non-executable; 32 bits a pixel, mode set through the adapter's own registers: 1024 by 768 for the kernel's own screens, and the mode a program asks for while it runs. The adapter's memory holds two pages: a program draws a whole picture into the hidden page and the kernel switches pages, so no half-drawn picture is shown. No VGA BIOS call is made.
 - *Keyboard.* PS/2, scan-code set 1 through the controller's translation, interrupt-driven, delivered to the process that holds the capability as press and release events. Ctrl+Alt+Del is never delivered: it ends the running program and returns to the launcher.

@@ -21,6 +21,8 @@ mod register_wire;
 mod session;
 mod sys;
 mod ui;
+#[cfg(feature = "vm-store")]
+mod store;
 mod user;
 
 use pcpos_core::acr::{self, Record};
@@ -522,7 +524,8 @@ fn script_drain() -> Result<(), &'static str> {
 fn asynchronous(failed: &mut u32) {
     use dev::KeyPacing::{BlockedRead, Sleeping, Timed};
     use user::{End, Grants, Program, Start, World};
-    let world = || World { files: alloc::vec::Vec::new(), store: alloc::vec::Vec::new(), epoch_at_start: 0, unanswered: alloc::vec::Vec::new() };
+    let world = || World { files: alloc::vec::Vec::new(), store: alloc::vec::Vec::new(),
+        #[cfg(feature = "vm-store")] volume: None, epoch_at_start: 0, unanswered: alloc::vec::Vec::new() };
     let grants = Grants { console: true, keys: true, ..Grants::default() };
     let loaded = |name: &str, args: &[&str], keys: &[u8], after: u64, pacing| -> (Result<user::Process, &'static str>, usize, usize, u64) {
         let free0 = user::frames_free();
@@ -851,7 +854,9 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     let (pool_frames, pool_free, taken, given) = mem::census();
     say!("kernel heap: {} bytes in use, {} bytes ever carved; frames: {} of {} free, {} handed out and {} given back since the start", live, carved, pool_free, pool_frames, taken, given);
     if failed == 0 {
-        #[cfg(not(feature = "guest-ethernet"))]
+        #[cfg(all(feature = "vm-store", not(feature = "guest-ethernet")))]
+        say!("ALL SELF-TESTS PASS. VM checkpoint storage is available when a dedicated IDE data disk is explicitly mounted.");
+        #[cfg(not(any(feature = "guest-ethernet", feature = "vm-store")))]
         say!("ALL SELF-TESTS PASS. Present: user mode and preemptive processes; programs loaded from the loader's files; a display, a keyboard, sound and music where the machine has ones this kernel drives. Not present: storage that outlasts power, a mouse, network, a second processor.");
         #[cfg(feature = "guest-ethernet")]
         say!("ALL SELF-TESTS PASS. Guest Ethernet support is compiled in. Access requires a matching image grant and a supported NIC.");

@@ -12,6 +12,7 @@ publish = false
 pcpos-core = { path = "../pcpos-core" }
 
 [features]
+vm-store = [] # explicitly mounted 64 KiB checkpoint store on a dedicated QEMU PC IDE disk
 uefi-demo-heap = [] # 4 MiB heap for the guarded Q35/OVMF demo trial
 guest-ethernet = ["virtio-tx-probe"] # raw frames for one explicitly hash-granted ELF
 game-link = [] # opt-in COM2 cable for an explicitly hash-granted guest
