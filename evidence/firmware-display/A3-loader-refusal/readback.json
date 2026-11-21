@@ -1,0 +1,38 @@
+{
+  "64 MiB": {
+    "repetitions": 2,
+    "result": "allocation refused; automatic guest shutdown",
+    "kernel_pass": 0,
+    "kernel_fail": 0,
+    "keys": [],
+    "USB_reads": 30,
+    "internal_media_requests": 0,
+    "OVMF_variable_bytes_changed": 6047
+  },
+  "80 MiB": {
+    "repetitions": 2,
+    "result": "zero program frames; SAFE; two failed checks; confirmed shutdown",
+    "kernel_pass": 39,
+    "kernel_fail": 2,
+    "keys": [
+      "f10",
+      "ret"
+    ],
+    "USB_reads": 30,
+    "internal_media_requests": 0,
+    "OVMF_variable_bytes_changed": 6047
+  },
+  "128 MiB": {
+    "repetitions": 2,
+    "result": "72 passed; confirmed shutdown",
+    "kernel_pass": 72,
+    "kernel_fail": 0,
+    "keys": [
+      "f10",
+      "ret"
+    ],
+    "USB_reads": 30,
+    "internal_media_requests": 0,
+    "OVMF_variable_bytes_changed": 6047
+  }
+}
