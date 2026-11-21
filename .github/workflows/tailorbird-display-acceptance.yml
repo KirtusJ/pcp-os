@@ -23,6 +23,11 @@ jobs:
         run: |
           python3 -m unittest -q test_installed_serial
           python3 -O -m unittest -q test_installed_serial
+      - name: Independently check all native register-head pixels and font shape
+        run: |
+          python3 -m unittest discover -s os-docs/display-acceptance/register -p 'test_*.py' -q
+          python3 -O -m unittest discover -s os-docs/display-acceptance/register -p 'test_*.py' -q
+          python3 -c 'import sys; sys.path.insert(0, "os-docs/display-acceptance/register"); from check_register import FONT, glyphs_from_file; assert len(glyphs_from_file(FONT)) == 95'
       - name: Get pinned desktop kernel
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
