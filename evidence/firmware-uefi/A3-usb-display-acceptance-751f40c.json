@@ -1,0 +1,125 @@
+{
+  "source": "751f40c5be636b474b9fe92f2608621acdf72040",
+  "checker_git_blob": "726ba33295681153adad7be2351283d786ae14eb",
+  "usb_source": "https://github.com/KirtusJ/pcp-os/actions/runs/44903435629/artifacts/14706499167",
+  "comparison": "https://github.com/KirtusJ/pcp-os/blob/43effee02dfc296e824c2575cbace350b009d7c8/evidence/firmware-uefi/B3-USB-display-handoff-751f40c.tar.xz",
+  "originals_readback": {
+    "b3_archive_sha256": "552b6ade10a9cbd0892ad046e432a50f8d20395e00f8135672b4b462d2be595a",
+    "b3_archive_git_blob": "b4438805aa2931a98d7a2ec1fd0f8b699bcf53d6",
+    "b3_modes": {
+      "std": {
+        "checks": 72,
+        "automatic_shutdown": false,
+        "recorded_exit": 0,
+        "firmware_frame_equals_final_frame": false,
+        "final_frame_sha256": "9ed103015e66b97de216d76bd92de8e1e392b415cd46fe1054bebdce9c5e33fe",
+        "std_checks_absent": []
+      },
+      "ramfb": {
+        "checks": 71,
+        "automatic_shutdown": true,
+        "recorded_exit": 0,
+        "firmware_frame_equals_final_frame": true,
+        "final_frame_sha256": "3caf4ff91d16af625728a09e5c2f6e3966a745530b442840a28247e314b2a3ef",
+        "std_checks_absent": [
+          "with the display mapped, the kernel's memory map is as it was plus the display's memory, which is never executable"
+        ]
+      },
+      "virtio-vga": {
+        "checks": 71,
+        "automatic_shutdown": true,
+        "recorded_exit": 0,
+        "firmware_frame_equals_final_frame": true,
+        "final_frame_sha256": "d09a5e1add949b48794f3b8407402870d3946d5eea8dffe8d9a8fd37ffc02677",
+        "std_checks_absent": [
+          "with the display mapped, the kernel's memory map is as it was plus the display's memory, which is never executable"
+        ]
+      }
+    },
+    "verified_manifest_files": 37,
+    "b3_ramfb_handoff": {
+      "bytes": 128,
+      "flags": "0x4c",
+      "module_count": 3,
+      "framebuffer_flag_set": false,
+      "raw_framebuffer_fields": "00000000000000000000000000000000000000000000"
+    }
+  },
+  "fresh_guests": {
+    "std": {
+      "source": "751f40c5be636b474b9fe92f2608621acdf72040",
+      "video": "std",
+      "checker_error": null,
+      "checker_passed": true,
+      "usb_sha256": "edb9466101f5ff9451192b907fca593fd70448f8e3be356492bc835800ef3730",
+      "kernel_measurement": "8be588744953d5d5eaa9f259f9db9d90b7a7cff455a6b14f0a3c08a6df06765e",
+      "measurement_matched": true,
+      "firmware_code_sha256": "624e06de18b4fa535e90db7160d00d3d07d206422b89999bf1e27d920264e4e0",
+      "initial_firmware_vars_sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+      "serial_checks": 72,
+      "all_self_tests_pass": true,
+      "display": "display: Bochs, 1920x1080, 2 page(s), 16384 KiB of its memory mapped at 0x80000000",
+      "desktop": "desktop: 1920x1080 at 1x UI scale",
+      "last_frame_size": "1920 1080",
+      "last_frame_sha256": "9ed103015e66b97de216d76bd92de8e1e392b415cd46fe1054bebdce9c5e33fe",
+      "power_screen_seen": true,
+      "checker_recorded_exit": 0,
+      "checker_recorded_shutdown": {
+        "guest": true,
+        "reason": "guest-shutdown"
+      },
+      "elapsed_seconds": 13.0,
+      "last_frame_matches_b3_guest": true
+    },
+    "ramfb": {
+      "source": "751f40c5be636b474b9fe92f2608621acdf72040",
+      "video": "ramfb",
+      "checker_error": {
+        "type": "TimeoutError",
+        "message": "waiting for home framebuffer"
+      },
+      "checker_passed": false,
+      "usb_sha256": "edb9466101f5ff9451192b907fca593fd70448f8e3be356492bc835800ef3730",
+      "kernel_measurement": "8be588744953d5d5eaa9f259f9db9d90b7a7cff455a6b14f0a3c08a6df06765e",
+      "measurement_matched": true,
+      "firmware_code_sha256": "624e06de18b4fa535e90db7160d00d3d07d206422b89999bf1e27d920264e4e0",
+      "initial_firmware_vars_sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+      "serial_checks": 71,
+      "all_self_tests_pass": true,
+      "display": "display: none this kernel can drive",
+      "desktop": null,
+      "last_frame_size": "800 600",
+      "last_frame_sha256": "3caf4ff91d16af625728a09e5c2f6e3966a745530b442840a28247e314b2a3ef",
+      "power_screen_seen": false,
+      "checker_recorded_exit": null,
+      "checker_recorded_shutdown": null,
+      "elapsed_seconds": 65.5,
+      "last_frame_matches_b3_guest": true
+    },
+    "virtio-vga": {
+      "source": "751f40c5be636b474b9fe92f2608621acdf72040",
+      "video": "virtio-vga",
+      "checker_error": {
+        "type": "TimeoutError",
+        "message": "waiting for home framebuffer"
+      },
+      "checker_passed": false,
+      "usb_sha256": "edb9466101f5ff9451192b907fca593fd70448f8e3be356492bc835800ef3730",
+      "kernel_measurement": "8be588744953d5d5eaa9f259f9db9d90b7a7cff455a6b14f0a3c08a6df06765e",
+      "measurement_matched": true,
+      "firmware_code_sha256": "624e06de18b4fa535e90db7160d00d3d07d206422b89999bf1e27d920264e4e0",
+      "initial_firmware_vars_sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e",
+      "serial_checks": 71,
+      "all_self_tests_pass": true,
+      "display": "display: none this kernel can drive",
+      "desktop": null,
+      "last_frame_size": "1280 800",
+      "last_frame_sha256": "d09a5e1add949b48794f3b8407402870d3946d5eea8dffe8d9a8fd37ffc02677",
+      "power_screen_seen": false,
+      "checker_recorded_exit": null,
+      "checker_recorded_shutdown": null,
+      "elapsed_seconds": 65.9,
+      "last_frame_matches_b3_guest": true
+    }
+  }
+}
