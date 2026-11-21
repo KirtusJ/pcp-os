@@ -286,10 +286,10 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
         key("p")
         time.sleep(1)
         screen("launcher-letters")
-        if any("in the dock" in row for row in read_screen((out / "launcher-letters.ppm").read_bytes(), glyphs) or []):
+        if any("pinned to the desktop" in row for row in read_screen((out / "launcher-letters.ppm").read_bytes(), glyphs) or []):
             raise RuntimeError("a letter alone pinned a program")
         key("ctrl", "p")
-        wait_screen("launcher-with-shortcut", lambda view: launcher_list_visible(view) and any("in the dock" in row for row in view))
+        wait_screen("launcher-with-shortcut", lambda view: launcher_list_visible(view) and any("pinned to the desktop" in row for row in view))
         key("ret")
         wait("SURFBIRD media ready")
         screen("surfbird")
@@ -334,8 +334,24 @@ def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queu
         wait_screen("home-after-refusal", lambda view: view == before_letters)
         if "ALL SELF-TESTS PASS." in (out / "serial.txt").read_text(errors="replace"):
             raise RuntimeError("the kernel began to stop before the question was answered")
+        # An Enter that is already held when the question appears is not an answer, however often it repeats
+        # (A3's finding). Enter goes down and stays down: it opens the launcher. F10 asks. The held key's
+        # repeats must leave the question standing. Only after Enter has come up does a press switch off.
+        def enter(down):
+            rpc("input-send-event", events=[{"type": "key", "data": {"down": down, "key": {"type": "qcode", "data": "ret"}}}])
+        enter(True)
+        wait_screen("launcher-with-enter-held", launcher_list_visible)
         key("f10")
-        wait_screen("power-question-again", lambda view: any("POWER OFF" in row for row in view))
+        wait_screen("power-question-enter-held", lambda view: any("POWER OFF" in row for row in view))
+        for _ in range(3):
+            enter(True)
+            time.sleep(0.3)
+        time.sleep(1)
+        held = wait_screen("power-question-after-repeats", lambda view: any("POWER OFF" in row for row in view))
+        if "ALL SELF-TESTS PASS." in (out / "serial.txt").read_text(errors="replace") or not held:
+            raise RuntimeError("a held Enter answered the power question")
+        enter(False)
+        time.sleep(0.5)
         key("ret")
         wait("ALL SELF-TESTS PASS.")
         try:
