@@ -1,0 +1,5 @@
+751f40c5be636b474b9fe92f2608621acdf72040
+    Finished `release` profile [optimized] target(s) in 23.32s
+93ed3b599ad7be0e1e88a64813b1f2b5299d51507df2edca691aaf6189d10d15  /home/user/pcp/PCP-OS.iso
+mkfs.fat 4.2 (2021-01-31)
+Positive control passed: 7 changed NVMe bytes; 124 changed VARS bytes
