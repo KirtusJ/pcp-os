@@ -118,6 +118,13 @@ def exercise_queue(key, wait, screen, out):
     wait("PARROTS QUEUE total=1 active=0 selected=1 state=FINISHED store=Session save")
     key("esc")
     wait("rdesk.elf ended DONE: exit 0", 2)
+    time.sleep(.5)
+    key("ret")
+    wait("PARROTS QUEUE total=1 active=0 selected=1 state=FINISHED store=Queue restored")
+    screen("queue-finished-restored")
+    check_desk_label((out / "queue-finished-restored.ppm").read_bytes(), label)
+    key("esc")
+    wait("rdesk.elf ended DONE: exit 0", 3)
 
 
 def session(qemu, iso, out, machine, counted, measurement, timeout, glyphs, queue_desk):
@@ -286,7 +293,8 @@ def main():
     parser.add_argument("--queue-desk", action="store_true", help="require the second app and its saved queue")
     args = parser.parse_args()
     receipt = json.loads((args.built / "receipt.json").read_text())
-    if args.queue_desk and "rdesk.elf" not in receipt.get("on_disc", {}):
+    queue_desk = "rdesk.elf" in receipt.get("on_disc", receipt.get("files", {}))
+    if args.queue_desk and not queue_desk:
         sys.exit("the receipt has no queue desk")
     iso = (args.built / "pcp-os-tester.iso").resolve(strict=True)
     if hashlib.sha256(iso.read_bytes()).hexdigest() != receipt["iso_sha256"]:
@@ -296,7 +304,7 @@ def main():
     glyphs = kernel_glyphs()
     version = subprocess.check_output([args.qemu, "--version"], text=True).splitlines()[0]
     results = [session(args.qemu, iso, evidence / ("%s-%s" % (machine, "counted" if counted else "ordinary")), machine, counted,
-                       receipt["kernel_measurement"], args.timeout, glyphs, args.queue_desk)
+                       receipt["kernel_measurement"], args.timeout, glyphs, queue_desk)
                for machine in ("pc", "q35") for counted in (False, True)]
     summary = {"iso_sha256": receipt["iso_sha256"], "source_commit": receipt["source_commit"], "kernel_measurement": receipt["kernel_measurement"],
                "qemu": version, "host": " ".join(os.uname()[i] for i in (0, 2, 4)), "passed": all(r["passed"] for r in results),
