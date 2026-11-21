@@ -1,0 +1,83 @@
+name: Optical boot with a disposable disk
+on:
+  pull_request:
+    paths:
+      - 'examples/optical-disk-check/**'
+      - '.github/workflows/optical-disk-check.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  disk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the test
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Read the published ISO
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: KirtusJ/pcp
+          ref: 983fc4a45dbbada52b507dd0e413b9f7d3ca0c9d
+          path: input-cd
+          sparse-checkout: PCP-OS.iso
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Read Limine 10.8.5 BIOS files and license
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: Limine-Bootloader/Limine
+          ref: 7a9013f305de0bea1f6310e76e7baba30499fef0
+          path: upstream-loader
+          persist-credentials: false
+      - name: Read pycdlib 1.14.0
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: clalancette/pycdlib
+          ref: 7a02e35e9f5a692e2a1bc355450d763d42299e7f
+          path: iso-tools
+          persist-credentials: false
+      - name: Install the emulator and framebuffer reader
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y --no-install-recommends qemu-system-x86 seabios tesseract-ocr tesseract-ocr-eng
+      - name: Build both images twice and verify their bytes
+        id: build
+        run: |
+          export PYTHONPATH="$PWD/iso-tools"
+          python3 -B examples/optical-disk-check/build.py input-cd/PCP-OS.iso upstream-loader images
+          python3 -B examples/optical-disk-check/build.py input-cd/PCP-OS.iso upstream-loader repeat
+          cmp images/old-loader-control.iso repeat/old-loader-control.iso
+          cmp images/no-write-candidate.iso repeat/no-write-candidate.iso
+      - name: Test shipped image on PC and Q35
+        if: "!cancelled() && steps.build.outcome == 'success'"
+        run: |
+          mkdir -p receipts
+          python3 -IB examples/optical-disk-check/check.py input-cd/PCP-OS.iso receipts/shipped \
+            --timeout 65 --sha256 93ed3b599ad7be0e1e88a64813b1f2b5299d51507df2edca691aaf6189d10d15 --expect-writeback
+      - name: Test old image on PC and Q35
+        if: "!cancelled() && steps.build.outcome == 'success'"
+        run: |
+          mkdir -p receipts
+          python3 -IB examples/optical-disk-check/check.py images/old-loader-control.iso receipts/old \
+            --timeout 65 --sha256 d1699ce2a9facc8e905e00bc4e14b3cca1569f0b9d25a3609c9663a33a6e196f --expect-writeback
+      - name: Test candidate image on PC and Q35
+        if: "!cancelled() && steps.build.outcome == 'success'"
+        run: |
+          mkdir -p receipts
+          python3 -IB examples/optical-disk-check/check.py images/no-write-candidate.iso receipts/candidate \
+            --timeout 65 --sha256 0d2672e284d1bf0d09c3869285e657d3769c7933d83f132ce9dc89a77f07abf8
+      - name: Retain observations, including failed cases
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: optical-disk-evidence
+          path: receipts
+          if-no-files-found: warn
+      - name: Retain the tested experimental ISO
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: experimental-bios-optical-candidate
+          path: images/no-write-candidate.iso
