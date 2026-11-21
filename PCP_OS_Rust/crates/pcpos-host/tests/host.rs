@@ -120,14 +120,12 @@ fn link_to_dir(target: &std::path::Path, link: &std::path::Path) {
     std::os::windows::fs::symlink_dir(target, link).expect("creating a symbolic link on Windows needs Developer Mode or an elevated process");
 }
 
-#[cfg(unix)]
 #[test]
 fn a_register_is_never_reached_through_a_link_or_outside_the_served_directory() {
-    use std::os::unix::fs::symlink;
     let (root, outside) = (dir("served"), dir("outside"));
     // A name that points nowhere yet: creating "the register" would create a file outside.
     fs::create_dir(root.join(".pcp")).unwrap();
-    symlink(outside.join("made.jsonl"), root.join(REG)).unwrap();
+    link_to_file(&outside.join("made.jsonl"), &root.join(REG));
     let (text, err) = tool(&root, "acr_begin", "{}");
     assert!(err && text.contains("link"), "{text}");
     assert!(!outside.join("made.jsonl").exists(), "nothing was created outside the served directory");
@@ -138,7 +136,7 @@ fn a_register_is_never_reached_through_a_link_or_outside_the_served_directory() 
     // A directory on the way that is a link out.
     fs::remove_file(root.join(REG)).unwrap();
     fs::remove_dir(root.join(".pcp")).unwrap();
-    symlink(&outside, root.join(".pcp")).unwrap();
+    link_to_dir(&outside, &root.join(".pcp"));
     assert!(tool(&root, "acr_begin", "{}").1);
     assert!(!outside.join("register.jsonl").exists());
     // Names that leave the directory, and names that are not registers.
@@ -147,10 +145,15 @@ fn a_register_is_never_reached_through_a_link_or_outside_the_served_directory() 
         assert!(err, "{bad}: {text}");
     }
     // A register with a second name is not served: a write through one name would be a write to the other.
-    let own = dir("own");
-    assert!(!tool(&own, "acr_begin", "{}").1);
-    fs::hard_link(own.join(REG), own.join("other.jsonl")).unwrap();
-    assert!(tool(&own, "acr_status", "{}").0.contains("more than one name"));
+    // The host counts names only where the system reports the count to safe code, which today is Unix
+    // (issue 65): on Windows this refusal does not exist yet, so it is not asserted there.
+    #[cfg(unix)]
+    {
+        let own = dir("own");
+        assert!(!tool(&own, "acr_begin", "{}").1);
+        fs::hard_link(own.join(REG), own.join("other.jsonl")).unwrap();
+        assert!(tool(&own, "acr_status", "{}").0.contains("more than one name"));
+    }
 }
 
 #[test]
