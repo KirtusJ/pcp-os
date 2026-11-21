@@ -1,0 +1,503 @@
+{
+  "kernel_source": "ea3bbb48ee4512d022a43dde67b520abc2e7ff01",
+  "iso_sha256": "ca4856fa682fba37df6dad6ceb264ea9de9d9ef4b59fcd6fe47fa1924a65e8b3",
+  "measurement": "cc9801491dbcda9d5cb0bf154b6eb0914987c2faafcadfc76719e4509e45856a",
+  "checker_revisions": [
+    "ea3bbb48ee4512d022a43dde67b520abc2e7ff01",
+    "2c27f9123f3f0e8149d9fc7dd91cf7054513ab20"
+  ],
+  "method": "Read fresh native 1x QEMU frames before and after running Queue Desk. Reconstruct all three task records from the first F5 head and two shutdown records from the second, and match final serial output. Extract and execute the exact whole-head verdict statements from each named checker on all captured pages. Erase only the last displayed hex digit in every original frame that shows it, then repeat. Separate failed-start guests used the same kernel with a one-digit mismatch in the expected measurement and the Surfbird application from the tester ISO.",
+  "observation": "In seven geometries the complete F5 field reproduced the changing register and closed serial digest. At 320x200 an earlier page contains 56 digits, and the next page contains the full 64. The first checker fails to recognize the wrapped title. The revised checker finds both prefix and complete head and rejects the originals. Both reject the erased-digit controls. At 640x480 the alternate roomy Programs title omits only its final period after a failed start. Every negative boot refused Enter.",
+  "f5_verdicts": {
+    "1024x768": {
+      "before": {
+        "ea3bbb4": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        },
+        "2c27f91": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        }
+      },
+      "after": {
+        "ea3bbb4": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        },
+        "2c27f91": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        }
+      }
+    },
+    "1280x720": {
+      "before": {
+        "ea3bbb4": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        },
+        "2c27f91": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        }
+      },
+      "after": {
+        "ea3bbb4": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        },
+        "2c27f91": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        }
+      }
+    },
+    "1920x1080": {
+      "before": {
+        "ea3bbb4": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        },
+        "2c27f91": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        }
+      },
+      "after": {
+        "ea3bbb4": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        },
+        "2c27f91": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        }
+      }
+    },
+    "2560x1440": {
+      "before": {
+        "ea3bbb4": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        },
+        "2c27f91": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        }
+      },
+      "after": {
+        "ea3bbb4": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        },
+        "2c27f91": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        }
+      }
+    },
+    "320x200": {
+      "before": {
+        "ea3bbb4": {
+          "original": {
+            "accepts": false,
+            "candidate_lengths": []
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": []
+          }
+        },
+        "2c27f91": {
+          "original": {
+            "accepts": false,
+            "candidate_lengths": [
+              56,
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              56,
+              63
+            ]
+          }
+        }
+      },
+      "after": {
+        "ea3bbb4": {
+          "original": {
+            "accepts": false,
+            "candidate_lengths": []
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": []
+          }
+        },
+        "2c27f91": {
+          "original": {
+            "accepts": false,
+            "candidate_lengths": [
+              56,
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              56,
+              63
+            ]
+          }
+        }
+      }
+    },
+    "640x480": {
+      "before": {
+        "ea3bbb4": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        },
+        "2c27f91": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        }
+      },
+      "after": {
+        "ea3bbb4": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        },
+        "2c27f91": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        }
+      }
+    },
+    "800x600": {
+      "before": {
+        "ea3bbb4": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        },
+        "2c27f91": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        }
+      },
+      "after": {
+        "ea3bbb4": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        },
+        "2c27f91": {
+          "original": {
+            "accepts": true,
+            "candidate_lengths": [
+              64
+            ]
+          },
+          "last_digit_erased": {
+            "accepts": false,
+            "candidate_lengths": [
+              63
+            ]
+          }
+        }
+      }
+    }
+  },
+  "failed_start": {
+    "480x480": {
+      "disabled_notice": true,
+      "before": 6,
+      "after": 6,
+      "task_launches": 0,
+      "closed": 8
+    },
+    "416x280": {
+      "disabled_notice": true,
+      "before": 6,
+      "after": 6,
+      "task_launches": 0,
+      "closed": 8
+    },
+    "800x600": {
+      "disabled_notice": true,
+      "before": 6,
+      "after": 6,
+      "task_launches": 0,
+      "closed": 8
+    },
+    "2560x1440": {
+      "disabled_notice": true,
+      "before": 6,
+      "after": 6,
+      "task_launches": 0,
+      "closed": 8
+    },
+    "640x480": {
+      "disabled_notice": false,
+      "before": 6,
+      "after": 6,
+      "task_launches": 0,
+      "closed": 8
+    },
+    "320x200": {
+      "disabled_notice": true,
+      "before": 6,
+      "after": 6,
+      "task_launches": 0,
+      "closed": 8
+    },
+    "1920x1080": {
+      "disabled_notice": true,
+      "before": 6,
+      "after": 6,
+      "task_launches": 0,
+      "closed": 8
+    },
+    "1280x720": {
+      "disabled_notice": true,
+      "before": 6,
+      "after": 6,
+      "task_launches": 0,
+      "closed": 8
+    }
+  },
+  "working_branch_only": true,
+  "replay": "Extract the archive. Check SHA256SUMS, then run python3 -B verify_f5.py (NumPy). Original register screenshots, per-page text, serials and reconstructed records are included."
+}
