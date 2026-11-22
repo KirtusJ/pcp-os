@@ -19,10 +19,3 @@ serde_json = { version = "1", optional = true }
 name = "pin-inputs"
 path = "src/bin/pin.rs"
 required-features = ["assembly"]
-
-[profile.release]
-panic = "abort"
-codegen-units = 1
-opt-level = 2
-
-[workspace]

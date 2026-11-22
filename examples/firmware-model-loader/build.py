@@ -30,17 +30,24 @@ def main():
 
         run("cargo", "run", "--locked", "--manifest-path", CRATE, "--features", "assembly",
             "--bin", "pin-inputs", "--", a.parts.resolve(), a.receipt.resolve(), a.receipt_sha256, config)
-        env.update(PCPOS_EFI_CONFIGURATION=str(config), RUSTFLAGS="-C relocation-model=pic -C no-redzone=yes")
-        run("cargo", "build", "--locked", "--manifest-path", CRATE, "--lib", "--release", "--target", "x86_64-unknown-none")
+        env.pop("RUSTFLAGS", None)
+        env.update(PCPOS_EFI_CONFIGURATION=str(config), CARGO_ENCODED_RUSTFLAGS="\x1f".join((
+            "-C", "relocation-model=pic", "-C", "no-redzone=yes",
+            "--remap-path-prefix", f"{HERE.parents[1]}=/pcpos-source",
+            "--remap-path-prefix", f"{work}=/pcpos-efi-build",
+        )))
+        run("cargo", "build", "--locked", "--manifest-path", CRATE, "--lib", "--profile", "efi", "--target", "x86_64-unknown-none")
         run("cc", "-O2", "-Wall", "-Wextra", "-Werror", "-fpic", "-fshort-wchar", "-ffreestanding",
             "-fno-stack-protector", "-mno-red-zone", "-DGNU_EFI_USE_MS_ABI", "-I"+str(prefix/"include/efi"),
             "-I"+str(prefix/"include/efi/x86_64"), "-c", HERE/"firmware.c", "-o", "firmware.o")
         run("cc", "-c", HERE.parent/"firmware-owned-uefi/handoff.S", "-o", "handoff.o")
-        run("ld", "-nostdlib", "-znocombreloc", "-T", lib/"elf_x86_64_efi.lds", "-shared", "-Bsymbolic",
+        exports = work / "exports.map"
+        exports.write_text("{ global: _start; efi_main; local: *; };\n", encoding="ascii")
+        run("ld", "--version-script", exports, "-nostdlib", "-znocombreloc", "-T", lib/"elf_x86_64_efi.lds", "-shared", "-Bsymbolic",
             "--gc-sections", "--no-undefined", lib/"crt0-efi-x86_64.o", "firmware.o", "handoff.o",
-            work/"target/x86_64-unknown-none/release/libpcpos_preloaded_loader.a", "-L"+str(lib), "-lefi", "-lgnuefi", "-o", "loader.so")
+            work/"target/x86_64-unknown-none/efi/libpcpos_preloaded_loader.a", "-L"+str(lib), "-lefi", "-lgnuefi", "-o", "loader.so")
         sections = (".text", ".rodata", ".sdata", ".data", ".dynamic", ".dynsym", ".rel", ".rela", ".reloc")
-        run("objcopy", *(arg for section in sections for arg in ("-j", section)),
+        run("objcopy", "--strip-all", *(arg for section in sections for arg in ("-j", section)),
             "--target=efi-app-x86_64", "loader.so", "BOOTX64.EFI")
         os.link(work/"BOOTX64.EFI", a.output)
     print(hashlib.sha256(a.output.read_bytes()).hexdigest(), a.output)
