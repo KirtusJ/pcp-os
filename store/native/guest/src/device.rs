@@ -45,6 +45,7 @@ pub struct Display {
     h: usize,
     pages: usize,
     shown: usize,
+    present_required: bool,
     pub held: [bool; 128],
     pub pressed: [bool; 128],
 }
@@ -83,6 +84,16 @@ impl Display {
         }
         let page = pitch.checked_mul(h).unwrap_or_else(|| exit(2));
         let bytes = page.checked_mul(d[3] as usize * 4).unwrap_or_else(|| exit(2));
+        // Older kernels return -ENOTTY for the opt-in and keep direct mappings.
+        const UNSUPPORTED_IOCTL: isize = -25;
+        let shadow = match ioctl(fd, 0x5004, 0) {
+            0 | UNSUPPORTED_IOCTL => false,
+            1 => true,
+            _ => {
+                log(b"display presentation setup failed\n");
+                exit(2);
+            }
+        };
         let base = call(9, 0, bytes, 3, 1, fd as usize, 0);
         if base < 0 {
             exit(2);
@@ -97,6 +108,7 @@ impl Display {
             h,
             pages: d[3] as usize,
             shown: d[4] as usize,
+            present_required: shadow || d[3] > 1,
             held: [false; 128],
             pressed: [false; 128],
         }
@@ -151,7 +163,7 @@ impl Display {
             )
         };
         paint(surface, self.w, self.h, self.pitch);
-        if self.pages > 1 && ioctl(self.fd, 0x5003, dest) != 0 {
+        if self.present_required && ioctl(self.fd, 0x5003, dest) != 0 {
             exit(2);
         }
         self.shown = dest;
