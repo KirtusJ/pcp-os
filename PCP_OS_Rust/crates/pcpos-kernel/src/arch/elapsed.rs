@@ -21,6 +21,20 @@ static PERIOD_FS: AtomicU64 = AtomicU64::new(0);
 static COUNTER_START: AtomicU64 = AtomicU64::new(0);
 static OFFSET_NS: AtomicU64 = AtomicU64::new(0);
 
+/// PWT and PCD together select UC on a processor without PAT. With PAT they select
+/// entry 3, which firmware can change. Check its actual type before touching MMIO.
+fn uncached_registers() -> bool {
+    if core::arch::x86_64::__cpuid(1).edx & (1 << 16) == 0 {
+        return true;
+    }
+    let low: u32;
+    // Safety: CPUID reported the page-attribute table. Reading IA32_PAT changes no state.
+    unsafe {
+        core::arch::asm!("rdmsr", in("ecx") 0x277u32, out("eax") low, out("edx") _, options(nomem, nostack, preserves_flags));
+    }
+    (low >> 24) == 0
+}
+
 /// Give the kernel a private, uncached view of just the timer's register page.
 /// The device-grant table is for programs and does not receive this mapping.
 fn map_registers() -> bool {
@@ -105,6 +119,7 @@ pub fn init(boot: &BootInfo) -> &'static str {
                 .iter()
                 .any(|&(a, b)| a < start + 4096 && b > start)
         })
+        || !uncached_registers()
         || !map_registers()
     {
         return FALLBACK;
