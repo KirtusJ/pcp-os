@@ -1354,9 +1354,9 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
         let mut access = String::from(if none { "console only" } else if proposes { "display, keyboard" } else if start.sound { "display, keyboard, sound, loader files" } else { "display, keyboard, loader files" });
         if !none && !proposes { access.push_str(", store"); }
         #[cfg(feature = "guest-ethernet")]
-        if !none && ethernet_grant(start.boot.exact_command_line(), &p.digest) { access.push_str(", raw Ethernet frames"); }
+        if !none && !proposes && ethernet_grant(start.boot.exact_command_line(), &p.digest) { access.push_str(", raw Ethernet frames"); }
         #[cfg(feature = "game-link")]
-        if !none && option(&start.boot.command_line, "link_image") == Some(p.digest.as_str()) { access.push_str(", second serial port"); }
+        if !none && !proposes && option(&start.boot.command_line, "link_image") == Some(p.digest.as_str()) { access.push_str(", second serial port"); }
         let mut lines: Vec<String> = Vec::new();
         let mut line = String::from("may use:");
         for (n, part) in access.split(", ").enumerate() {
@@ -1442,11 +1442,11 @@ fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message:
             access.push((String::from(approval), SOFT));
         }
         #[cfg(feature = "guest-ethernet")]
-        if !none && ethernet_grant(start.boot.exact_command_line(), &entry.digest) {
+        if !none && !file_proposals(start, entry, none) && ethernet_grant(start.boot.exact_command_line(), &entry.digest) {
             access.push((String::from("Access: raw Ethernet frames"), ui::AMBER));
         }
         #[cfg(feature = "game-link")]
-        if !none && option(&start.boot.command_line, "link_image") == Some(entry.digest.as_str()) {
+        if !none && !file_proposals(start, entry, none) && option(&start.boot.command_line, "link_image") == Some(entry.digest.as_str()) {
             access.push((String::from("Access: second serial port"), ui::AMBER));
         }
     }
@@ -1671,12 +1671,12 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
             row += 1;
         }
         #[cfg(feature = "guest-ethernet")]
-        if !none && ethernet_grant(start.boot.exact_command_line(), &p.digest) {
+        if !none && !file_proposals(start, p, none) && ethernet_grant(start.boot.exact_command_line(), &p.digest) {
             at(4, row, "Ethernet grant: this program can send and receive raw network frames.", SOFT, ground);
             row += 1;
         }
         #[cfg(feature = "game-link")]
-        if !none && option(&start.boot.command_line, "link_image") == Some(p.digest.as_str()) {
+        if !none && !file_proposals(start, p, none) && option(&start.boot.command_line, "link_image") == Some(p.digest.as_str()) {
             at(4, row, "Optional game cable: this image can read and write the second serial port.", SOFT, ground);
             row += 1;
         }
@@ -1818,11 +1818,11 @@ fn details_view(start: &Start, programs: &[Entry], files: &[(String, &'static [u
             lines.extend(whole(4, FILE_APPROVAL, SOFT));
         }
         #[cfg(feature = "guest-ethernet")]
-        if !none && ethernet_grant(start.boot.exact_command_line(), &p.digest) {
+        if !none && !file_proposals(start, p, none) && ethernet_grant(start.boot.exact_command_line(), &p.digest) {
             lines.extend(lines_of(4, "Ethernet grant: this program can send and receive raw network frames.", ui::AMBER));
         }
         #[cfg(feature = "game-link")]
-        if !none && option(&start.boot.command_line, "link_image") == Some(p.digest.as_str()) {
+        if !none && !file_proposals(start, p, none) && option(&start.boot.command_line, "link_image") == Some(p.digest.as_str()) {
             lines.extend(lines_of(4, "Optional game cable: this image can read and write the second serial port.", ui::AMBER));
         }
     }
@@ -2110,8 +2110,10 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
     let proposes = file_proposals(start, entry, none);
     let grants = if none { Grants { console: true, ..Grants::default() } } else { Grants { console: true, display: start.display.is_some(), keys: start.keyboard, files: !proposes, store: !proposes, sound: start.sound && !proposes,
         #[cfg(feature = "proposals")] propose: proposes,
-        #[cfg(feature = "guest-ethernet")] ethernet: ethernet_grant(start.boot.exact_command_line(), &entry.digest),
-        #[cfg(feature = "game-link")] game_link: option(&start.boot.command_line, "link_image") == Some(entry.digest.as_str()) && arch::game_link_init(), } };
+        // Nor raw Ethernet frames or the second serial port, even if the line names the same program
+        // for one of those as well (A3): a program that may propose is given none of them.
+        #[cfg(feature = "guest-ethernet")] ethernet: !proposes && ethernet_grant(start.boot.exact_command_line(), &entry.digest),
+        #[cfg(feature = "game-link")] game_link: !proposes && option(&start.boot.command_line, "link_image") == Some(entry.digest.as_str()) && arch::game_link_init(), } };
     if none {
         say!("{} is started with the console and no other grant (grant=none)", entry.name);
     }
