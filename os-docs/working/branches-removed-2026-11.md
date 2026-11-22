@@ -1,5 +1,12 @@
 # Branches proposed for removal, November 2026
 
+> **Status, 22 November 2026: nothing was removed.** Director A3 and Director B3 each answered no to
+> removing these as a batch (issue 368): neither has an instruction to release other contributors'
+> branch names, and the issue's own rule is that each contributor retires their own. Every branch
+> listed below still exists. The lists stand as a catalogue of branches that hold no commit outside
+> the default branch, for their owners or the rights holder to act on. The file keeps its name so
+> that links to it hold; read "removed" in the name as "proposed for removal".
+
 Part of the tidying the owner asked for (issue 368). This file is written **before** any branch is
 removed, so that each can be put back. Nothing listed here holds a commit that the default branch
 does not: every tip below is an ancestor of the pinned default commit named with it.
@@ -30,7 +37,7 @@ commits outside the default branch are not touched.
 
 To put one back: `git push origin <tip>:refs/heads/<name>`.
 
-## pcp-os: 81 to remove
+## pcp-os: 81 proposed (none removed)
 
 ```
 15a2b46059a85e738dc8026a5efd9ab69c053619  browser/surfbird-guest-http
@@ -131,7 +138,7 @@ c0bf80d05564aa7712c839f893cfce6986359ae4  director-2/verify-complete-event-label
 37d94dc722813b66a73a823d74b3883832991769  director-2/verify-installed-launcher-paint
 ```
 
-## tailorbird: 8 to remove
+## tailorbird: 8 proposed (none removed)
 
 ```
 efb45fe597eab166f2c3ef93dab0397c169bfbc7  import/post-134
@@ -166,5 +173,6 @@ f96a1fea783bf0d03b3c1fe5f774ebbdaf06dad5  c3/worker-reading-progress
 
 ## State
 
-Proposed. This file will be amended with the date of removal and the branch counts before and after
-once a second director has agreed to the reduced set and the branches have been removed.
+Not removed. Two directors declined the batch on 22 November 2026 (see the status note at the top).
+A branch here is retired only by its own contributor or on the rights holder's word, and this file
+is then amended with the date and the name.

@@ -687,6 +687,28 @@ fn check_space_cutoffs(failed: &mut u32) {
 }
 
 /// The kernel proper, entered from `arch` in 64-bit mode with interrupts off.
+/// What the firmware says of processors, in the one sentence written at start and shown under Details.
+pub fn processors_words(boot: &arch::BootInfo) -> alloc::string::String {
+    match &boot.processors {
+        Some(found) => alloc::format!("processors: the firmware lists {} usable ({}); {} more than this kernel would start, {} not to be used; this kernel runs on one",
+                                      found.processors.len(), boot.processors_note, found.beyond, found.disabled),
+        None => alloc::format!("processors: not known ({}); this kernel runs on one", boot.processors_note),
+    }
+}
+
+/// What a reading of the processor's heat says, in the one sentence written at start and shown
+/// under Details. The caller reads the sensor, so that words and anything else drawn from the
+/// reading come from the same one.
+#[cfg(feature = "heat")]
+pub fn heat_words(reading: Result<arch::heat::Heat, &'static str>) -> alloc::string::String {
+    match reading {
+        Ok(h) => alloc::format!("heat: this processor reports {} degrees below its highest junction temperature{}{}{}; it may begin to limit itself before that reaches zero, by a setting not read here", h.below_highest,
+                                if h.limiting { "; IT IS LIMITING ITSELF NOW" } else { "" }, if h.has_limited { "; it has limited itself before" } else { "" },
+                                if h.critical { "; ITS CRITICAL-TEMPERATURE STATUS IS SET" } else { "" }),
+        Err(why) => alloc::format!("heat: not known ({})", why),
+    }
+}
+
 pub fn kernel_start(magic: u32, info: u32) -> ! {
     arch::serial_init();
     say!("PCP OS kernel {} | x86_64 | new kernel, written in Rust | early", env!("CARGO_PKG_VERSION"));
@@ -701,11 +723,7 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     if let (Some(root), Some(_)) = (boot.processors_root, &boot.processors) {
         say!("processors: the root pointer is at {:#018x}", root);
     }
-    match &boot.processors {
-        Some(found) => say!("processors: the firmware lists {} usable ({}); {} more than this kernel would start, {} not to be used; this kernel runs on one",
-                            found.processors.len(), boot.processors_note, found.beyond, found.disabled),
-        None => say!("processors: not known ({}); this kernel runs on one", boot.processors_note),
-    }
+    say!("{}", processors_words(&boot));
     let [ts, te, rs, re, end] = arch::layout();
     say!("kernel image: code {:#x}..{:#x}, read-only data {:#x}..{:#x}, end {:#x}", ts, te, rs, re, end);
     let (cr0, _cr4, efer) = arch::protection_registers();
@@ -736,12 +754,7 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     let on = |bit: u32| if offered >> bit & 1 == 0 { "not offered by this processor" } else if enabled >> bit & 1 == 1 { "on" } else { "OFFERED AND NOT ON" };
     say!("further protections: supervisor execution prevention {}, supervisor access prevention {}, user-mode instruction prevention {}", on(20), on(21), on(11));
     #[cfg(feature = "heat")]
-    match arch::heat_now() {
-        Ok(h) => say!("heat: this processor reports {} degrees below its highest junction temperature{}{}{}; it may begin to limit itself before that reaches zero, by a setting not read here", h.below_highest,
-                      if h.limiting { "; IT IS LIMITING ITSELF NOW" } else { "" }, if h.has_limited { "; it has limited itself before" } else { "" },
-                      if h.critical { "; ITS CRITICAL-TEMPERATURE STATUS IS SET" } else { "" }),
-        Err(why) => say!("heat: not known ({})", why),
-    }
+    say!("{}", heat_words(arch::heat_now()));
     let measured = sha256_hex(arch::image());
     // K-12: the measurement is compared with a value the kernel did not compute, where whoever started it named one
     // (`image=<SHA-256>` on the loader's command line; tools/measure.py computes it from the image file without
