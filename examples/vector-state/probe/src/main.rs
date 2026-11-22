@@ -3,7 +3,8 @@
 //! A test program for `examples/vector-state/check.py`. Built two ways (LEAVE=1 or not). It asks the processor
 //! whether the 256-bit registers may be used; if so it reads the last of them first (what a program
 //! finds there when it starts), then fills it, sleeps so that the kernel runs in between, and reads it
-//! again. The first build ends leaving the register full, for the second to look for.
+//! again. The first build ends leaving the register full, for the second to look for. Each build first
+//! reads the vector control register (MXCSR) as it found it.
 use core::arch::asm;
 use pcp_game_guest::{exit, log, sleep_us};
 
@@ -24,6 +25,13 @@ fn say(words: &[u8], value: bool) {
 pcp_game_guest::entry!(probe_main);
 #[no_mangle]
 pub extern "C" fn probe_main() -> ! {
+    // The first thing this program does, before any instruction of its own has touched the vector
+    // registers: read their control register as the kernel handed it over. 0x1F80 is every
+    // floating-point exception masked. (Every processor that runs 64-bit programs has this register.)
+    let mut control: u32 = 0xFFFF_FFFF;
+    // Safety: stores the register into a local.
+    unsafe { asm!("stmxcsr [{}]", in(reg) &mut control, options(nostack)) };
+    say(b"vector: exceptions masked at start ", control == 0x1F80);
     let features = core::arch::x86_64::__cpuid(1).ecx;
     // The whole of the processor maker's test, in its order: the operating system has turned on the
     // register that says which states it keeps (bit 27); the processor has AVX (bit 28); and that

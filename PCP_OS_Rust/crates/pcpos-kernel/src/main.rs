@@ -736,6 +736,10 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     #[cfg(feature = "high-memory-demo")]
     mem::high_memory_demo();
     arch::fpu_init();
+    let first_mxcsr = arch::fpu_first_mxcsr();
+    say!("floating point: a program that has used nothing starts with MXCSR {:#06x}, read back after its first state is loaded{}",
+         first_mxcsr, if first_mxcsr == 0x1F80 { " (every exception masked)" } else { ": NOT 0x1f80" });
+    let mxcsr_wrong = first_mxcsr != 0x1F80;
     #[cfg(feature = "vector-state-demo")]
     arch::vector_state_demo();
     arch::syscall_init();
@@ -764,6 +768,10 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
         _ => say!("running image (code and read-only data), SHA-256: {} (measured; the loader named no value to compare it with)", measured),
     }
     let mut failed = 0;
+    // Said only when it fails, so that the number of self-tests a sound kernel reports is unchanged.
+    if mxcsr_wrong {
+        check("a program that has used nothing starts with every floating-point exception masked", false, &mut failed);
+    }
 
     // The kernel's own register: START, then VERIFY.
     let mut rec = Record::new();

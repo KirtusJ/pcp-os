@@ -22,6 +22,11 @@ Predicates, fixed before the first run.
     says there are no such registers. V1 alone does not show this: one program at a time never makes
     the kernel load back a state it saved.
 
+ V5 on every processor, each program finds the vector control register (MXCSR) at 0x1F80 when it starts,
+    every floating-point exception masked: "exceptions masked at start 1" is the first thing each says.
+    With --unfixed-kernel (the kernel as it was before the correction, same programs) the first program on
+    "max" and "Haswell" says 0: the control. On "qemu64", which keeps the registers the older way, it says 1.
+
 Usage: check.py <kernel.elf32> <vector-leave> <vector-look> [--qemu qemu-system-x86_64]
 This is an emulator. It says nothing of a real processor.
 """
@@ -95,15 +100,17 @@ def main():
     parser.add_argument("look", type=Path)
     parser.add_argument("--qemu", default="qemu-system-x86_64")
     parser.add_argument("--demo-kernel", type=Path)
+    parser.add_argument("--unfixed-kernel", type=Path, help="the kernel before the MXCSR correction: the control for V5")
     args = parser.parse_args()
     kernel, leave, look = args.kernel.resolve(), args.leave.resolve(), args.look.resolve()
     if leave.name != "vector-leave" or look.name != "vector-look":
         sys.exit("the two programs must be in files named vector-leave and vector-look")
-    wide = ["vector: found clean 1", "vector: set 1", "vector: kept 1"]
+    masked = "vector: exceptions masked at start 1"
+    wide = [masked, "vector: found clean 1", "vector: set 1", "vector: kept 1"]
     problems = []
     with tempfile.TemporaryDirectory() as folder:
         for cpu, want in (("max", wide + ["vector: left full"] + wide + ["vector: done"]), ("Haswell", wide + ["vector: left full"] + wide + ["vector: done"]),
-                          ("qemu64", ["vector: none", "vector: none"])):
+                          ("qemu64", [masked, "vector: none", masked, "vector: none"])):
             first, second, status, lines = boot(args.qemu, kernel, leave, look, cpu, folder)
             said = [line for line in lines if line.startswith("vector: ")]
             if not first or not second:
@@ -113,6 +120,13 @@ def main():
             if status != 33 or any(line.startswith("  FAIL") for line in lines):
                 problems.append("%s: the kernel ended with status %r, or a self-test failed" % (cpu, status))
             print("%s: %s" % (cpu, "; ".join(said)))
+        if args.unfixed_kernel:
+            for cpu, want in (("max", "0"), ("Haswell", "0"), ("qemu64", "1")):
+                _, _, _, lines = boot(args.qemu, args.unfixed_kernel.resolve(), leave, look, cpu, folder)
+                said = [line for line in lines if line.startswith("vector: exceptions masked at start ")][:1]
+                if said != ["vector: exceptions masked at start " + want]:
+                    problems.append("control, %s: the unfixed kernel's first program said %r, not %s" % (cpu, said, want))
+                print("control, unfixed kernel, %s: %s" % (cpu, "; ".join(said)))
     if args.demo_kernel:
         demo = args.demo_kernel.resolve()
         for cpu, want in (("max", "vector demo: first state returned 1, second state returned 1, first again 1, left clean 1"),
