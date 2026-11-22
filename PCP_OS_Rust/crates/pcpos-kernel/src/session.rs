@@ -1192,9 +1192,13 @@ fn files_view(store: &crate::regular::Files, mounted: bool) {
 
 const CUT_LINE_NOTICE: &str = "Loader line cut. Cannot run.";
 
+#[cfg(feature = "proposals")]
 fn cut_blocks_launch(start: &Start) -> bool {
-    cfg!(feature = "proposals") && start.boot.exact_command_line().is_none()
+    start.boot.exact_command_line().is_none()
 }
+
+#[cfg(not(feature = "proposals"))]
+fn cut_blocks_launch(_: &Start) -> bool { false }
 
 const FILE_APPROVAL: &str = "Creating a file needs your approval.";
 #[cfg(feature = "proposals")]
