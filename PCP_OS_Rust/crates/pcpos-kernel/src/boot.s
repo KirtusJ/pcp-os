@@ -1,5 +1,6 @@
 # Entry from a Multiboot loader: 32-bit protected mode, paging off, EAX = magic, EBX = information structure.
-# This file does the least that must be done before Rust can run: an identity map of the first gibibyte,
+# This file does the least that must be done before Rust can run: an identity map of the first four gibibytes
+# (the kernel uses only the first; the rest is there so that the firmware's tables can be read wherever they lie),
 # long mode with no-execute enabled, a stack, and a jump.
 
 .section .multiboot, "a"
@@ -32,16 +33,23 @@ _start:
     movl $boot_pdpt, %eax
     orl  $0x3, %eax
     movl %eax, boot_pml4
-    movl $boot_pd, %eax
+    # Four second-level tables, one for each gibibyte, each of 512 pages of 2 MiB.
+    xorl %ecx, %ecx
+2:  movl %ecx, %eax
+    shll $12, %eax
+    addl $boot_pd, %eax
     orl  $0x3, %eax
-    movl %eax, boot_pdpt
+    movl %eax, boot_pdpt(,%ecx,8)
+    incl %ecx
+    cmpl $4, %ecx
+    jne  2b
     xorl %ecx, %ecx
 1:  movl %ecx, %eax
     shll $21, %eax
     orl  $0x83, %eax
     movl %eax, boot_pd(,%ecx,8)
     incl %ecx
-    cmpl $512, %ecx
+    cmpl $2048, %ecx
     jne  1b
 
     movl $boot_pml4, %eax
@@ -101,7 +109,7 @@ unsupported_text:
 .align 4096
 boot_pml4: .skip 4096
 boot_pdpt: .skip 4096
-boot_pd:   .skip 4096
+boot_pd:   .skip 16384
 .global boot_stack_guard
 boot_stack_guard: .skip 4096     # left unmapped by arch::protect: running off the end of the stack faults instead of overwriting
 boot_stack: .skip 65536

@@ -5,6 +5,7 @@ on:
       - 'PCP_OS_Rust/crates/pcpos-kernel/**'
       - 'examples/guarded-uefi/**'
       - 'examples/heat/**'
+      - 'examples/processors/**'
       - '.github/workflows/guarded-uefi.yml'
   workflow_dispatch:
 permissions:
@@ -12,7 +13,7 @@ permissions:
 jobs:
   firmware:
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    timeout-minutes: 30
     env:
       OMP_THREAD_LIMIT: '1'
       PCPOS_KERNEL_FEATURES: uefi-demo-heap
@@ -38,8 +39,11 @@ jobs:
           "$RUNNER_TEMP/frame-map-tests"
           rustc --edition=2021 --test -C overflow-checks=on examples/heat/test_heat.rs -o "$RUNNER_TEMP/heat-tests"
           "$RUNNER_TEMP/heat-tests"
+          rustc --edition=2021 --test -C overflow-checks=on examples/processors/test_processors.rs -o "$RUNNER_TEMP/processor-table-tests"
+          "$RUNNER_TEMP/processor-table-tests"
           bash PCP_OS_Rust/crates/pcpos-kernel/run.sh build
       - name: Check the default 16 MiB heap kernel on BIOS
+        shell: bash # with this GitHub adds pipefail, so the checker's failure is not lost in the pipe to tee (A3)
         run: |
           kernel=PCP_OS_Rust/crates/pcpos-kernel
           cp "$kernel/target/pcpos-kernel.elf32" "$RUNNER_TEMP/uefi-demo.elf32"
@@ -64,6 +68,19 @@ jobs:
               raise SystemExit("Default BIOS regression failed")
           PY
           python3 examples/guarded-uefi/default_optical.py distribution "$kernel" "$RUNNER_TEMP/default-optical"
+          # The count of processors the kernel reads from firmware, on machines of 1 to 8, and the words it refuses.
+          python3 examples/processors/check.py "$DEFAULT_KERNEL" | tee "$RUNNER_TEMP/processors.txt"
+          cp "$RUNNER_TEMP/uefi-demo.elf32" "$kernel/target/pcpos-kernel.elf32"
+      - name: Start the other processors and park them (feature processors, off by default)
+        shell: bash # pipefail: the checker's failure is not lost in the pipe to tee
+        run: |
+          kernel=PCP_OS_Rust/crates/pcpos-kernel
+          for features in "" processors processors-extended-demo processors-silent-demo; do
+            PCPOS_KERNEL_FEATURES="$features" bash "$kernel/run.sh" build
+            cp "$kernel/target/pcpos-kernel.elf32" "$RUNNER_TEMP/kernel-${features:-plain}.elf32"
+          done
+          python3 examples/processors/check_started.py "$RUNNER_TEMP/kernel-processors.elf32" "$RUNNER_TEMP/kernel-plain.elf32" \
+            "$RUNNER_TEMP/kernel-processors-extended-demo.elf32" "$RUNNER_TEMP/kernel-processors-silent-demo.elf32" | tee "$RUNNER_TEMP/processors-started.txt"
           cp "$RUNNER_TEMP/uefi-demo.elf32" "$kernel/target/pcpos-kernel.elf32"
       - name: Check the released ELF and guard the experimental handoff
         run: python3 examples/guarded-uefi/trial.py distribution PCP_OS_Rust/crates/pcpos-kernel "$RUNNER_TEMP/guarded-uefi"
@@ -74,6 +91,8 @@ jobs:
           path: |
             ${{ runner.temp }}/guarded-uefi
             ${{ runner.temp }}/default-bios.txt
+            ${{ runner.temp }}/processors.txt
+            ${{ runner.temp }}/processors-started.txt
             ${{ runner.temp }}/default-optical
           if-no-files-found: warn
           retention-days: 14
