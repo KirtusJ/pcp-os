@@ -1,0 +1,21 @@
+[package]
+name = "pcpos-preloaded-loader"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[features]
+assembly = ["dep:serde_json"]
+
+[dependencies]
+pcpos-model-media = { path = "../pcpos-model-media", default-features = false }
+sha2 = { version = "=0.10.9", default-features = false, features = ["force-soft"] }
+serde_json = { version = "1", optional = true }
+
+[[bin]]
+name = "pin-inputs"
+path = "src/bin/pin.rs"
+required-features = ["assembly"]

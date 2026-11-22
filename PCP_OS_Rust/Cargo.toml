@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/pcpos-core", "crates/pcpos-pkg", "crates/pcpos-host", "crates/pcpos-gguf", "crates/pcpos-model-media", "crates/pcpos-model-tensor", "crates/pcpos-qwen"]
+members = ["crates/pcpos-core", "crates/pcpos-pkg", "crates/pcpos-host", "crates/pcpos-gguf", "crates/pcpos-model-media", "crates/pcpos-model-tensor", "crates/pcpos-qwen", "crates/pcpos-efi-loader"]
 exclude = ["crates/pcpos-kernel"]        # built for a bare-metal target with its own settings; see crates/pcpos-kernel/README.md
 
 [workspace.package]
@@ -17,3 +17,11 @@ lto = true
 codegen-units = 1
 strip = "symbols"                        # names of functions are not needed to run it; a refusal or a stop still says why in words
 overflow-checks = true                   # integrity over throughput: arithmetic overflow stops the program instead of wrapping
+
+[profile.efi]
+inherits = "release"
+panic = "abort"
+opt-level = 2
+lto = false
+codegen-units = 1
+strip = "none"

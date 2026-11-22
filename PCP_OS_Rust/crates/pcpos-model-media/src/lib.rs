@@ -6,7 +6,9 @@
 //! returned buffers; later reads therefore do not depend on mutable media.
 #![no_std]
 #![forbid(unsafe_code)]
+#[cfg(feature = "alloc")]
 extern crate alloc;
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 use sha2::{Digest, Sha256};
 
@@ -51,6 +53,10 @@ impl<'a> Manifest<'a> {
     pub fn model_digest(&self) -> [u8; 32] { self.model_digest }
     pub fn shard_bytes(&self) -> u32 { self.shard_bytes }
     pub fn shard_count(&self) -> u32 { self.count }
+    /// Expected digest for a shard ordinal in the pinned manifest.
+    pub fn shard_digest(&self, ordinal: u32) -> Option<[u8; 32]> {
+        (ordinal < self.count).then(|| self.digest(ordinal))
+    }
     fn digest(&self, shard: u32) -> [u8; 32] {
         let first = HEADER_BYTES + shard as usize * 32;
         self.bytes[first..first + 32].try_into().unwrap()
@@ -82,11 +88,13 @@ pub struct Progress {
 
 /// All returned buffers have been verified and are held privately by this value.
 /// No lazy rereads from a replaceable source occur after construction.
+#[cfg(feature = "alloc")]
 #[derive(Debug)]
 pub struct VerifiedModel {
     shards: Vec<Vec<u8>>, total: u64, shard_bytes: u32, digest: [u8; 32],
 }
 
+#[cfg(feature = "alloc")]
 impl VerifiedModel {
     /// Verify an entire nominated model. `keep_going` runs before each at-most-64-KiB
     /// read and after each shard. False cancels; all temporary allocations are dropped.

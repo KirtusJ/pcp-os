@@ -37,6 +37,7 @@ Every entry at the top of the repository, and every folder one level down in the
 | `audit/sim` | Record of an earlier simulation. | no |
 | `examples/companion` | Check: two programs side by side exchanging bytes (kernel feature companion). | no |
 | `examples/desktop-source-cd` | Record: the source-built tester CD booted on three desktop hosts. | no |
+| `examples/firmware-model-loader` | Builds and tests the UEFI loader for preloaded model media. | no |
 | `examples/firmware-owned-uefi` | Experiment and CI check: a UEFI loader handing the full-size kernel over under OVMF. | no |
 | `examples/guarded-uefi` | Experiment and CI check: the kernel under Q35/OVMF, with the frame-map tests. | no |
 | `examples/large-memory` | Check: memory above four gibibytes. | no |
@@ -66,6 +67,7 @@ Every entry at the top of the repository, and every folder one level down in the
 | `store/instruments` | Notes on instruments that ship in the Rust host. | not determined |
 | `store/native` | The native Store launcher. | not determined |
 | `PCP_OS_Rust/crates/pcpos-core` | The register and its rules, shared by host and kernel. | yes |
+| `PCP_OS_Rust/crates/pcpos-efi-loader` | Verifies the kernel, guests and model shards and hands their measured memory to the kernel under UEFI. | not determined |
 | `PCP_OS_Rust/crates/pcpos-gguf` | Reads a model index before weights are loaded. | not determined |
 | `PCP_OS_Rust/crates/pcpos-host` | The host program and tool server. | yes |
 | `PCP_OS_Rust/crates/pcpos-kernel` | The kernel, its built-in programs and its emulator checks. | yes |
