@@ -225,20 +225,23 @@ class FinalGptGeometryTests(unittest.TestCase):
         image, pin = self.fixture()
         self.assertEqual(verify_embedded_fat(image, 131072, pin), (1048576, 131072))
 
-    def test_other_active_partitions_refused_after_recomputing_both_gpt_crcs(self):
-        for label, bounds in (
-            ("adjacent", (2304, 2400)),
-            ("overlap", (2200, 2350)),
-            ("outside_usable", (4063, 4075)),
+    def test_bounded_nonoverlapping_extra_partition_is_valid(self):
+        image, pin = self.fixture(second=(2304, 2400))
+        self.assertEqual(verify_embedded_fat(image, 131072, pin), (1048576, 131072))
+
+    def test_invalid_active_partitions_refused_with_valid_gpt_crcs(self):
+        for label, bounds, refusal in (
+            ("overlap", (2200, 2350), "overlapping active GPT partitions"),
+            ("outside_usable", (4063, 4075), "outside usable range"),
         ):
             with self.subTest(label=label):
                 image, pin = self.fixture(second=bounds)
-                with self.assertRaisesRegex(ValueError, "unexpected active GPT partition"):
+                with self.assertRaisesRegex(ValueError, refusal):
                     verify_embedded_fat(image, 131072, pin)
 
     def test_esp_without_unique_guid_refused(self):
         image, pin = self.fixture(missing_esp_guid=True)
-        with self.assertRaisesRegex(ValueError, "ambiguous or out-of-range"):
+        with self.assertRaisesRegex(ValueError, "missing or duplicated active GPT partition GUID"):
             verify_embedded_fat(image, 131072, pin)
 
 
