@@ -1,0 +1,8 @@
+{
+  "bytes": 5253365760,
+  "ordered_model_sha256": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
+  "sha256": "74a073346aa83f9a9c8e2aa0c78834325c0f8f02258a699ad5f3dd81f20650ee",
+  "tail_shard_bytes": 61727552,
+  "verified_files": 80,
+  "verified_shards": 75
+}
