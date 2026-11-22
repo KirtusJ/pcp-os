@@ -72,12 +72,12 @@ RECORD = 32 + len(NAME) + len(CONTENT)
 
 
 class Guest:
-    def __init__(self, qemu, kernel, probe, out, append):
+    def __init__(self, qemu, kernel, probe, out, append, also=None):
         out.mkdir(parents=True)
         self.out, self.serial, sock = out, out / "serial.txt", out / "q.sock"
         self.process = subprocess.Popen(
             [qemu, "-machine", "pc", "-accel", "tcg", "-cpu", "max", "-m", "128M", "-kernel", str(kernel),
-             "-initrd", "%s proposal-probe" % probe, "-append", append, "-vga", "std", "-display", "none", "-nic", "none",
+             "-initrd", "%s proposal-probe" % probe + (",%s" % also if also else ""), "-append", append, "-vga", "std", "-display", "none", "-nic", "none",
              "-serial", "file:%s" % self.serial, "-no-reboot", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
              "-qmp", "unix:%s,server=on,wait=off" % sock], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         for _ in range(100):
@@ -149,6 +149,11 @@ def main():
     parser.add_argument("probe", type=Path)
     parser.add_argument("evidence", type=Path)
     parser.add_argument("--qemu", default="qemu-system-x86_64")
+    # Two builds of examples/proposals/filler, each in a file named store-filler: one leaving the store
+    # one byte short of room for the note (FILL = the store's budget less 57), one leaving exactly room
+    # (less 58). With them the full-store cases run; without them they are reported as not run.
+    parser.add_argument("--filler-over", type=Path)
+    parser.add_argument("--filler-exact", type=Path)
     args = parser.parse_args()
     evidence = args.evidence.resolve()
     evidence.mkdir(parents=True, exist_ok=False)
@@ -266,6 +271,41 @@ def main():
         finally:
             if guest.process.poll() is None:
                 guest.process.kill()
+    # F1, F2: an ordinary program with the store fills it first; then the proposing program is started
+    # from the launcher and its note is allowed. With one byte too little room nothing is made and the
+    # receipt says no room (5); with exactly enough the note is made.
+    full_run = []
+    for name, filler, outcome, made in (("store-one-byte-short", args.filler_over, "5", 0), ("store-exactly-enough", args.filler_exact, "1", 1)):
+        if filler is None:
+            continue
+        full_run.append(name)
+        guest = Guest(args.qemu, args.kernel, args.probe, evidence / name, "auto=store-filler then=menu propose_image=%s" % digest, also=filler)
+        try:
+            filled = guest.until("filler: of ", seconds=120)
+            time.sleep(3)
+            guest.key("ret")
+            time.sleep(1.5)
+            guest.key("ret")
+            asked = guest.until("probe: asking", seconds=40)
+            time.sleep(2.0)
+            guest.key("f12")
+            guest.key("ret")
+            answered = guest.until("probe: outcome ", seconds=20)
+            time.sleep(1.0)
+            full_log = guest.log()
+            results[name] = {"probe": [line for line in full_log.splitlines() if line.startswith(("probe:", "proposal ", "filler:"))][:12]}
+            wrote = [line for line in full_log.splitlines() if line.startswith("filler: ")]
+            if not filled or len(wrote) != 2 or wrote[0].split()[-1] != wrote[1].split()[-1]:
+                found.append("%s: the filler did not write all it was built to: %r" % (name, wrote))
+            if not asked or not answered or answers(full_log)[:3] != [str(RECORD), "100", outcome]:
+                found.append("%s: the first proposal was answered %r, not outcome %s" % (name, answers(full_log)[:3], outcome))
+            if len([line for line in full_log.splitlines() if "CREATED after the person allowed it" in line]) != made:
+                found.append("%s: the note was made %s" % (name, "although there was no room" if not made else "no times, or more than once"))
+            if "KERNEL STOPPED" in full_log:
+                found.append("%s: the kernel stopped" % name)
+        finally:
+            if guest.process.poll() is None:
+                guest.process.kill()
     # B1: afterwards the program sees its build folder and nothing else, and can change nothing by itself.
     listed = [line for line in log.splitlines() if line.startswith("probe: listed ")]
     if listed != ["probe: listed %s of bytes %d" % (NAME, len(CONTENT))]:
@@ -372,6 +412,7 @@ def main():
     if problems:
         sys.exit("\n".join(problems))
     print("proposals: allowed once by F12 then Enter and made by the kernel; refused three ways; a held Enter does not allow; F12 with nothing waiting says so; refused unseen; not offered without the grant")
+    print("full-store cases run: %s" % (", ".join(full_run) if full_run else "none (no --filler-over / --filler-exact given)"))
 
 
 if __name__ == "__main__":
