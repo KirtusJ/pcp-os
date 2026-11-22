@@ -231,6 +231,22 @@ def main():
         found.append("A1: the program was answered %r, not %r" % (answers(log), want))
     if "probe: making a file directly answered -13" not in log:
         found.append("A2: the program's own attempt to make a file was not refused with -13")
+    # R1: started with another build folder, the same program can build only there: its proposal under
+    # taylor/ is refused unseen, nobody is asked, and its list names the other folder and holds nothing.
+    other, other_log = case("another-folder", granted + " build_folder=workshop/kit", [], False)
+    for words in ("probe: list folder workshop/kit\n", "probe: list count 0", "probe: list complete 1", "probe: opening the note to read answered -2"):
+        if words not in other_log:
+            other.append("R1: the log does not hold %r" % words)
+    if answers(other_log)[:2] != ["-22", "0"] or any(line.startswith("proposal ") for line in other_log.splitlines()):
+        other.append("R1: a proposal outside the folder of this run was taken or put to the person: %r" % answers(other_log)[:3])
+    found += other
+    # R2: a folder name the kernel does not accept is said in the log and the usual folder is used.
+    bad, bad_log = case("bad-folder", granted + " build_folder=Dev/x", ["f12", "ret"], True)
+    if "build_folder=Dev/x is not a name a build folder may have; using taylor" not in bad_log or "probe: list folder taylor\n" not in bad_log:
+        bad.append("R2: the refused folder name was not logged, or the usual folder was not used")
+    if len([line for line in bad_log.splitlines() if "CREATED after the person allowed it" in line]) != 1:
+        bad.append("R2: with the usual folder in use the note was not created once")
+    found += bad
     # B1: afterwards the program sees its build folder and nothing else, and can change nothing by itself.
     listed = [line for line in log.splitlines() if line.startswith("probe: listed ")]
     if listed != ["probe: listed %s of bytes %d" % (NAME, len(CONTENT))]:

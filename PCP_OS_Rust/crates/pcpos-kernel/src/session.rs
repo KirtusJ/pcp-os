@@ -187,7 +187,18 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
         }
     }
     let (y, mo, d, h, mi, s) = arch::clock();
-    let mut world = World { files: files.iter().map(|f| (f.0.clone(), f.1)).collect(), store: Default::default(),
+    // Where a program that may propose files builds, for this session: the loader's option if it is a
+    // name a build folder may have, else the usual one, said in the log either way.
+    #[cfg(feature = "proposals")]
+    let build_folder = match option(&start.boot.command_line, "build_folder") {
+        Some(name) if crate::sys::build_folder(name) => String::from(name),
+        Some(name) => {
+            crate::log(format_args!("build_folder={} is not a name a build folder may have; using {}\n", name, crate::sys::BUILD_FOLDER));
+            String::from(crate::sys::BUILD_FOLDER)
+        }
+        None => String::from(crate::sys::BUILD_FOLDER),
+    };
+    let mut world = World { files: files.iter().map(|f| (f.0.clone(), f.1)).collect(), store: Default::default(), #[cfg(feature = "proposals")] build_folder,
         #[cfg(feature = "vm-store")] volume: None,
                             epoch_at_start: epoch(y, mo, d, h, mi, s).saturating_sub(arch::ticks() / arch::TICKS_PER_SECOND), unanswered: Vec::new() };
     let line = start.boot.command_line.as_str();

@@ -133,6 +133,9 @@ pub struct Proposal {
 #[derive(Default)]
 struct Proposals {
     allowed: bool,
+    /// The folder this run builds into: copied from the kernel's setting when the program started, and
+    /// the same until it ends, whatever the setting becomes meanwhile.
+    root: String,
     /// Which run of a proposing program this is, counted by the kernel from its start.
     launch: u64,
     pending: Option<Proposal>,
@@ -171,14 +174,24 @@ pub const PROPOSAL_CONTENT: usize = 16 * 1024;
 #[cfg(feature = "proposals")]
 pub const E_INVALID: u64 = (-EINVAL) as u64;
 
-/// The folder a program that may propose files builds into. It is fixed when the program starts; the
-/// program may list and read what is under it and nothing else in the store.
+/// The folder a program that may propose files builds into unless the kernel's setting names another.
+/// It is fixed when the program starts; the program may list and read what is under it and nothing
+/// else in the store.
 #[cfg(feature = "proposals")]
 pub const BUILD_FOLDER: &str = "taylor";
 #[cfg(feature = "proposals")]
 const LISTED: usize = 256;
 #[cfg(feature = "proposals")]
 const LISTING: usize = 64 * 1024;
+
+/// Whether a name may be a build folder: one or two parts, each of small letters, digits, dot,
+/// underscore and hyphen, not empty and not beginning with a dot, the first not "dev", at most 116 bytes
+/// (so that a project and a file still fit in a proposal's 120).
+#[cfg(feature = "proposals")]
+pub fn build_folder(name: &str) -> bool {
+    let part = |p: &str| !p.is_empty() && !p.starts_with('.') && p.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-'));
+    name.len() <= 116 && name.split('/').count() <= 2 && name.split('/').all(part) && name.split('/').next() != Some("dev")
+}
 
 /// Whether a store name is inside the folder: the folder, a slash, and something after it.
 #[cfg(feature = "proposals")]
@@ -242,8 +255,9 @@ fn request_digest(proposal: &Proposal) -> [u8; 32] {
 
 #[cfg(feature = "proposals")]
 impl Linux {
-    pub fn allow_proposals(&mut self, allowed: bool) {
+    pub fn allow_proposals(&mut self, allowed: bool, folder: &str) {
         self.proposals.allowed = allowed;
+        self.proposals.root = String::from(if build_folder(folder) { folder } else { BUILD_FOLDER });
         if allowed {
             self.proposals.launch = LAUNCHES.fetch_add(1, core::sync::atomic::Ordering::SeqCst) + 1;
         }
@@ -309,7 +323,7 @@ fn propose(p: &mut Process, world: &World, addr: u64, len: u64) -> Outcome {
     // spaces and new lines: what the kernel's screen can show exactly, and no more.
     let part = |p: &[u8]| !p.is_empty() && p[0] != b'.' && p.iter().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-'));
     let named = name.split(|b| *b == b'/').count() <= 4 && name.split(|b| *b == b'/').all(part) && !name.starts_with(b"dev/") && name != b"dev"
-        && core::str::from_utf8(name).is_ok_and(|n| under(BUILD_FOLDER, n));
+        && core::str::from_utf8(name).is_ok_and(|n| p.linux.as_ref().is_some_and(|l| under(&l.proposals.root, n)));
     let shown = content.iter().all(|b| (0x20..0x7f).contains(b) || *b == b'\n');
     // What the kernel cannot show whole, in a number of pages a person can turn, it does not ask about.
     let lines: usize = content.split(|b| *b == b'\n').map(|line| line.len().div_ceil(PROPOSAL_ACROSS).max(1)).sum();
@@ -444,7 +458,7 @@ fn lookup(p: &Process, caps: &CapSpace, world: &World, path: &str) -> Result<Nod
         #[cfg(feature = "proposals")]
         "dev/build-folder" => match p.linux.as_ref().filter(|l| l.proposals.allowed) {
             Some(l) => {
-                let bytes = listing(&world.store, BUILD_FOLDER, l.proposals.launch);
+                let bytes = listing(&world.store, &l.proposals.root, l.proposals.launch);
                 if world.store.fits(bytes.len()) { Ok(Node::Stored(world.store.detached(bytes))) } else { Err(err(ENOSPC)) }
             }
             None => Err(err(EACCES)),
@@ -458,9 +472,9 @@ fn lookup(p: &Process, caps: &CapSpace, world: &World, path: &str) -> Result<Nod
             // A program that may propose files reads what is under its build folder, and for it nothing
             // else in the store has a name: the answer for another folder's file is that of no file.
             #[cfg(feature = "proposals")]
-            if p.linux.as_ref().is_some_and(|l| l.proposals.allowed) && !p.holds(caps, Object::Store, Rights::READ) {
+            if let Some(l) = p.linux.as_ref().filter(|l| l.proposals.allowed && !p.holds(caps, Object::Store, Rights::READ)) {
                 return match world.store.named(&name) {
-                    Some(file) if under(BUILD_FOLDER, &name) => Ok(Node::Stored(file.clone())),
+                    Some(file) if under(&l.proposals.root, &name) => Ok(Node::Stored(file.clone())),
                     Some(_) => Err(err(ENOENT)),
                     None => match world.files.iter().position(|f| f.0 == name) {
                         Some(i) => need(Object::Files, Rights::READ, Node::File(i)),

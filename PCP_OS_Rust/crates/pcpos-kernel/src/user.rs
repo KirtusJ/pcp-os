@@ -151,6 +151,10 @@ pub struct World {
     pub files: Vec<(String, &'static [u8])>,
     /// The live writable namespace. With a mounted VM volume, fsync checkpoints its named files.
     pub store: crate::regular::Files,
+    /// The folder the next program that may propose files will build into. The kernel's own setting:
+    /// no program can change it.
+    #[cfg(feature = "proposals")]
+    pub build_folder: String,
     #[cfg(feature = "vm-store")]
     pub volume: Option<crate::store::Volume>,
     /// Seconds since 1970 when the tick count was zero, by the machine's clock.
@@ -211,7 +215,7 @@ fn new_table(world: World) -> Table {
 }
 
 pub(crate) fn empty_world() -> World {
-    World { files: Vec::new(), store: Default::default(),
+    World { files: Vec::new(), store: Default::default(), #[cfg(feature = "proposals")] build_folder: String::from(sys::BUILD_FOLDER),
         #[cfg(feature = "vm-store")] volume: None, epoch_at_start: 0, unanswered: Vec::new() }
 }
 
@@ -315,7 +319,7 @@ pub fn run_program(program: &Program, world: World) -> (Result<Process, &'static
     #[allow(unused_mut)]
     let mut linux = sys::Linux::new(loaded.image_end);
     #[cfg(feature = "proposals")]
-    linux.allow_proposals(program.grants.propose);
+    linux.allow_proposals(program.grants.propose, &t.world.build_folder);
     if t.admit(program.name, space, Frame::user(loaded.entry, loaded.stack), program.grants, program.budget, Some(linux)).is_none() {
         return (Err("the program could not be admitted as a task"), t.world);
     }
