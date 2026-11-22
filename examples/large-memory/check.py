@@ -16,6 +16,9 @@ Predicates, fixed before the first run.
     above, 1,572,864 frames). The kernel's line for high memory shows that many frames, all free at
     the end, and as many given back as handed out.
  L4 every page handed to the program reads zero at both ends before the program writes to it.
+ L6 every page is written with a value of its own at both ends, and after the last piece has been
+    written every page of every piece is read again: all of them hold what was written (no two pages
+    are one piece of memory, and none lost its contents).
  L5 (with --demo-kernel, built with the high-memory-demo feature, at 8,192 MiB) what a device would be
     given, a run of frames and a single frame, lies below one gibibyte although memory above four is
     free; a program's frame lies above four gibibytes, takes a write, is given back, and reads zero
@@ -60,7 +63,8 @@ def main():
             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, cwd=kernel.parent, timeout=900)
         lines = done.stdout.decode(errors="replace").splitlines()
         said = [line for line in lines if line.startswith("memory: ") and "so far" not in line]
-        if said != ["memory: refused with 12", "memory: pages that did not read zero 0", "memory: mebibytes mapped and touched %d" % want]:
+        if said != ["memory: refused with 12", "memory: pages that did not read zero 0", "memory: pages read again after all were written %d" % (want * 256),
+                    "memory: of those, pages that did not hold what was written 0", "memory: mebibytes mapped and touched %d" % want]:
             problems.append("%d MiB: the program said %r, not refused with 12 after %d MiB" % (mebibytes, said, want))
         passes = sum(1 for line in lines if line.startswith("  pass "))
         if done.returncode != 33 or passes != 71 or any(line.startswith("  FAIL") for line in lines):
