@@ -907,6 +907,12 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     check("the kernel's register of its own start, verification and stop verifies and replays without a problem",
           matches!(&reopened, Ok((r, problems)) if problems.is_empty() && r.state().system() == Some(System::Stopped) && r.ledger().head() == rec.ledger().head()), &mut failed);
     say!("kernel register: {} events, head {}", rec.ledger().len(), rec.ledger().head());
+    // For checks that read what the register holds, not how many events it has: every line of it,
+    // as stored, after the kernel's own verification of it above.
+    #[cfg(feature = "register-dump")]
+    for line in core::str::from_utf8(rec.ledger().bytes()).unwrap_or("").lines() {
+        say!("register line: {}", line);
+    }
     #[cfg(feature = "overflow-demo")]
     {
         say!("overflow demonstration: recursing until the stack is exhausted");

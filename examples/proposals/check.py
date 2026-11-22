@@ -52,9 +52,16 @@ Predicates, fixed before the first run.
  N1 without `propose_image` on the command line the program is refused the proposal device (-13) and
     nobody is asked: no screen, no CREATED, no DENIED.
  Every case: the emulator ends with status 33 (the kernel's own checks passed and it powered off).
- G1 the kernel's own register records a file it made (an artifact, produced, with its digest, size,
-    path and the task it was made for): the allowed case ends with exactly one event more than the
-    case refused with Esc, and in no case does the register refuse an event the kernel gave it.
+ G1 the kernel's own register records a file it made, and nothing it did not. With a kernel built
+    to print its register at shutdown (feature register-dump), in every case the printed register
+    is a chain (each line names the digest of the line before and its own number; the head the
+    kernel reports is the digest of the last line; the count agrees). In the allowed case exactly
+    one event is about the file: recorded by the kernel, between the start and the end of the
+    probe's one task, with the SHA-256 and size of the bytes proposed, origin PRODUCED, not stored,
+    the whole path, the last part of it as the file name, that task's id, and no other field. In
+    the refused cases no event is about it. In no case does the register refuse an event. Fourteen
+    altered registers are tried on the comparison before anything is booted. Without that feature
+    the check can only count events, and says so in its output.
  C1 (with --companion, on a kernel built with the companion feature as well): every case comes out
     the same with a second program beside the probe, waiting on the channel, and in the cases that
     ask the person the kernel says it started that program. Without --companion none is started.
@@ -145,6 +152,90 @@ def selftest_exactly():
         assert not exactly(rows, good), what
 
 
+def register_problems(lines, head, count):
+    """What is wrong with a register printed line by line: its chain, its numbering, its head."""
+    wrong = []
+    try:
+        events = [json.loads(line) for line in lines]
+    except ValueError:
+        return ["a line of the register is not JSON"]
+    for i, event in enumerate(events):
+        before = "0" * 64 if i == 0 else hashlib.sha256(lines[i - 1].encode()).hexdigest()
+        if event.get("prev") != before or event.get("seq") != i:
+            wrong.append("event %d does not follow the one before it (its number, or the digest of the line before)" % i)
+            break
+    if head is not None and hashlib.sha256(lines[-1].encode()).hexdigest() != head:
+        wrong.append("the head the kernel reported is not the digest of the last line")
+    if count is not None and count != len(lines):
+        wrong.append("the kernel reported %d events and printed %d" % (count, len(lines)))
+    return wrong
+
+
+def made_problems(lines, path, content, program, made):
+    """What is wrong with how a register records one file: once, exactly, for the right task; or not at all."""
+    events = [json.loads(line) for line in lines]
+    about = [e for e in events if e.get("kind") == "ARTIFACT_ADDED" and e.get("body", {}).get("path") == path]
+    if not made:
+        return ["the register records %s although it was never made" % path] if about else []
+    if len(about) != 1:
+        return ["the register records %s %d times, not once" % (path, len(about))]
+    event, body = about[0], about[0]["body"]
+    started = [e for e in events if e.get("kind") == "TASK_STARTED" and e.get("body", {}).get("label") == program]
+    ended = [e for e in events if e.get("kind") == "TASK_ENDED" and started and e.get("body", {}).get("id") == started[-1]["body"].get("id")]
+    wanted = {"sha256": hashlib.sha256(content).hexdigest(), "size": len(content), "origin": "PRODUCED", "stored": False,
+              "path": path, "filename": path.rpartition("/")[2], "task": started[-1]["body"].get("id") if started else None}
+    wrong = ["its %s is %r, not %r" % (key, body.get(key), value) for key, value in wanted.items() if body.get(key) != value]
+    if set(body) != set(wanted):
+        wrong.append("it has other fields than those: %r" % sorted(set(body) ^ set(wanted)))
+    if event.get("actor") != "kernel" or event.get("auth") != "HOST":
+        wrong.append("it was not recorded by the kernel")
+    if len(started) != 1 or len(ended) != 1 or not started[0]["seq"] < event["seq"] < ended[0]["seq"]:
+        wrong.append("it does not lie between the start and the end of the one task of %s" % program)
+    return wrong
+
+
+def selftest_register():
+    def chain(events):
+        lines, before = [], "0" * 64
+        for i, event in enumerate(events):
+            lines.append(json.dumps(dict(event, prev=before, seq=i), sort_keys=True, separators=(",", ":")))
+            before = hashlib.sha256(lines[-1].encode()).hexdigest()
+        return lines
+    path, content = "taylor/first-project/note.txt", b"Hello.\n"
+    body = {"sha256": hashlib.sha256(content).hexdigest(), "size": len(content), "origin": "PRODUCED", "stored": False, "path": path, "filename": "note.txt", "task": "T15"}
+    start = {"actor": "kernel", "auth": "HOST", "kind": "TASK_STARTED", "body": {"id": "T15", "label": "proposal-probe"}}
+    end = {"actor": "host", "auth": "HOST", "kind": "TASK_ENDED", "body": {"id": "T15"}}
+    made = {"actor": "kernel", "auth": "HOST", "kind": "ARTIFACT_ADDED", "body": body}
+    good = chain([start, made, end])
+    assert not register_problems(good, hashlib.sha256(good[-1].encode()).hexdigest(), 3)
+    assert not made_problems(good, path, content, "proposal-probe", True)
+    assert not made_problems(chain([start, end]), path, content, "proposal-probe", False)
+    changed = lambda **fields: chain([start, dict(made, body=dict(body, **fields)), end])
+    adverse = {
+        "another digest": changed(sha256="0" * 64),
+        "another size": changed(size=8),
+        "another task": changed(task="T14"),
+        "supplied, not produced": changed(origin="SUPPLIED"),
+        "said to be stored": changed(stored=True),
+        "another file name": changed(filename="note.txt.bak"),
+        "a field more": changed(name="note"),
+        "recorded twice": chain([start, made, made, end]),
+        "recorded after the task ended": chain([start, end, made]),
+        "recorded by another": chain([start, dict(made, actor="program"), end]),
+        "not recorded": chain([start, end]),
+        "another path only": chain([start, dict(made, body=dict(body, path=path + ".old")), end]),
+    }
+    for what, lines in adverse.items():
+        assert made_problems(lines, path, content, "proposal-probe", True), what
+    assert made_problems(good, path, content, "proposal-probe", False), "a file never made, recorded"
+    # A register that was altered after it was written: one byte of one line, the rest as it was.
+    altered = list(good)
+    altered[1] = altered[1].replace("PRODUCED", "PRODUCEE")
+    assert register_problems(altered, hashlib.sha256(good[-1].encode()).hexdigest(), 3)
+    assert register_problems(good, "0" * 64, 3) and register_problems(good, hashlib.sha256(good[-1].encode()).hexdigest(), 4)
+    assert register_problems(good[1:], None, None)
+
+
 # Words of padding that make a loader line longer than the kernel takes whole (1,023 bytes; 255
 # before the line was lengthened): 80 words of 15 bytes and the spaces between them.
 PADS = 80
@@ -197,7 +288,11 @@ class Guest:
             return {}
 
     def log(self):
-        return self.serial.read_text(errors="replace") if self.serial.exists() else ""
+        # What the kernel and the program said. The register a kernel may print at shutdown is read
+        # by its own predicate (G1), from the file; its lines hold words such as PROCESS_CREATED that
+        # the other predicates look for in what was said, so they are left out here.
+        text = self.serial.read_text(errors="replace") if self.serial.exists() else ""
+        return "\n".join(line for line in text.split("\n") if not line.startswith("register line: "))
 
     def until(self, words, seconds=120):
         deadline = time.monotonic() + seconds
@@ -255,6 +350,7 @@ def main():
     parser.add_argument("--companion", type=Path)
     args = parser.parse_args()
     selftest_exactly()
+    selftest_register()
     evidence = args.evidence.resolve()
     evidence.mkdir(parents=True, exist_ok=False)
     glyphs = CHECK["kernel_glyphs"]()
@@ -549,19 +645,38 @@ def main():
     if not args.companion and beside:
         problems.append("companion: a companion was started although none was named: %r" % beside)
     results["with_companion"] = beside
-    # G1: the kernel's register. One event more where a file was made than where it was refused, and
-    # the register refused nothing the kernel gave it in any case.
-    def register(name):
-        text = (evidence / name / "serial.txt").read_text(errors="replace")
-        counts = [int(line.split()[2]) for line in text.splitlines() if line.startswith("kernel register: ") and line.split()[3:4] == ["events,"]]
-        return (counts[-1] if counts else None), "the register refused" in text
+    # G1: the kernel's register, read back. With a kernel that prints its register at shutdown
+    # (feature register-dump) every line is read: the chain is recomputed, and the event for the
+    # file made is compared field by field with what was proposed and with the task it was made for.
+    # Without that feature only the number of events can be compared, and that is said.
+    dumped = {}
     for name in sorted(d.name for d in evidence.iterdir() if (d / "serial.txt").is_file()):
-        if register(name)[1]:
+        text = (evidence / name / "serial.txt").read_text(errors="replace")
+        if "the register refused" in text:
             problems.append("G1 %s: the kernel's register refused an event" % name)
-    made, not_made = register("allowed")[0], register("refused-esc")[0]
-    if made is None or not_made is None or made != not_made + 1:
-        problems.append("G1: the register holds %r events where the file was made and %r where it was refused, not one more" % (made, not_made))
-    results["register_events"] = {"allowed": made, "refused-esc": not_made}
+        lines = [line[len("register line: "):] for line in text.splitlines() if line.startswith("register line: ")]
+        said = [line.split() for line in text.splitlines() if line.startswith("kernel register: ")]
+        if lines:
+            dumped[name] = lines
+            wrong = register_problems(lines, said[-1][5] if said and len(said[-1]) > 5 else None, int(said[-1][2]) if said else None)
+            problems += ["G1 %s: %s" % (name, w) for w in wrong]
+    leaf = NAME.rpartition("/")[2]
+    if "allowed" in dumped and "refused-esc" in dumped:
+        problems += ["G1 allowed: " + w for w in made_problems(dumped["allowed"], NAME, CONTENT, "proposal-probe", True)]
+        for name in ("refused-esc", "refused-enter-alone", "refused-f12-then-other", "not-granted"):
+            if name in dumped:
+                problems += ["G1 %s: %s" % (name, w) for w in made_problems(dumped[name], NAME, CONTENT, "proposal-probe", False)]
+        results["register"] = "read back in %d cases; the made file's event checked field by field" % len(dumped)
+    else:
+        counts = {}
+        for name in ("allowed", "refused-esc"):
+            text = (evidence / name / "serial.txt").read_text(errors="replace")
+            found = [int(line.split()[2]) for line in text.splitlines() if line.startswith("kernel register: ")]
+            counts[name] = found[-1] if found else None
+        if None in counts.values() or counts["allowed"] != counts["refused-esc"] + 1:
+            problems.append("G1: the register holds %r events where the file was made and %r where it was refused, not one more" % (counts["allowed"], counts["refused-esc"]))
+        results["register"] = "NOT READ BACK (the kernel does not print its register): only counted, %r" % counts
+    print("register: " + results["register"])
     (evidence / "result.json").write_text(json.dumps({"probe_sha256": digest, "problems": problems, "results": results}, indent=2) + "\n")
     if problems:
         sys.exit("\n".join(problems))
