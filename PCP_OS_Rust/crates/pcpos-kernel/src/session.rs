@@ -211,9 +211,31 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
         }
     };
     let mut world = World { files: files.iter().map(|f| (f.0.clone(), f.1)).collect(), store: Default::default(), #[cfg(feature = "proposals")] build_folder,
-        #[cfg(feature = "vm-store")] volume: None,
+        #[cfg(feature = "vm-store")] volume: None, #[cfg(feature = "model-memory")] model: None,
                             epoch_at_start: epoch(y, mo, d, h, mi, s).saturating_sub(arch::ticks() / arch::TICKS_PER_SECOND), unanswered: Vec::new() };
     let line = start.boot.command_line.as_str();
+    // A kernel that has the emulator fixture in it says so at every start, used or not, so that one
+    // can never be taken for a release kernel by its log.
+    #[cfg(feature = "model-memory-fixture")]
+    say!("THIS KERNEL IS BUILT WITH model-memory-fixture, AN EMULATOR TEST FIXTURE. IT IS NOT A RELEASE KERNEL.");
+    #[cfg(feature = "model-memory-fixture")]
+    if arch::model_fixture_used(&start.boot) {
+        say!("FIXTURE, NOT FOR ANY RELEASE: the loader's line (fixture_model_ram=), not the loader's map, marks memory as holding a model in this boot");
+    }
+    #[cfg(feature = "model-memory")]
+    {
+        world.model = match model_given(start, &world.files) {
+            Ok(Some(given)) => {
+                say!("a model of {} bytes is held in memory, out of the pool, for a companion to read; its manifest ({} bytes) is the one the loader's line pins", given.bytes, given.manifest.len());
+                Some(given)
+            }
+            Ok(None) => None,
+            Err(why) => {
+                say!("no model is given to any program: {}", why);
+                None
+            }
+        };
+    }
     #[cfg(feature = "vm-store")]
     if !safe {
         match crate::store::from_command_line(start.boot.exact_command_line()) {
@@ -1221,6 +1243,50 @@ fn cut_blocks_launch(start: &Start) -> bool {
 #[cfg(not(feature = "proposals"))]
 fn cut_blocks_launch(_: &Start) -> bool { false }
 
+/// Whether a model is given to a companion, decided once: memory the loader named and the kernel kept
+/// (`arch::model`), a manifest among the loader's files under the name `model.manifest`, and its
+/// SHA-256 on the loader's line as `model_manifest=`. All three, agreeing, or none. Nothing here reads
+/// the model's own bytes: the companion checks those against the manifest, which this pins.
+#[cfg(feature = "model-memory")]
+fn model_given(start: &Start, files: &[(String, &'static [u8])]) -> Result<Option<crate::sys::ModelGiven>, String> {
+    let bytes = match arch::model() {
+        arch::Model::None => {
+            return if start.boot.command_line.contains("model_manifest=") { Err(String::from("model_manifest is given and no model_memory")) } else { Ok(None) };
+        }
+        arch::Model::Refused(why) => return Err(format!("the memory named for it is not given ({})", why)),
+        arch::Model::Held { bytes, .. } => bytes,
+    };
+    let kept = "the memory marked for it stays out of the pool and is given to nothing";
+    let line = start.boot.exact_command_line().ok_or_else(|| format!("the loader's line was cut; {}", kept))?;
+    let mut pins = line.split_whitespace().filter_map(|w| w.strip_prefix("model_manifest="));
+    let pin = match (pins.next(), pins.next()) {
+        (Some(pin), None) => pin,
+        (None, _) => return Err(format!("model_manifest is not given; {}", kept)),
+        _ => return Err(format!("model_manifest is given more than once; {}", kept)),
+    };
+    let mut digest = [0u8; 32];
+    let hex = pin.as_bytes();
+    if hex.len() != 64 || !hex.iter().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+        return Err(format!("model_manifest is not 64 lower-case hexadecimal digits; {}", kept));
+    }
+    for (i, pair) in hex.chunks(2).enumerate() {
+        let nibble = |b: u8| if b <= b'9' { b - b'0' } else { b - b'a' + 10 };
+        digest[i] = nibble(pair[0]) << 4 | nibble(pair[1]);
+    }
+    let mut named = files.iter().filter(|f| f.0 == "model.manifest");
+    let manifest = match (named.next(), named.next()) {
+        (Some(file), None) => file.1,
+        (None, _) => return Err(format!("the loader gave no file named model.manifest; {}", kept)),
+        _ => return Err(format!("the loader gave more than one file named model.manifest; {}", kept)),
+    };
+    let parsed = pcpos_model_media::Manifest::parse(manifest, digest)
+        .map_err(|e| format!("model.manifest is not the manifest the loader's line pins, or is not a manifest ({:?}); {}", e, kept))?;
+    if parsed.model_bytes() != bytes {
+        return Err(format!("the manifest is of a model of {} bytes and the memory named holds {}; {}", parsed.model_bytes(), bytes, kept));
+    }
+    Ok(Some(crate::sys::ModelGiven { manifest, digest, bytes }))
+}
+
 const FILE_APPROVAL: &str = "Creating a file needs your approval.";
 #[cfg(feature = "proposals")]
 const NO_BUILD_FOLDER: &str = "its projects folder setting is not a valid name";
@@ -1836,6 +1902,17 @@ fn register_view(rec: &Record) {
                 lines.extend(lines_of(4, &what, TEXT));
             }
         }
+        // An event about a file that was made says which file and which bytes, whole: where it is,
+        // how long it is, what made it and for which task, and all of its digest. Two files must
+        // never look the same here (Director 2 found that they did). Lines of their own under the
+        // event, on a display of any width; the digest alone on its line, cut nowhere.
+        let made = |k: &str| body.and_then(|b| b.get(k));
+        if let Some(path) = made("path").and_then(Value::as_str) {
+            let text_of = |k: &str| made(k).and_then(Value::as_str).unwrap_or("?").to_string();
+            lines.extend(lines_of(6, &format!("file {}", path), TEXT));
+            lines.extend(lines_of(6, &format!("{} bytes, {}, for task {}", made("size").and_then(Value::as_int).unwrap_or(-1), text_of("origin"), text_of("task")), SOFT));
+            lines.extend(wrapped(&format!("sha256 {}", text_of("sha256")), across.saturating_sub(4).max(1)).into_iter().map(|part| alloc::vec![(6, part, SOFT)]));
+        }
     }
     text_screen(&title, ui::TEAL, Some(table), &lines, "Up/Down scroll    Esc back", false, true);
 }
@@ -2098,6 +2175,16 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
     let refusal = result.as_ref().err().copied();
     let message = match result {
         Ok(p) => {
+            // Every file the kernel made for this program after the person allowed it is in the
+            // register, however the program then ended: its name, its size, the digest of its bytes,
+            // and the task it was made for. A file the person refused was never made and is not here.
+            #[cfg(feature = "proposals")]
+            for (name, size, sha) in p.linux.as_ref().map(|l| l.files_made()).unwrap_or(&[]) {
+                recorded &= logged("ARTIFACT_ADDED", rec.submit(&now(), "kernel", "HOST", "ARTIFACT_ADDED",
+                    obj(&[("sha256", text(sha)), ("size", Value::Int(*size as i64)), ("origin", text("PRODUCED")), ("stored", Value::Bool(false)),
+                          // A register's "name" is a short label and may hold no '/'; where the file is goes in "path".
+                          ("path", text(name)), ("filename", text(name.rsplit('/').next().unwrap_or(name))), ("task", text(&id))]))).is_ok();
+            }
             let digest = sha256_hex(&p.output);
             let (outcome, result, how) = match p.end {
                 Some(End::Exited(0)) => {

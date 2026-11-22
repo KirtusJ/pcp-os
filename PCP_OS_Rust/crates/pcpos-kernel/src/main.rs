@@ -536,7 +536,7 @@ fn asynchronous(failed: &mut u32, replays: bool) {
     use dev::KeyPacing::{BlockedRead, Sleeping, Timed};
     use user::{End, Grants, Program, Start, World};
     let world = || World { files: alloc::vec::Vec::new(), store: Default::default(), #[cfg(feature = "proposals")] build_folder: Some(alloc::string::String::from(sys::BUILD_FOLDER)),
-        #[cfg(feature = "vm-store")] volume: None, epoch_at_start: 0, unanswered: alloc::vec::Vec::new() };
+        #[cfg(feature = "vm-store")] volume: None, #[cfg(feature = "model-memory")] model: None, epoch_at_start: 0, unanswered: alloc::vec::Vec::new() };
     let grants = Grants { console: true, keys: true, ..Grants::default() };
     let loaded = |name: &str, args: &[&str], keys: &[u8], after: u64, pacing| -> (Result<user::Process, &'static str>, usize, usize, u64) {
         let free0 = user::frames_free();
@@ -907,6 +907,12 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     check("the kernel's register of its own start, verification and stop verifies and replays without a problem",
           matches!(&reopened, Ok((r, problems)) if problems.is_empty() && r.state().system() == Some(System::Stopped) && r.ledger().head() == rec.ledger().head()), &mut failed);
     say!("kernel register: {} events, head {}", rec.ledger().len(), rec.ledger().head());
+    // For checks that read what the register holds, not how many events it has: every line of it,
+    // as stored, after the kernel's own verification of it above.
+    #[cfg(feature = "register-dump")]
+    for line in core::str::from_utf8(rec.ledger().bytes()).unwrap_or("").lines() {
+        say!("register line: {}", line);
+    }
     #[cfg(feature = "overflow-demo")]
     {
         say!("overflow demonstration: recursing until the stack is exhausted");
