@@ -1,0 +1,67 @@
+{
+  "component_receipt": {
+    "url": "https://github.com/KirtusJ/pcp-os/blob/c566f8df2ee1d0a996939b7375aecd6cae0ceaec/examples/release-media/observations/plain-merged-kernel/inputs.json",
+    "sha256": "1dbe06857cae22be78603b086679b726f1d42d7f7b660ea048c25252d26722d0"
+  },
+  "original_boot_record": "https://github.com/KirtusJ/pcp-os/blob/c566f8df2ee1d0a996939b7375aecd6cae0ceaec/examples/release-media/observations/plain-merged-kernel/image.json",
+  "media": {
+    "first": {
+      "iso_bytes": 70389760,
+      "iso_sha256": "75dce9c7581a5802ff941962aead7665c882fccb6876cad7e6b6c8844fa1f1e8",
+      "fat_offset": 67584,
+      "fat_bytes": 67108864,
+      "fat_sha256": "aba4ccff3be549f49c78a19a10902402c06f6da34a4c0075dee3ea7f93c1c5be",
+      "el_torito_sector_count": 0,
+      "files_each_view": 11,
+      "efi_sha256": "e7046c52123efd16e3faa217863da79b76b481348c4e890477781d03c643bc3e",
+      "efi_certificate_table": [
+        0,
+        0
+      ]
+    },
+    "repeat": {
+      "iso_bytes": 70389760,
+      "iso_sha256": "75dce9c7581a5802ff941962aead7665c882fccb6876cad7e6b6c8844fa1f1e8",
+      "fat_offset": 67584,
+      "fat_bytes": 67108864,
+      "fat_sha256": "aba4ccff3be549f49c78a19a10902402c06f6da34a4c0075dee3ea7f93c1c5be",
+      "el_torito_sector_count": 0,
+      "files_each_view": 11,
+      "efi_sha256": "e7046c52123efd16e3faa217863da79b76b481348c4e890477781d03c643bc3e",
+      "efi_certificate_table": [
+        0,
+        0
+      ]
+    }
+  },
+  "loader": {
+    "source_package": "grub2",
+    "source_version": "2.12-9+deb13u2",
+    "dsc_sha256": "5d1cda92727de39518a94ce23e7e239077acdfa9a4694e71eba736dbd354391a",
+    "source_archives": {
+      "grub2_2.12.orig.tar.xz": {
+        "sha256": "f3c97391f7c4eaa677a78e090c7e97e6dc47b16f655f04683ebd37bef7fe0faa",
+        "bytes": 6675608
+      },
+      "grub2_2.12-9+deb13u2.debian.tar.xz": {
+        "sha256": "4d3c4689ee100466a36b6a5caa2477ef525fbc5b6ec27cb0319c83db7d9faf89",
+        "bytes": 1123180
+      }
+    },
+    "binary_packages": {
+      "grub-common_2.12-9+deb13u2_amd64.deb": {
+        "bytes": 2899204,
+        "sha256": "a59d34a52e98450165ffc05b75886e139ad77b9d851d25b11eaa973cbdcb3bdd"
+      },
+      "grub-efi-amd64-bin_2.12-9+deb13u2_amd64.deb": {
+        "bytes": 1053352,
+        "sha256": "d486d62c83aa197f83c1dd0560ffd96d91c896f4d58485164eb7e1623e7bfde2"
+      }
+    },
+    "early_config_sha256": "69561858fc0caeb034fb78706213e68ad1c82ecb9291682a18fa653eb4ac3815",
+    "efi_sha256": "e7046c52123efd16e3faa217863da79b76b481348c4e890477781d03c643bc3e",
+    "efi_bytes": 692224,
+    "origin": "https://deb.debian.org/debian/pool/main/g/grub2/",
+    "scope": "Source archives matched the .dsc. The candidate EFI was regenerated with the two exact Debian binary packages. GRUB itself was not compiled from source in this check."
+  }
+}
