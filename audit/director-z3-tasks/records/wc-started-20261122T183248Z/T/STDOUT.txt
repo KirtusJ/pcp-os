@@ -1,0 +1,15 @@
+S1 pc, 256M, 1: other processors: 0 of 0 started and parked, the interrupt controller reached through memory; 1 thread(s) on 1 core(s) in all; none runs any work yet
+S1 pc, 256M, 2: other processors: 1 of 1 started and parked, the interrupt controller reached through memory; 2 thread(s) on 2 core(s) in all; none runs any work yet
+S1 pc, 256M, 4: other processors: 3 of 3 started and parked, the interrupt controller reached through memory; 4 thread(s) on 4 core(s) in all; none runs any work yet
+S1 pc, 256M, 8: other processors: 7 of 7 started and parked, the interrupt controller reached through memory; 8 thread(s) on 8 core(s) in all; none runs any work yet
+S1 q35, 6G, 4: other processors: 3 of 3 started and parked, the interrupt controller reached through memory; 4 thread(s) on 4 core(s) in all; none runs any work yet
+S2: other processors: 3 of 3 started and parked, the interrupt controller reached through memory; 4 thread(s) on 2 core(s) in all; none runs any work yet
+S3: processors: the firmware lists 2 usable (found where a BIOS puts it); 0 more than this kernel would start, 2 not to be used; this kernel runs on one | other processors: 1 of 1 started and parked, the interrupt controller reached through memory; 2 thread(s) on 2 core(s) in all; none runs any work yet
+S4: by the emulator's account (VM status: paused (shutdown)) all four are in ring 0, the other three halted with interrupts on in 64-bit mode with CR0 80010033, CR4 00340e20, CR3 000000000123f000, segment tables at 000000000123d000, 000000000129b000, 00000000012b4000, 00000000012cd000
+S5: without the feature nothing is said of other processors, and their CR0 is 00000011, 00000011, 00000011: paging off, never on the kernel's map
+S6: NOT RUN: this emulator does not offer the extended mode (qemu-system-x86_64: warning: TCG doesn't support requested feature: CPUID.01H:ECX.x2apic [bit 21])
+S7: other processors: 3 of 4 started and parked, the interrupt controller reached through memory; 4 thread(s) on 4 core(s) in all; none runs any work yet; the one check fails and the map check passes; 1.7 s against 1.7 s
+S10: without waiting for the lock the count was 23646 of 80000, and that one check failed
+S9: in every boot with more than one processor the count was exact
+S8: every processor started in S1 to S3 was given the first's memory types, and said so
+other processors: started and parked as the predicates require, on every machine tried
