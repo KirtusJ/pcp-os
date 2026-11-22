@@ -59,6 +59,7 @@ fn option<'a>(line: &'a str, key: &str) -> Option<&'a str> {
 
 #[cfg(feature = "guest-ethernet")]
 mod ethernet;
+mod pictures;
 #[cfg(feature = "guest-ethernet")]
 use ethernet::ethernet_grant;
 
@@ -1396,6 +1397,13 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
         let on_row = plate(left, y, list_width, tall, if i == chosen { PLATE_CHOSEN } else { PLATE }, if i == chosen { outline() } else { edge() }, i == chosen);
         if i == chosen {
             dev::display_fill(left, y + 8, 4, tall - 16, AMBER);
+        }
+        // A program the loader's line names by digest as one this system knows by sight has its
+        // picture beside its row, in the margin to the left of the plate: thirty-two pixels on a dark
+        // tile of thirty-six, outside every cell a row's words are drawn in, and the same on every
+        // edition's field. Never by its name (see `pictures`).
+        if let Some(picture) = pictures::of(start.boot.exact_command_line(), &p.digest) {
+            pictures::draw(picture, left - 44, y + 12, 2);
         }
         // The row says, on the character grid: which is chosen, its name, its size and digest, and what it may use.
         label(left + 20, y + 10, if i == chosen { ">" } else { " " }, AMBER, false, &on_row);

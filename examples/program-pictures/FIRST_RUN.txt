@@ -1,0 +1,33 @@
+The first run of check.py, 22 November 2026, Director Z3's container, QEMU 8.2.2 (TCG), kernel
+built from this branch before the predicate P3 was reworded. Kept because P3 failed as written.
+
+PASS P1 named Taylor at (18, 184)
+PASS P2 named Surfbird at (18, 264)
+FAIL P3 nothing else stray 0, differing 1040, outside the boxes 0, text equal False
+PASS P4 not by name listed True, stray 0
+PASS P5 by digest
+PASS P6 small display listed True, stray 0
+PASS P7 cut line listed True, stray 0
+failed: P3 nothing else
+
+What differed in the text read (first 12 columns of rows 10, 11, 14, 15; with pictures, then without):
+  "  ????? > t"   "    ??? > t"
+  " ???? ?   m"   "    ? ?   m"
+  "  ??? ?   s"   "   ?  ?   s"
+  " ???? ?   m"   "   ?  ?   m"
+From the ">" on, every row was the same in both.
+
+The second run, after P3 was reworded, same kernel:
+
+PASS P1 named Taylor at (18, 184)
+PASS P2 named Surfbird at (18, 264)
+FAIL P3 nothing else stray 0, differing 1040, outside the boxes 0, words equal from column 6 True, margin cells read as [' ', '?', 'E', 'c', 's']
+PASS P4 not by name listed True, stray 0
+PASS P5 by digest
+PASS P6 small display listed True, stray 0
+PASS P7 cut line listed True, stray 0
+failed: P3 nothing else
+
+The letters were "Esc" in the key legend at the foot of the screen, columns 0 to 5 of a row far below
+the pictures: the check read the margin of every row. It now reads the margin of the rows the
+pictures stand beside.
