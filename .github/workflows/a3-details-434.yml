@@ -1,0 +1,71 @@
+name: A3 one-page Details readback
+on:
+  push:
+    branches: [a3/details-434-optical-readback]
+    paths:
+      - '.github/workflows/a3-details-434.yml'
+      - 'examples/processors/a3_details_colours.py'
+permissions:
+  contents: read
+jobs:
+  one-page:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      RUSTUP_TOOLCHAIN: 1.97.0
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install firmware, emulator and compiler
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y --no-install-recommends qemu-system-x86 qemu-system-gui ovmf grub-efi-amd64-bin grub-common mtools lld python3-pil python3-numpy
+          rustup toolchain install 1.97.0 --profile minimal --no-self-update -c rust-src -t x86_64-unknown-none
+      - name: Build PCP worker and the requested kernel
+        run: |
+          mkdir evidence
+          cargo build --release --locked --manifest-path store/apps/parrots-all-the-way-down/host/Cargo.toml --target-dir "$RUNNER_TEMP/pcp-helper" --bin pcp-delegate
+          delegate="$RUNNER_TEMP/pcp-helper/release/pcp-delegate"
+          PCPOS_KERNEL_FEATURES=proposals,model-memory "$delegate" "$PWD/evidence/desk.redb" 43401 build -- sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          sha256sum PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 | tee evidence/kernel.sha256
+      - name: Build private desktop boot volume
+        run: |
+          cat >evidence/grub.cfg <<'GRUB'
+          set timeout=0
+          insmod all_video
+          insmod gfxterm
+          insmod multiboot
+          insmod fat
+          set gfxmode=1920x1080x32
+          set gfxpayload=keep
+          terminal_output gfxterm
+          search --no-floppy --file /kernel.elf32 --set=root
+          multiboot /kernel.elf32 kernel
+          boot
+          GRUB
+          grub-mkstandalone -O x86_64-efi -o "$RUNNER_TEMP/BOOTX64.EFI" --modules='multiboot all_video gfxterm part_gpt part_msdos fat search normal efi_gop' "boot/grub/grub.cfg=evidence/grub.cfg"
+          disk="$RUNNER_TEMP/details.img"
+          truncate -s 64M "$disk"
+          mformat -i "$disk" -F ::
+          mmd -i "$disk" ::EFI ::EFI/BOOT
+          mcopy -i "$disk" "$RUNNER_TEMP/BOOTX64.EFI" ::EFI/BOOT/BOOTX64.EFI
+          mcopy -i "$disk" PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 ::kernel.elf32
+          sha256sum "$disk" > evidence/medium.sha256
+      - name: Read the framebuffer with PAT exposed
+        run: |
+          "$RUNNER_TEMP/pcp-helper/release/pcp-delegate" "$PWD/evidence/desk.redb" 43402 pat -- /usr/bin/python3 examples/processors/a3_details_colours.py pat "$RUNNER_TEMP/details.img" evidence/pat
+      - name: Read the framebuffer with PAT hidden
+        if: ${{ !cancelled() }}
+        run: |
+          "$RUNNER_TEMP/pcp-helper/release/pcp-delegate" "$PWD/evidence/desk.redb" 43403 no-pat -- /usr/bin/python3 examples/processors/a3_details_colours.py no-pat "$RUNNER_TEMP/details.img" evidence/no-pat
+      - name: Retain the serial logs, screenshots and parsed rows
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: details-434-one-page
+          path: |
+            evidence/**
+            !evidence/**/screen.ppm
+            !evidence/**/vars.fd
+          retention-days: 14
