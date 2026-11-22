@@ -6,7 +6,15 @@ extern crate alloc;
 use alloc::{rc::Rc, string::String, vec::Vec};
 use core::cell::{Cell, Ref, RefCell};
 
-const LIMIT: usize = 16 << 20;
+/// The most bytes all stored files may hold together: a quarter of the kernel's own memory for such
+/// things (16 MiB, or 4 MiB where the firmware-started demonstration has less). It was once the whole of
+/// it, which no store could reach: a file growing past about a third of that memory asked the kernel
+/// for a block it did not have, and the kernel stopped. A quarter leaves room for a file to be moved
+/// to a larger block while it grows, and for everything else the kernel keeps.
+#[cfg(not(feature = "uefi-demo-heap"))]
+const LIMIT: usize = 4 << 20;
+#[cfg(feature = "uefi-demo-heap")]
+const LIMIT: usize = 1 << 20;
 
 #[derive(Default)]
 pub struct Files {
@@ -103,6 +111,11 @@ impl File {
             return None;
         }
         if growth != 0 {
+            // Memory that is not there is the same answer as a budget that is spent: no room, and the
+            // file as it was. The kernel does not stop for want of it.
+            if bytes.try_reserve(growth).is_err() {
+                return None;
+            }
             bytes.resize(end, 0);
             self.0.used.set(used + growth);
         }
