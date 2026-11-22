@@ -125,6 +125,37 @@ DLL_DIR MODEL PROFILE_JSON NEW_OUTPUT_DIR TOKEN...` uses NumPy for the independe
 Qwen2 graph; the profile supplies the directory and pinned model hash. These are
 host QA tools, not native dependencies. See `THIRD_PARTY_NOTICES` for provenance.
 
+## Prompt prefill and measured alternatives
+
+`Decoder::prefill` accepts a nonempty token batch and computes vocabulary scores
+only for its final token. All transformer and KV steps are retained. Empty input,
+invalid IDs and insufficient remaining context refuse before mutation. A failure
+or cancellation rolls the logical position back to its entry value; retained
+context is untouched and retry overwrites only the uncommitted suffix. This is
+logical rollback, not memory erasure. Tests compare batched and individual steps,
+repeat resets/full contexts, and cut at early, late and seeded callback positions.
+
+`Decoder::new` retains sequential f64 dot accumulation. `new_unrolled` explicitly
+selects four-lane f64 reduction; model-level numerical/quality checks are required
+because reassociation can differ materially on ill-conditioned inputs. Budgets,
+weight validation, cancellation and retry ownership are unchanged. The separate
+tensor tests retain an adverse numerical discriminator rather than promising
+universal bit parity.
+
+`cargo run --release -p pcpos-qwen --example speed -- MODEL NEW_DIR TOKENS_CSV MODE`
+is a host-only paired diagnostic restricted to the checksum-pinned 0.5B reference.
+Modes are `step`, `prefill`, `unrolled-step`, `unrolled-prefill` and `rows`. Use the
+same binary/compiler/profile, identical token CSV and alternating run order. It
+records 8 fixed greedy steps and every vocabulary logit; it does not stop on EOS
+or apply chat sampling, and reports decoder time separately from loading/hash
+checks. Shared-host timings are not native, target-laptop or release qualification.
+
+The stock `x86_64-unknown-none` target uses software floating arithmetic. Enabling
+SSE2 alone does not replace it. Disabling its `soft-float` feature violates the
+target ABI and is not supported here. A hardware-float guest needs a consistent
+target/core/alloc build and kernel register-state qualification; the kernel must
+retain its own no-FP target. See [Rust target requirements](https://doc.rust-lang.org/rustc/platform-support/x86_64-unknown-none.html).
+
 ## Qwen byte BPE tokenizer
 
 `tokenizer::Tokenizer` admits only the GGUF `gpt2` / `qwen2` profile, with complete
