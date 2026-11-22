@@ -1,0 +1,26 @@
+{"event": "boot-observed", "boot_s": 45.441860671999166, "last_serial": ["Verified 402653184 of 5027783488 model bytes."], "elapsed_s": 45.4}
+{"event": "boot-observed", "boot_s": 105.56535599499875, "last_serial": ["Verified 1744830464 of 5027783488 model bytes."], "elapsed_s": 105.6}
+{"event": "boot-observed", "boot_s": 165.66835518399967, "last_serial": ["Verified 3154116608 of 5027783488 model bytes."], "elapsed_s": 165.7}
+{"event": "boot-observed", "boot_s": 225.76885135799967, "last_serial": ["Verified 4563402752 of 5027783488 model bytes."], "elapsed_s": 225.8}
+{"event": "first-frame", "boot_s": 246.99733545199888}
+{"event": "loading-observed", "boot_s": 286.0189688349983, "elapsed_s": 286.0}
+{"event": "loading-observed", "boot_s": 346.1519969669989, "elapsed_s": 346.2}
+{"event": "loading-observed", "boot_s": 406.29627883899957, "elapsed_s": 406.3}
+{"event": "loading-observed", "boot_s": 466.4375718909996, "elapsed_s": 466.4}
+{"event": "loading-observed", "boot_s": 526.6179178619986, "elapsed_s": 526.6}
+{"event": "loading-observed", "boot_s": 586.7747737829995, "elapsed_s": 586.8}
+{"event": "loading-observed", "boot_s": 646.9719726639996, "elapsed_s": 647.0}
+{"event": "loading-observed", "boot_s": 707.1678687240001, "elapsed_s": 707.2}
+{"event": "loading-observed", "boot_s": 767.3246073669998, "elapsed_s": 767.3}
+{"event": "loading-observed", "boot_s": 827.5236151709996, "elapsed_s": 827.5}
+{"event": "loading-observed", "boot_s": 887.6981613309999, "elapsed_s": 887.7}
+{"event": "loading-observed", "boot_s": 947.8387438359987, "elapsed_s": 947.8}
+{"event": "loading-observed", "boot_s": 1007.9954823009994, "elapsed_s": 1008.0}
+{"event": "loading-observed", "boot_s": 1068.1453394779983, "elapsed_s": 1068.1}
+{"event": "loading-observed", "boot_s": 1128.3152540639985, "elapsed_s": 1128.3}
+{"event": "loading-observed", "boot_s": 1188.5030516349998, "elapsed_s": 1188.5}
+{"event": "loading-observed", "boot_s": 1248.690668576999, "elapsed_s": 1248.7}
+{"event": "ready", "boot_s": 1269.1178259479984}
+{"event": "prefill-stop", "boot_s": 1278.5120968769988, "ui_confirmation_s": 0.24117143299918098}
+{"event": "reply-submitted", "boot_s": 1282.0851871959985, "prompt": "Say hello in one short sentence.", "turn": 2}
+{"event": "reply-placeholder", "boot_s": 1284.5701827519988, "readback": "(answering...)"}
