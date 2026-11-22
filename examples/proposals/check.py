@@ -242,11 +242,15 @@ def main():
     found += other
     # R2, R3: a folder name the kernel does not accept, or two of them, and the program that would
     # propose is not started at all: no other folder is used in its place, and the kernel says why.
-    for name, extra, why in (("bad-folder", " build_folder=Dev/x", "build_folder=Dev/x is not a name a build folder may have; no build folder is set"),
-                             ("two-folders", " build_folder=one build_folder=two", "build_folder=one is given more than once; no build folder is set")):
+    # R4: a loader line too long to be taken whole may have lost the word naming the proposing program,
+    # so no program is started from it (it must not run as an ordinary program with the store).
+    for name, extra, why, said_words in (
+            ("bad-folder", " build_folder=Dev/x", "build_folder=Dev/x is not a name a build folder may have; no build folder is set", "its projects folder setting is not a valid name"),
+            ("two-folders", " build_folder=one build_folder=two", "build_folder=one is given more than once; no build folder is set", "its projects folder setting is not a valid name"),
+            ("cut-line", " " + " ".join("pad%02d=xxxxxxxx" % n for n in range(20)), "the loader's line was not taken whole, so no build folder is set", "the loader's line was cut, so what it may use is not known")):
         guest = Guest(args.qemu, args.kernel, args.probe, evidence / name, granted + extra)
         try:
-            said = guest.until("proposal-probe was not started: its projects folder setting is not a valid name", seconds=60)
+            said = guest.until("proposal-probe was not started: " + said_words, seconds=60)
             status = guest.end()
             folder_log = guest.log()
             results[name] = {"status": status, "probe": [line for line in folder_log.splitlines() if line.startswith(("probe:", "proposal "))]}

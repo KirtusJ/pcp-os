@@ -1046,6 +1046,8 @@ fn files_view(store: &crate::regular::Files, mounted: bool) {
 const FILE_APPROVAL: &str = "Creating a file needs your approval.";
 #[cfg(feature = "proposals")]
 const NO_BUILD_FOLDER: &str = "its projects folder setting is not a valid name";
+#[cfg(feature = "proposals")]
+const CUT_LINE: &str = "the loader's line was cut, so what it may use is not known";
 
 fn file_proposals(start: &Start, entry: &Entry, none: bool) -> bool {
     cfg!(feature = "proposals") && !none && option(&start.boot.command_line, "propose_image") == Some(entry.digest.as_str())
@@ -1768,6 +1770,14 @@ fn consent(proposal: Option<&crate::sys::Proposal>) -> crate::sys::Answer {
 /// Run one program as a task in the register. Interrupts must be off; returns with them off.
 /// Returns the run summary, the resulting world and any reason the program could not start.
 fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, start: &Start, failed: &mut u32) -> (String, World, Option<&'static str>) {
+    // A loader line that was not taken whole may have lost the word that names the proposing program,
+    // and that program must not then be started as an ordinary one with the right to write files. Which
+    // program it was cannot be known, so none is started.
+    #[cfg(feature = "proposals")]
+    if start.boot.exact_command_line().is_none() {
+        say!("{} was not started: {}", entry.name, CUT_LINE);
+        return (format!("{} was not started: {}", entry.name, CUT_LINE), world, Some(CUT_LINE));
+    }
     // A program that would be started with the right to propose files is not started at all while the
     // build folder setting is not a name a folder may have: said where the person sees it, and no other
     // folder is used in its place.
