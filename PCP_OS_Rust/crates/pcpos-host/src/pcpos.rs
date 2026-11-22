@@ -2540,6 +2540,69 @@ fn commit_module_removal(tx: &mut Tx, home: &Path, key: &str, head: &str) -> Res
     Ok(())
 }
 
+/// Publish a complete, freshly prepared directory. No file is opened for writing by way of an
+/// existing module directory. A failed installation leaves a pre-existing entry alone.
+fn install_module(root: &Path, key: &str, bytes: &[u8], overview: Option<&Path>) -> std::io::Result<()> {
+    use std::io::{Error, ErrorKind};
+    let home = root.join("modules");
+    match fs::create_dir(&home) {
+        Ok(()) => {}
+        Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
+        Err(e) => return Err(e),
+    }
+    let destination = home.join(key);
+    if home.canonicalize()? != home || !home.is_dir() {
+        return Err(Error::new(ErrorKind::InvalidInput, "the modules folder is not an ordinary directory beside the register"));
+    }
+    match fs::symlink_metadata(&destination) {
+        Ok(_) => return Err(Error::new(ErrorKind::AlreadyExists, "the installation name is already occupied")),
+        Err(e) if e.kind() == ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+
+    // Stay on the installation filesystem. Discovery looks for SOURCE directly under a module:
+    // the extra level hides the prepared specification until the final rename.
+    let tick = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
+    let stage = home.join(format!(".pcpos-install-{}-{tick}", std::process::id()));
+    let builder = fs::DirBuilder::new();
+    #[cfg(unix)]
+    let builder = {
+        use std::os::unix::fs::DirBuilderExt;
+        let mut private = builder;
+        private.mode(0o700);
+        private
+    };
+    builder.create(&stage)?;
+    let prepared = stage.join("module");
+    let source = prepared.join("SOURCE");
+    let written = (|| {
+        fs::create_dir(&prepared)?;
+        fs::create_dir(&source)?;
+        let write_new = |name: &str, contents: &[u8]| -> std::io::Result<()> {
+            let mut file = OpenOptions::new().write(true).create_new(true).open(source.join(name))?;
+            file.write_all(contents)?;
+            file.sync_all()
+        };
+        write_new("Specification.md", bytes)?;
+        if let Some(path) = overview {
+            write_new("Overview.md", &fs::read(path)?)?;
+        }
+        if home.canonicalize()? != home {
+            return Err(Error::new(ErrorKind::InvalidInput, "the modules directory changed before publication"));
+        }
+        fs::rename(&prepared, &destination)
+    })();
+    if written.is_err() {
+        // Clean up only the names made by this attempt.
+        let _ = fs::remove_file(source.join("Overview.md"));
+        let _ = fs::remove_file(source.join("Specification.md"));
+        let _ = fs::remove_dir(source);
+        let _ = fs::remove_dir(prepared);
+    }
+    let _ = fs::remove_dir(stage);
+    written
+}
+
 /// A person adds, removes or lists the modules that stand beside a register. An added module is text the
 /// person supplies; it is identified in every review that uses it by the digest of its Specification, and
 /// it never displaces a module of the method text.
@@ -2589,14 +2652,8 @@ fn module_command(args: &[String]) -> Result<i32, String> {
                 return Err(format!("{key} is already the name of a module here. Remove it first (pcpos module remove), or give the new one its own identifier"));
             }
             begin(&mut tx, &se, None, false)?;
-            let dest = home.join(&key).join("SOURCE");
-            if fs::symlink_metadata(&home).map(|m| m.file_type().is_symlink()).unwrap_or(false) {
-                return Err("the modules folder beside the register is a link; nothing was added".to_string());
-            }
-            fs::create_dir_all(&dest).and_then(|_| fs::write(dest.join("Specification.md"), &bytes)).map_err(|e| format!("the module could not be stored: {e}"))?;
-            if let Some(over) = file.parent().map(|p| p.join("Overview.md")).filter(|p| p.is_file() && fs::metadata(p).map(|m| m.len() <= MAX_SPECIFICATION).unwrap_or(false)) {
-                let _ = fs::copy(over, dest.join("Overview.md"));
-            }
+            let overview = file.parent().map(|p| p.join("Overview.md")).filter(|p| p.is_file() && fs::metadata(p).map(|m| m.len() <= MAX_SPECIFICATION).unwrap_or(false));
+            install_module(&se.root, &key, &bytes, overview.as_deref()).map_err(|e| format!("the module could not be stored: {e}"))?;
             println!("added {id} {version} to {}\nSHA-256 of its Specification {}\nIt selects nothing: name it in a workspace or a review to use it.", home.join(&key).display(), sha256_hex(&bytes));
             event(&mut tx, "MODULE_ADDED", obj(vec![("id", s(&id)), ("version", s(&version)), ("sha256", s(&sha256_hex(&bytes)))])).map(|p| (tx, p))?
         }
