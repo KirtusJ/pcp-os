@@ -278,7 +278,12 @@ def main():
     # from the launcher and its note is allowed. With one byte too little room nothing is made and the
     # receipt says no room (5); with exactly enough the note is made.
     full_run = []
-    for name, filler, outcome, made in (("store-one-byte-short", args.filler_over, "5", 0), ("store-exactly-enough", args.filler_exact, "1", 1)):
+    # The store's budget in the kernel as built without the smaller demonstration heap (regular.rs).
+    # The fillers must have written exactly these totals: a filler built for any other size is the
+    # wrong setup, and the case fails instead of passing for another reason.
+    budget = 4 << 20
+    for name, filler, outcome, made, fill in (("store-one-byte-short", args.filler_over, "5", 0, budget - len(CONTENT) + 1),
+                                              ("store-exactly-enough", args.filler_exact, "1", 1, budget - len(CONTENT))):
         if filler is None:
             continue
         full_run.append(name)
@@ -315,12 +320,15 @@ def main():
                 time.sleep(4)
                 full_run.append("an ordinary write into the room left after the refusal")
             full_log = guest.log()
-            results[name] = {"probe": [line for line in full_log.splitlines() if line.startswith(("probe:", "proposal ", "filler:"))][:12]}
+            results[name] = {"probe": [line for line in full_log.splitlines() if line.startswith(("probe:", "proposal ", "filler:"))][:12],
+                             "filler_sha256": hashlib.sha256(filler.read_bytes()).hexdigest(),
+                             "after_sha256": hashlib.sha256(after.read_bytes()).hexdigest() if after else None, "filled_bytes": fill}
             wrote = [line for line in full_log.splitlines() if line.startswith("filler: ")]
-            if not filled or len(wrote) < 4 or wrote[0].split()[-1] != wrote[1].split()[-1] or wrote[3] != "filler: read back the same 1":
-                found.append("%s: the filler did not write all it was built to, or read it back: %r" % (name, wrote[:4]))
-            if after and wrote[4:] != ["filler: wrote 57", "filler: of 57", "filler: read back 57", "filler: read back the same 1"]:
-                found.append("%s: after the refusal an ordinary program did not write and read back the 57 bytes left: %r" % (name, wrote[4:]))
+            if not filled or wrote[:4] != ["filler: wrote %d" % fill, "filler: of %d" % fill, "filler: read back %d" % fill, "filler: read back the same 1"]:
+                found.append("%s: the filler did not write and read back exactly %d bytes: %r" % (name, fill, wrote[:4]))
+            left = budget - fill
+            if after and wrote[4:] != ["filler: wrote %d" % left, "filler: of %d" % left, "filler: read back %d" % left, "filler: read back the same 1"]:
+                found.append("%s: after the refusal an ordinary program did not write and read back the %d bytes left: %r" % (name, left, wrote[4:]))
             if not asked or not answered or answers(full_log)[:3] != [str(RECORD), "100", outcome]:
                 found.append("%s: the first proposal was answered %r, not outcome %s" % (name, answers(full_log)[:3], outcome))
             if len([line for line in full_log.splitlines() if "CREATED after the person allowed it" in line]) != made:

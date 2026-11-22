@@ -308,11 +308,17 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
         // no other time: a key that changes nothing writes nothing to the display (B3 traced the stores).
         let shows = (surface, chosen, place, name_page, shortcuts.clone(), whole_bar, widgets, message.clone(), last_refusal, tasks, world.store.len(), mounted);
         if drawn.as_ref() != Some(&(shows.clone(), ui::clears())) {
+            // The projects folder as the kernel holds it now: what a proposing program started from
+            // here would be given, and so what the launcher says of it.
+            #[cfg(feature = "proposals")]
+            let folder: Option<&str> = world.build_folder.as_deref();
+            #[cfg(not(feature = "proposals"))]
+            let folder: Option<&str> = None;
             match surface {
                 Surface::Home => name_pages = draw_home(start, &programs, rec, &shortcuts, place, whole_bar, &widgets, &world.store, mounted, tasks - start.tasks, &message, last_refusal, name_page),
-                Surface::Launcher => draw_desktop(start, &programs, rec, chosen, &message, &shortcuts),
+                Surface::Launcher => draw_desktop(start, &programs, rec, chosen, &message, &shortcuts, folder),
                 Surface::Details => draw_menu(start, &programs, &files, rec, chosen, &message, world.store.len(),
-                                              #[cfg(feature = "vm-store")] mounted),
+                                              #[cfg(feature = "vm-store")] mounted, folder),
             }
             drawn = Some((shows, ui::clears()));
         }
@@ -379,7 +385,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
             },
             // The plain list is laid out for ninety-six columns. On a narrower display Ctrl+D shows the
             // same facts as a screen of text that is read and left, whole, and the choosing stays here.
-            (Surface::Launcher, (0x20, false)) if ctrl && ui::grid().0 < 96 => details_view(start, &programs, &files, rec, world.store.len(), mounted),
+            (Surface::Launcher, (0x20, false)) if ctrl && ui::grid().0 < 96 => details_view(start, &programs, &files, rec, world.store.len(), mounted, { #[cfg(feature = "proposals")] { world.build_folder.as_deref() } #[cfg(not(feature = "proposals"))] { None } }),
             (Surface::Launcher, (0x20, false)) if ctrl => surface = Surface::Details,
             (Surface::Details, (0x20, false)) => surface = Surface::Launcher,
             (Surface::Launcher, (0x01, false)) | (Surface::Details, (0x01, false)) => surface = Surface::Home,
@@ -1187,6 +1193,15 @@ const NO_BUILD_FOLDER: &str = "its projects folder setting is not a valid name";
 #[cfg(feature = "proposals")]
 const CUT_LINE: &str = "the loader's line was cut, so what it may use is not known";
 
+/// What the launcher says of the folder a proposing program would be started with now: the kernel's
+/// setting as it stands, which is what the program's grant is copied from, never a default.
+fn build_folder_access(folder: Option<&str>) -> String {
+    match folder {
+        Some(name) => format!("Can list and read {}/", name),
+        None => String::from("No projects folder is set (F7): cannot start."),
+    }
+}
+
 fn file_proposals(start: &Start, entry: &Entry, none: bool) -> bool {
     cfg!(feature = "proposals") && !none && option(&start.boot.command_line, "propose_image") == Some(entry.digest.as_str())
 }
@@ -1203,11 +1218,11 @@ fn detail_access(none: bool, proposes: bool, sound: bool) -> &'static str {
 
 /// The launcher: the programs the loader gave, one chosen, each with what it may use. It is opened from the
 /// desktop and left with Esc. On a display under 1280 by 720 the plain list below is drawn instead.
-fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, message: &str, shortcuts: &[usize]) {
+fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, message: &str, shortcuts: &[usize], folder: Option<&str>) {
     use ui::{label, label_width, AMBER, BAD, SOFT, TEXT};
     let display = match dev::display() {
         Some(d) if d.width >= 1280 && d.height >= 720 && ui::scale() == 1 => d,
-        _ => return draw_desktop_plain(start, programs, chosen, message),
+        _ => return draw_desktop_plain(start, programs, chosen, message, folder),
     };
     let (w, h) = (display.width, display.height);
     let safe = start.failed != 0;
@@ -1249,7 +1264,10 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
             }
         }
         lines.push(line);
-        if proposes { lines.push(String::from(FILE_APPROVAL)); }
+        if proposes {
+            lines.push(build_folder_access(folder));
+            lines.push(String::from(FILE_APPROVAL));
+        }
         lines
     };
     let height_of = |i: usize, p: &Entry| 40 + 20 * (access_of(p).len() as u32 + shortcuts.contains(&i) as u32);
@@ -1293,7 +1311,7 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
     corners(start, w, h, &[("Esc", "desktop"), ("F1", "keys")]);
 }
 
-fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message: &str) {
+fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message: &str, folder: Option<&str>) {
     use ui::{at, GROUND, PANEL, SOFT, TEXT};
     ui::clear(GROUND);
     let (cols, rows) = ui::grid();
@@ -1308,7 +1326,12 @@ fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message:
         } else if start.sound {
             "Access: console, display, keyboard, files, store, sound"
         } else { "Access: console, display, keyboard, files and store" }), SOFT));
-        if proposes { access.push((String::from(FILE_APPROVAL), SOFT)); }
+        if proposes {
+            access.push((build_folder_access(folder), SOFT));
+            // At 320 pixels the creation rule and the folder scope each get their own line.
+            let approval = if across < FILE_APPROVAL.len() { "You approve each new file." } else { FILE_APPROVAL };
+            access.push((String::from(approval), SOFT));
+        }
         #[cfg(feature = "guest-ethernet")]
         if !none && ethernet_grant(start.boot.exact_command_line(), &entry.digest) {
             access.push((String::from("Access: raw Ethernet frames"), ui::AMBER));
@@ -1488,7 +1511,7 @@ fn power_prompt() -> bool {
 }
 
 fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8], String)], rec: &Record, chosen: usize, message: &str, stored: usize,
-             #[cfg(feature = "vm-store")] mounted: bool) {
+             #[cfg(feature = "vm-store")] mounted: bool, folder: Option<&str>) {
     use ui::{at, GROUND, PANEL, SOFT, TEXT};
     ui::clear(GROUND);
     let (cols, rows) = ui::grid();
@@ -1522,6 +1545,8 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
         at(4, row + 1, detail_access(none, proposes, start.sound), SOFT, ground);
         row += 2;
         if proposes {
+            at(4, row, &build_folder_access(folder), SOFT, GROUND);
+            row += 1;
             at(4, row, FILE_APPROVAL, SOFT, GROUND);
             row += 1;
         }
@@ -1632,7 +1657,7 @@ pub fn stopped_screen(start: &Start, failed: u32, passed: u32) {
 
 /// Everything the loader gave and what the machine has, as a screen of text for a display too narrow for
 /// the plain list: nothing is cut, digests are whole, and nothing here starts or changes anything.
-fn details_view(start: &Start, programs: &[Entry], files: &[(String, &'static [u8], String)], rec: &Record, stored: usize, mounted: bool) {
+fn details_view(start: &Start, programs: &[Entry], files: &[(String, &'static [u8], String)], rec: &Record, stored: usize, mounted: bool, folder: Option<&str>) {
     use ui::{SOFT, TEXT};
     let across = (ui::grid().0 as usize).saturating_sub(4).max(1);
     let whole = |col: u32, text: &str, colour: u32| -> Vec<Line> {
@@ -1659,7 +1684,10 @@ fn details_view(start: &Start, programs: &[Entry], files: &[(String, &'static [u
         }
         let proposes = file_proposals(start, p, none);
         lines.extend(lines_of(4, detail_access(none, proposes, start.sound), SOFT));
-        if proposes { lines.extend(lines_of(4, FILE_APPROVAL, SOFT)); }
+        if proposes {
+            lines.extend(whole(4, &build_folder_access(folder), SOFT));
+            lines.extend(whole(4, FILE_APPROVAL, SOFT));
+        }
         #[cfg(feature = "guest-ethernet")]
         if !none && ethernet_grant(start.boot.exact_command_line(), &p.digest) {
             lines.extend(lines_of(4, "Ethernet grant: this program can send and receive raw network frames.", ui::AMBER));
