@@ -1,0 +1,1 @@
+FAIL a companion that never yields, front: no line 'slept and was woken, times 100' in ['opening the channel answered 0', 'a sleep was refused with -14']
