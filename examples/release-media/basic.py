@@ -11,6 +11,8 @@ import sys
 import tarfile
 import tempfile
 
+from toolchain import build_environment, check_project_wrappers, tool_record
+
 
 def run(*args, cwd=None, env=None):
     return subprocess.check_output(args, cwd=cwd, env=env, text=True)
@@ -33,7 +35,8 @@ def archive(repo, head, paths, dest):
 
 
 def cargo_bin(directory, binary, features, env, work):
-    command = ["cargo", "build", "--locked", "--release", "--target", "x86_64-unknown-none",
+    check_project_wrappers(directory, work)
+    command = [env["CARGO"], "build", "--locked", "--release", "--target", "x86_64-unknown-none",
                "--bin", binary, "--no-default-features", "--message-format=json",
                "--config", f"target.x86_64-unknown-none.rustflags=['--remap-path-prefix={work}=/pcpos-build']"]
     if features:
@@ -46,17 +49,24 @@ def cargo_bin(directory, binary, features, env, work):
     return Path(artifacts[0]["executable"]), artifacts[0]["features"]
 
 
+def export_guest(os_repo, tailorbird, head, bird, extra_paths=()):
+    archive(tailorbird, head, ["Cargo.toml", "Cargo.lock", ".cargo", "guest"], bird)
+    pin = run("git", "-C", tailorbird, "ls-tree", head, "pcp-os").split()
+    if len(pin) != 4 or pin[:2] != ["160000", "commit"] or pin[3] != "pcp-os":
+        raise ValueError("expected the PCP OS submodule pinned by Tailorbird")
+    paths = ["store/native/guest", "store/games/flux-rink/guest.ld", "PCP_OS_Rust", *extra_paths]
+    archive(os_repo, pin[2], paths, bird / "pcp-os")
+    return pin[2]
+
+
 def prepare(args, stage, work):
     files = stage / "files"
     efi = files / "EFI" / "BOOT"
     payload = files / "PCPOS"
     efi.mkdir(parents=True)
     payload.mkdir()
-    env = dict(os.environ, TZ="UTC", LC_ALL="C", SOURCE_DATE_EPOCH="1794614400",
-               RUSTC_BOOTSTRAP="1", CARGO_TARGET_DIR=str(work / "target"))
-    for name in ("RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CARGO_BUILD_RUSTFLAGS",
-                 "CARGO_TARGET_X86_64_UNKNOWN_NONE_RUSTFLAGS"):
-        env.pop(name, None)
+    env = build_environment(work)
+    env["RUSTC_BOOTSTRAP"] = "1"
 
     if sha(args.assets_iso) != args.assets_sha256:
         raise ValueError("donor ISO SHA-256 differs")
@@ -73,12 +83,7 @@ def prepare(args, stage, work):
         raise ValueError("kernel measurement is missing")
 
     bird = work / "tailorbird"
-    archive(args.tailorbird, args.tailorbird_head, ["Cargo.toml", "Cargo.lock", ".cargo", "guest"], bird)
-    pin = run("git", "-C", args.tailorbird, "ls-tree", args.tailorbird_head, "pcp-os").split()
-    if len(pin) != 4 or pin[:2] != ["160000", "commit"] or pin[3] != "pcp-os":
-        raise ValueError("expected the PCP OS submodule pinned by Tailorbird")
-    archive(args.os, pin[2], ["store/native/guest", "store/games/flux-rink/guest.ld",
-                              "PCP_OS_Rust/crates/pcpos-kernel/src"], bird / "pcp-os")
+    guest_head = export_guest(args.os, args.tailorbird, args.tailorbird_head, bird)
     app, app_features = cargo_bin(bird, "tailorbird", [], env, work)
     shutil.copyfile(app, payload / "TAILOR.ELF")
 
@@ -103,11 +108,31 @@ def prepare(args, stage, work):
                     "normal", "configfile", "fat", "iso9660", "part_gpt",
                     "part_msdos", "multiboot", "boot", "efi_gop", "all_video"], env=env, check=True)
     return {"format": "pcpos-release-parts/1", "profile": "model-free",
-            "os_head": args.os_head, "tailorbird_head": args.tailorbird_head, "guest_os_head": pin[2],
+            "os_head": args.os_head, "tailorbird_head": args.tailorbird_head, "guest_os_head": guest_head,
             "kernel_features": features, "tailorbird_features": app_features, "measurement": measurement,
-            "asset_iso_sha256": args.assets_sha256, "rustc": run("rustc", "--version").strip(),
+            "asset_iso_sha256": args.assets_sha256, "rustc": run(env["RUSTC"], "--version", env=env).strip(),
+            "rust_tools": tool_record(env),
             "grub": run("grub-mkimage", "--version").strip(),
             "files": {p.relative_to(files).as_posix(): sha(p) for p in sorted(files.rglob("*")) if p.is_file()}}
+
+
+def write_parts(args, builder):
+    args.parts = args.parts.absolute()
+    # mkdir reserves the new output for this invocation; incomplete builds never get a lock file.
+    args.parts.mkdir()
+    try:
+        work = args.work.resolve()
+        work.mkdir(mode=0o700)
+        try:
+            receipt = builder(args, args.parts, work)
+        finally:
+            shutil.rmtree(work)
+        lock = args.parts / "inputs.json"
+        lock.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        print(f"{sha(lock)}  {lock}")
+    except BaseException:
+        shutil.rmtree(args.parts)
+        raise
 
 
 def main():
@@ -120,22 +145,7 @@ def main():
                    help="fixed, initially absent build path; use the same path for repeat builds")
     p.add_argument("parts", type=Path)
     args = p.parse_args()
-    args.parts = args.parts.absolute()
-    # mkdir reserves the new output for this invocation; incomplete builds never get a lock file.
-    args.parts.mkdir()
-    try:
-        work = args.work.resolve()
-        work.mkdir(mode=0o700)
-        try:
-            receipt = prepare(args, args.parts, work)
-        finally:
-            shutil.rmtree(work)
-        lock = args.parts / "inputs.json"
-        lock.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        print(f"{sha(lock)}  {lock}")
-    except BaseException:
-        shutil.rmtree(args.parts)
-        raise
+    write_parts(args, prepare)
 
 
 if __name__ == "__main__":
