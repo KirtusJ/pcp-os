@@ -270,10 +270,18 @@ fn protection_probes(failed: &mut u32) {
     check("a write to the segment table and task state segment is refused by the processor", matches!(w, Refused(e) if e & 3 == 3), failed);
     let all = arch::guard_pages().iter().all(|g| matches!(arch::probe_read_at(*g), Refused(e) if e & 1 == 0));
     check("a read of the page below each of the six stacks is refused by the processor", all, failed);
-    let (_, pool_end) = arch::pool();
-    let outside = [0xB8000usize, 0x9FC00, pool_end, pool_end + (2 << 20), (1 << 30) - 4096, 0xFD00_0000, (4 << 30) - 4096];
+    let (pool_start, pool_end) = arch::pool();
+    // The last page below one gibibyte is on the list because on a small machine the frame memory ends
+    // well before it. On a machine with two gibibytes or more the frame memory runs right up to it and
+    // that page is the kernel's own (B3 found the check failing there and the kernel going to SAFE): an
+    // address is asked about only if it lies outside the frame memory, and at least five always do.
+    let listed = [0xB8000usize, 0x9FC00, pool_end, pool_end + (2 << 20), (1 << 30) - 4096, 0xFD00_0000, (4 << 30) - 4096];
+    let outside = || listed.iter().filter(|a| **a < pool_start || **a >= pool_end);
+    // The last page of the frame memory must read, which shows the probe tells mapped from unmapped. It
+    // is part of this one check and not a check of its own: other tools count the checks at start.
+    let readable = pool_end > pool_start && arch::probe_read_at(pool_end - 4096) == arch::Probe::Allowed;
     check("memory the kernel does not use is not mapped: the text display, the low mebibyte, what lies above the frame memory, and where devices are",
-          outside.iter().all(|a| matches!(arch::probe_read_at(*a), Refused(e) if e & 1 == 0)), failed);
+          readable && outside().count() >= 5 && outside().all(|a| matches!(arch::probe_read_at(*a), Refused(e) if e & 1 == 0)), failed);
     let frame = mem::take();
     let (wr, ex) = (frame.map(arch::probe_write_same), frame.map(arch::probe_execute_at));
     if let Some(f) = frame {
