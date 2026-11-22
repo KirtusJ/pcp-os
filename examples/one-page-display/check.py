@@ -11,9 +11,10 @@ Predicates, fixed before the first run.
  O1 the kernel reports "display: Loader, 1920x1080, 1 page(s)" and 8100 KiB mapped: the laptop's case, whole pages.
  O2 the kernel says "display: a program that asks draws to memory of its own, and the kernel shows each
     finished picture". With --before (the kernel as it was) that line is absent: the control.
- O3 the program presents its first frame, and the screen after it, and again after two letters are typed, is
-    not one colour. With --before the two screens are byte for byte the same as this kernel's: what is shown
-    is the same picture, and only where it was drawn has changed.
+ O3 the program presents its first frame. The screen after it, and again after two letters are typed, is a
+    whole 1920 by 1080 picture (the file's header and length say so) with more than one colour counted over
+    every pixel, and typing changes some rows and not all of them. With --before the two screens are byte for
+    byte the same as this kernel's: what is shown is the same picture, and only where it was drawn has changed.
 
 What this does not show: the repaint itself. An emulator writes a framebuffer at the speed of memory, so the
 wipe the owner saw cannot be seen here, with either kernel. That the wipe is gone needs the laptop.
@@ -25,6 +26,7 @@ The guest is started as "tailorbird" (auto=tailorbird); any program that asks to
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -93,9 +95,25 @@ def run(kernel, guest, efi, out):
     return presented, serial.read_text(errors="replace").splitlines(), (out / "first.ppm").read_bytes(), (out / "typed.ppm").read_bytes()
 
 
-def one_colour(picture):
-    body = picture.split(b"\n", 3)[3]
-    return len({body[i:i + 3] for i in range(0, len(body), 3 * 997)}) < 2
+def picture(data):
+    """The size and pixels of a binary PPM as QEMU writes it, or None when it is not exactly one."""
+    header = re.match(rb"P6\s+(\d+)\s+(\d+)\s+255\s", data)
+    if not header:
+        return None
+    width, height = int(header.group(1)), int(header.group(2))
+    body = data[header.end():]
+    return (width, height, body) if len(body) == width * height * 3 else None
+
+
+def colours(body):
+    """How many different colours there are, over every pixel."""
+    return len({body[i:i + 3] for i in range(0, len(body), 3)})
+
+
+def rows_changed(first, second, width):
+    """The rows in which two pictures of one size differ."""
+    row = width * 3
+    return [y for y in range(len(first) // row) if first[y * row:(y + 1) * row] != second[y * row:(y + 1) * row]]
 
 
 def main():
@@ -122,7 +140,12 @@ def main():
     display = [line for line in lines if line.startswith("display:")]
     check("O1 the loader's display is one page of 1920 by 1080, mapped whole", any(line.startswith("display: Loader, 1920x1080, 1 page(s), 8100 KiB") for line in display), repr(display[:1]))
     check("O2 the kernel says a program that asks draws to memory of its own", OWN in display, repr(display[1:2]))
-    check("O3 the program presented, and both screens hold a picture", presented and not one_colour(first) and not one_colour(typed) and first != typed)
+    one, two = picture(first), picture(typed)
+    whole = one is not None and two is not None and one[:2] == (1920, 1080) and two[:2] == (1920, 1080)
+    kinds = (colours(one[2]), colours(two[2])) if whole else (0, 0)
+    changed = rows_changed(one[2], two[2], 1920) if whole else []
+    check("O3 the program presented, and both screens are whole 1920x1080 pictures that typing changed in part",
+          presented and whole and min(kinds) >= 2 and 0 < len(changed) < 1080, "colours %s, rows changed %d" % (kinds, len(changed)))
     if args.before:
         was, old_lines, old_first, old_typed = run(args.before.resolve(), args.guest.resolve(), efi, out / "before")
         check("O2 control: the kernel as it was does not say so", OWN not in old_lines)
