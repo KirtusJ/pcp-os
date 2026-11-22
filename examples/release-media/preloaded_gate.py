@@ -26,6 +26,13 @@ FIXED = {
     "PCPOS/model.manifest",
 }
 PUBLISHER_TEXTS = {"PCPOS/MODEL-LICENSE.txt", "PCPOS/MODEL-NOTICE.txt"}
+RUNTIME_NOTICE = "PCPOS/RUNTIME-NOTICE.txt"
+# Tailorbird #33 qualification binaries and their engine #404 notice.
+PACKED_WORKERS = {
+    "e454fbaf009feba660fba2ed7bf1f187cc18c4f4f8278125a7e8dfb3eb519bf7",
+    "1400620be191ec0d6d18e6ff4da363cb6983913115067e3ee424abce5131a32c",
+}
+GGML_NOTICE = {"bytes": 1308, "sha256": "aa99af64d67d449bcff124bb9d449e624c5aac78484cbd36de8426a8624db348"}
 SHARD = re.compile(r"PCPOS/shard-([0-9]{5})\.bin\Z")
 HEX = re.compile(r"[0-9a-f]{64}\Z")
 EPOCH = "1794614400"
@@ -58,7 +65,8 @@ def inventory(path, approved_sha256):
     shard_numbers = []
     folded = set()
     for name, entry in found.items():
-        if type(name) is not str or (name not in FIXED and name not in PUBLISHER_TEXTS and not SHARD.fullmatch(name)):
+        if type(name) is not str or (name not in FIXED and name not in PUBLISHER_TEXTS
+                                     and name != RUNTIME_NOTICE and not SHARD.fullmatch(name)):
             raise ValueError("unexpected release path: " + str(name))
         if name.casefold() in folded:
             raise ValueError("case-colliding release path: " + name)
@@ -74,6 +82,8 @@ def inventory(path, approved_sha256):
             shard_numbers.append(int(match.group(1)))
     if not FIXED.issubset(found):
         raise ValueError("missing fixed executable or manifest path")
+    if found["PCPOS/WORKER.ELF"]["sha256"] in PACKED_WORKERS and found.get(RUNTIME_NOTICE) != GGML_NOTICE:
+        raise ValueError("packed worker requires the exact ggml runtime notice at " + RUNTIME_NOTICE)
     if not shard_numbers or sorted(shard_numbers) != list(range(len(shard_numbers))):
         raise ValueError("shards must be contiguous and start at zero")
     return found

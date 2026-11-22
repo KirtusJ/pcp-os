@@ -58,6 +58,22 @@ class GateTests(unittest.TestCase):
     def test_approved_inventory(self):
         self.assertEqual(self.approved(self.records), self.records)
 
+    def test_qualified_packed_workers_require_their_source_notice(self):
+        notice = {"bytes": 1308, "sha256": "aa99af64d67d449bcff124bb9d449e624c5aac78484cbd36de8426a8624db348"}
+        for worker in ("1400620be191ec0d6d18e6ff4da363cb6983913115067e3ee424abce5131a32c",
+                       "e454fbaf009feba660fba2ed7bf1f187cc18c4f4f8278125a7e8dfb3eb519bf7"):
+            with self.subTest(worker=worker):
+                records = dict(self.records)
+                records["PCPOS/WORKER.ELF"] = {"bytes": 286088, "sha256": worker}
+                records["PCPOS/MODEL-NOTICE.txt"] = notice
+                with self.assertRaisesRegex(ValueError, "exact ggml runtime notice"):
+                    self.approved(records)
+                records["PCPOS/RUNTIME-NOTICE.txt"] = {"bytes": 1308, "sha256": "0" * 64}
+                with self.assertRaisesRegex(ValueError, "exact ggml runtime notice"):
+                    self.approved(records)
+                records["PCPOS/RUNTIME-NOTICE.txt"] = notice
+                self.assertEqual(self.approved(records), records)
+
     def test_changed_byte_refused(self):
         (self.root / "PCPOS/TAILOR.ELF").write_bytes(b"Foreground")
         with self.assertRaisesRegex(ValueError, "payload size or digest differs"):
@@ -131,7 +147,7 @@ class GateTests(unittest.TestCase):
 
     def test_cli_reopens_finished_medium_and_keeps_existing_output(self):
         # Exercise the normal invocation with synthetic, non-distributable test data.
-        for name in ("PCPOS/MODEL-LICENSE.txt", "PCPOS/MODEL-NOTICE.txt"):
+        for name in ("PCPOS/MODEL-LICENSE.txt", "PCPOS/MODEL-NOTICE.txt", "PCPOS/RUNTIME-NOTICE.txt"):
             text = ("fixture text for " + name).encode()
             (self.root / name).write_bytes(text)
             self.parts[name] = text
