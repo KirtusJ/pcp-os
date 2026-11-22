@@ -146,6 +146,62 @@ fn red_zone(rounds: u64) -> u64 {
     wrong
 }
 
+extern "C" {
+    fn memcmp(left: *const u8, right: *const u8, n: usize) -> i32;
+    fn bcmp(left: *const u8, right: *const u8, n: usize) -> i32;
+}
+/// Bytes in the program's read-only data, for comparing a range with one that overlaps it.
+static STEPS: [u8; 64] = {
+    let mut bytes = [0u8; 64];
+    let mut i = 0;
+    while i < 64 {
+        bytes[i] = (i as u8) / 3;
+        i += 1;
+    }
+    bytes
+};
+
+/// The comparison routines the shared guest crate supplies, called as the compiler calls them. One
+/// bit of the answer for each case that came out wrong. The last case goes through comparisons of
+/// slices, for which the compiler emits the calls itself.
+#[inline(never)]
+fn compare_wrong() -> u64 {
+    let mut wrong = 0u64;
+    let mut case = |n: u32, ok: bool| {
+        if !ok {
+            wrong |= 1 << n;
+        }
+    };
+    let hide = |bytes: &[u8]| core::hint::black_box(bytes.as_ptr());
+    let a: Vec<u8> = (0..200u32).map(|i| (i * 7) as u8).collect();
+    let mut b = a.clone();
+    // Safety: every pointer is to at least as many readable bytes as the length given with it,
+    // and with a length of zero none is read.
+    unsafe {
+        let n = core::hint::black_box(200usize);
+        case(0, memcmp(hide(&a), hide(&b), n) == 0 && bcmp(hide(&a), hide(&b), n) == 0);
+        b[0] = a[0].wrapping_add(1); // the first byte differs, and is larger in b
+        case(1, memcmp(hide(&a), hide(&b), n) < 0 && memcmp(hide(&b), hide(&a), n) > 0 && bcmp(hide(&a), hide(&b), n) != 0);
+        b[0] = a[0];
+        b[199] = a[199].wrapping_sub(1); // only the last byte differs, and is smaller in b
+        case(2, memcmp(hide(&a), hide(&b), n) > 0 && bcmp(hide(&a), hide(&b), n) != 0 && memcmp(hide(&a), hide(&b), n - 1) == 0 && bcmp(hide(&a), hide(&b), n - 1) == 0);
+        // Bytes are compared as unsigned: 0x80 is more than 0x7f, though as a signed byte it is less.
+        let (high, low) = (core::hint::black_box([0x80u8, 1]), core::hint::black_box([0x7fu8, 2]));
+        case(3, memcmp(hide(&high), hide(&low), 2) > 0 && memcmp(hide(&low), hide(&high), 2) < 0 && memcmp(hide(&[0xffu8]), hide(&[0u8]), 1) > 0);
+        // A length of zero reads neither: these addresses are not this program's to read.
+        let nowhere = core::hint::black_box(8usize) as *const u8;
+        case(4, memcmp(nowhere, nowhere.wrapping_add(4096), core::hint::black_box(0)) == 0 && bcmp(nowhere, nowhere, core::hint::black_box(0)) == 0);
+        // Two ranges of the same read-only bytes, one byte apart: they first differ at their third byte.
+        let (early, late) = (hide(&STEPS[..60]), hide(&STEPS[1..61]));
+        case(5, memcmp(early, late, 60) < 0 && memcmp(late, early, 60) > 0 && bcmp(early, late, 60) != 0 && memcmp(early, late, 2) == 0 && memcmp(early, early, 60) == 0);
+    }
+    // And as the compiler asks for them, by comparing slices.
+    b[199] = a[199];
+    case(6, core::hint::black_box(&a[..]) == core::hint::black_box(&b[..]) && core::hint::black_box(&a[..]) != core::hint::black_box(&STEPS[..])
+            && core::hint::black_box(&STEPS[..60]) < core::hint::black_box(&STEPS[1..61]));
+    wrong
+}
+
 pcp_game_guest::entry!(probe_main);
 #[no_mangle]
 pub extern "C" fn probe_main() -> ! {
@@ -158,6 +214,7 @@ pub extern "C" fn probe_main() -> ! {
     // Both programs use the heap. (A program with nothing writable is linked with an empty
     // segment at address zero, which the kernel refuses.)
     say(who, b": heap ", heap_sum(core::hint::black_box(100_000)).to_bits() as u64);
+    say(who, b": compare wrong ", compare_wrong());
     if !BACK {
         say(who, b": red zone wrong ", red_zone(core::hint::black_box(400_000_000)));
     }

@@ -44,3 +44,29 @@ unsafe extern "C" fn memcpy(dst: *mut u8, src: *const u8, n: usize) -> *mut u8 {
     asm!("rep movsb", inout("rdi") to=>_, inout("rsi") from=>_, inout("rcx") n%8=>_, options(nostack));
     dst
 }
+/// Compare `n` bytes as unsigned values: negative, zero or positive as the first that differs is
+/// smaller in `left`, absent, or larger. A length of zero reads neither. The compiler emits calls to
+/// this (and to `bcmp`) for comparisons of slices; a guest built for the Linux target with no C
+/// library has no other definition. The reads are volatile so that the compiler does not turn
+/// this loop back into a call to the routine it is.
+///
+/// # Safety
+/// Both must be readable for `n` bytes.
+#[no_mangle]
+unsafe extern "C" fn memcmp(left: *const u8, right: *const u8, n: usize) -> i32 {
+    for at in 0..n {
+        let (a, b) = (left.add(at).read_volatile(), right.add(at).read_volatile());
+        if a != b {
+            return i32::from(a) - i32::from(b);
+        }
+    }
+    0
+}
+/// Zero if `n` bytes are the same, something else if not.
+///
+/// # Safety
+/// Both must be readable for `n` bytes.
+#[no_mangle]
+unsafe extern "C" fn bcmp(left: *const u8, right: *const u8, n: usize) -> i32 {
+    memcmp(left, right, n)
+}

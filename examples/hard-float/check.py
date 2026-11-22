@@ -21,6 +21,13 @@ Predicates, fixed before the first run.
     registers ("max") and on one with SSE2 only ("qemu64"): the front program prints exactly what
     it printed alone; the back program's sums (f32, f64, heap) are the bits the software build gives
     for the same series; the back program reports at least eight rounds and none of them wrong.
+ H6 comparing bytes. The shared guest crate supplies `memcmp` and `bcmp`, which a guest built for
+    the Linux target with no C library gets from nowhere else. Every build of the probe has both
+    defined in it and no symbol left undefined. Every program, alone or beside another, says no
+    case came out wrong of: equal buffers; a first byte that differs; a last byte that differs
+    (and the same buffers one byte shorter are equal); bytes compared as unsigned; a length of
+    zero at addresses that cannot be read; two ranges of the same read-only bytes one apart; and
+    comparisons of slices, for which the compiler emits the calls.
  H5 every boot ends with status 33, 71 self-tests passed and every frame given back.
 
 Usage: check.py <kernel.elf32 with companion> <soft> <hard> <hard, BACK=1> <hard, CLOBBER=1> <soft, BACK_SERIES=1>
@@ -109,12 +116,22 @@ def main():
     if counts["soft"] != 0 or counts["hard"] == 0:
         problems.append("H1: scalar SSE arithmetic instructions: software build %(soft)d, hardware build %(hard)d" % counts)
 
+    # H6, in the files
+    for name in ("soft", "hard", "back", "clobber", "series"):
+        symbols = subprocess.run(["nm", str(getattr(args, name))], capture_output=True, text=True, check=True).stdout.splitlines()
+        defined = {line.split()[-1] for line in symbols if len(line.split()) == 3 and line.split()[1] in "Tt"}
+        undefined = [line.split()[-1] for line in symbols if line.split()[0] in "Uw" or (len(line.split()) == 2 and line.split()[0] == "U")]
+        if not {"memcmp", "bcmp"} <= defined or undefined:
+            problems.append("H6 %s: memcmp and bcmp defined: %r; left undefined: %r" % (name, sorted({"memcmp", "bcmp"} & defined), undefined))
+
     # H2, H3
     alone = {}
     for name in ("soft", "hard", "clobber", "series"):
         status, lines = boot(args.qemu, args.kernel, [getattr(args, name)], "auto=float-probe then=off", "max")
         sound(name + " alone", status, lines, problems)
         alone[name] = said(lines, "front")
+        if alone[name].get("compare wrong") != ["%016x" % 0]:
+            problems.append("H6 %s: comparing bytes came out wrong: %r" % (name, alone[name].get("compare wrong")))
         if alone[name].get("done") != [None] or alone[name].get("rounds wrong") != ["%016x" % 0]:
             problems.append("H2 %s: it did not run to its end with no round wrong: %r" % (name, alone[name]))
     for words in ("f32", "f64", "heap"):
@@ -136,6 +153,8 @@ def main():
         for words in ("f32", "f64", "heap"):
             if back.get(words) != alone["series"].get(words) or not back.get(words):
                 problems.append("H4 %s: the back program's %s is %r; software gives %r for that series" % (cpu, words, back.get(words), alone["series"].get(words)))
+        if back.get("compare wrong") != ["%016x" % 0]:
+            problems.append("H6 %s: beside another program, comparing bytes came out wrong: %r" % (cpu, back.get("compare wrong")))
         rounds = [int(v, 16) for v in back.get("rounds so far, and of them wrong", [])]
         if not rounds or max(r >> 32 for r in rounds) < 8 or any(r & 0xffff_ffff for r in rounds):
             problems.append("H4 %s: the back program reported %r (rounds in the high half, wrong ones in the low)" % (cpu, ["%016x" % r for r in rounds]))
