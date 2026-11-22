@@ -1069,6 +1069,27 @@ fn a_check_is_what_the_host_saw_run_or_it_says_it_is_a_report() {
     assert_eq!(fs::read_to_string(root.join(".pcp/observed_tools.jsonl")).unwrap().lines().count(), 2);
 }
 
+#[test]
+fn distinct_tool_ids_with_the_same_preview_each_yield_one_check() {
+    let root = in_use("shell-id-preview");
+    let prefix = "x".repeat(200);
+    for suffix in ["A", "B"] {
+        let id = format!("{prefix}{suffix}");
+        hook(&root, "post-tool", &format!(r#"{{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_use_id":"{id}","tool_input":{{"command":"echo {suffix}"}},"tool_response":{{"stdout":"{suffix}","stderr":"","interrupted":false}}}}"#));
+    }
+    for suffix in ["A", "B"] {
+        let args = format!(r#"{{"command":"echo {suffix}"}}"#);
+        let (reply, _) = tool(&root, "acr_check", &args);
+        assert!(reply.starts_with("WRITTEN"), "{reply}");
+        let rows = events(&root);
+        let body = rows.last().unwrap().get("body").unwrap();
+        let digest = sha256_hex(format!("{prefix}{suffix}").as_bytes());
+        let expected = format!("{prefix}#sha256:{digest}");
+        assert_eq!(body.get("tool_use_id").and_then(Value::as_str), Some(expected.as_str()));
+        assert!(tool(&root, "acr_check", &args).0.starts_with("REFUSE"));
+    }
+}
+
 /// The register's time, as seconds since 1970.
 fn epoch(ts: &str) -> u64 {
     let n = |a: usize, b: usize| ts[a..b].parse::<i64>().unwrap();
