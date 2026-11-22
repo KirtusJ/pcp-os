@@ -28,11 +28,13 @@ Predicates, fixed before the first run.
  P6 without the words that name a companion the same front program is refused the channel (-13).
  P7 with the words but on a line whose worker digest matches no loaded file, likewise refused.
  P9 a companion that computes for ever and makes no call does not keep the other program from
-    running: a front that sleeps twenty milliseconds a hundred times finishes, and the kernel then
-    ends the companion.
- P10 the person's Ctrl+Alt+Delete, pressed while the front sleeps and that companion computes, ends
-    both: the front is reported STOPPED by that key, the companion as ended by it together with the
-    front, and every frame comes back.
+    running: a front that sleeps twenty milliseconds a hundred times, each sleep answered 0, is
+    woken a hundred times and finishes, and the kernel then ends the companion. A sleep the kernel
+    refuses fails the front with neither line this check looks for.
+ P10 the person's Ctrl+Alt+Delete, pressed after the front has completed ten sleeps and while it
+    goes on sleeping and that companion computes, ends both: the front is reported STOPPED by that
+    key, the companion as ended by it together with the front, and every frame comes back. Whether
+    the key arrived while the front was asleep or between two sleeps is not observed.
  P8 every run ends with status 33, 71 self-tests pass, none fails, the kernel does not stop, and
     every frame is given back.
 
@@ -96,7 +98,7 @@ def stopped(qemu, kernel, files, append):
         rpc("qmp_capabilities")
         log = lambda: serial.read_text(errors="replace") if serial.exists() else ""
         deadline = time.monotonic() + 90
-        while time.monotonic() < deadline and not ("front: waiting to be stopped" in log() and "back: computing for ever" in log()):
+        while time.monotonic() < deadline and not ("front: ten sleeps done, and sleeping on until stopped" in log() and "back: computing for ever" in log()):
             time.sleep(0.2)
         if time.monotonic() < deadline:
             rpc("send-key", keys=[{"type": "qcode", "data": key} for key in ("ctrl", "alt", "delete")])
@@ -178,7 +180,7 @@ def main():
         spins, alone, waits = (p.resolve() for p in (args.never_yields, args.alone, args.waits))
         status, lines = boot(args.qemu, kernel, [alone, spins], words % (digest(alone), digest(spins)))
         common("a companion that never yields", status, lines)
-        require("a companion that never yields, front", said(lines, "front: "), ["opening the channel answered 0", "went on by itself for periods of sleep 100"])
+        require("a companion that never yields, front", said(lines, "front: "), ["opening the channel answered 0", "slept and was woken, times 100"])
         require("a companion that never yields, back", said(lines, "back: "), ["computing for ever and making no call"])
         if not any(line.startswith("companion talk-back: the kernel ended it when the program it was beside ended") for line in lines):
             problems.append("P9: the kernel did not end the companion that never yields when the front ended")
