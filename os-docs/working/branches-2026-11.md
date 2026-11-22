@@ -13,6 +13,8 @@ and the **250** below each hold at least one.
 - **Tip** is the branch's head commit. **Date** is that commit's own date, which is not the day the
   branch was last pushed and says nothing of whether its contributor is still at work.
 - **Ahead** is the number of commits reachable from the tip and not from the default branch.
+- The sums in the table count a commit once for every branch that holds it: branches share history. The
+  250 counts add to 5,609; the distinct commits outside the default branch number 1,155 (A3 computed both; Z3 recomputed them from the tips listed here).
 - SHA-256 of the list in name order, each line a full tip, two spaces, the name and a line feed:
   `38e26c908486da93db72a152eef812c2b5e5e6780487d99ac097ce34e11e1204`.
 
@@ -21,7 +23,7 @@ To make it again: `git for-each-ref --no-merged <default> refs/remotes/origin`, 
 
 ## By prefix
 
-| Prefix | Branches | Oldest tip | Newest tip | Commits ahead, together |
+| Prefix | Branches | Oldest tip | Newest tip | Sum of per-branch ahead counts |
 | --- | ---: | --- | --- | ---: |
 | `evidence` | 31 | 2026-11-16 | 2026-11-21 | 58 |
 | `b3` | 21 | 2026-11-21 | 2026-11-22 | 115 |
