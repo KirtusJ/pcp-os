@@ -80,6 +80,21 @@ Every entry at the top of the repository, and every folder one level down in the
 | `PCP_OS_Rust/crates/pcpos-pkg` | Package reading and checking. | not determined |
 | `PCP_OS_Rust/crates/pcpos-qwen` | Runs dense Qwen inference with bounded causal prompt batches and a scalar fallback. | not determined |
 
+## The other repositories
+
+This table is the index to the other repositories the baseline work covers: what each is, and where its own catalogue is. It is written by hand and is not checked by `build/check_catalog.py`, which reads only this repository's tree; the commits named are where each was read on 22 November 2026.
+
+| Repository | What it is | Its catalogue |
+|---|---|---|
+| [pcp](https://github.com/KirtusJ/pcp/tree/03d68793f754a6057d6fcde87c210a1931e53ee2) | PCP 1.0 Enterprise Edition, build 19, with its packets, the ISO and the first-boot guide. Its `EDITION.json` records it as pre-publication at that commit. It carries its own `verify_edition.py`, which was not run for this table. | None of its own; its [`MANIFEST.json`](https://github.com/KirtusJ/pcp/blob/03d68793f754a6057d6fcde87c210a1931e53ee2/MANIFEST.json) and [`EDITION_GUIDE.md`](https://github.com/KirtusJ/pcp/blob/03d68793f754a6057d6fcde87c210a1931e53ee2/EDITION_GUIDE.md) say what is in the edition (read at `03d68793`). |
+| [pcp-os-claude](https://github.com/KirtusJ/pcp-os-claude/tree/c0fbde739b4cc3bc409878d901de0974702c506e) | The released Build 22 OS adapter: the plugin that delivers the method over the `pcpos` host. Pinned by commit wherever it is used. | None is added, on purpose: it is a release, and a new file would make a new one. Its [`MANIFEST.json`](https://github.com/KirtusJ/pcp-os-claude/blob/c0fbde739b4cc3bc409878d901de0974702c506e/MANIFEST.json) lists all 84 payload files with lengths and SHA-256 (A3 verified each, 22 November 2026). |
+| [pcp-claude](https://github.com/KirtusJ/pcp-claude/tree/3187dc226cd9f51b81a940f7d986bc124b26bc12) | The released Build 22 text adapter: the method as skills, subagents and pinned text, without the host. | None is added, for the same reason. Its [`MANIFEST.json`](https://github.com/KirtusJ/pcp-claude/blob/3187dc226cd9f51b81a940f7d986bc124b26bc12/MANIFEST.json) lists all 74 payload files (A3 verified each, 22 November 2026). |
+| [pcp-fidelity-lab](https://github.com/KirtusJ/pcp-fidelity-lab) | An experimental plugin for auditing how well a PCP analysis follows its sources. Released separately as the 0.1.0 experimental plugin ([release manifest](https://github.com/KirtusJ/pcp-fidelity-lab/blob/453bbaf97c68d6581e73fbd1467623781c0a781b/releases/0.1.0.json), 16 files); outside the PCP OS release. | [`CATALOG.md`](https://github.com/KirtusJ/pcp-fidelity-lab/blob/453bbaf97c68d6581e73fbd1467623781c0a781b/CATALOG.md), checked in its CI by this repository's check at a pinned commit. |
+| [surfbird](https://github.com/KirtusJ/surfbird) | Surfbird's hosted reader and optional Windows window. The native guest is here, under `apps/surfbird`. | [`CATALOG.md`](https://github.com/KirtusJ/surfbird/blob/906658eb5b71ceb0eac59df3be4eff93e1001637/CATALOG.md), checked the same way. |
+| [tailorbird](https://github.com/KirtusJ/tailorbird) | Tailorbird, the program for working with a local model worker, where a person talks to Taylor. It pins this repository as a submodule. | [`CATALOG.md`](https://github.com/KirtusJ/tailorbird/blob/a5aa8524262efc126e4095d86c7eb79f4cc14ff3/CATALOG.md), checked by this repository's check from that submodule. |
+
+Not indexed here: the research program's repository, which is separate from the product, and [Director HelpDesk](https://github.com/KirtusJ/android-helpdesk), which the README links and which was not read for this table.
+
 ## Session context
 
 A tracked file must not carry a session's address or a session's scratch path. The check lists every file that does. Today those are the records under `audit/director-z3-tasks/records`, named in the check as the one place still allowed until they leave master (issue 368); nothing else may.

@@ -85,6 +85,11 @@ jobs:
           python3 examples/processors/check_started.py "$RUNNER_TEMP/kernel-processors.elf32" "$RUNNER_TEMP/kernel-plain.elf32" \
             "$RUNNER_TEMP/kernel-processors-extended-demo.elf32" "$RUNNER_TEMP/kernel-processors-silent-demo.elf32" \
             "$RUNNER_TEMP/kernel-processors-unlocked-demo.elf32" | tee "$RUNNER_TEMP/processors-started.txt"
+          # The Details screen shows the same sentences, for a machine with no serial connector.
+          PCPOS_KERNEL_FEATURES="processors,heat" bash "$kernel/run.sh" build
+          cp "$kernel/target/pcpos-kernel.elf32" "$RUNNER_TEMP/kernel-processors-heat.elf32"
+          python3 examples/processors/check_details.py "$RUNNER_TEMP/kernel-plain.elf32" "$RUNNER_TEMP/kernel-processors-heat.elf32" \
+            "$RUNNER_TEMP/details-machine" | tee "$RUNNER_TEMP/details-machine.txt"
           cp "$RUNNER_TEMP/uefi-demo.elf32" "$kernel/target/pcpos-kernel.elf32"
       - name: Check the released ELF and guard the experimental handoff
         run: python3 examples/guarded-uefi/trial.py distribution PCP_OS_Rust/crates/pcpos-kernel "$RUNNER_TEMP/guarded-uefi"
@@ -97,6 +102,7 @@ jobs:
             ${{ runner.temp }}/default-bios.txt
             ${{ runner.temp }}/processors.txt
             ${{ runner.temp }}/processors-started.txt
+            ${{ runner.temp }}/details-machine.txt
             ${{ runner.temp }}/default-optical
           if-no-files-found: warn
           retention-days: 14
