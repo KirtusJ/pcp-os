@@ -39,6 +39,7 @@ Every entry at the top of the repository, and every folder one level down in the
 | `examples/desktop-source-cd` | Record: the source-built tester CD booted on three desktop hosts. | no |
 | `examples/firmware-owned-uefi` | Experiment and CI check: a UEFI loader handing the full-size kernel over under OVMF. | no |
 | `examples/guarded-uefi` | Experiment and CI check: the kernel under Q35/OVMF, with the frame-map tests. | no |
+| `examples/hard-float` | Check: a guest built with the processor's floating point on a stable target computes what the software build computes, alone and beside another. | no |
 | `examples/large-memory` | Check: memory above four gibibytes. | no |
 | `examples/loader-line` | Check: what the kernel accepts on the loader's line. | no |
 | `examples/model-memory` | Check: memory a loader filled with a model is kept out of the pool and given read-only to the companion alone (kernel feature model-memory). | no |
