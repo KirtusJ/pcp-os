@@ -65,6 +65,9 @@ pub struct Grants {
     pub files: bool,
     pub store: bool,
     pub sound: bool,
+    /// May propose effects to the kernel (and is then given no right to make files by itself).
+    #[cfg(feature = "proposals")]
+    pub propose: bool,
     #[cfg(feature = "game-link")]
     pub game_link: bool,
     #[cfg(feature = "guest-ethernet")]
@@ -88,6 +91,9 @@ pub enum Waiting {
     Until(u64),
     /// A key event.
     Key,
+    /// The kernel's answer to a proposal the program has made.
+    #[cfg(feature = "proposals")]
+    Consent,
     /// Bytes from the companion, or its going.
     #[cfg(feature = "companion")]
     TalkBytes,
@@ -151,6 +157,11 @@ pub struct World {
     pub files: Vec<(String, &'static [u8])>,
     /// The live writable namespace. With a mounted VM volume, fsync checkpoints its named files.
     pub store: crate::regular::Files,
+    /// The folder the next program that may propose files will build into. The kernel's own setting:
+    /// no program can change it. None when the setting given is not a name a build folder may have:
+    /// then no program is started with the right to propose, and nothing is used in its place.
+    #[cfg(feature = "proposals")]
+    pub build_folder: Option<String>,
     #[cfg(feature = "vm-store")]
     pub volume: Option<crate::store::Volume>,
     /// Seconds since 1970 when the tick count was zero, by the machine's clock.
@@ -172,6 +183,10 @@ pub struct Table {
     pub world: World,
     /// Timer ticks in which the processor was idling.
     idle: u64,
+    /// A program stopped for the kernel's screen though it had asked nothing (F12 with nothing
+    /// waiting), and what it was waiting for, which it goes back to.
+    #[cfg(feature = "proposals")]
+    parked: Option<(usize, Waiting)>,
     /// The channel between the foreground program and its companion, while both were started together.
     #[cfg(feature = "companion")]
     pub talk: Option<crate::talk::Channel>,
@@ -197,14 +212,23 @@ pub struct Program<'a> {
     pub grants: Grants,
     /// Timer periods it may use; `u64::MAX` for a program the person stops when they choose.
     pub budget: u64,
+    /// Asked, with the program stopped, when it proposes an effect: whether the person allows it.
+    #[cfg(feature = "proposals")]
+    pub consent: fn(Option<&sys::Proposal>) -> sys::Answer,
+}
+
+/// The answer where nobody can be asked.
+#[cfg(feature = "proposals")]
+pub fn nobody_to_ask(_: Option<&sys::Proposal>) -> sys::Answer {
+    sys::Answer::Refused
 }
 
 fn new_table(world: World) -> Table {
-    Table { procs: Vec::new(), current: None, kernel: None, tasks: TaskTable::new(), caps: CapSpace::new(64), fpu_owner: None, fs_loaded: 0, world, idle: 0, #[cfg(feature = "companion")] talk: None, #[cfg(feature = "companion")] foreground: None }
+    Table { procs: Vec::new(), current: None, kernel: None, tasks: TaskTable::new(), caps: CapSpace::new(64), fpu_owner: None, fs_loaded: 0, world, idle: 0, #[cfg(feature = "proposals")] parked: None, #[cfg(feature = "companion")] talk: None, #[cfg(feature = "companion")] foreground: None }
 }
 
 pub(crate) fn empty_world() -> World {
-    World { files: Vec::new(), store: Default::default(),
+    World { files: Vec::new(), store: Default::default(), #[cfg(feature = "proposals")] build_folder: Some(String::from(sys::BUILD_FOLDER)),
         #[cfg(feature = "vm-store")] volume: None, epoch_at_start: 0, unanswered: Vec::new() }
 }
 
@@ -239,9 +263,17 @@ impl Table {
 
 /// Run whatever the table holds until no process is left, then settle and give back every process's memory.
 fn run_table(t: Table) -> Option<Table> {
+    entered(t).map(settled)
+}
+
+/// Run the programs of the table until none can go on: all ended, or one waits for the kernel's answer.
+fn entered(t: Table) -> Option<Table> {
     TABLE.with(|slot| *slot = Some(t));
     arch::enter_user();
-    let mut t = TABLE.with(|slot| slot.take())?;
+    TABLE.with(|slot| slot.take())
+}
+
+fn settled(mut t: Table) -> Table {
     // Completion is settled by the kernel's own reading of what each process wrote, after it exited.
     for p in t.procs.iter_mut() {
         if p.end == Some(End::Exited(0)) {
@@ -255,7 +287,7 @@ fn run_table(t: Table) -> Option<Table> {
             p.released = space.release();
         }
     }
-    Some(t)
+    t
 }
 
 /// Start each built-in program as a process, run them all until none is left, and return what the kernel observed.
@@ -280,6 +312,51 @@ pub fn run(programs: &[Start]) -> Option<Vec<Process>> {
     run_table(t).map(|t| t.procs)
 }
 
+/// Run the table until no process is left, asking the person through `consent` each time a program
+/// stops with a proposal (or F12 is pressed with none waiting), then settle. `None` if the table was lost.
+#[cfg(feature = "proposals")]
+fn run_asking(mut t: Table, program: &Program) -> Option<Table> {
+    dev::ask_reserve(program.grants.propose);
+    loop {
+        t = match entered(t) {
+            Some(t) => t,
+            None => {
+                dev::ask_reserve(false);
+                return None;
+            }
+        };
+        let Some(i) = t.procs.iter().position(|p| p.end.is_none() && p.waiting == Waiting::Consent) else { break };
+        // The program is stopped where it asked. The kernel's own code asks the person and acts.
+        let Table { procs, world, parked, .. } = &mut t;
+        let p = &mut procs[i];
+        let mut back = Waiting::Nothing;
+        match p.linux.as_mut().and_then(|l| l.proposal_taken()) {
+            Some(proposal) => {
+                let allowed = (program.consent)(Some(&proposal));
+                // The call is answered with the record's length: that the kernel took the proposal,
+                // never that anything was made. Only the receipt says what happened.
+                p.frame.answer(proposal.length as u64);
+                if let Some(l) = p.linux.as_mut() {
+                    l.proposal_settled(proposal, allowed, world);
+                }
+            }
+            // F12 with nothing waiting. The program was stopped by the clock, not in a call: it goes on
+            // exactly where it was.
+            None => {
+                let _ = (program.consent)(None);
+                if let Some((_, waiting)) = parked.take() {
+                    back = waiting;
+                }
+            }
+        }
+        p.waiting = back;
+        dev::keys_forget();
+        dev::ask_reserve(true);
+    }
+    dev::ask_reserve(false);
+    Some(settled(t))
+}
+
 /// Load one program the loader handed over and run it until it ends. Returns what the kernel observed of
 /// it, or why it could not be started, and the world as the program left it.
 /// Interrupts must be off when this is called; it returns with them off.
@@ -297,13 +374,20 @@ pub fn run_program(program: &Program, world: World) -> (Result<Process, &'static
             return (Err(e), t.world);
         }
     };
-    let linux = sys::Linux::new(loaded.image_end);
+    #[allow(unused_mut)]
+    let mut linux = sys::Linux::new(loaded.image_end);
+    #[cfg(feature = "proposals")]
+    linux.allow_proposals(program.grants.propose, t.world.build_folder.as_deref().unwrap_or(""));
     if t.admit(program.name, space, Frame::user(loaded.entry, loaded.stack), program.grants, program.budget, Some(linux)).is_none() {
         return (Err("the program could not be admitted as a task"), t.world);
     }
     dev::keys_forget();
     let _ = dev::stop_requested(); // a stop asked for before the program existed is not a stop of it
-    match run_table(t) {
+    #[cfg(feature = "proposals")]
+    let t = run_asking(t, program);
+    #[cfg(not(feature = "proposals"))]
+    let t = run_table(t);
+    match t {
         Some(mut t) => (t.procs.pop().ok_or("the process table was lost"), t.world),
         None => (Err("the process table was lost"), empty_world()),
     }
@@ -331,6 +415,8 @@ pub fn run_pair(program: &Program, companion: &Program, world: World) -> (Result
         };
         let mut linux = sys::Linux::new(loaded.image_end);
         linux.talk = Some(index);
+        #[cfg(feature = "proposals")]
+        linux.allow_proposals(one.grants.propose, t.world.build_folder.as_deref().unwrap_or(""));
         if t.admit(one.name, space, Frame::user(loaded.entry, loaded.stack), one.grants, one.budget, Some(linux)).is_none() {
             return (Err("the program could not be admitted as a task"), None, abandon(t));
         }
@@ -339,7 +425,11 @@ pub fn run_pair(program: &Program, companion: &Program, world: World) -> (Result
     t.foreground = Some(1);
     dev::keys_forget();
     let _ = dev::stop_requested();
-    match run_table(t) {
+    #[cfg(feature = "proposals")]
+    let t = run_asking(t, program);
+    #[cfg(not(feature = "proposals"))]
+    let t = run_table(t);
+    match t {
         Some(mut t) => {
             let front = t.procs.pop().ok_or("the process table was lost");
             (front, t.procs.pop(), t.world)
@@ -564,6 +654,16 @@ impl Table {
     fn next(&mut self, frame: &mut Frame, from: usize) {
         let n = self.procs.len();
         let now = arch::ticks();
+        // F12 with nothing waiting: the program that may propose is stopped where it is, running or
+        // asleep, and the kernel's own screen says that nothing waits. Its state has been saved by
+        // whoever called this.
+        #[cfg(feature = "proposals")]
+        if self.parked.is_none() && dev::ask_waiting() {
+            if let Some(i) = self.procs.iter().position(|p| p.end.is_none() && p.waiting != Waiting::Consent && p.linux.as_ref().is_some_and(|l| l.proposals_allowed())) {
+                self.parked = Some((i, self.procs[i].waiting));
+                self.procs[i].waiting = Waiting::Consent;
+            }
+        }
         let key = dev::keys_waiting();
         for p in self.procs.iter_mut() {
             match p.waiting {
@@ -584,6 +684,17 @@ impl Table {
                 }
                 _ => {}
             }
+        }
+        // The foreground question must reach the kernel even while its companion computes.
+        #[cfg(feature = "proposals")]
+        if self.procs.iter().any(|p| p.end.is_none() && p.waiting == Waiting::Consent) {
+            self.current = None;
+            arch::kernel_space();
+            match self.kernel.take() {
+                Some(k) => *frame = k,
+                None => crate::fault(255, 3, 0, 0),
+            }
+            return;
         }
         for k in 0..n {
             let i = (from + k) % n;

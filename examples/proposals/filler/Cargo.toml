@@ -1,0 +1,15 @@
+[package]
+name = "store-filler"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Fills the store to a set number of bytes: a test program for the proposals check"
+
+[dependencies]
+pcp-game-guest = { path = "../../../store/native/guest" }
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+codegen-units = 1
+overflow-checks = true
