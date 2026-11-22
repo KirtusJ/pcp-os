@@ -52,6 +52,12 @@ fn say(what: &[u8], value: isize) {
     log(&line[..used + 1]);
 }
 
+fn ask_only(fd: isize, attempt: u64, number: u64, name: &[u8], content: &[u8]) -> isize {
+    let mut buffer = [0u8; 256];
+    let length = record(&mut buffer, attempt, number, name, content);
+    call(1, fd as usize, buffer.as_ptr() as usize, length, 0, 0, 0)
+}
+
 fn ask(fd: isize, attempt: u64, number: u64, name: &[u8], content: &[u8]) -> u32 {
     let mut buffer = [0u8; 256];
     let length = record(&mut buffer, attempt, number, name, content);
@@ -163,6 +169,59 @@ pub extern "C" fn probe_main() -> ! {
         log(b"probe: after the flood\n");
         ask(fd, 7, 1, NAME, CONTENT);
     }
+    // What the program can see afterwards: a picture of its build folder, read a few bytes at a time,
+    // and the files in it, read and never written; nothing anywhere else.
+    say(b"probe: a file outside the build folder was answered ", ask_only(fd, 7, 8, b"elsewhere/note.txt", CONTENT));
+    let list = open(b"/dev/build-folder\0", 0);
+    say(b"probe: opening the list answered ", list);
+    say(b"probe: opening the list to write answered ", open(b"/dev/build-folder\0", 1));
+    let mut picture = [0u8; 512];
+    let mut have = 0usize;
+    loop {
+        let got = call(0, list as usize, picture[have..].as_mut_ptr() as usize, 7.min(picture.len() - have), 0, 0, 0);
+        if got <= 0 {
+            say(b"probe: the list ended with ", got);
+            break;
+        }
+        have += got as usize;
+    }
+    say(b"probe: the list is bytes ", have as isize);
+    if have >= 24 {
+        let word = |at: usize| u32::from_le_bytes([picture[at], picture[at + 1], picture[at + 2], picture[at + 3]]) as usize;
+        say(b"probe: list version ", word(0) as isize);
+        say(b"probe: list count ", word(4) as isize);
+        say(b"probe: list complete ", word(8) as isize);
+        say(b"probe: list run ", word(16) as isize);
+        let root = word(12);
+        log(b"probe: list folder ");
+        log(&picture[24..24 + root]);
+        log(b"\n");
+        let mut at = 24 + root;
+        for _ in 0..word(4) {
+            let length = u16::from_le_bytes([picture[at], picture[at + 1]]) as usize;
+            log(b"probe: listed ");
+            log(&picture[at + 8..at + 8 + length]);
+            say(b" of bytes ", word(at + 4) as isize);
+            at += 8 + length;
+        }
+        say(b"probe: list bytes left over ", (have - at) as isize);
+    }
+    say(b"probe: writing to the list answered ", call(1, list as usize, picture.as_ptr() as usize, 4, 0, 0, 0));
+    let note = open(b"taylor/first-project/note.txt\0", 0);
+    say(b"probe: opening the note to read answered ", if note >= 0 { 0 } else { note });
+    if note >= 0 {
+        let mut back = [0u8; 128];
+        let got = call(0, note as usize, back.as_mut_ptr() as usize, back.len(), 0, 0, 0);
+        say(b"probe: the note read back bytes ", got);
+        say(b"probe: the note read back the same ", (got as usize == CONTENT.len() && &back[..CONTENT.len()] == CONTENT) as isize);
+        say(b"probe: writing to the note answered ", call(1, note as usize, back.as_ptr() as usize, 4, 0, 0, 0));
+    }
+    say(b"probe: opening the note to write answered ", open(b"taylor/first-project/note.txt\0", 1));
+    say(b"probe: opening the note to empty it answered ", open(b"taylor/first-project/note.txt\0", 0x201));
+    say(b"probe: removing the note answered ", call(87, b"taylor/first-project/note.txt\0".as_ptr() as usize, 0, 0, 0, 0, 0));
+    say(b"probe: renaming the note answered ", call(82, b"taylor/first-project/note.txt\0".as_ptr() as usize, b"taylor/x.txt\0".as_ptr() as usize, 0, 0, 0, 0));
+    say(b"probe: a name outside the folder answered ", open(b"elsewhere/note.txt\0", 0));
+    say(b"probe: a name beside the folder answered ", open(b"taylorx/note.txt\0", 0));
     log(b"probe: done\n");
     exit(0);
 }

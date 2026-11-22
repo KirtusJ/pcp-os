@@ -51,6 +51,12 @@ impl Files {
         self.names.iter().any(|(_, f)| Rc::ptr_eq(&f.0, &file.0))
     }
 
+    /// Bytes with no name, counted in the shared budget until the last descriptor on them closes.
+    pub fn detached(&self, bytes: Vec<u8>) -> File {
+        self.used.set(self.used.get() + bytes.len());
+        File(Rc::new(Contents { bytes: RefCell::new(bytes), used: self.used.clone() }))
+    }
+
     /// An unused name and either an empty buffer or bytes from a validated 64 KiB snapshot.
     pub fn insert(&mut self, name: String, bytes: Vec<u8>) -> File {
         self.used.set(self.used.get() + bytes.len());

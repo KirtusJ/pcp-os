@@ -230,6 +230,24 @@ def main():
         found.append("A1: the program was answered %r, not %r" % (answers(log), want))
     if "probe: making a file directly answered -13" not in log:
         found.append("A2: the program's own attempt to make a file was not refused with -13")
+    # B1: afterwards the program sees its build folder and nothing else, and can change nothing by itself.
+    listed = [line for line in log.splitlines() if line.startswith("probe: listed ")]
+    if listed != ["probe: listed %s of bytes %d" % (NAME, len(CONTENT))]:
+        found.append("B1: the list does not hold exactly the one file made, with its size: %r" % listed)
+    size = 24 + len("taylor") + 8 + len(NAME)
+    for words in ("probe: a file outside the build folder was answered -22", "probe: opening the list to write answered -13",
+                  "probe: the list ended with 0", "probe: the list is bytes %d" % size, "probe: list version 1", "probe: list count 1",
+                  "probe: list complete 1", "probe: list run 1", "probe: list folder taylor\n", "probe: list bytes left over 0",
+                  "probe: writing to the list answered -9", "probe: opening the note to read answered 0",
+                  "probe: the note read back bytes %d" % len(CONTENT), "probe: the note read back the same 1",
+                  "probe: writing to the note answered -9", "probe: opening the note to write answered -13",
+                  "probe: opening the note to empty it answered -13", "probe: removing the note answered -13",
+                  "probe: renaming the note answered -13", "probe: a name outside the folder answered -2",
+                  "probe: a name beside the folder answered -2"):
+        if words not in log:
+            found.append("B1: the log does not hold %r" % words)
+    if "elsewhere" in " ".join(line for line in log.splitlines() if line.startswith("proposal ")):
+        found.append("B1: a file outside the build folder was put to the person")
     problems += ["allowed: " + p for p in found]
 
     for name, keys in (("refused-esc", ["esc", "wait", "esc"]), ("refused-enter-alone", ["ret", "wait", "esc"]),

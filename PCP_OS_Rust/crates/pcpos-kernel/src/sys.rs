@@ -171,6 +171,52 @@ pub const PROPOSAL_CONTENT: usize = 16 * 1024;
 #[cfg(feature = "proposals")]
 pub const E_INVALID: u64 = (-EINVAL) as u64;
 
+/// The folder a program that may propose files builds into. It is fixed when the program starts; the
+/// program may list and read what is under it and nothing else in the store.
+#[cfg(feature = "proposals")]
+pub const BUILD_FOLDER: &str = "taylor";
+#[cfg(feature = "proposals")]
+const LISTED: usize = 256;
+#[cfg(feature = "proposals")]
+const LISTING: usize = 64 * 1024;
+
+/// Whether a store name is inside the folder: the folder, a slash, and something after it.
+#[cfg(feature = "proposals")]
+fn under(root: &str, name: &str) -> bool {
+    name.len() > root.len() + 1 && name.starts_with(root) && name.as_bytes()[root.len()] == b'/'
+}
+
+/// What is under the build folder now, version 1, little-endian: version, count, complete (1 or 0),
+/// length of the folder's name (u32 each), this run's number (u64), the folder's name; then for each file
+/// the length of its name (u16), zero (u16), its size (u32) and its whole name, in byte order. At most
+/// 256 files and 64 KiB; when there is more, complete is 0 and the first in byte order are given.
+#[cfg(feature = "proposals")]
+fn listing(store: &crate::regular::Files, root: &str, launch: u64) -> Vec<u8> {
+    let mut names: Vec<(&str, usize)> = store.iter().filter(|(n, _)| under(root, n)).map(|(n, f)| (n.as_str(), f.len())).collect();
+    names.sort();
+    let mut out = Vec::new();
+    out.extend_from_slice(&[0u8; 24]);
+    out.extend_from_slice(root.as_bytes());
+    let (mut count, mut complete) = (0u32, 1u32);
+    for (name, size) in names {
+        if count as usize == LISTED || out.len() + 8 + name.len() > LISTING {
+            complete = 0;
+            break;
+        }
+        out.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&(size.min(u32::MAX as usize) as u32).to_le_bytes());
+        out.extend_from_slice(name.as_bytes());
+        count += 1;
+    }
+    out[0..4].copy_from_slice(&1u32.to_le_bytes());
+    out[4..8].copy_from_slice(&count.to_le_bytes());
+    out[8..12].copy_from_slice(&complete.to_le_bytes());
+    out[12..16].copy_from_slice(&(root.len() as u32).to_le_bytes());
+    out[16..24].copy_from_slice(&launch.to_le_bytes());
+    out
+}
+
 #[cfg(feature = "proposals")]
 fn receipt(outcome: u32, launch: u64, proposal: &Proposal) -> [u8; RECEIPT] {
     let mut r = [0u8; RECEIPT];
@@ -258,10 +304,12 @@ fn propose(p: &mut Process, world: &World, addr: u64, len: u64) -> Outcome {
     let (name, content) = (&bytes[32..32 + name_len], &bytes[32 + name_len..]);
     // A name is a file in at most three folders, one inside another ("taylor/my-project/notes.txt"):
     // each part of small letters, digits, dot, underscore and hyphen, not empty and not beginning with a
-    // dot, and the first not "dev", where the kernel's devices are. Content of printable characters,
+    // dot, and the first not "dev", where the kernel's devices are; and it is under the build folder,
+    // the one place such a program builds into and can afterwards list and read. Content of printable characters,
     // spaces and new lines: what the kernel's screen can show exactly, and no more.
     let part = |p: &[u8]| !p.is_empty() && p[0] != b'.' && p.iter().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-'));
-    let named = name.split(|b| *b == b'/').count() <= 4 && name.split(|b| *b == b'/').all(part) && !name.starts_with(b"dev/") && name != b"dev";
+    let named = name.split(|b| *b == b'/').count() <= 4 && name.split(|b| *b == b'/').all(part) && !name.starts_with(b"dev/") && name != b"dev"
+        && core::str::from_utf8(name).is_ok_and(|n| under(BUILD_FOLDER, n));
     let shown = content.iter().all(|b| (0x20..0x7f).contains(b) || *b == b'\n');
     // What the kernel cannot show whole, in a number of pages a person can turn, it does not ask about.
     let lines: usize = content.split(|b| *b == b'\n').map(|line| line.len().div_ceil(PROPOSAL_ACROSS).max(1)).sum();
@@ -392,12 +440,34 @@ fn lookup(p: &Process, caps: &CapSpace, world: &World, path: &str) -> Result<Nod
         "dev/null" => Ok(Node::Null),
         #[cfg(feature = "proposals")]
         "dev/proposal" => if p.linux.as_ref().is_some_and(|l| l.proposals.allowed) { Ok(Node::Proposal) } else { Err(err(EACCES)) },
+        // A picture of the build folder taken now, read like a file that has no name and cannot be written.
+        #[cfg(feature = "proposals")]
+        "dev/build-folder" => match p.linux.as_ref().filter(|l| l.proposals.allowed) {
+            Some(l) => {
+                let bytes = listing(&world.store, BUILD_FOLDER, l.proposals.launch);
+                if world.store.fits(bytes.len()) { Ok(Node::Stored(world.store.detached(bytes))) } else { Err(err(ENOSPC)) }
+            }
+            None => Err(err(EACCES)),
+        },
         "dev/console" | "dev/tty" => need(Object::Console, Rights::APPEND, Node::Console),
         "dev/fb0" => need(Object::Display, Rights::APPEND, Node::Display),
         "dev/kbd" => need(Object::Keys, Rights::READ, Node::Keys),
         "dev/audio" => need(Object::Sound, Rights::APPEND, Node::Sound),
         "dev/fm" if dev::fm_state().0 => need(Object::Sound, Rights::APPEND, Node::Music),
         _ => {
+            // A program that may propose files reads what is under its build folder, and for it nothing
+            // else in the store has a name: the answer for another folder's file is that of no file.
+            #[cfg(feature = "proposals")]
+            if p.linux.as_ref().is_some_and(|l| l.proposals.allowed) && !p.holds(caps, Object::Store, Rights::READ) {
+                return match world.store.named(&name) {
+                    Some(file) if under(BUILD_FOLDER, &name) => Ok(Node::Stored(file.clone())),
+                    Some(_) => Err(err(ENOENT)),
+                    None => match world.files.iter().position(|f| f.0 == name) {
+                        Some(i) => need(Object::Files, Rights::READ, Node::File(i)),
+                        None => Err(err(ENOENT)),
+                    },
+                };
+            }
             if let Some(file) = world.store.named(&name) {
                 return need(Object::Store, Rights::READ, Node::Stored(file.clone()));
             }
