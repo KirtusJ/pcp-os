@@ -1020,6 +1020,22 @@ fn files_view(store: &crate::regular::Files, mounted: bool) {
     }
 }
 
+const FILE_APPROVAL: &str = "Creating a file needs your approval.";
+
+fn file_proposals(start: &Start, entry: &Entry, none: bool) -> bool {
+    cfg!(feature = "proposals") && !none && option(&start.boot.command_line, "propose_image") == Some(entry.digest.as_str())
+}
+
+fn detail_access(none: bool, proposes: bool, sound: bool) -> &'static str {
+    match (none, proposes, sound) {
+        (true, _, _) => "starting it lets it use: the console only",
+        (false, true, true) => "starting it lets it use: the display, the keyboard, sound, the loader's files",
+        (false, true, false) => "starting it lets it use: the display, the keyboard, the loader's files",
+        (false, false, true) => "starting it lets it use: the display, the keyboard, sound, the loader's files, the store",
+        (false, false, false) => "starting it lets it use: the display, the keyboard, the loader's files, the store",
+    }
+}
+
 /// The launcher: the programs the loader gave, one chosen, each with what it may use. It is opened from the
 /// desktop and left with Esc. On a display under 1280 by 720 the plain list below is drawn instead.
 fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, message: &str, shortcuts: &[usize]) {
@@ -1043,20 +1059,19 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
                                else if list_width >= 640 { "Choose one to start. Each runs with only what it is granted." }
                                else { "Choose one. Each runs with only what it is granted." }, if safe { BAD } else { SOFT }, false, &on_note);
     let none = option(&start.boot.command_line, "grant") == Some("none");
-    let grants = if none { "console only" } else if start.sound { "display, keyboard, sound, loader files, store" } else { "display, keyboard, loader files, store" };
     let foot = h / 20 * 20 - 60;
     let _ = rec;
     // What a program may use is never cut short and never drawn over: it takes as many lines as it needs,
     // and that a program is pinned is said on a line of its own.
     let across = (list_width / 10).saturating_sub(6) as usize;
     let access_of = |p: &Entry| -> Vec<String> {
-        #[allow(unused_mut)]
-        let mut access = String::from(grants);
+        let proposes = file_proposals(start, p, none);
+        let mut access = String::from(if none { "console only" } else if start.sound { "display, keyboard, sound, loader files" } else { "display, keyboard, loader files" });
+        if !none && !proposes { access.push_str(", store"); }
         #[cfg(feature = "guest-ethernet")]
         if !none && ethernet_grant(start.boot.exact_command_line(), &p.digest) { access.push_str(", raw Ethernet frames"); }
         #[cfg(feature = "game-link")]
         if !none && option(&start.boot.command_line, "link_image") == Some(p.digest.as_str()) { access.push_str(", second serial port"); }
-        let _ = p;
         let mut lines: Vec<String> = Vec::new();
         let mut line = String::from("may use:");
         for (n, part) in access.split(", ").enumerate() {
@@ -1069,6 +1084,7 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
             }
         }
         lines.push(line);
+        if proposes { lines.push(String::from(FILE_APPROVAL)); }
         lines
     };
     let height_of = |i: usize, p: &Entry| 40 + 20 * (access_of(p).len() as u32 + shortcuts.contains(&i) as u32);
@@ -1119,17 +1135,21 @@ fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message:
     let across = (cols as usize).saturating_sub(4).max(1);
     // What the chosen program may use, said only when programs can be started.
     let mut access: Vec<(String, u32)> = Vec::new();
-    if let Some(_entry) = programs.get(chosen).filter(|_| start.failed == 0) {
+    if let Some(entry) = programs.get(chosen).filter(|_| start.failed == 0) {
         let none = option(&start.boot.command_line, "grant") == Some("none");
-        access.push((String::from(if none { "Access: console only" } else if start.sound {
+        let proposes = file_proposals(start, entry, none);
+        access.push((String::from(if none { "Access: console only" } else if proposes {
+            if start.sound { "Access: console, display, keyboard, files, sound" } else { "Access: console, display, keyboard, files" }
+        } else if start.sound {
             "Access: console, display, keyboard, files, store, sound"
         } else { "Access: console, display, keyboard, files and store" }), SOFT));
+        if proposes { access.push((String::from(FILE_APPROVAL), SOFT)); }
         #[cfg(feature = "guest-ethernet")]
-        if !none && ethernet_grant(start.boot.exact_command_line(), &_entry.digest) {
+        if !none && ethernet_grant(start.boot.exact_command_line(), &entry.digest) {
             access.push((String::from("Access: raw Ethernet frames"), ui::AMBER));
         }
         #[cfg(feature = "game-link")]
-        if !none && option(&start.boot.command_line, "link_image") == Some(_entry.digest.as_str()) {
+        if !none && option(&start.boot.command_line, "link_image") == Some(entry.digest.as_str()) {
             access.push((String::from("Access: second serial port"), ui::AMBER));
         }
     }
@@ -1166,14 +1186,15 @@ fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message:
         } else {
             at(2, 3, &format!("Verified at start: all {} self-tests passed.", start.passed), ui::GOOD, GROUND);
         }
+        let access_rows = (access.len() as u32).max(3);
         for (n, (line, colour)) in access.iter().enumerate() {
-            at(2, rows - 7 + n as u32, line, *colour, GROUND);
+            at(2, rows - 4 - access_rows + n as u32, line, *colour, GROUND);
         }
         for (n, line) in said.iter().enumerate() {
             at(2, rows - 4 + n as u32, line, ui::AMBER, GROUND);
         }
         at(2, rows - 2, keys, TEXT, GROUND);
-        (5u32, rows.saturating_sub(12).max(1) as usize)
+        (5u32, rows.saturating_sub(9 + access_rows).max(1) as usize)
     } else {
         at(2, 0, &verified_sentence(start, across), if start.failed != 0 { ui::BAD } else { ui::GOOD }, GROUND);
         let key_lines: Vec<String> = if keys.len() <= across { alloc::vec![String::from(keys)] } else if programs.is_empty() || start.failed != 0 {
@@ -1321,6 +1342,7 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
         at(4, row, "The loader handed over no program.", SOFT, GROUND);
         row += 1;
     }
+    let none = option(&start.boot.command_line, "grant") == Some("none");
     for (i, p) in programs.iter().enumerate() {
         let ground = if i == chosen { PANEL } else { GROUND };
         ui::fill(ui::CELL_W, row * ui::CELL_H, (cols - 2) * ui::CELL_W, 2 * ui::CELL_H, ground);
@@ -1331,15 +1353,20 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
         if !p.arguments.is_empty() {
             at(66, row, &format!("with: {}", p.arguments.chars().take(30).collect::<String>()), SOFT, ground);
         }
-        at(4, row + 1, if start.sound { "starting it lets it use: the display, the keyboard, sound, the loader's files, the store" } else { "starting it lets it use: the display, the keyboard, the loader's files, the store" }, SOFT, ground);
+        let proposes = file_proposals(start, p, none);
+        at(4, row + 1, detail_access(none, proposes, start.sound), SOFT, ground);
         row += 2;
+        if proposes {
+            at(4, row, FILE_APPROVAL, SOFT, GROUND);
+            row += 1;
+        }
         #[cfg(feature = "guest-ethernet")]
-        if ethernet_grant(start.boot.exact_command_line(), &p.digest) {
+        if !none && ethernet_grant(start.boot.exact_command_line(), &p.digest) {
             at(4, row, "Ethernet grant: this program can send and receive raw network frames.", SOFT, ground);
             row += 1;
         }
         #[cfg(feature = "game-link")]
-        if option(&start.boot.command_line, "grant") != Some("none") && option(&start.boot.command_line, "link_image") == Some(p.digest.as_str()) {
+        if !none && option(&start.boot.command_line, "link_image") == Some(p.digest.as_str()) {
             at(4, row, "Optional game cable: this image can read and write the second serial port.", SOFT, ground);
             row += 1;
         }
@@ -1465,8 +1492,9 @@ fn details_view(start: &Start, programs: &[Entry], files: &[(String, &'static [u
         if !p.arguments.is_empty() {
             lines.extend(lines_of(4, &format!("with: {}", p.arguments), SOFT));
         }
-        lines.extend(lines_of(4, if none { "starting it lets it use: the console only" } else if start.sound { "starting it lets it use: the display, the keyboard, sound, the loader's files, the store" }
-                                 else { "starting it lets it use: the display, the keyboard, the loader's files, the store" }, SOFT));
+        let proposes = file_proposals(start, p, none);
+        lines.extend(lines_of(4, detail_access(none, proposes, start.sound), SOFT));
+        if proposes { lines.extend(lines_of(4, FILE_APPROVAL, SOFT)); }
         #[cfg(feature = "guest-ethernet")]
         if !none && ethernet_grant(start.boot.exact_command_line(), &p.digest) {
             lines.extend(lines_of(4, "Ethernet grant: this program can send and receive raw network frames.", ui::AMBER));
@@ -1719,10 +1747,7 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
     let none = option(start.boot.command_line.as_str(), "grant") == Some("none");
     // The one program named by its digest may propose effects to the kernel, and is then given no
     // right to make files by itself: what it makes, the person has been asked about.
-    #[cfg(feature = "proposals")]
-    let proposes = !none && option(&start.boot.command_line, "propose_image") == Some(entry.digest.as_str());
-    #[cfg(not(feature = "proposals"))]
-    let proposes = false;
+    let proposes = file_proposals(start, entry, none);
     let grants = if none { Grants { console: true, ..Grants::default() } } else { Grants { console: true, display: start.display.is_some(), keys: start.keyboard, files: true, store: !proposes, sound: start.sound,
         #[cfg(feature = "proposals")] propose: proposes,
         #[cfg(feature = "guest-ethernet")] ethernet: ethernet_grant(start.boot.exact_command_line(), &entry.digest),
