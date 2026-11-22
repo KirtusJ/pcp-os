@@ -18,6 +18,8 @@ Predicates, fixed before the first run.
  O4 the monitor accepts both keys; the screen left alone for as long as a key is given is byte for byte
     unchanged; and each key then changes some rows and not all of them. So a change is a key's, one at a time.
 
+Whether a picture is seen while it is being made is asked directly by check_pause.py beside this file.
+
 What O3 and O4 do not show: what the picture is of. Nothing here reads a letter or a title, so a screen that
 answered each key by changing one pixel would pass. What Tailorbird draws is read in its own checks.
 
