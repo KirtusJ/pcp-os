@@ -30,8 +30,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let began=std::time::Instant::now();
     let verified=VerifiedModel::load(&manifest,&mut source,|_| true).map_err(|e| format!("load: {e:?}"))?;
     let mut magic=[0u8;4];
-    verified.copy_into(0,&mut magic).map_err(|_| "cannot read model header")?;
-    println!("verified_bytes={} shards={} first_four={magic:02x?} elapsed_seconds={:.3}",
+    let prefix=&mut magic[..verified.len().min(4) as usize];
+    verified.copy_into(0,prefix).map_err(|_| "cannot read model prefix")?;
+    println!("verified_bytes={} shards={} first_bytes={prefix:02x?} elapsed_seconds={:.3}",
              verified.len(),manifest.shard_count(),began.elapsed().as_secs_f64());
     Ok(())
 }
