@@ -990,8 +990,12 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     if failed == 0 {
         #[cfg(all(feature = "vm-store", not(feature = "guest-ethernet")))]
         say!("ALL SELF-TESTS PASS. VM checkpoint storage is available when a dedicated IDE data disk is explicitly mounted.");
-        #[cfg(not(any(feature = "guest-ethernet", feature = "vm-store")))]
+        #[cfg(not(any(feature = "guest-ethernet", feature = "vm-store", feature = "processors")))]
         say!("ALL SELF-TESTS PASS. Present: user mode and preemptive processes; programs loaded from the loader's files; a display, a keyboard, sound and music where the machine has ones this kernel drives. Not present: storage that outlasts power, a mouse, network, a second processor.");
+        // With the processors feature the machine's other processors are started and can be asked to run
+        // kernel work, so "a second processor" is no longer absent; what is absent is a program on more than one (A3).
+        #[cfg(all(feature = "processors", not(any(feature = "guest-ethernet", feature = "vm-store"))))]
+        say!("ALL SELF-TESTS PASS. Present: user mode and preemptive processes; programs loaded from the loader's files; a display, a keyboard, sound and music where the machine has ones this kernel drives. Not present: storage that outlasts power, a mouse, network, a program that runs on more than one processor (the others are started where the machine has them, and idle).");
         #[cfg(feature = "guest-ethernet")]
         say!("ALL SELF-TESTS PASS. Guest Ethernet support is compiled in. Access requires a matching image grant and a supported NIC.");
     } else {
