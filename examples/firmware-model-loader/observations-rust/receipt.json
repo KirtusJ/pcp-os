@@ -1,0 +1,129 @@
+{
+  "loader_head": "3243828ea27f167e8f09db6afcd012d598fb184c",
+  "kernel_source": "1af35d14ab5d37aaee3963be20380fff65d53a12",
+  "kernel_relocation": "examples/firmware-owned-uefi/load-base.patch applied with git apply -C0",
+  "tailorbird_head": "dd8633d8516cb1bdc0fd8f258260594ad98848f1",
+  "guest_pcp_os": "5a87b5e75b63f12c4d92cd8345eccee1cc292e9e",
+  "compiler_guest": "rustc 1.97.0",
+  "compiler_kernel": "rustc 1.100.0",
+  "efi_sha256": "ed3232301331b9ae5c9837fb34567d92ca111f1a7f5b9a12e2eb5bbf965687d8",
+  "input_receipt_sha256": "6971b3171aa76c9d5af9f7fa2797d34c5b09eaa07f7fc138744977508542300b",
+  "volume_sha256": "3c4e36be733bd7cf4f508a495799fda3a04d17d43321114fd9777da3f834ca5b",
+  "firmware_code_sha256": "624e06de18b4fa535e90db7160d00d3d07d206422b89999bf1e27d920264e4e0",
+  "machine": "Q35, one emulated CPU, TCG, 4096 MiB, read-only raw xHCI USB, no NIC or internal disk",
+  "model_source": "https://huggingface.co/Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF/resolve/ebb2015119c907b064c512bf053e945850b5875f/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+  "model_bytes": 491400064,
+  "model_sha256": "1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32",
+  "shard_sha256": [
+    "e7fd135f9a4d78d25240baf1360df065de058106caa002a863b3d41d85e8b06e",
+    "7338348414bf83a1be9c0124b0056e97963ff36ec485196d807e1854c898d851",
+    "676357b2562fb24ec78a727cd8f0a41a03e3249988d557cb95796c5651ba50e9",
+    "9680ad63cb6c5282f074d2a16157c28d61af7b6632d3bf16eae3ae6e8d4a565b",
+    "b37d210762bb960cdf41644d790e1481d87b6603fb2564aea80b3200b5e9b5c9",
+    "f2b809a97ed2399dbc221141d4b0e4e02511bb2391414334d989e8882a8b6034",
+    "b271a09e0f5ad4fc94ca5d7433e3625c5b3843c511e5190e4ab87e546237515a",
+    "8638639c2def9ef289e4d5b982544c0f013ce0064df4927526d39a116e8c9048"
+  ],
+  "model_manifest_sha256": "bbdaa8cd263d9454159f12b55ec32613d18a4b7b4d75d284ad0cadc932bc1f4b",
+  "last_page_unused_bytes": 1152,
+  "command_line": "image=6ca0d64225ffb1a6115689226ad64efa331b869fde6ae9c6f4ca2b07a326ae05 auto=tailorbird then=menu propose_image=97da808610494446a0be3f2ab5d65b41b8e2a2ce98a12d2ec43517c5ea9b48ff worker_for=97da808610494446a0be3f2ab5d65b41b8e2a2ce98a12d2ec43517c5ea9b48ff worker_image=9ca62f5d46fd60fffe6f45cf796ec777937bf4e3883a661cfc5ce6ea29c38cbc model_manifest=bbdaa8cd263d9454159f12b55ec32613d18a4b7b4d75d284ad0cadc932bc1f4b model_memory=0x100000000:0x1d4a2b80",
+  "frame_pools": {
+    "low": {
+      "free": 248832,
+      "total": 248832,
+      "issued": 251808,
+      "returned": 251808
+    },
+    "high": {
+      "free": 403968,
+      "total": 403968,
+      "issued": 14169,
+      "returned": 14169
+    }
+  },
+  "checks": 72,
+  "qemu_status": 33,
+  "serial_sha256": "34a3720744f045e59ec66d0270213c9eb493e1c3f4ac4bd589dfad9b540abac8",
+  "screens": {
+    "loading": {
+      "width": 1920,
+      "height": 1080,
+      "rgb_sha256": "2fe993b97f9f4143bb5023e2fcd19a1bafb355d175160fa4030d5f03cad7fc6a",
+      "ppm_sha256": "7af2f0344507baa468ca6b17a5564bb94e95698f99501e2acbb061675d468122",
+      "png_sha256": "221aaba9bae948db69e70937bf55b4704d1bff212cd43c325c265b95983dd14d"
+    },
+    "ready": {
+      "width": 1920,
+      "height": 1080,
+      "rgb_sha256": "c4b22d42d0d811c2336fc5a422add520372149fd4d260f5c8f9741f64aef30d5",
+      "ppm_sha256": "d5a3ef7d6b54f316d9284450985b895ff9866d482446aef552c1c8d61b1d0dbd",
+      "png_sha256": "aaea8e4c531cec9a76267e1b042b0751ec407841c311d37101a2a5cf0eb98566"
+    },
+    "first-stop": {
+      "width": 1920,
+      "height": 1080,
+      "rgb_sha256": "2fdf69bc71cd9731150f7bd3263076999c5688961c81c485a9ad6dd93f51aac6",
+      "ppm_sha256": "7b370feaba7bc4226bd81102b623ec86a1f0dac4e00abf0ac65f33d324243111",
+      "png_sha256": "bcb1d1ee3136313443cc7b581a425446e31a45dab50a4d9c4c4268caed33a698"
+    },
+    "new-chat": {
+      "width": 1920,
+      "height": 1080,
+      "rgb_sha256": "25836cc295f3934aea54bfa8c91358328d0baadf78f1ed9b7d4f819f01673647",
+      "ppm_sha256": "38968d65c7d1ad2bbe1ae4c1a85a0599fa613074f63e68f1b0dc6483ebfd0baf",
+      "png_sha256": "b6785d138fe60ce49261e7cfe39d89e2378b292e059197d1083e95d034e06e37"
+    },
+    "desktop": {
+      "width": 1920,
+      "height": 1080,
+      "rgb_sha256": "f26da47fb088f448bff25f2e33983bf0970e056f3d464c0ace83cf5ce1b910d0",
+      "ppm_sha256": "9af41d1c882919b94e30336696e12a1878aa74986a190abfedbc69126d38e558",
+      "png_sha256": "9830ca2eb3fb08618d722e781429b4636f8b9fcf49c1c398ba7050ce59c2a9fd"
+    },
+    "power": {
+      "width": 1920,
+      "height": 1080,
+      "rgb_sha256": "d6a88a068ced22028b5af8c106d4f99a3283a9c34ba89440fb1d464393b3ded6",
+      "ppm_sha256": "d1b17a61aebaefe984d9e1a153631f67c8f1a86c11a9ccdc94f81ec55270e4b8",
+      "png_sha256": "ff6ed33c84b41a6ed213e63d6e5c2095a961f3ff8ed6303acb28d9ca9909cf74"
+    }
+  },
+  "refusals": {
+    "extra": {
+      "firmware": "PCP OS could not start. The volume has an extra or duplicate model shard.",
+      "serial_sha256": "cb77d3a080fc76e80f74ba0a932197a2bdf7fe8f2959cbf99ce867465b60ba24"
+    },
+    "kernel": {
+      "firmware": "PCP OS could not start. The file does not match the SHA-256 fixed in this loader.",
+      "serial_sha256": "ea67bd00e0d66d2a46744b101293c6e815d4230af27cd0f66ab5ffdf68f10c7d"
+    },
+    "manifest": {
+      "firmware": "PCP OS could not start. The file does not match the SHA-256 fixed in this loader.",
+      "serial_sha256": "29422d14c3c849836c219b89d930b8f77261b186d134711149fb7ec66bd4b6bf"
+    },
+    "memory": {
+      "firmware": "PCP OS could not start. There is not enough usable high memory for this model.",
+      "serial_sha256": "7a838d2d12a27d1089f217c712272c4a376aa52b9ab1aa6525a041501ae917c8"
+    },
+    "missing": {
+      "firmware": "PCP OS could not start. The volume is missing a model shard.",
+      "serial_sha256": "bbe2337a846fd77f706a1d8c4b9915df2f5c19b6aa5dc5d0a5ac1baede9bd4b0"
+    },
+    "order": {
+      "firmware": "PCP OS could not start. A model shard does not match its ordered manifest digest.",
+      "serial_sha256": "78af35c42ee0f37dae763d02c7cd72cda6f03196677d69e8e1cb0b2fa6af682f"
+    },
+    "short": {
+      "firmware": "PCP OS could not start. A model shard has the wrong length or is not a file.",
+      "serial_sha256": "7b04ff779e2e0b8c2ae7f115c81df057aba32cbbd756a93ecd8aabe5a5ee2e58"
+    },
+    "truncated-manifest": {
+      "firmware": "PCP OS could not start. A required file could not be read to its expected length.",
+      "serial_sha256": "999cabaa84904d4f5db8960e73190a9f856afa0b116574aaed2af6d7cb3975cf"
+    },
+    "worker": {
+      "firmware": "PCP OS could not start. The file does not match the SHA-256 fixed in this loader.",
+      "serial_sha256": "625e5034fab35d9d68f35626eeaa880a9cf427a59f4e8e07c9f4ef3701ee7e9f"
+    }
+  }
+}

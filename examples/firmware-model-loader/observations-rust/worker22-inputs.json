@@ -1,0 +1,15 @@
+{
+  "format": "pcpos-preloaded-inputs/1",
+  "kernel_features": [
+    "proposals",
+    "companion",
+    "model-memory"
+  ],
+  "worker_manifest_sha256": "bbdaa8cd263d9454159f12b55ec32613d18a4b7b4d75d284ad0cadc932bc1f4b",
+  "files": {
+    "KERNEL.ELF": "5f4af431201d25e74233ac908265404d9d12d4c72a03db111475b3f9e683d188",
+    "TAILOR.ELF": "97da808610494446a0be3f2ab5d65b41b8e2a2ce98a12d2ec43517c5ea9b48ff",
+    "WORKER.ELF": "9ca62f5d46fd60fffe6f45cf796ec777937bf4e3883a661cfc5ce6ea29c38cbc",
+    "model.manifest": "bbdaa8cd263d9454159f12b55ec32613d18a4b7b4d75d284ad0cadc932bc1f4b"
+  }
+}
