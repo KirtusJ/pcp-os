@@ -49,6 +49,15 @@ Predicates, fixed before the first run.
     in a space: more than sixty-four pages. The kernel takes the proposal (the write is answered with
     its length), does not ask, says on its screen that the file is too long to show, and the receipt's
     outcome is 6; no file long.txt is made. (Director 2: the first count was of the file's own lines.)
+ U1 (in the allowed case) the program can give up proposing, and the kernel then holds it to that.
+    After everything above, it writes the record that gives proposing up: an ill-formed one is
+    answered -22 and changes nothing; the right one is answered its 32 bytes with a receipt of
+    outcome 7, and the kernel says once that the program GAVE UP. A new proposal after it is answered
+    -13 with a receipt of outcome 7, the kernel says it was REFUSED without asking, no question is
+    put to the person, and no such file exists afterwards. The first proposal, answered before, is
+    still answered from its receipt (outcome 1) and nothing is made again. Giving up a second time
+    is answered the same and said no second time. Opening the device anew does not bring the right
+    back: a new proposal through it is refused the same way.
  P1 (in the allowed case) the program is given only what it is for. With a sound device the kernel
     drives attached, opening it is answered -13; opening a file among the loader's (its own program,
     which is certainly there) is answered -13. The kernel's start-up must say it found the sound
@@ -446,6 +455,16 @@ def main():
     # other, and is refused by the space the check presses. L1 is checked at 800 by 600 below.)
     if answers(log) != want:
         found.append("A1: the program was answered %r, not %r" % (answers(log), want))
+    gave = [line for line in log.splitlines() if line.startswith("probe: given up: ")]
+    wanted = ["probe: given up: an ill-formed record answered -22", "probe: given up: the record answered 32", "probe: given up: its receipt says 7",
+              "probe: given up: a new proposal then answered -13", "probe: given up: its receipt says 7",
+              "probe: given up: the first proposal again answered %d" % (32 + len(NAME) + len(CONTENT)), "probe: given up: its receipt says 1",
+              "probe: given up: a second record answered 32", "probe: given up: opening the device anew answered 0",
+              "probe: given up: a new proposal through it answered -13", "probe: given up: its receipt says 7", "probe: given up: opening the later file answered -2"]
+    said_gave = [line for line in log.splitlines() if "GAVE UP proposing files" in line]
+    said_refused = [line for line in log.splitlines() if "REFUSED without asking: this program gave up proposing files in this run" in line]
+    if gave != wanted or len(said_gave) != 1 or len(said_refused) != 2 or not all("later.txt" in a or "other.txt" in a for a in said_refused):
+        problems.append("U1: the program said %r; the kernel said it gave up %d time(s) and refused %r" % (gave, len(said_gave), said_refused))
     if "probe: making a file directly answered -13" not in log:
         found.append("A2: the program's own attempt to make a file was not refused with -13")
     # R1: started with another build folder, the same program can build only there: its proposal under

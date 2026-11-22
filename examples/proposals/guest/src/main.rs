@@ -256,5 +256,33 @@ pub extern "C" fn probe_main() -> ! {
     say(b"probe: opening the sound device answered ", open(b"/dev/audio\0", 1));
     say(b"probe: opening its own program among the loader's files answered ", open(b"proposal-probe\0", 0));
     log(b"probe: done\n");
+    // Giving up: the second kind of record. After it nothing new is asked of the person; what was
+    // answered before is still answered from its receipt; and giving up again changes nothing.
+    let mut gone = [0u8; 32];
+    gone[0..4].copy_from_slice(&1u32.to_le_bytes());
+    gone[4..8].copy_from_slice(&2u32.to_le_bytes());
+    gone[8..16].copy_from_slice(&9u64.to_le_bytes());
+    gone[16..24].copy_from_slice(&1u64.to_le_bytes());
+    let mut ill = gone;
+    ill[24] = 1; // a give-up record that names a length is not one
+    let outcome_now = |through: isize| {
+        let mut receipt = [0u8; 100];
+        if call(0, through as usize, receipt.as_mut_ptr() as usize, 100, 0, 0, 0) == 100 { u32::from_le_bytes([receipt[4], receipt[5], receipt[6], receipt[7]]) as isize } else { -1 }
+    };
+    say(b"probe: given up: an ill-formed record answered ", call(1, fd as usize, ill.as_ptr() as usize, 32, 0, 0, 0));
+    say(b"probe: given up: the record answered ", call(1, fd as usize, gone.as_ptr() as usize, 32, 0, 0, 0));
+    say(b"probe: given up: its receipt says ", outcome_now(fd));
+    say(b"probe: given up: a new proposal then answered ", ask_only(fd, 9, 2, b"taylor/first-project/later.txt", CONTENT));
+    say(b"probe: given up: its receipt says ", outcome_now(fd));
+    say(b"probe: given up: the first proposal again answered ", ask_only(fd, 7, 1, NAME, CONTENT));
+    say(b"probe: given up: its receipt says ", outcome_now(fd));
+    say(b"probe: given up: a second record answered ", call(1, fd as usize, gone.as_ptr() as usize, 32, 0, 0, 0));
+    let again = open(b"/dev/proposal\0", 2);
+    say(b"probe: given up: opening the device anew answered ", if again >= 0 { 0 } else { again });
+    if again >= 0 {
+        say(b"probe: given up: a new proposal through it answered ", ask_only(again, 9, 3, b"taylor/first-project/other.txt", CONTENT));
+        say(b"probe: given up: its receipt says ", outcome_now(again));
+    }
+    say(b"probe: given up: opening the later file answered ", open(b"taylor/first-project/later.txt\0", 0));
     exit(0);
 }
