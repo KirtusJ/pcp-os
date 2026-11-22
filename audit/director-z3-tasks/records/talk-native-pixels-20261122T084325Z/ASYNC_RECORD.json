@@ -1,0 +1,37 @@
+{
+ "tool": "async_run.py",
+ "plan": "plan.json",
+ "plan_sha256": "d7e6704f0ba047b2cdf30ab5d20b7b65090be72c33f234f4b66154300c7031ee",
+ "width": 1,
+ "tasks": [
+  {
+   "id": "T",
+   "argv": [
+    "python3",
+    "-B",
+    "/home/user/tailorbird/guest/tests/talk_native.py",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/mm1.elf32",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/tb6/tailorbird",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/tb6/talk-test-worker",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/tn11"
+   ],
+   "exit": 0,
+   "expect_exit": 0,
+   "timed_out": false,
+   "seconds": 44.83,
+   "ended_as_expected": true,
+   "copied_in": [],
+   "files": {
+    "STDERR.txt": {
+     "sha256": "1b0dda38d3f0b86a806fe9ba56550f4b26793f254895c4a49cf47aaee679483b",
+     "bytes": 334
+    },
+    "STDOUT.txt": {
+     "sha256": "5441b054b99a2823d892185808d518740d48c869650c26853ffffc0f00de9041",
+     "bytes": 1586
+    }
+   }
+  }
+ ],
+ "all_ended_as_expected": true
+}
