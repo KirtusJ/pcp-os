@@ -1,0 +1,24 @@
+name: Preloaded candidate inventory gate
+
+on:
+  pull_request:
+    paths:
+      - "examples/release-media/preloaded_gate.py"
+      - "examples/release-media/test_preloaded_gate.py"
+      - ".github/workflows/preloaded-gate.yml"
+  push:
+    branches: [master]
+    paths:
+      - "examples/release-media/preloaded_gate.py"
+      - "examples/release-media/test_preloaded_gate.py"
+      - ".github/workflows/preloaded-gate.yml"
+
+jobs:
+  inventory-refusals:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run source-only adverse controls
+        run: python3 examples/release-media/test_preloaded_gate.py
