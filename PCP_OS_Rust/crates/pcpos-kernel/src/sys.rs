@@ -487,14 +487,14 @@ fn open(p: &mut Process, caps: &CapSpace, world: &mut World, path: u64, flags: u
     let (writing, create, truncate) = (flags & 3 != 0, flags & 0x40 != 0, flags & 0x200 != 0);
     enum Target { Existing(Node), Create(String) }
     let target = match lookup(p, caps, world, &path) {
-        Ok(_) if create && flags & 0x80 != 0 => return err(EEXIST), // O_CREAT | O_EXCL
-        #[cfg(feature = "guest-ethernet")]
-        Ok(Node::Ethernet) if flags & 3 != 2 => return err(EINVAL), // raw packet sessions require O_RDWR
-        Ok(Node::File(_)) if writing => return err(EACCES), // the loader's files are read and never written
         // A program that may propose files opens stored files, and the picture of its build folder, to read
         // and for nothing else, whatever else it holds: any flag that means to write, make or empty is refused.
         #[cfg(feature = "proposals")]
         Ok(Node::Stored(_)) if (writing || create || truncate) && p.linux.as_ref().is_some_and(|l| l.proposals.allowed) => return err(EACCES),
+        Ok(_) if create && flags & 0x80 != 0 => return err(EEXIST), // O_CREAT | O_EXCL
+        #[cfg(feature = "guest-ethernet")]
+        Ok(Node::Ethernet) if flags & 3 != 2 => return err(EINVAL), // raw packet sessions require O_RDWR
+        Ok(Node::File(_)) if writing => return err(EACCES), // the loader's files are read and never written
         Ok(n) => {
             if writing && matches!(n, Node::Stored(_)) && !p.holds(caps, Object::Store, Rights::APPEND) {
                 return err(EACCES);

@@ -245,7 +245,9 @@ def main():
                   "probe: writing to the note answered -9", "probe: opening the note to write answered -13",
                   "probe: opening the note to empty it answered -13", "probe: opening the list to read and make answered -13",
                   "probe: opening the list to read and empty answered -13", "probe: opening the note to read and make answered -13",
-                  "probe: opening the note to read and empty answered -13", "probe: opening the note to read after all that answered 0",
+                  "probe: opening the note to read and empty answered -13", "probe: opening the note to read after all that answered 0", "probe: opening the note to make it anew answered -13",
+                  "probe: opening the list to make it anew answered -13", "probe: the note read after all that ended with 0",
+                  "probe: the note after all that is the same 1", "probe: closing it answered 0",
                   "probe: list hex " + snapshot.hex() + "\n", "probe: removing the note answered -13",
                   "probe: renaming the note answered -13", "probe: a name outside the folder answered -2",
                   "probe: a name beside the folder answered -2"):

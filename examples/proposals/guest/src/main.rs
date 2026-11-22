@@ -228,7 +228,25 @@ pub extern "C" fn probe_main() -> ! {
     say(b"probe: opening the note to empty it answered ", open(b"taylor/first-project/note.txt\0", 0x201));
     say(b"probe: opening the note to read and make answered ", open(b"taylor/first-project/note.txt\0", 0x40));
     say(b"probe: opening the note to read and empty answered ", open(b"taylor/first-project/note.txt\0", 0x200));
-    say(b"probe: opening the note to read after all that answered ", if open(b"taylor/first-project/note.txt\0", 0) >= 0 { 0 } else { -1 });
+    say(b"probe: opening the note to make it anew answered ", open(b"taylor/first-project/note.txt\0", 0xc0));
+    say(b"probe: opening the list to make it anew answered ", open(b"/dev/build-folder\0", 0xc0));
+    // After every refusal the note is read again, to its end, and is what it was.
+    let after = open(b"taylor/first-project/note.txt\0", 0);
+    say(b"probe: opening the note to read after all that answered ", if after >= 0 { 0 } else { after });
+    if after >= 0 {
+        let mut back = [0u8; 128];
+        let mut have = 0usize;
+        loop {
+            let got = call(0, after as usize, back[have..].as_mut_ptr() as usize, 5.min(back.len() - have), 0, 0, 0);
+            if got <= 0 {
+                say(b"probe: the note read after all that ended with ", got);
+                break;
+            }
+            have += got as usize;
+        }
+        say(b"probe: the note after all that is the same ", (have == CONTENT.len() && &back[..have] == CONTENT) as isize);
+        say(b"probe: closing it answered ", call(3, after as usize, 0, 0, 0, 0, 0));
+    }
     say(b"probe: removing the note answered ", call(87, b"taylor/first-project/note.txt\0".as_ptr() as usize, 0, 0, 0, 0, 0));
     say(b"probe: renaming the note answered ", call(82, b"taylor/first-project/note.txt\0".as_ptr() as usize, b"taylor/x.txt\0".as_ptr() as usize, 0, 0, 0, 0));
     say(b"probe: a name outside the folder answered ", open(b"elsewhere/note.txt\0", 0));
