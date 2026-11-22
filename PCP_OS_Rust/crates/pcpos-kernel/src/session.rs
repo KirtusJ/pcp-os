@@ -211,9 +211,23 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
         }
     };
     let mut world = World { files: files.iter().map(|f| (f.0.clone(), f.1)).collect(), store: Default::default(), #[cfg(feature = "proposals")] build_folder,
-        #[cfg(feature = "vm-store")] volume: None,
+        #[cfg(feature = "vm-store")] volume: None, #[cfg(feature = "model-memory")] model: None,
                             epoch_at_start: epoch(y, mo, d, h, mi, s).saturating_sub(arch::ticks() / arch::TICKS_PER_SECOND), unanswered: Vec::new() };
     let line = start.boot.command_line.as_str();
+    #[cfg(feature = "model-memory")]
+    {
+        world.model = match model_given(start, &world.files) {
+            Ok(Some(given)) => {
+                say!("a model of {} bytes is held in memory, out of the pool, for a companion to read; its manifest ({} bytes) is the one the loader's line pins", given.bytes, given.manifest.len());
+                Some(given)
+            }
+            Ok(None) => None,
+            Err(why) => {
+                say!("no model is given to any program: {}", why);
+                None
+            }
+        };
+    }
     #[cfg(feature = "vm-store")]
     if !safe {
         match crate::store::from_command_line(start.boot.exact_command_line()) {
@@ -1219,6 +1233,50 @@ fn cut_blocks_launch(start: &Start) -> bool {
 
 #[cfg(not(feature = "proposals"))]
 fn cut_blocks_launch(_: &Start) -> bool { false }
+
+/// Whether a model is given to a companion, decided once: memory the loader named and the kernel kept
+/// (`arch::model`), a manifest among the loader's files under the name `model.manifest`, and its
+/// SHA-256 on the loader's line as `model_manifest=`. All three, agreeing, or none. Nothing here reads
+/// the model's own bytes: the companion checks those against the manifest, which this pins.
+#[cfg(feature = "model-memory")]
+fn model_given(start: &Start, files: &[(String, &'static [u8])]) -> Result<Option<crate::sys::ModelGiven>, String> {
+    let bytes = match arch::model() {
+        arch::Model::None => {
+            return if start.boot.command_line.contains("model_manifest=") { Err(String::from("model_manifest is given and no model_memory")) } else { Ok(None) };
+        }
+        arch::Model::Refused(why) => return Err(format!("the memory named for it is not kept ({})", why)),
+        arch::Model::Held { bytes, .. } => bytes,
+    };
+    let kept = "the memory named for it stays out of the pool and is given to nothing";
+    let line = start.boot.exact_command_line().ok_or_else(|| format!("the loader's line was cut; {}", kept))?;
+    let mut pins = line.split_whitespace().filter_map(|w| w.strip_prefix("model_manifest="));
+    let pin = match (pins.next(), pins.next()) {
+        (Some(pin), None) => pin,
+        (None, _) => return Err(format!("model_manifest is not given; {}", kept)),
+        _ => return Err(format!("model_manifest is given more than once; {}", kept)),
+    };
+    let mut digest = [0u8; 32];
+    let hex = pin.as_bytes();
+    if hex.len() != 64 || !hex.iter().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+        return Err(format!("model_manifest is not 64 lower-case hexadecimal digits; {}", kept));
+    }
+    for (i, pair) in hex.chunks(2).enumerate() {
+        let nibble = |b: u8| if b <= b'9' { b - b'0' } else { b - b'a' + 10 };
+        digest[i] = nibble(pair[0]) << 4 | nibble(pair[1]);
+    }
+    let mut named = files.iter().filter(|f| f.0 == "model.manifest");
+    let manifest = match (named.next(), named.next()) {
+        (Some(file), None) => file.1,
+        (None, _) => return Err(format!("the loader gave no file named model.manifest; {}", kept)),
+        _ => return Err(format!("the loader gave more than one file named model.manifest; {}", kept)),
+    };
+    let parsed = pcpos_model_media::Manifest::parse(manifest, digest)
+        .map_err(|e| format!("model.manifest is not the manifest the loader's line pins, or is not a manifest ({:?}); {}", e, kept))?;
+    if parsed.model_bytes() != bytes {
+        return Err(format!("the manifest is of a model of {} bytes and the memory named holds {}; {}", parsed.model_bytes(), bytes, kept));
+    }
+    Ok(Some(crate::sys::ModelGiven { manifest, digest, bytes }))
+}
 
 const FILE_APPROVAL: &str = "Creating a file needs your approval.";
 #[cfg(feature = "proposals")]
