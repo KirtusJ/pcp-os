@@ -1,0 +1,372 @@
+"""Fixture-only negative controls. Never opens a block device or writes bytes."""
+from dataclasses import replace
+import unittest
+
+from target_preflight import (
+    FIRST_TRANSPORT, Inventory, FreshInstallPlan, MediaCondition,
+    ObservedDevice, PreflightState, SourceStatus, assess_fresh_install,
+    classify_source,
+)
+
+CAP = 2048  # exactly 1 MiB, all fake; no allocated disk image.
+ID = "toy-id-a"  # deliberately non-authenticating
+HASH = "a" * 64
+IMAGE = "b" * 64
+
+
+def example():
+    d = ObservedDevice(
+        handle="host-minted-handle-A", generation=3,
+        transport=FIRST_TRANSPORT, bus_path="pci/0000:00:05.0",
+        capacity_512=CAP, gpt_lba_bytes=512, volume_marker=ID,
+        uefi_media_id=7,
+        preflight_digest=HASH,
+        condition=MediaCondition.FULL_ZERO_SCAN_REPORTED,
+    )
+    p = FreshInstallPlan(
+        inventory_epoch=9, handle=d.handle, generation=d.generation,
+        transport=d.transport, bus_path=d.bus_path,
+        capacity_512=d.capacity_512, gpt_lba_bytes=d.gpt_lba_bytes,
+        volume_marker=d.volume_marker, uefi_media_id=d.uefi_media_id,
+        preflight_digest=d.preflight_digest,
+        image_bytes=CAP * 512, image_sha256=IMAGE,
+    )
+    return Inventory(epoch=9, devices=(d,)), p
+
+
+class PreflightTests(unittest.TestCase):
+    def assert_hold(self, inventory, plan):
+        self.assertEqual(assess_fresh_install(inventory, plan).state,
+                         PreflightState.HOLD)
+
+    def test_consistent_claims_are_only_eligible_for_further_host_check(self):
+        inv, plan = example()
+        result = assess_fresh_install(inv, plan)
+        self.assertEqual(result.state, PreflightState.ELIGIBLE_FOR_HOST_RECHECK)
+        self.assertNotIn("AUTHORIZED", result.state.value)
+
+    def test_4096_gpt_logical_sector_policy(self):
+        inv, plan = example()
+        d = replace(inv.devices[0], gpt_lba_bytes=4096)
+        self.assertEqual(assess_fresh_install(replace(inv, devices=(d,)),
+                          replace(plan, gpt_lba_bytes=4096)).state,
+                         PreflightState.ELIGIBLE_FOR_HOST_RECHECK)
+
+    def test_stale_epoch(self):
+        inv, p = example()
+        self.assert_hold(replace(inv, epoch=10), p)
+
+    def test_generation_changed(self):
+        inv, p = example()
+        self.assert_hold(replace(inv, devices=(replace(inv.devices[0],generation=4),)), p)
+
+    def test_bus_path_swapped_even_if_volume_marker_is_cloned(self):
+        inv, p = example()
+        self.assert_hold(replace(inv, devices=(replace(inv.devices[0],bus_path="pci/0000:00:06.0"),)), p)
+
+    def test_same_device_id_on_two_present_drives(self):
+        inv, p = example()
+        clone = replace(inv.devices[0], handle="different-handle",bus_path="pci/0000:00:06.0")
+        self.assert_hold(replace(inv, devices=(inv.devices[0],clone)), p)
+
+    def test_another_writable_device_even_with_different_id(self):
+        inv, p = example()
+        extra = replace(inv.devices[0], handle="different-handle",bus_path="pci/0000:00:06.0",volume_marker="different-id")
+        self.assert_hold(replace(inv, devices=(inv.devices[0],extra)), p)
+
+    def test_second_writable_device_on_unsupported_bus_still_holds(self):
+        inv,p=example()
+        extra=replace(inv.devices[0],handle="other",bus_path="pci/0000:00:06.0",
+                      transport="ahci",volume_marker="different")
+        self.assert_hold(replace(inv,devices=(inv.devices[0],extra)),p)
+
+    def test_blank_disk_without_existing_volume_marker_is_not_automatically_disqualified(self):
+        inv,p=example()
+        blank=replace(inv.devices[0],volume_marker="")
+        self.assertEqual(assess_fresh_install(replace(inv,devices=(blank,)),
+                         replace(p,volume_marker="")).state,
+                         PreflightState.ELIGIBLE_FOR_HOST_RECHECK)
+
+    def test_other_read_only_device_does_not_create_two_writable_targets(self):
+        inv, p = example()
+        other = replace(inv.devices[0], handle="different-handle",bus_path="pci/0000:00:06.0",volume_marker="different-id",read_only=True)
+        self.assertEqual(assess_fresh_install(replace(inv,devices=(inv.devices[0],other)),p).state,
+                         PreflightState.ELIGIBLE_FOR_HOST_RECHECK)
+
+    def test_duplicate_bus_path_is_ambiguous(self):
+        inv, p = example()
+        extra = replace(inv.devices[0],handle="different-handle",volume_marker="different-id",read_only=True)
+        self.assert_hold(replace(inv,devices=(inv.devices[0],extra)),p)
+
+    def test_target_absent(self):
+        inv, p = example()
+        self.assert_hold(replace(inv, devices=(replace(inv.devices[0],present=False),)),p)
+
+    def test_target_read_only(self):
+        inv, p = example()
+        self.assert_hold(replace(inv,devices=(replace(inv.devices[0],read_only=True),)),p)
+
+    def test_outstanding_io_fence(self):
+        inv, p = example()
+        self.assert_hold(replace(inv,devices=(replace(inv.devices[0],outstanding_io=True),)),p)
+
+    def test_transport_not_other_ide_or_ahci(self):
+        inv, p = example()
+        self.assert_hold(replace(inv,devices=(replace(inv.devices[0],transport="ahci"),)),p)
+
+    def test_uefi_media_change_is_distinct_from_volume_marker(self):
+        inv, p = example()
+        d = replace(inv.devices[0], uefi_media_id=8)
+        self.assert_hold(replace(inv, devices=(d,)), p)
+
+    def test_missing_or_noninteger_uefi_media_id_holds(self):
+        inv, p = example()
+        d = replace(inv.devices[0], uefi_media_id=None)
+        self.assert_hold(replace(inv, devices=(d,)), p)
+
+    def test_invalid_plan_uefi_media_id_holds(self):
+        inv, p = example()
+        self.assert_hold(inv, replace(p, uefi_media_id=True))
+
+    def test_valid_zero_uefi_media_id_can_coexist_with_blank_media(self):
+        inv, p = example()
+        d = replace(inv.devices[0], uefi_media_id=0, volume_marker="")
+        self.assertEqual(assess_fresh_install(
+            replace(inv, devices=(d,)),
+            replace(p, uefi_media_id=0, volume_marker="")).state,
+            PreflightState.ELIGIBLE_FOR_HOST_RECHECK)
+
+    def test_boolean_epoch_cannot_pass_for_integer_one(self):
+        inv, p = example()
+        self.assert_hold(replace(inv, epoch=True), replace(p, inventory_epoch=1))
+
+    def test_float_image_length_cannot_equal_int_bytes(self):
+        inv, p = example()
+        self.assert_hold(inv, replace(p, image_bytes=float(p.image_bytes)))
+
+    def test_missing_digest_type_returns_hold_not_exception(self):
+        inv, p = example()
+        self.assert_hold(inv, replace(p, image_sha256=None))
+
+    def test_boolean_generation_cannot_pass_integer_one(self):
+        inv, p = example()
+        d = replace(inv.devices[0], generation=True)
+        self.assert_hold(replace(inv, devices=(d,)), replace(p, generation=1))
+
+    def test_float_capacity_cannot_equal_integer_sector_count(self):
+        inv, p = example()
+        d = replace(inv.devices[0], capacity_512=float(CAP))
+        self.assert_hold(replace(inv, devices=(d,)), p)
+
+    def test_string_false_flush_flag_is_not_true(self):
+        inv, p = example()
+        d = replace(inv.devices[0], flush_supported="false")
+        self.assert_hold(replace(inv, devices=(d,)), p)
+
+    def test_string_true_present_flag_cannot_activate_device(self):
+        inv, p = example()
+        d = replace(inv.devices[0], present="true")
+        self.assert_hold(replace(inv, devices=(d,)), p)
+
+    def test_nonstring_volume_marker_holds(self):
+        inv, p = example()
+        d = replace(inv.devices[0], volume_marker=None)
+        self.assert_hold(replace(inv, devices=(d,)), replace(p, volume_marker=None))
+
+    def test_boolean_plan_capacity_cannot_pass_integer_one(self):
+        inv, p = example()
+        d = replace(inv.devices[0], capacity_512=1)
+        self.assert_hold(replace(inv, devices=(d,)),
+                         replace(p, capacity_512=True, image_bytes=512))
+
+    def test_raw_string_condition_cannot_masquerade_as_enum(self):
+        inv, p = example()
+        d = replace(inv.devices[0], condition="full-zero-scan-reported")
+        self.assert_hold(replace(inv, devices=(d,)), p)
+
+    def test_capacity_changed(self):
+        inv, p = example()
+        self.assert_hold(replace(inv,devices=(replace(inv.devices[0],capacity_512=CAP+1),)),p)
+
+    def test_small_device_prevents_partial_factory_image(self):
+        inv, p = example()
+        d = replace(inv.devices[0], capacity_512=CAP//2)
+        self.assert_hold(replace(inv, devices=(d,)),replace(p,capacity_512=CAP//2))
+
+    def test_large_device_rejects_stale_gpt_backup_lba(self):
+        inv, p = example()
+        d = replace(inv.devices[0], capacity_512=CAP*2)
+        self.assert_hold(replace(inv,devices=(d,)),replace(p,capacity_512=CAP*2))
+
+    def test_unsupported_gpt_2048_byte_target_lba(self):
+        inv, p = example()
+        d = replace(inv.devices[0],gpt_lba_bytes=2048)
+        self.assert_hold(replace(inv,devices=(d,)),replace(p,gpt_lba_bytes=2048))
+
+    def test_capacity_gpt_block_misaligned(self):
+        inv, p = example()
+        d = replace(inv.devices[0],capacity_512=CAP+1,gpt_lba_bytes=4096)
+        self.assert_hold(replace(inv,devices=(d,)),replace(p,capacity_512=CAP+1,gpt_lba_bytes=4096,image_bytes=(CAP+1)*512))
+
+    def test_overflowed_capacity(self):
+        inv, p = example()
+        d = replace(inv.devices[0], capacity_512=(1<<64)-1)
+        self.assert_hold(replace(inv,devices=(d,)),replace(p,capacity_512=(1<<64)-1))
+
+    def test_no_flush_durability_claim(self):
+        inv, p = example()
+        self.assert_hold(replace(inv,devices=(replace(inv.devices[0],flush_supported=False),)),p)
+
+    def test_nonblank_valid_gpt_not_fresh_install(self):
+        inv, p = example()
+        self.assert_hold(replace(inv,devices=(replace(inv.devices[0],condition=MediaCondition.GPT_VALID_REPORTED),)),p)
+
+    def test_damaged_gpt_requires_recovery_separate(self):
+        inv, p = example()
+        self.assert_hold(replace(inv,devices=(replace(inv.devices[0],condition=MediaCondition.GPT_DAMAGED_REPORTED),)),p)
+
+    def test_unknown_media_not_silently_blank(self):
+        inv, p = example()
+        self.assert_hold(replace(inv,devices=(replace(inv.devices[0],condition=MediaCondition.UNKNOWN),)),p)
+
+    def test_preflight_digest_changed(self):
+        inv, p = example()
+        self.assert_hold(replace(inv,devices=(replace(inv.devices[0],preflight_digest="c"*64),)),p)
+
+    def test_volume_marker_changed(self):
+        inv, p = example()
+        self.assert_hold(replace(inv,devices=(replace(inv.devices[0],volume_marker="other"),)),p)
+
+    def test_missing_image_digest(self):
+        inv, p = example()
+        self.assert_hold(inv,replace(p,image_sha256=""))
+
+    def test_no_inventory(self):
+        inv, p = example()
+        self.assert_hold(replace(inv,devices=()),p)
+
+    def test_incomplete_device_record(self):
+        inv, p = example()
+        self.assert_hold(replace(inv,devices=(replace(inv.devices[0],handle=""),)),p)
+
+    def test_reordered_enumeration_is_not_identity(self):
+        inv, p = example()
+        ro=replace(inv.devices[0],handle="other",bus_path="pci/0000:00:09.0",volume_marker="different",read_only=True)
+        self.assertEqual(assess_fresh_install(replace(inv,devices=(ro,inv.devices[0])),p).state,
+                         PreflightState.ELIGIBLE_FOR_HOST_RECHECK)
+
+    def test_limit_same_port_clone_is_indistinguishable_to_forged_facts(self):
+        # An attacker replaces the disk while recreating EVERY presented field.
+        # No model that only sees these fields can detect this; a fresh trusted
+        # grant and observed hardware boundary are *still* necessary.
+        inv,p=example()
+        self.assertEqual(assess_fresh_install(inv,p).state,
+                         PreflightState.ELIGIBLE_FOR_HOST_RECHECK)
+
+
+class OfflineEvidenceTests(unittest.TestCase):
+    def test_offline_local_source_actually_inspected(self):
+        self.assertEqual(classify_source(location="local",available=True,
+                         inspected=True,networking_enabled=False),SourceStatus.INSPECTED_LOCAL)
+
+    def test_offline_local_source_absent(self):
+        self.assertEqual(classify_source(location="local",available=False,
+                         inspected=False,networking_enabled=False),SourceStatus.UNAVAILABLE)
+
+    def test_offline_external_unavailable(self):
+        self.assertEqual(classify_source(location="external",available=False,
+                         inspected=False,networking_enabled=False),SourceStatus.UNAVAILABLE)
+
+    def test_offline_cached_external_source_available_but_unread(self):
+        self.assertEqual(classify_source(location="external",available=True,
+                         inspected=False,networking_enabled=False),SourceStatus.NOT_INSPECTED)
+
+    def test_online_external_source_available_but_unread(self):
+        self.assertEqual(classify_source(location="external",available=True,
+                         inspected=False,networking_enabled=True),SourceStatus.NOT_INSPECTED)
+
+    def test_external_source_inspected_before_network_disabled(self):
+        self.assertEqual(classify_source(location="external",available=True,
+                         inspected=True,networking_enabled=False),SourceStatus.INSPECTED_EXTERNAL)
+
+    def test_cannot_claim_unavailable_source_inspected(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="external",available=False,
+                            inspected=True,networking_enabled=False)
+
+
+    # Red controls: annotations are not runtime validation. Input values other
+    # than actual Python bools must NOT be truthiness-coerced into INSPECTED.
+    def test_inspected_string_false_cannot_become_inspected_local(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="local", available=True,
+                            inspected="false", networking_enabled=False)
+
+    def test_inspected_string_true_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="local", available=True,
+                            inspected="true", networking_enabled=False)
+
+    def test_inspected_integer_one_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="external", available=True,
+                            inspected=1, networking_enabled=False)
+
+    def test_inspected_integer_zero_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="local", available=True,
+                            inspected=0, networking_enabled=False)
+
+    def test_inspected_none_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="local", available=True,
+                            inspected=None, networking_enabled=False)
+
+    def test_inspected_float_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="external", available=True,
+                            inspected=0.0, networking_enabled=False)
+
+    def test_available_string_false_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="local", available="false",
+                            inspected=False, networking_enabled=False)
+
+    def test_available_integer_zero_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="local", available=0,
+                            inspected=False, networking_enabled=False)
+
+    def test_available_none_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="local", available=None,
+                            inspected=False, networking_enabled=False)
+
+    def test_available_float_one_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="local", available=1.0,
+                            inspected=False, networking_enabled=False)
+
+    def test_network_string_false_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="external", available=True,
+                            inspected=False, networking_enabled="false")
+
+    def test_network_integer_one_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="external", available=True,
+                            inspected=False, networking_enabled=1)
+
+    def test_network_none_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="external", available=True,
+                            inspected=False, networking_enabled=None)
+
+    def test_network_float_zero_is_not_a_boolean(self):
+        with self.assertRaises(ValueError):
+            classify_source(location="external", available=True,
+                            inspected=False, networking_enabled=0.0)
+
+
+if __name__ == "__main__":
+    unittest.main()
