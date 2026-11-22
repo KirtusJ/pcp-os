@@ -251,7 +251,12 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     s=read_map(bs,&key,&stride,&count);
     if (EFI_ERROR(s) || !translate(stride,count,NULL,0)) return EFI_UNSUPPORTED;
     word("owned-before-write\n");
-    SetMem((void *)(UINTN)base,ARENA_END-IMAGE_BASE,0);
+#ifdef PCP_USB_VM
+    /* The content check below must observe a real clear, even when firmware returns zeroed pages. */
+    _Static_assert(SURF_BASE > IMAGE_BASE + KERNEL_FILE_BYTES, "fixture needs a zero-filled tail");
+    *(volatile UINT8 *)(SURF_BASE - 1) = 0xa5;
+#endif
+    uefi_call_wrapper(bs->SetMem, 3, (void *)(UINTN)base, ARENA_END-IMAGE_BASE, 0);
     copy_bytes((void *)(UINTN)base,kernel_bytes,KERNEL_FILE_BYTES);
     struct boot_data *b=(void *)INFO_BASE;
     set_module(b,0,SURF_BASE,SURF_SIZE,surf_bytes,"surf.elf",9);
