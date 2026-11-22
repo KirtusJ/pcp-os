@@ -878,6 +878,25 @@ fn remove_selects_the_exact_local_installation_and_preserves_other_directories()
 }
 
 #[test]
+fn text_artifact_reuses_identical_bytes_and_preserves_an_occupied_digest_name() {
+    let root = in_use("kept-artifact");
+    let input = r#"{"text":"collected observation","origin":"PRODUCED"}"#;
+    let path = root.join(".pcp/artifacts").join(sha256_hex(b"collected observation"));
+    for _ in 0..2 {
+        let (reply, error) = tool(&root, "acr_artifact", input);
+        assert!(!error && reply.contains("ARTIFACT_ADDED"), "{reply}");
+        assert_eq!(fs::read(&path).unwrap(), b"collected observation");
+    }
+    let before = fs::read(root.join(REG)).unwrap();
+    fs::write(&path, b"other evidence").unwrap();
+    let (reply, error) = tool(&root, "acr_artifact", input);
+    assert!(error && reply.contains("different contents"), "{reply}");
+    assert_eq!(fs::read(&path).unwrap(), b"other evidence");
+    assert_eq!(fs::read(root.join(REG)).unwrap(), before);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn repair_preserves_an_existing_fragment_and_can_resume_with_matching_bytes() {
     let root = dir("resume-repair");
     assert!(pcpos(&root).args(["init", REG, "--principal", "p"]).output().unwrap().status.success());
@@ -896,6 +915,28 @@ fn repair_preserves_an_existing_fragment_and_can_resume_with_matching_bytes() {
     assert!(pcpos(&root).args(["repair", REG]).output().unwrap().status.success());
     assert_eq!(fs::read(&register).unwrap(), complete);
     assert_eq!(fs::read(&sidecar).unwrap(), fragment);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn concurrent_installers_share_one_module_registration() {
+    let root = dir("same-module");
+    let method = small_method(&root);
+    let initialize = pcpos(&root).args(["init", REG, "--principal", "p"]).output().unwrap();
+    assert!(initialize.status.success());
+    let spec = "**Component:** `local.shared`, Version 1.0\n";
+    fs::write(root.join("incoming.md"), spec).unwrap();
+    let mut children = Vec::new();
+    for _ in 0..8 {
+        let mut command = with_method(&root, &method);
+        children.push(command.args(["module", "add", REG, "incoming.md", "--by", "p"])
+            .stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap());
+    }
+    let successes = children.into_iter().map(|mut c| c.wait().unwrap()).filter(|s| s.success()).count();
+    assert_eq!(successes, 1);
+    assert_eq!(fs::read_to_string(root.join(".pcp/modules/shared/SOURCE/Specification.md")).unwrap(), spec);
+    let ledger = events(&root);
+    assert_eq!(ledger.iter().filter(|e| e.get("body").and_then(|b| b.get("event")).and_then(Value::as_str) == Some("MODULE_ADDED")).count(), 1);
     fs::remove_dir_all(root).unwrap();
 }
 

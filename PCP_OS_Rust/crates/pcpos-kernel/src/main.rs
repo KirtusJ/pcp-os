@@ -703,6 +703,8 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
          cr0 >> 31 & 1 == 1, cr0 >> 16 & 1 == 1, efer >> 11 & 1 == 1, efer >> 10 & 1 == 1);
     let (pool_start, pool_end) = arch::protect(&mut boot);
     let frames = mem::init();
+    #[cfg(feature = "high-memory-demo")]
+    mem::high_memory_demo();
     arch::fpu_init();
     #[cfg(feature = "vector-state-demo")]
     arch::vector_state_demo();
@@ -758,11 +760,14 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     failed += self_test();
     let image_pages = ((end - ts) >> 12) as u32 + ((ts - (1 << 20)) >> 12) as u32 - arch::guard_pages().len() as u32;
     let module_pages: u32 = boot.modules.iter().filter(|m| m.usable).map(|m| (((m.end + 4095) >> 12) - (m.start >> 12)) as u32).sum();
+    // The frame memory is the pool below one gibibyte and, where the machine has it, the ranges above
+    // four: exactly those bytes must be what the page tables map as frame memory, and no more.
+    let high_bytes: usize = { let (ranges, count) = arch::high_pools(); ranges[..count].iter().map(|&(start, stop)| stop - start).sum() };
     for (name, ok) in [("no memory is both writable and executable", map.writable_and_executable == 0), ("code is executable and not writable", map.code_executable_not_writable),
                        ("read-only data is neither writable nor executable", map.read_only_data_neither), ("data is writable and not executable", map.data_writable_not_executable),
                        ("address zero is not mapped, nor anything below the image", map.address_zero_unmapped && map.low_mebibyte_unmapped),
                        ("what is mapped is the kernel image, the loader's files read-only, and frame memory that is never executable; nothing else, each at its own address, none of it for user mode",
-                        map.image_pages == image_pages && map.module_pages == module_pages && map.module_pages_not_read_only == 0 && map.pool_bytes == pool_end - pool_start
+                        map.image_pages == image_pages && map.module_pages == module_pages && map.module_pages_not_read_only == 0 && map.pool_bytes == pool_end - pool_start + high_bytes
                             && map.pool_or_device_executable == 0 && map.outside == 0 && map.not_identity == 0 && map.user_reachable == 0 && map.other_top_entries == 0 && map.device_bytes == 0),
                        ("every further protection the processor offers is on", offered == enabled)] {
         check(name, ok, &mut failed);
@@ -915,6 +920,10 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     let (live, carved) = arch::heap_used();
     let (pool_frames, pool_free, taken, given) = mem::census();
     say!("kernel heap: {} bytes in use, {} bytes ever carved; frames: {} of {} free, {} handed out and {} given back since the start", live, carved, pool_free, pool_frames, taken, given);
+    let (high_frames, high_free, high_taken, high_given) = mem::census_high();
+    if high_frames > 0 {
+        say!("memory above four gibibytes: {} of {} frames free, {} handed out and {} given back since the start", high_free, high_frames, high_taken, high_given);
+    }
     if failed == 0 {
         #[cfg(all(feature = "vm-store", not(feature = "guest-ethernet")))]
         say!("ALL SELF-TESTS PASS. VM checkpoint storage is available when a dedicated IDE data disk is explicitly mounted.");
