@@ -2116,12 +2116,20 @@ impl Space {
         true
     }
 
-    /// Copy `len` bytes a program names in its own memory, at most a mebibyte. `None` if any of them is not memory it may read.
+    /// Copy `len` bytes a program names in its own memory, at most a mebibyte. `None` if any of them is not memory it may
+    /// read, or if the kernel has no memory left to copy them into.
     pub fn read(&self, addr: usize, len: usize) -> Option<alloc::vec::Vec<u8>> {
         if len > 1 << 20 {
             return None;
         }
-        let mut out = alloc::vec![0u8; len];
+        // The buffer's size comes from the program. If the kernel has not that much memory left, the
+        // call is refused like any other that cannot be carried out: an allocation that cannot fail
+        // would stop the kernel instead, on a number a program chose.
+        let mut out = alloc::vec::Vec::new();
+        if out.try_reserve_exact(len).is_err() {
+            return None;
+        }
+        out.resize(len, 0);
         if self.copy_in(addr, &mut out) { Some(out) } else { None }
     }
 
