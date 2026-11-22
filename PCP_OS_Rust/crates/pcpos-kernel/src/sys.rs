@@ -69,6 +69,9 @@ pub enum Node {
     Music,
     /// Reads nothing and swallows what is written.
     Null,
+    /// This program's end of the channel to its companion.
+    #[cfg(feature = "companion")]
+    Talk,
     /// The one directory there is.
     Directory,
     /// One of the loader's files: its index in `World::files`.
@@ -103,6 +106,9 @@ pub struct Linux {
     shadow_asked: bool,
     /// Where that memory is in the program's address space, once it has mapped the display.
     shadow: Option<usize>,
+    /// Which end of the channel to its companion this program holds, if it has one.
+    #[cfg(feature = "companion")]
+    pub talk: Option<usize>,
     #[cfg(feature = "proposals")]
     proposals: Proposals,
 }
@@ -371,7 +377,7 @@ const TICK_NS: u64 = 999_847;
 impl Linux {
     pub fn new(image_end: usize) -> Linux {
         let console = || Some(Open { node: Node::Console, position: 0, nonblocking: false, writable: true, append: false });
-        Linux { files: alloc::vec![console(), console(), console()], heap_start: image_end, heap_end: image_end, next_map: arch::USER_BASE + (64 << 30), reserved: Vec::new(), extra_pages: 0, shadow_asked: false, shadow: None, #[cfg(feature = "proposals")] proposals: Proposals::default() }
+        Linux { files: alloc::vec![console(), console(), console()], heap_start: image_end, heap_end: image_end, next_map: arch::USER_BASE + (64 << 30), reserved: Vec::new(), extra_pages: 0, shadow_asked: false, shadow: None, #[cfg(feature = "proposals")] proposals: Proposals::default(), #[cfg(feature = "companion")] talk: None }
     }
 }
 
@@ -435,6 +441,8 @@ fn node_stat(world: &World, node: &Node) -> Option<[u8; 144]> {
         #[cfg(feature = "guest-ethernet")]
         Node::Ethernet => stat_bytes(0o020660, 0, 1),
         Node::Console | Node::Display | Node::Keys | Node::Sound | Node::Music | Node::Null => stat_bytes(0o020666, 0, 1),
+        #[cfg(feature = "companion")]
+        Node::Talk => stat_bytes(0o020660, 0, 1),
         #[cfg(feature = "game-link")]
         Node::GameLink => stat_bytes(0o020666, 0, 1),
         Node::Directory => stat_bytes(0o040755, 0, 1),
@@ -465,6 +473,9 @@ fn lookup(p: &Process, caps: &CapSpace, world: &World, path: &str) -> Result<Nod
             }
             None => Err(err(EACCES)),
         },
+        // The channel to the program's companion: only for a program the kernel gave an end of it.
+        #[cfg(feature = "companion")]
+        "dev/talk" => if p.linux.as_ref().is_some_and(|l| l.talk.is_some()) { Ok(Node::Talk) } else { Err(err(EACCES)) },
         "dev/console" | "dev/tty" => need(Object::Console, Rights::APPEND, Node::Console),
         "dev/fb0" => need(Object::Display, Rights::APPEND, Node::Display),
         "dev/kbd" => need(Object::Keys, Rights::READ, Node::Keys),
@@ -614,6 +625,8 @@ fn read(p: &mut Process, world: &World, fd: u64, addr: u64, len: u64) -> Outcome
             return Outcome::Return(result);
         }
         Node::Console | Node::Null => return Outcome::Return(0),
+        #[cfg(feature = "companion")]
+        Node::Talk => return Outcome::Return(err(EINVAL)), // answered in `call`, where the channel is
         Node::Display | Node::Directory | Node::Sound | Node::Music => return Outcome::Return(err(EINVAL)),
         Node::Keys => {
             // Each key event is two bytes: the key's number, then bit 0 set if it was released and bit 1 if it is of the second group.
@@ -660,6 +673,8 @@ fn write(p: &mut Process, caps: &CapSpace, fd: u64, addr: u64, len: u64) -> u64 
         #[cfg(feature = "proposals")]
         Node::Proposal => err(EINVAL), // a proposal is taken where the call is answered, before this
         Node::Null => len as u64,
+        #[cfg(feature = "companion")]
+        Node::Talk => err(EINVAL), // answered in `call`, where the channel is
         #[cfg(feature = "guest-ethernet")]
         Node::Ethernet => {
             if !f.writable || !p.holds(caps, Object::Ethernet, Rights::APPEND) { return err(EBADF); }
@@ -1096,8 +1111,59 @@ fn display_call(p: &mut Process, caps: &CapSpace, request: u64, arg: u64) -> u64
 }
 
 /// Answer one call of process `i`.
+/// A read or a write on the channel to the companion. Bytes only: the kernel carries them in order and
+/// reads none. A read takes what is waiting, or waits; with the other program gone and nothing left it
+/// answers 0. A write queues what there is room for, or waits for room; to a program that is gone it
+/// answers EPIPE. A descriptor opened not to wait is answered EAGAIN where the other would wait.
+#[cfg(feature = "companion")]
+fn talk(t: &mut Table, i: usize, writing: bool, fd: u64, addr: u64, len: u64) -> Outcome {
+    let p = &t.procs[i];
+    let (Some(f), Some(end)) = (file(p, fd), p.linux.as_ref().and_then(|l| l.talk)) else { return Outcome::Return(err(EBADF)) };
+    let Some(channel) = t.talk.as_mut() else { return Outcome::Return(err(EBADF)) };
+    let len = len.min(crate::talk::ROOM as u64) as usize;
+    if len == 0 {
+        return Outcome::Return(0);
+    }
+    if writing {
+        if !channel.peer(end) {
+            return Outcome::Return(err(32)); // EPIPE
+        }
+        let room = channel.room(end).min(len);
+        if room == 0 {
+            return if f.nonblocking { Outcome::Return(err(EAGAIN)) } else { Outcome::Wait(Waiting::TalkRoom, true) };
+        }
+        return match p.space.as_ref().and_then(|s| s.read(addr as usize, room)) {
+            Some(bytes) => Outcome::Return(channel.write(end, &bytes) as u64),
+            None => Outcome::Return(err(EFAULT)),
+        };
+    }
+    if !channel.readable(end) {
+        return if !channel.peer(end) {
+            Outcome::Return(0)
+        } else if f.nonblocking {
+            Outcome::Return(err(EAGAIN))
+        } else {
+            Outcome::Wait(Waiting::TalkBytes, true)
+        };
+    }
+    // What is handed over is taken from the queue only once the program's memory has accepted it.
+    let mut bytes = Vec::new();
+    if bytes.try_reserve_exact(len).is_err() {
+        return Outcome::Return(err(ENOMEM));
+    }
+    bytes.extend(channel.peek(end, len));
+    if !put(p, addr, &bytes) {
+        return Outcome::Return(err(EFAULT));
+    }
+    Outcome::Return(channel.read(end, bytes.len(), |_| ()) as u64)
+}
+
 pub fn call(t: &mut Table, i: usize, frame: &Frame) -> Outcome {
     let (number, a) = frame.linux_call();
+    #[cfg(feature = "companion")]
+    if matches!(number, 0 | 1) && file(&t.procs[i], a[0]).is_some_and(|f| matches!(f.node, Node::Talk)) {
+        return talk(t, i, number == 1, a[0], a[1], a[2]);
+    }
     let Table { procs, caps, world, fs_loaded, .. } = t;
     let p = &mut procs[i];
     let ret = Outcome::Return;

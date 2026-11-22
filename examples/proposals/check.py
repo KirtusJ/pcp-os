@@ -57,10 +57,12 @@ import hashlib
 import json
 from pathlib import Path
 import runpy
+import shutil
 import socket
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 
 HERE = Path(__file__).resolve().parent
@@ -72,9 +74,20 @@ RECORD = 32 + len(NAME) + len(CONTENT)
 
 
 class Guest:
+    # (file, digest of the probe, digest of the file) when every run of the probe is to have a
+    # companion beside it; None otherwise.
+    companion = None
+
     def __init__(self, qemu, kernel, probe, out, append, also=None):
         out.mkdir(parents=True)
-        self.out, self.serial, sock = out, out / "serial.txt", out / "q.sock"
+        if Guest.companion and "auto=proposal-probe" in append:
+            beside, front, back = Guest.companion
+            also = "%s,%s" % (also, beside) if also else str(beside)
+            append += " worker_for=%s worker_image=%s" % (front, back)
+        # The socket is kept in a short directory of its own: a socket's path may hold 107 bytes, and
+        # the evidence directory's can be longer than that.
+        self.out, self.serial, sock = out, out / "serial.txt", Path(tempfile.mkdtemp(prefix="q")) / "s"
+        self.socket_at = sock
         self.process = subprocess.Popen(
             [qemu, "-machine", "pc", "-accel", "tcg", "-cpu", "max", "-m", "128M", "-kernel", str(kernel),
              "-initrd", "%s proposal-probe" % probe + (",%s" % also if also else ""), "-append", append, "-vga", "std", "-display", "none", "-nic", "none",
@@ -141,6 +154,8 @@ class Guest:
             self.process.kill()
             self.process.wait()
             return None
+        finally:
+            shutil.rmtree(self.socket_at.parent, ignore_errors=True)
 
 
 def main():
@@ -157,6 +172,10 @@ def main():
     # A third build, in a file named store-after (FILL=57 FILE=after.bin): after the refusal for want of
     # one byte it writes the 57 bytes that are left, as an ordinary program, and reads them back.
     parser.add_argument("--filler-after", type=Path)
+    # A kernel built with the companion feature as well, and a program that waits on the channel
+    # (examples/companion/probe built with BACK=1): every run of the probe then has it beside it, and
+    # each case must come out the same, the companion having been started.
+    parser.add_argument("--companion", type=Path)
     args = parser.parse_args()
     evidence = args.evidence.resolve()
     evidence.mkdir(parents=True, exist_ok=False)
@@ -165,6 +184,8 @@ def main():
     content = hashlib.sha256(CONTENT).hexdigest()
     request = hashlib.sha256(len(NAME).to_bytes(4, "little") + len(CONTENT).to_bytes(4, "little") + NAME.encode() + CONTENT).hexdigest()
     granted = "auto=proposal-probe then=off propose_image=%s" % digest
+    if args.companion:
+        Guest.companion = (args.companion.resolve(), digest, hashlib.sha256(args.companion.read_bytes()).hexdigest())
     problems, results = [], {}
 
     def case(name, append, keys, asked, idle=None):
