@@ -12,6 +12,15 @@ finite f32 or an error; its caller can cancel between blocks of at most 256 valu
 The library is `no_std`, allocation-free and forbids unsafe code. It adds only a
 dependency on the existing GGUF index crate.
 
+`dot_unrolled` is an opt-in four-lane f64 reduction with the same validation,
+scratch and cancellation bounds. It exposes independent arithmetic to the
+compiler; it does not enable new CPU features. Reordering sums is a numerical
+change. It matches the measured ordinary vectors closely, but is not universally
+bit-identical: the tests retain a severe-cancellation example where the sequential
+result is 1 and the four-lane result is 0. Neither equals the exact-real sum 2.
+Keep `dot` as the reference and qualify actual model logits/quality before choosing
+the alternate path. Unsupported target ABI flags are not a speed optimization.
+
 The caller must supply bytes from the verified immutable model, select the right
 tensor/row and validate the model architecture. This crate is a scalar reference
 component: it supplies no tokenizer, transformer, KV cache, sampler, device ABI,

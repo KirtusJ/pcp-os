@@ -70,6 +70,70 @@ fn nonfinite_late_weight_does_not_commit_a_position() {
 }
 
 #[test]
+fn prefill_matches_step_bits_across_batches_resets_and_full_context() {
+    for (arch,unrolled) in [("qwen2",false),("qwen3",false),("qwen2",true),("qwen3",true)] {
+        let b=Fixture::full(arch);let idx=Index::parse(&b,b.len() as u64).unwrap();let m=Model::admit(&idx).unwrap();
+        let mut slow=Decoder::new(&m,&b,32,1<<20,||true).unwrap();
+        let mut fast=if unrolled{Decoder::new_unrolled(&m,&b,32,1<<20,||true)}else{Decoder::new(&m,&b,32,1<<20,||true)}.unwrap();
+        let mut seed=739u64;
+        for trial in 0..64 {
+            slow.reset();fast.reset();let mut remaining=32;
+            while remaining>0 {
+                seed=seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+                let count=(1+(seed as usize%7)).min(remaining);
+                let ids:Vec<_>=(0..count).map(|_|{seed=seed.wrapping_mul(6364136223846793005).wrapping_add(1);(seed>>32) as u32%16}).collect();
+                let mut expected=Vec::new();for &id in &ids{expected=slow.step(id,||true).unwrap().to_vec();}
+                assert_eq!(fast.prefill(&ids,||true).unwrap(),expected,"{arch} trial {trial}");
+                remaining-=count;assert_eq!(fast.position(),32-remaining);
+            }
+            assert_eq!(fast.prefill(&[1],||true),Err(Error::ContextFull));
+        }
+    }
+}
+
+#[test]
+fn prefill_cancellation_edges_and_seeded_positions_roll_back_and_retry() {
+    for (arch,unrolled) in [("qwen2",false),("qwen3",false),("qwen2",true),("qwen3",true)] {
+        let b=Fixture::full(arch);let idx=Index::parse(&b,b.len() as u64).unwrap();let m=Model::admit(&idx).unwrap();
+        let make=||if unrolled{Decoder::new_unrolled(&m,&b,8,1<<20,||true)}else{Decoder::new(&m,&b,8,1<<20,||true)}.unwrap();
+        let mut baseline=make();baseline.step(3,||true).unwrap();
+        let mut calls=0;let expected=baseline.prefill(&[7,5,2],||{calls+=1;true}).unwrap().to_vec();
+        let next=baseline.step(4,||true).unwrap().to_vec();
+        let mut d=make();
+        let mut cuts=std::collections::BTreeSet::new();
+        for cut in 0..128.min(calls){cuts.insert(cut);cuts.insert(calls-1-cut);}
+        for i in 0..128{cuts.insert(calls*i/128);}
+        let mut seed=917u64;for _ in 0..512{seed=seed.wrapping_mul(6364136223846793005).wrapping_add(1);cuts.insert(seed as usize%calls);}
+        let count=cuts.len();
+        for cut in cuts {
+            d.reset();d.step(3,||true).unwrap();let mut tick=0;
+            assert_eq!(d.prefill(&[7,5,2],||{tick+=1;tick<=cut}),Err(Error::Cancelled),"{arch} cut {cut}");
+            assert_eq!(d.position(),1);assert_eq!(d.prefill(&[7,5,2],||true).unwrap(),expected);
+            assert_eq!(d.step(4,||true).unwrap(),next);
+        }
+        eprintln!("{arch} unrolled={unrolled}: {count} boundary/seeded cuts among {calls} prefill callbacks retried exactly");
+    }
+}
+
+#[test]
+fn prefill_refuses_empty_bad_tokens_capacity_and_late_corruption_atomically() {
+    for (arch,unrolled) in [("qwen2",false),("qwen3",false),("qwen2",true),("qwen3",true)] {
+        let mut b=Fixture::full(arch);
+        {let idx=Index::parse(&b,b.len() as u64).unwrap();let m=Model::admit(&idx).unwrap();
+            let mut d=if unrolled{Decoder::new_unrolled(&m,&b,4,1<<20,||true)}else{Decoder::new(&m,&b,4,1<<20,||true)}.unwrap();d.step(3,||true).unwrap();
+            for (input,error) in [(vec![],Error::Token),(vec![1,16],Error::Token),(vec![1,2,3,4],Error::ContextFull)] {
+                let mut calls=0;assert_eq!(d.prefill(&input,||{calls+=1;true}),Err(error));assert_eq!(calls,0);assert_eq!(d.position(),1);
+            }
+        }
+        let idx=Index::parse(&b,b.len() as u64).unwrap();let t=idx.tensors().iter().find(|t|t.name=="output.weight").unwrap();let at=(t.offset+t.bytes-4) as usize;
+        drop(idx);b[at..at+4].copy_from_slice(&f32::INFINITY.to_le_bytes());
+        let idx=Index::parse(&b,b.len() as u64).unwrap();let m=Model::admit(&idx).unwrap();
+        let mut d=if unrolled{Decoder::new_unrolled(&m,&b,4,1<<20,||true)}else{Decoder::new(&m,&b,4,1<<20,||true)}.unwrap();
+        for _ in 0..8{assert_eq!(d.prefill(&[1,2,3],||true),Err(Error::NonFinite));assert_eq!(d.position(),0);}
+    }
+}
+
+#[test]
 #[ignore = "QA input export: set QWEN_FIXTURE_DIR to an existing output directory"]
 fn export_reference_models() {
     let p=std::path::PathBuf::from(std::env::var_os("QWEN_FIXTURE_DIR").expect("QWEN_FIXTURE_DIR"));

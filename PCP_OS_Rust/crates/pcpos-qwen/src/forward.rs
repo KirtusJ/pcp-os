@@ -21,7 +21,7 @@ impl From<pcpos_model_tensor::Error> for Error {
 /// A failed/cancelled step does not advance the sequence or return partial logits.
 /// Retrying overwrites the uncommitted KV position; all previous positions remain intact.
 pub struct Decoder<'m, 'i, 'b, 'w> {
-    model: &'m Model<'i, 'b>, weights: &'w [u8], context: usize, position: usize,
+    model: &'m Model<'i, 'b>, weights: &'w [u8], context: usize, position: usize, unrolled: bool,
     keys: Vec<f32>, values: Vec<f32>,
     x: Vec<f32>, norm: Vec<f32>, temp: Vec<f32>, norm_weights: Vec<f32>,
     q: Vec<f32>, k: Vec<f32>, v: Vec<f32>, attention: Vec<f32>,
@@ -47,7 +47,7 @@ impl<'m, 'i, 'b, 'w> Decoder<'m, 'i, 'b, 'w> {
         let kv = c.layers.checked_mul(context).and_then(|v|v.checked_mul(c.kv_heads*c.head_width)).ok_or(Error::Budget)?;
         let mut new = |n| zeros(n, &mut keep_going);
         let mut result = Self {
-            model, weights, context, position:0,
+            model, weights, context, position:0, unrolled:false,
             keys:new(kv)?, values:new(kv)?, x:new(c.embedding)?, norm:new(c.embedding)?, temp:new(c.embedding)?,
             norm_weights:new(c.embedding.max(c.head_width))?, q:new(c.heads*c.head_width)?,
             k:new(c.kv_heads*c.head_width)?, v:new(c.kv_heads*c.head_width)?, attention:new(c.heads*c.head_width)?,
@@ -60,6 +60,15 @@ impl<'m, 'i, 'b, 'w> Decoder<'m, 'i, 'b, 'w> {
         Ok(result)
     }
 
+    /// Opt in to four-lane f64 accumulation. This changes summation order and
+    /// needs model-level numerical/quality qualification; `new` keeps the
+    /// sequential reference. Allocation and cancellation bounds are unchanged.
+    pub fn new_unrolled(model: &'m Model<'i, 'b>, weights: &'w [u8], context: usize,
+        budget: u64, keep_going: impl FnMut() -> bool) -> Result<Self, Error> {
+        let mut decoder=Self::new(model,weights,context,budget,keep_going)?;
+        decoder.unrolled=true;Ok(decoder)
+    }
+
     pub fn position(&self) -> usize { self.position }
 
     /// Start a new logical sequence. Old positions become inaccessible immediately.
@@ -70,6 +79,29 @@ impl<'m, 'i, 'b, 'w> Decoder<'m, 'i, 'b, 'w> {
     /// polled at initialization chunks, row/block boundaries and attention positions.
     /// Row validation itself scans at most 65536 weights; there is no wall-clock Stop claim.
     pub fn step(&mut self, token: u32, mut keep_going: impl FnMut() -> bool) -> Result<&[f32], Error> {
+        self.advance(token, true, &mut keep_going)?;
+        Ok(&self.logits)
+    }
+
+    /// Process a nonempty prompt, projecting vocabulary logits only for its last
+    /// token. Numerical layer/KV operations are identical to repeated `step`.
+    /// On any failure the logical position returns to its entry value; prior
+    /// context remains untouched and the entire same prompt can be retried.
+    pub fn prefill(&mut self, tokens: &[u32], mut keep_going: impl FnMut() -> bool) -> Result<&[f32], Error> {
+        if tokens.is_empty() { return Err(Error::Token); }
+        if tokens.len() > self.context - self.position { return Err(Error::ContextFull); }
+        if tokens.iter().any(|&id| id as usize >= self.model.config().vocabulary) { return Err(Error::Token); }
+        let start = self.position;
+        for (i, &token) in tokens.iter().enumerate() {
+            if let Err(error) = self.advance(token, i + 1 == tokens.len(), &mut keep_going) {
+                self.position = start;
+                return Err(error);
+            }
+        }
+        Ok(&self.logits)
+    }
+
+    fn advance(&mut self, token: u32, project: bool, mut keep_going: impl FnMut() -> bool) -> Result<(), Error> {
         let c = self.model.config();
         if token as usize >= c.vocabulary { return Err(Error::Token); }
         if self.position == self.context { return Err(Error::ContextFull); }
@@ -79,9 +111,9 @@ impl<'m, 'i, 'b, 'w> Decoder<'m, 'i, 'b, 'w> {
         for layer_index in 0..c.layers {
             let l = self.model.layer(layer_index).ok_or(Error::Shape)?;
             normalize(self.weights, l.attention_norm, &self.x, &mut self.norm, &mut self.norm_weights, c.rms_epsilon)?;
-            matmul(self.weights, l.query, &self.norm, &mut self.q, &mut keep_going)?;
-            matmul(self.weights, l.key, &self.norm, &mut self.k, &mut keep_going)?;
-            matmul(self.weights, l.value, &self.norm, &mut self.v, &mut keep_going)?;
+            matmul(self.weights, l.query, &self.norm, &mut self.q, self.unrolled, &mut keep_going)?;
+            matmul(self.weights, l.key, &self.norm, &mut self.k, self.unrolled, &mut keep_going)?;
+            matmul(self.weights, l.value, &self.norm, &mut self.v, self.unrolled, &mut keep_going)?;
             for (bias, output) in [(l.query_bias, &mut self.q), (l.key_bias, &mut self.k), (l.value_bias, &mut self.v)] {
                 if let Some(bias) = bias { add_bias(self.weights,bias,output)?; }
             }
@@ -96,11 +128,11 @@ impl<'m, 'i, 'b, 'w> Decoder<'m, 'i, 'b, 'w> {
             self.values[at..at+kv_width].copy_from_slice(&self.v);
             attention(c,self.context,self.position,layer_index,&self.q,&self.keys,&self.values,
                 &mut self.scores,&mut self.attention,&mut keep_going)?;
-            matmul(self.weights,l.attention_output,&self.attention,&mut self.temp,&mut keep_going)?;
+            matmul(self.weights,l.attention_output,&self.attention,&mut self.temp,self.unrolled,&mut keep_going)?;
             add(&mut self.x,&self.temp)?;
             normalize(self.weights,l.feed_forward_norm,&self.x,&mut self.norm,&mut self.norm_weights,c.rms_epsilon)?;
-            matmul(self.weights,l.gate,&self.norm,&mut self.gate,&mut keep_going)?;
-            matmul(self.weights,l.up,&self.norm,&mut self.up,&mut keep_going)?;
+            matmul(self.weights,l.gate,&self.norm,&mut self.gate,self.unrolled,&mut keep_going)?;
+            matmul(self.weights,l.up,&self.norm,&mut self.up,self.unrolled,&mut keep_going)?;
             for (i,(gate,up)) in self.gate.iter_mut().zip(&self.up).enumerate() {
                 if i%256==0 {check(&mut keep_going)?;}
                 // Stable sigmoid: avoid overflow in exp(-gate) for finite large negatives.
@@ -108,14 +140,16 @@ impl<'m, 'i, 'b, 'w> Decoder<'m, 'i, 'b, 'w> {
                     else {let e=libm::expf(*gate); e/(1.0+e)};
                 *gate=finite(*gate*sigmoid*up)?;
             }
-            matmul(self.weights,l.down,&self.gate,&mut self.temp,&mut keep_going)?;
+            matmul(self.weights,l.down,&self.gate,&mut self.temp,self.unrolled,&mut keep_going)?;
             add(&mut self.x,&self.temp)?;
         }
-        normalize(self.weights,self.model.output_norm(),&self.x,&mut self.norm,&mut self.norm_weights,c.rms_epsilon)?;
-        matmul(self.weights,self.model.output(),&self.norm,&mut self.logits,&mut keep_going)?;
+        if project {
+            normalize(self.weights,self.model.output_norm(),&self.x,&mut self.norm,&mut self.norm_weights,c.rms_epsilon)?;
+            matmul(self.weights,self.model.output(),&self.norm,&mut self.logits,self.unrolled,&mut keep_going)?;
+        }
         check(&mut keep_going)?;
         self.position += 1;
-        Ok(&self.logits)
+        Ok(())
     }
 }
 
@@ -139,9 +173,10 @@ fn row<'a>(weights:&'a[u8],t:&Tensor<'_>,r:usize)->Result<Row<'a>,Error>{
     let end=start.checked_add(bytes).ok_or(Error::Weights)?;
     Ok(Row::new(t.kind,columns,weights.get(start..end).ok_or(Error::Weights)?)?)
 }
-fn matmul(weights:&[u8],t:&Tensor<'_>,input:&[f32],output:&mut[f32],go:&mut impl FnMut()->bool)->Result<(),Error>{
+fn matmul(weights:&[u8],t:&Tensor<'_>,input:&[f32],output:&mut[f32],unrolled:bool,go:&mut impl FnMut()->bool)->Result<(),Error>{
     if t.dimensions()!=[input.len() as u64,output.len() as u64]{return Err(Error::Shape);}
-    for (i,out) in output.iter_mut().enumerate(){check(go)?;*out=row(weights,t,i)?.dot(input,&mut *go)?;}
+    for (i,out) in output.iter_mut().enumerate(){check(go)?;let row=row(weights,t,i)?;
+        *out=if unrolled{row.dot_unrolled(input,&mut *go)?}else{row.dot(input,&mut *go)?};}
     Ok(())
 }
 fn add(a:&mut[f32],b:&[f32])->Result<(),Error>{
