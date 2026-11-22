@@ -87,8 +87,15 @@ static BOOLEAN read_map(void) {
     return TRUE;
 }
 static UINT64 end_of(const EFI_MEMORY_DESCRIPTOR *d) { return d->PhysicalStart + d->NumberOfPages * PAGE_BYTES; }
+/* The kernel treats ordinary RAM as interchangeable for code, data and page tables.
+ * Reserve descriptors advertising special purpose, persistence or restricted access. */
+static BOOLEAN ordinary_ram(const EFI_MEMORY_DESCRIPTOR *d) {
+    const UINT64 excluded = EFI_MEMORY_RUNTIME | EFI_MEMORY_SP | EFI_MEMORY_NV |
+        EFI_MEMORY_RP | EFI_MEMORY_WP | EFI_MEMORY_RO | EFI_MEMORY_XP;
+    return (d->Attribute & EFI_MEMORY_WB) && !(d->Attribute & excluded);
+}
 static BOOLEAN conventional(const EFI_MEMORY_DESCRIPTOR *d) {
-    return d->Type == EfiConventionalMemory && !(d->Attribute & EFI_MEMORY_RUNTIME);
+    return d->Type == EfiConventionalMemory && ordinary_ram(d);
 }
 static BOOLEAN claim(UINT64 start, UINT64 bytes) {
     EFI_PHYSICAL_ADDRESS address = start;
@@ -389,7 +396,7 @@ static BOOLEAN translate(void) {
                 UINT64 lo = pieces[j].start, hi = lo+pieces[j].size;
                 if (a < lo) next = minimum(next,lo);
                 else if (a < hi) {
-                    if (d->Type != EfiLoaderData || (d->Attribute & EFI_MEMORY_RUNTIME))
+                    if (d->Type != EfiLoaderData || !ordinary_ram(d))
                         return reject(L"A model range is not owned by this loader in the final map.");
                     next = minimum(next,hi);
                     type = MODEL_RAM;

@@ -39,7 +39,8 @@ static EFI_STATUS EFIAPI fake_exit(EFI_HANDLE image, UINTN key) {
     exit_calls++; return stale_once && exit_calls==1 ? EFI_INVALID_PARAMETER : EFI_SUCCESS;
 }
 static EFI_MEMORY_DESCRIPTOR map_entry(UINT32 type, UINT64 addr, UINT64 bytes) {
-    EFI_MEMORY_DESCRIPTOR d = {0}; d.Type=type; d.PhysicalStart=addr; d.NumberOfPages=bytes/PAGE_BYTES; return d;
+    EFI_MEMORY_DESCRIPTOR d = {0}; d.Type=type; d.PhysicalStart=addr; d.NumberOfPages=bytes/PAGE_BYTES;
+    d.Attribute=EFI_MEMORY_WB; return d;
 }
 static void reset(void) {
     memset(&services,0,sizeof(services)); memset(&system_fixture,0,sizeof(system_fixture));
@@ -58,8 +59,37 @@ static void fragments(void) {
     descriptors[1]=map_entry(EfiConventionalMemory,HIGH_START+16*PAGE_BYTES,(pages-2)*PAGE_BYTES);
     descriptors[2]=map_entry(EfiConventionalMemory,HIGH_END,8*PAGE_BYTES); /* outside kernel window */
     descriptors[3]=map_entry(EfiConventionalMemory,HIGH_START+8*PAGE_BYTES,4*PAGE_BYTES);
-    descriptors[3].Attribute=EFI_MEMORY_RUNTIME;
+    descriptors[3].Attribute |= EFI_MEMORY_RUNTIME;
     descriptor_count=4;
+}
+static void restricted_ranges(void) {
+    static const UINT64 attributes[] = {
+        0, EFI_MEMORY_WT, EFI_MEMORY_WB | EFI_MEMORY_RUNTIME, EFI_MEMORY_WB | EFI_MEMORY_SP,
+        EFI_MEMORY_WB | EFI_MEMORY_NV, EFI_MEMORY_WB | EFI_MEMORY_RP, EFI_MEMORY_WB | EFI_MEMORY_WP,
+        EFI_MEMORY_WB | EFI_MEMORY_RO, EFI_MEMORY_WB | EFI_MEMORY_XP
+    };
+    const UINT64 size = page_size(MODEL_BYTES);
+    for (UINTN i = 0; i < ARRAY_LEN(attributes); i++) {
+        reset();
+        descriptors[0] = map_entry(EfiConventionalMemory, HIGH_START, size);
+        descriptors[1] = map_entry(EfiConventionalMemory, KERNEL_BASE, KERNEL_END-KERNEL_BASE);
+        descriptors[0].Attribute = descriptors[1].Attribute = attributes[i];
+        descriptor_count = 2;
+        UINT8 *low = NULL;
+        assert(!reserve_high() && !reserve_low(KERNEL_BASE, PAGE_BYTES, &low));
+        assert(!allocate_calls && !reads && !low);
+        assert(translate() && range_count == 2);
+        assert(boot->ranges[0].type == 2 && boot->ranges[1].type == 2);
+
+        descriptors[2] = map_entry(EfiConventionalMemory, HIGH_START + size, size);
+        descriptors[2].Attribute |= EFI_MEMORY_UC | EFI_MEMORY_WT | EFI_MEMORY_WC;
+        descriptor_count++;
+        assert(reserve_high() && piece_count == 1 && pieces[0].start == descriptors[2].PhysicalStart);
+        descriptors[2].Type = EfiLoaderData;
+        assert(read_map() && translate());
+        descriptors[2].Attribute = attributes[i];
+        assert(read_map() && !translate());
+    }
 }
 /* This case isolates byte placement. The OVMF volume checks use the real Rust SHA-256. */
 void model_hash_init(hash_state *h) { memset(h,0,sizeof(*h)); }
@@ -108,6 +138,7 @@ int main(void) {
     stale_once=TRUE; assert(leave_firmware((void *)1));
     assert(exit_calls==2 && map_calls==2 && boot->info[11]==sizeof(struct mb_range));
     placement();
+    restricted_ranges();
     puts("PASS data across a physical split, exact zero page tail and intact sentinels; fragmented allocation, final ownership, tail coverage, full and partial rollback, RAM refusal before reads, short reads, I/O errors, EOF, stale map key/retry");
     return 0;
 }
