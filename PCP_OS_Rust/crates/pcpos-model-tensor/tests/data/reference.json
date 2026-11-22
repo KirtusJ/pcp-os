@@ -1,0 +1,11 @@
+{
+  "upstream": "https://github.com/ggml-org/llama.cpp",
+  "revision": "a956a852c9c8bc1fb07206364838ddef299178c0",
+  "release": "b12387",
+  "library": "llama-b12387-bin-win-cpu-x64.zip/ggml-base.dll",
+  "library_sha256": "3e0ceab7d54a173b349d05968b589aff9fb84e75ea8acb578322afaec2ab4cfb",
+  "scope": "Independent scalar dequantize_row outputs and ggml_fp16_to_fp32; F32/BF16 vectors use direct IEEE bit identity. No model inference.",
+  "archive_url": "https://github.com/ggml-org/llama.cpp/releases/download/b12387/llama-b12387-bin-win-cpu-x64.zip",
+  "archive_sha256": "ced8482efac76c5f24398b97a6fe1662109038ec3b880686fd7c7c8f22bc5d99",
+  "archive_member": "ggml-base.dll"
+}
