@@ -152,9 +152,10 @@ pub struct World {
     /// The live writable namespace. With a mounted VM volume, fsync checkpoints its named files.
     pub store: crate::regular::Files,
     /// The folder the next program that may propose files will build into. The kernel's own setting:
-    /// no program can change it.
+    /// no program can change it. None when the setting given is not a name a build folder may have:
+    /// then no program is started with the right to propose, and nothing is used in its place.
     #[cfg(feature = "proposals")]
-    pub build_folder: String,
+    pub build_folder: Option<String>,
     #[cfg(feature = "vm-store")]
     pub volume: Option<crate::store::Volume>,
     /// Seconds since 1970 when the tick count was zero, by the machine's clock.
@@ -215,7 +216,7 @@ fn new_table(world: World) -> Table {
 }
 
 pub(crate) fn empty_world() -> World {
-    World { files: Vec::new(), store: Default::default(), #[cfg(feature = "proposals")] build_folder: String::from(sys::BUILD_FOLDER),
+    World { files: Vec::new(), store: Default::default(), #[cfg(feature = "proposals")] build_folder: Some(String::from(sys::BUILD_FOLDER)),
         #[cfg(feature = "vm-store")] volume: None, epoch_at_start: 0, unanswered: Vec::new() }
 }
 
@@ -319,7 +320,7 @@ pub fn run_program(program: &Program, world: World) -> (Result<Process, &'static
     #[allow(unused_mut)]
     let mut linux = sys::Linux::new(loaded.image_end);
     #[cfg(feature = "proposals")]
-    linux.allow_proposals(program.grants.propose, &t.world.build_folder);
+    linux.allow_proposals(program.grants.propose, t.world.build_folder.as_deref().unwrap_or(""));
     if t.admit(program.name, space, Frame::user(loaded.entry, loaded.stack), program.grants, program.budget, Some(linux)).is_none() {
         return (Err("the program could not be admitted as a task"), t.world);
     }

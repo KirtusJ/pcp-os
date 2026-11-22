@@ -256,8 +256,10 @@ fn request_digest(proposal: &Proposal) -> [u8; 32] {
 #[cfg(feature = "proposals")]
 impl Linux {
     pub fn allow_proposals(&mut self, allowed: bool, folder: &str) {
+        // Without a folder that may be one there is no right to propose: no other folder stands in.
+        let allowed = allowed && build_folder(folder);
         self.proposals.allowed = allowed;
-        self.proposals.root = String::from(if build_folder(folder) { folder } else { BUILD_FOLDER });
+        self.proposals.root = String::from(if allowed { folder } else { "" });
         if allowed {
             self.proposals.launch = LAUNCHES.fetch_add(1, core::sync::atomic::Ordering::SeqCst) + 1;
         }

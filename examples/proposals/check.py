@@ -240,13 +240,25 @@ def main():
     if answers(other_log)[:2] != ["-22", "0"] or any(line.startswith("proposal ") for line in other_log.splitlines()):
         other.append("R1: a proposal outside the folder of this run was taken or put to the person: %r" % answers(other_log)[:3])
     found += other
-    # R2: a folder name the kernel does not accept is said in the log and the usual folder is used.
-    bad, bad_log = case("bad-folder", granted + " build_folder=Dev/x", ["f12", "ret"], True)
-    if "build_folder=Dev/x is not a name a build folder may have; using taylor" not in bad_log or "probe: list folder taylor\n" not in bad_log:
-        bad.append("R2: the refused folder name was not logged, or the usual folder was not used")
-    if len([line for line in bad_log.splitlines() if "CREATED after the person allowed it" in line]) != 1:
-        bad.append("R2: with the usual folder in use the note was not created once")
-    found += bad
+    # R2, R3: a folder name the kernel does not accept, or two of them, and the program that would
+    # propose is not started at all: no other folder is used in its place, and the kernel says why.
+    for name, extra, why in (("bad-folder", " build_folder=Dev/x", "build_folder=Dev/x is not a name a build folder may have; no build folder is set"),
+                             ("two-folders", " build_folder=one build_folder=two", "build_folder=one is given more than once; no build folder is set")):
+        guest = Guest(args.qemu, args.kernel, args.probe, evidence / name, granted + extra)
+        try:
+            said = guest.until("proposal-probe was not started: its projects folder setting is not a valid name", seconds=60)
+            status = guest.end()
+            folder_log = guest.log()
+            results[name] = {"status": status, "probe": [line for line in folder_log.splitlines() if line.startswith(("probe:", "proposal "))]}
+            if not said or why not in folder_log:
+                found.append("%s: the kernel did not say the program was not started, or why" % name)
+            if "probe:" in folder_log or any(line.startswith("proposal ") for line in folder_log.splitlines()):
+                found.append("%s: the program ran, or a proposal was taken" % name)
+            if status != 33:
+                found.append("%s: the emulator ended with status %r, not 33" % (name, status))
+        finally:
+            if guest.process.poll() is None:
+                guest.process.kill()
     # B1: afterwards the program sees its build folder and nothing else, and can change nothing by itself.
     listed = [line for line in log.splitlines() if line.startswith("probe: listed ")]
     if listed != ["probe: listed %s of bytes %d" % (NAME, len(CONTENT))]:

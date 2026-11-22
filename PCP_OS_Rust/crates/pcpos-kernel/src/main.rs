@@ -533,7 +533,7 @@ fn script_drain() -> Result<(), &'static str> {
 fn asynchronous(failed: &mut u32, replays: bool) {
     use dev::KeyPacing::{BlockedRead, Sleeping, Timed};
     use user::{End, Grants, Program, Start, World};
-    let world = || World { files: alloc::vec::Vec::new(), store: Default::default(), #[cfg(feature = "proposals")] build_folder: alloc::string::String::from(sys::BUILD_FOLDER),
+    let world = || World { files: alloc::vec::Vec::new(), store: Default::default(), #[cfg(feature = "proposals")] build_folder: Some(alloc::string::String::from(sys::BUILD_FOLDER)),
         #[cfg(feature = "vm-store")] volume: None, epoch_at_start: 0, unanswered: alloc::vec::Vec::new() };
     let grants = Grants { console: true, keys: true, ..Grants::default() };
     let loaded = |name: &str, args: &[&str], keys: &[u8], after: u64, pacing| -> (Result<user::Process, &'static str>, usize, usize, u64) {

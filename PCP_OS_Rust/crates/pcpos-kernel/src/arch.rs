@@ -204,7 +204,7 @@ pub struct BootInfo {
 }
 
 impl BootInfo {
-    #[cfg(any(feature = "guest-ethernet", feature = "vm-store"))]
+    #[cfg(any(feature = "guest-ethernet", feature = "vm-store", feature = "proposals"))]
     pub(crate) fn exact_command_line(&self) -> Option<&str> {
         self.command_line_exact.then_some(self.command_line.as_str())
     }

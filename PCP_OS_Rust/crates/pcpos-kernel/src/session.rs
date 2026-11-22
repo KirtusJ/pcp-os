@@ -187,16 +187,28 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
         }
     }
     let (y, mo, d, h, mi, s) = arch::clock();
-    // Where a program that may propose files builds, for this session: the loader's option if it is a
-    // name a build folder may have, else the usual one, said in the log either way.
+    // Where a program that may propose files builds, for this session. Read from the loader's line only
+    // if that line was taken whole (a cut line could turn one name into another): no build_folder= word
+    // means the usual folder; exactly one that is a name a build folder may have means that folder;
+    // anything else means there is none, and a program is then not started with the right to propose.
     #[cfg(feature = "proposals")]
-    let build_folder = match option(&start.boot.command_line, "build_folder") {
-        Some(name) if crate::sys::build_folder(name) => String::from(name),
-        Some(name) => {
-            crate::log(format_args!("build_folder={} is not a name a build folder may have; using {}\n", name, crate::sys::BUILD_FOLDER));
-            String::from(crate::sys::BUILD_FOLDER)
+    let build_folder = match start.boot.exact_command_line() {
+        None => {
+            crate::log(format_args!("the loader's line was not taken whole, so no build folder is set\n"));
+            None
         }
-        None => String::from(crate::sys::BUILD_FOLDER),
+        Some(line) => {
+            let mut given = line.split_whitespace().filter_map(|w| w.strip_prefix("build_folder="));
+            match (given.next(), given.next()) {
+                (None, _) => Some(String::from(crate::sys::BUILD_FOLDER)),
+                (Some(name), None) if crate::sys::build_folder(name) => Some(String::from(name)),
+                (Some(name), second) => {
+                    crate::log(format_args!("build_folder={} is {}; no build folder is set\n", name,
+                        if second.is_some() { "given more than once" } else { "not a name a build folder may have" }));
+                    None
+                }
+            }
+        }
     };
     let mut world = World { files: files.iter().map(|f| (f.0.clone(), f.1)).collect(), store: Default::default(), #[cfg(feature = "proposals")] build_folder,
         #[cfg(feature = "vm-store")] volume: None,
@@ -1032,6 +1044,8 @@ fn files_view(store: &crate::regular::Files, mounted: bool) {
 }
 
 const FILE_APPROVAL: &str = "Creating a file needs your approval.";
+#[cfg(feature = "proposals")]
+const NO_BUILD_FOLDER: &str = "its projects folder setting is not a valid name";
 
 fn file_proposals(start: &Start, entry: &Entry, none: bool) -> bool {
     cfg!(feature = "proposals") && !none && option(&start.boot.command_line, "propose_image") == Some(entry.digest.as_str())
@@ -1754,6 +1768,14 @@ fn consent(proposal: Option<&crate::sys::Proposal>) -> crate::sys::Answer {
 /// Run one program as a task in the register. Interrupts must be off; returns with them off.
 /// Returns the run summary, the resulting world and any reason the program could not start.
 fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, start: &Start, failed: &mut u32) -> (String, World, Option<&'static str>) {
+    // A program that would be started with the right to propose files is not started at all while the
+    // build folder setting is not a name a folder may have: said where the person sees it, and no other
+    // folder is used in its place.
+    #[cfg(feature = "proposals")]
+    if world.build_folder.is_none() && file_proposals(start, entry, option(start.boot.command_line.as_str(), "grant") == Some("none")) {
+        say!("{} was not started: {}", entry.name, NO_BUILD_FOLDER);
+        return (format!("{} was not started: {}", entry.name, NO_BUILD_FOLDER), world, Some(NO_BUILD_FOLDER));
+    }
     *tasks += 1;
     let id = format!("T{}", *tasks);
     let mut recorded = logged("TASK_STARTED", rec.submit(&now(), "kernel", "HOST", "TASK_STARTED",
