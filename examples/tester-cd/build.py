@@ -14,6 +14,7 @@ receipt into the output directory, and whether that image is given to anyone is 
 import argparse
 import hashlib
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -97,13 +98,35 @@ def notices(crates, queue_desk=False):
     return ("\n".join(lines) + "\n").encode()
 
 
-def read_back(image):
-    """The files in the root directory of an ISO 9660 image, by their Rock Ridge names, as the bytes on the disc."""
-    volume = image[16 * 2048:17 * 2048]
+IMAGE_BLOCK = 1024 * 1024
+
+
+def compare_assemblies(first, second):
+    """Compare every byte and measure the image in the same pass."""
+    digest = hashlib.sha256()
+    total = 0
+    with first.open("rb") as left, second.open("rb") as right:
+        while True:
+            block = left.read(IMAGE_BLOCK)
+            if block != right.read(IMAGE_BLOCK):
+                sys.exit("two assemblies of the same files gave different images")
+            if not block:
+                return total, digest.hexdigest()
+            digest.update(block)
+            total += len(block)
+
+
+def root_entries(image):
+    """Return the offsets and sizes of ISO 9660 root files under their Rock Ridge names."""
+    image.seek(16 * 2048)
+    volume = image.read(2048)
     if volume[1:6] != b"CD001":
         sys.exit("the assembled file is not an ISO 9660 image")
     start, size = struct.unpack("<I", volume[158:162])[0], struct.unpack("<I", volume[166:170])[0]
-    directory, files, at = image[start * 2048:start * 2048 + size], {}, 0
+    image.seek(start * 2048)
+    directory, files, at = image.read(size), {}, 0
+    if len(directory) != size:
+        sys.exit("the image ends inside its root directory")
     while at < len(directory):
         length = directory[at]
         if length == 0:
@@ -119,8 +142,47 @@ def read_back(image):
             if use[i:i + 2] == b"NM":
                 name = use[i + 5:i + use[i + 2]].decode()
             i += use[i + 2]
-        files[name or entry[33:33 + name_length].decode().split(";")[0]] = image[extent * 2048:extent * 2048 + extent_size]
+        files[name or entry[33:33 + name_length].decode().split(";")[0]] = (extent * 2048, extent_size)
     return files
+
+
+def read_back(image):
+    """Return the original root-file byte mapping used by the screen and optical checks."""
+    with io.BytesIO(image) as stream:
+        entries = root_entries(stream)
+    return {name: image[offset:offset + size] for name, (offset, size) in entries.items()}
+
+
+def verify_members(path, files, boot):
+    # What is on the disc, read back from the image. Every file must be the bytes that went in, except the
+    # two the mastering writes: the boot catalog, which it creates, and the loader's CD boot file, into which
+    # it writes the boot information table (bytes 8 to 63) that the loader reads to find itself.
+    on_disc = {}
+    with path.open("rb") as image:
+        entries = root_entries(image)
+        expected_names = set(files) | {"boot.cat"}
+        if set(entries) != expected_names:
+            sys.exit("unexpected or missing files on the image: %s" % sorted(set(entries) ^ expected_names))
+        for name, (offset, size) in sorted(entries.items()):
+            image.seek(offset)
+            digest = hashlib.sha256()
+            expected = files.get(name)
+            if expected is not None and len(expected) != size:
+                sys.exit("%s on the disc is not the size that went in" % name)
+            for at in range(0, size, IMAGE_BLOCK):
+                count = min(size - at, IMAGE_BLOCK)
+                block = image.read(count)
+                if len(block) != count:
+                    sys.exit("the image ends inside %s" % name)
+                digest.update(block)
+                if expected is not None:
+                    reference = expected[at:at + count]
+                    if name == boot and at == 0:
+                        block, reference = block[:8] + block[64:], reference[:8] + reference[64:]
+                    if block != reference:
+                        sys.exit("%s on the disc is not the file that went in" % name)
+            on_disc[name] = {"bytes": size, "sha256": digest.hexdigest()}
+    return on_disc
 
 
 def assemble(tree, iso, env):
@@ -245,7 +307,7 @@ def main():
         files["readme.txt"] += (b"Down selects the queue desk. Enter opens it. N creates a request. Type a label and press Enter.\n"
                                 b"Esc returns to the launcher. Reopening the desk restores this boot's queue.\n")
 
-    images = []
+    first, second = out / "first.iso", out / "second.iso"
     for attempt in ("first", "second"):
         tree = out / ("tree-" + attempt)
         tree.mkdir()
@@ -253,31 +315,20 @@ def main():
             (tree / name).write_bytes(data)
         iso = out / ("%s.iso" % attempt)
         assemble(tree, iso, env)
-        images.append(iso.read_bytes())
         shutil.rmtree(tree)
-    if images[0] != images[1]:
-        sys.exit("two assemblies of the same files gave different images")
-    # What is on the disc, read back from the image. Every file must be the bytes that went in, except the
-    # two the mastering writes: the boot catalog, which it creates, and the loader's CD boot file, into which
-    # it writes the boot information table (bytes 8 to 63) that the loader reads to find itself.
-    on_disc = read_back(images[0])
+    iso_bytes, iso_sha256 = compare_assemblies(first, second)
     boot = "limine-bios-cd.bin"
-    if set(on_disc) != set(files) | {"boot.cat"}:
-        sys.exit("the image does not hold exactly the files that went in and a boot catalog: %s" % sorted(set(on_disc) ^ set(files)))
-    for name, data in files.items():
-        same = on_disc[name] == data if name != boot else on_disc[name][:8] + on_disc[name][64:] == data[:8] + data[64:]
-        if not same:
-            sys.exit("%s on the disc is not the file that went in" % name)
-    (out / "second.iso").unlink()
-    (out / "first.iso").rename(out / "pcp-os-tester.iso")
+    on_disc = verify_members(first, files, boot)
+    second.unlink()
+    first.rename(out / "pcp-os-tester.iso")
     shutil.rmtree(work)
 
     receipt = {"format": "pcp-os-tester-cd/1", "source_commit": commit, "source_tree": source_tree, "uncommitted_changes": bool(changed),
                "toolchain": TOOLCHAIN, "rustc": dict(line.split(": ", 1) for line in rustc.splitlines() if ": " in line),
                "kernel_features": "default", "guest_features": "local-media",
-               "kernel_measurement": measurement, "iso_bytes": len(images[0]), "iso_sha256": sha(images[0]),
+               "kernel_measurement": measurement, "iso_bytes": iso_bytes, "iso_sha256": iso_sha256,
                "inputs": {name: {"bytes": len(data), "sha256": sha(data)} for name, data in sorted(files.items())},
-               "on_disc": {name: {"bytes": len(data), "sha256": sha(data)} for name, data in sorted(on_disc.items())},
+               "on_disc": on_disc,
                "written_by_mastering": ["boot.cat", boot],
                "third_party_crates_compiled_in": ["%s %s" % key for key in sorted(crates)]}
     (out / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
