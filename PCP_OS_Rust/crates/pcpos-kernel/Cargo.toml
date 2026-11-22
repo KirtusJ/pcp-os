@@ -31,6 +31,7 @@ fault-demo = []            # after the self-tests, fault on purpose to show that
 
 overflow-demo = []         # after the self-tests, exhaust the stack on purpose to show that it is reported
 proposals = []           # one hash-granted program may propose one new text file; the kernel asks and creates it
+register-dump = []       # at shutdown, print every line of the kernel's register to the console, for checks that read it
 
 [profile.dev]
 panic = "abort"
