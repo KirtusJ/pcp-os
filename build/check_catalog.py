@@ -10,12 +10,17 @@ Predicates.
  K4 every tracked file is read, and none outside ALLOWED holds a session's address or a session's
     scratch path. A file that cannot be read fails the check: it has not been scanned. A symbolic
     link is scanned as the path it names and is not followed.
+ K6 every relative link in every tracked Markdown file names a tracked path, so that a move which
+    breaks a link fails here. Links inside code fences, links to another site and links within a
+    page are not looked at.
  K5 the comparison refuses, before the tree is read, a catalogue with a row missing, a row for a
-    path that is not there, a file holding a session's address, and a file that cannot be read.
+    path that is not there, a file holding a session's address, a file that cannot be read, and a
+    Markdown link to a path that is not there.
     These controls are not asserts, so they also run under python -O.
 Exit 0 only if all hold. Standard library and git only.
 """
 import os
+import posixpath
 import re
 import subprocess
 import sys
@@ -40,12 +45,36 @@ def listed(text):
     return [m.group(1) for line in text.splitlines() for m in [re.match(r"\| `([^`]+)` \|", line)] if m]
 
 
+FENCE = re.compile(rb"```.*?```", re.S)
+LINK = re.compile(rb"\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
+ELSEWHERE = re.compile(r"[a-z][a-z0-9+.-]*:|#|//")
+
+
+def broken_links(name, data, tracked):
+    """The relative links of one Markdown file that do not name a tracked path."""
+    found = []
+    for match in LINK.finditer(FENCE.sub(b"", data)):
+        link = match.group(1).decode("utf-8", "replace")
+        if ELSEWHERE.match(link):
+            continue
+        target = link.split("#")[0].split("?")[0]
+        if not target:
+            continue
+        path = target.lstrip("/") if target.startswith("/") else posixpath.normpath(posixpath.join(posixpath.dirname(name), target))
+        if path != "." and path not in tracked:
+            found.append("K6: %s links to %s, which is not tracked" % (name, link))
+    return found
+
+
 def problems(files, text, contents):
     rows, tree = listed(text), wanted(files)
     tracked = set(files) | {"/".join(f.split("/")[:n]) for f in files for n in range(1, f.count("/") + 1)}
     found = ["K1/K2: not in the catalogue: " + p for p in sorted(tree - set(rows))]
     found += ["K3: in the catalogue but not tracked: " + p for p in sorted(set(rows) - tracked)]
     found += ["K3: listed twice: " + p for p in sorted({p for p in rows if rows.count(p) > 1})]
+    for name, data in contents:
+        if data is not None and name.endswith(".md"):
+            found += broken_links(name, data, tracked)
     for name, data in contents:
         if data is None:
             found.append("K4: could not be read, so not scanned: " + name)
@@ -71,6 +100,9 @@ def selftest():
     require(problems(files, good, [("README.md", address)]) == ["K4: session context in README.md"], "a session address")
     require(problems(files, good, [(ALLOWED[0] + "r.txt", address)]) == [], "the allowed place")
     require(problems(files, good, [("README.md", None)]) == ["K4: could not be read, so not scanned: README.md"], "an unreadable file (C3)")
+    page = b"[a](examples/a/x.py) [b](../README.md#top) [c](https://example.org/x) [d](#here)\n```\n[e](gone.md)\n```\n"
+    require(problems(files, good, [("audit/b/n.md", page.replace(b"examples/a", b"../../examples/a").replace(b"../README", b"../../README"))]) == [], "links that hold")
+    require(problems(files, good, [("README.md", b"see [the plan](os-docs/moved.md)")]) == ["K6: README.md links to os-docs/moved.md, which is not tracked"], "a link to a path that is gone")
     # A link is not followed: what it names is scanned, and a session address in the name is found.
     require(problems(files, good, [("README.md", address)]) != [], "a link whose target names a session")
 
@@ -99,8 +131,9 @@ def main():
     if found:
         sys.exit("\n".join(found))
     allowed = sum(1 for name, data in contents if name.startswith(ALLOWED) and CONTEXT.search(data))
-    print("catalogue: %d tracked files, every one read, %d rows, all agree; session context only in the %d files still allowed" % (
-        len(files), len(listed(text)), allowed))
+    links = sum(len(LINK.findall(FENCE.sub(b"", data))) for name, data in contents if name.endswith(".md"))
+    print("catalogue: %d tracked files, every one read, %d rows, all agree; %d Markdown links looked at, none broken; session context only in the %d files still allowed" % (
+        len(files), len(listed(text)), links, allowed))
 
 
 if __name__ == "__main__":
