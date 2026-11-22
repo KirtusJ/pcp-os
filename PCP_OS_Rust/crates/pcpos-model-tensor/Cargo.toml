@@ -1,6 +1,6 @@
 [package]
 name = "pcpos-model-tensor"
-description = "Allocation-free scalar decoding of the pinned Qwen tensor formats"
+description = "Allocation-free decoding and projection of the pinned Qwen tensor formats"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -8,3 +8,6 @@ publish.workspace = true
 
 [dependencies]
 pcpos-gguf = { path = "../pcpos-gguf" }
+
+[target.'cfg(all(target_arch = "x86_64", target_feature = "sse2"))'.dependencies]
+pcpos-model-simd = { path = "../pcpos-model-simd" }
