@@ -352,6 +352,9 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
             (Surface::Home, (0x3D, false)) => files_view(&world.store, mounted),
             (Surface::Home, (0x21, false)) if letters => files_view(&world.store, mounted),
             (Surface::Home, (0x3C, false)) => settings_view(&mut whole_bar, &mut widgets),
+            // F7: where Taylor builds. The kernel's own screen; no program can open or answer it.
+            #[cfg(feature = "proposals")]
+            (Surface::Home, (0x41, false)) => folder_view(&mut world.build_folder),
             (Surface::Home, (0x53, _)) | (Surface::Home, (0x0E, false)) if place > 0 => { shortcuts.remove(place - 1); name_page = 0; }
             (Surface::Launcher, (0x48, _)) | (Surface::Details, (0x48, _)) if chosen > 0 => chosen -= 1,
             (Surface::Launcher, (0x50, _)) | (Surface::Details, (0x50, _)) if chosen + 1 < programs.len() => chosen += 1,
@@ -905,6 +908,98 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
 
 /// The settings: how the desktop looks, and which widgets are on it. Nothing here changes by one key from
 /// the desktop; a person comes here, chooses, and sees what is chosen. They last for this session.
+/// The projects folder: the one place a program that may propose files builds into, lists and reads.
+/// Shown whole, and changed here and nowhere else. A name is taken exactly as typed or not at all; a
+/// change is copied into a program when it is next started, moves no file, and lasts for this session.
+#[cfg(feature = "proposals")]
+fn folder_view(folder: &mut Option<String>) {
+    use ui::{at, GROUND, PANEL, SOFT, TEXT};
+    let (cols, rows) = ui::grid();
+    let across = (cols.saturating_sub(4) as usize).max(8);
+    let mut typed = String::new();
+    let mut said: (&str, u32) = ("", SOFT);
+    loop {
+        ui::clear(GROUND);
+        let mut row = if rows >= 16 { 1 } else { 0 };
+        let mut line = |words: &str, colour: u32, row: &mut u32| {
+            if *row < rows {
+                at(2, *row, words, colour, GROUND);
+            }
+            *row += 1;
+        };
+        // A long name goes on as many rows as it needs; it is never cut.
+        let whole = |name: &str, colour: u32, ground: u32, row: &mut u32| {
+            let bytes = name.as_bytes();
+            for part in bytes.chunks(across) {
+                if *row < rows {
+                    ui::fill(2 * ui::CELL_W, *row * ui::CELL_H, across as u32 * ui::CELL_W, ui::CELL_H, ground);
+                    at(2, *row, core::str::from_utf8(part).unwrap_or("?"), colour, ground);
+                }
+                *row += 1;
+            }
+            if bytes.is_empty() {
+                if *row < rows {
+                    ui::fill(2 * ui::CELL_W, *row * ui::CELL_H, across as u32 * ui::CELL_W, ui::CELL_H, ground);
+                }
+                *row += 1;
+            }
+        };
+        line("PROJECTS FOLDER", ui::TEAL, &mut row);
+        line("Taylor builds only in this folder.", SOFT, &mut row);
+        match folder.as_deref() {
+            Some(name) => {
+                line("Now:", TEXT, &mut row);
+                whole(name, ui::GOOD, GROUND, &mut row);
+            }
+            None => {
+                line("Now: not set. The name given was", ui::BAD, &mut row);
+                line("not valid, so Taylor cannot start.", ui::BAD, &mut row);
+            }
+        }
+        line("A change applies when Taylor is", SOFT, &mut row);
+        line("next opened. No file is moved.", SOFT, &mut row);
+        line("It lasts until power-off.", SOFT, &mut row);
+        line("New name:", TEXT, &mut row);
+        whole(&typed, TEXT, PANEL, &mut row);
+        line("a-z 0-9 . - and at most one /", SOFT, &mut row);
+        line(said.0, said.1, &mut row);
+        if rows > 0 {
+            at(2, rows - 1, "Enter sets   Esc leaves", SOFT, GROUND);
+        }
+        loop {
+            let (code, extended) = wait_key();
+            let letter = if extended { None } else { match code {
+                0x02..=0x0B => Some(b"1234567890"[(code - 0x02) as usize]),
+                0x10..=0x19 => Some(b"qwertyuiop"[(code - 0x10) as usize]),
+                0x1E..=0x26 => Some(b"asdfghjkl"[(code - 0x1E) as usize]),
+                0x2C..=0x32 => Some(b"zxcvbnm"[(code - 0x2C) as usize]),
+                0x0C => Some(b'-'),
+                0x34 => Some(b'.'),
+                0x35 => Some(b'/'),
+                _ => None,
+            } };
+            match (code, letter) {
+                (0x01, _) => return,
+                // One more than a name may have can be typed, so that too long is seen and refused, not cut.
+                (_, Some(b)) if typed.len() <= 116 => { typed.push(b as char); said = ("", SOFT); }
+                (0x0E, _) if !typed.is_empty() => { typed.pop(); said = ("", SOFT); }
+                (0x1C, _) if typed.is_empty() => continue,
+                (0x1C, _) => {
+                    if crate::sys::build_folder(&typed) {
+                        *folder = Some(core::mem::take(&mut typed));
+                        said = ("Set. Applies when Taylor next opens.", ui::GOOD);
+                    } else {
+                        // The name typed stays as typed, and the folder stays as it was.
+                        said = ("Not changed: not a valid name.", ui::BAD);
+                    }
+                }
+                _ => continue,
+            }
+            break;
+        }
+    }
+}
+
 fn settings_view(whole_bar: &mut bool, widgets: &mut [bool; 3]) {
     use ui::{at, GROUND, PANEL, SOFT, TEXT};
     let (cols, rows) = ui::grid();
