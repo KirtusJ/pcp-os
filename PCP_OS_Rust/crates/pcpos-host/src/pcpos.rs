@@ -2431,6 +2431,31 @@ fn flag(args: &[String], name: &str) -> Option<String> {
     args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
 }
 
+/// The operands of a command: every argument after the register that is neither a flag nor the value
+/// that follows one of the flags in `valued`. A value is skipped because of where it stands, never
+/// because of what it says: an operand that happens to read the same as a flag's value (a person
+/// labelled CRITICAL setting the CRITICAL standard, a module named like the actor) used to be dropped
+/// with it (pcp issue 27).
+fn operands<'a>(args: &'a [String], valued: &[&str]) -> Result<Vec<&'a str>, String> {
+    let mut found = Vec::new();
+    let mut at = 2;
+    while at < args.len() {
+        let word = args[at].as_str();
+        if valued.contains(&word) {
+            if at + 1 >= args.len() {
+                return Err(format!("{word} needs a value after it"));
+            }
+            at += 2;
+        } else {
+            if !word.starts_with("--") {
+                found.push(word);
+            }
+            at += 1;
+        }
+    }
+    Ok(found)
+}
+
 /// A register named at a terminal: its own directory is the directory served.
 fn at_terminal(path: &str, create: bool) -> Result<(PathBuf, String), String> {
     let p = Path::new(path);
@@ -2621,7 +2646,7 @@ fn person(args: &[String]) -> Result<i32, String> {
         "adopt" => tx.put(&by, "DECLARED", "ADOPTED", obj(vec![("by", s(&by)), ("basis", s(&clip(&flag(args, "--basis").ok_or("give the instruction with --basis")?, 2000))), ("observed", s("ENTERED_AT_A_TERMINAL"))]))?,
         "halt" => tx.put(&by, "DECLARED", "HALTED", obj(vec![("by", s(&by)), ("words", flag(args, "--words").map(|w| s(&clip(&w, 2000))).unwrap_or(Value::Null))]))?,
         "workspace" => {
-            let names: Vec<&str> = args.iter().skip(2).filter(|a| !a.starts_with("--") && Some(*a) != flag(args, "--by").as_ref() && Some(*a) != flag(args, "--method").as_ref()).map(String::as_str).collect();
+            let names: Vec<&str> = operands(args, &["--by", "--method"])?;
             if let Some(m) = flag(args, "--method") {
                 se.method = Some(PathBuf::from(m));
             }
@@ -2630,8 +2655,8 @@ fn person(args: &[String]) -> Result<i32, String> {
         "standard" => {
             let mut st = tx.state().standard();
             let mut tasks: Vec<Value> = Vec::new();
-            for a in args.iter().skip(2).filter(|a| !a.starts_with("--") && Some(*a) != flag(args, "--by").as_ref() && Some(*a) != flag(args, "--second").as_ref()) {
-                match (a.as_str(), a.split_once('=')) {
+            for a in operands(args, &["--by", "--second"])? {
+                match (a, a.split_once('=')) {
                     ("BASELINE", _) => st = Standard::BASELINE,
                     ("CRITICAL", _) => st = Standard::CRITICAL,
                     (_, Some(("method", v))) => st.method = if v == "NATIVE_ONLY" { Method::NativeOnly } else { Method::NativeOrPinned },

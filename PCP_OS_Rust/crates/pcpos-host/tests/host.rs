@@ -526,6 +526,14 @@ fn a_person_at_a_terminal_acts_as_themselves() {
     assert_eq!(run(&["adopt", "r.jsonl", "--by", "kj", "--basis", "Use ACR."], None).1, 0);
     assert_eq!(run(&["standard", "r.jsonl", "--by", "kj", "CRITICAL"], Some("PERSONAL")).1, 2, "one person cannot meet a two-person requirement");
     assert_eq!(run(&["standard", "r.jsonl", "--by", "kj", "human_adoption=true", "model_findings=HUMAN_CLOSES"], Some("PERSONAL")).1, 0);
+    // An operand is taken by where it stands, not dropped because it reads the same as a flag's value
+    // (pcp issue 27). The person's own label given as an operand is not a field of a standard: it is
+    // refused like any other unknown word, where it used to vanish and the command succeed. A flag
+    // left without its value is refused too. Neither writes anything.
+    let before = fs::read(root.join("r.jsonl")).unwrap();
+    assert_ne!(run(&["standard", "r.jsonl", "--by", "kj", "kj"], Some("PERSONAL")).1, 0, "an operand reading like the actor's label was dropped");
+    assert_ne!(run(&["standard", "r.jsonl", "offline_only=true", "--by"], Some("PERSONAL")).1, 0, "a flag with no value was accepted");
+    assert_eq!(fs::read(root.join("r.jsonl")).unwrap(), before);
     assert_eq!(run(&["halt", "r.jsonl", "--by", "kj", "--words", "stop"], None).1, 0);
     let (out, code) = run(&["status", "r.jsonl"], None);
     assert!(code == 0 && out.contains("human adoption true") && out.contains("USE NOT_IN_USE"), "{out}");
