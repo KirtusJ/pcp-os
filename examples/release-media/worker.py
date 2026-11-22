@@ -6,7 +6,8 @@ import re
 import shutil
 import tempfile
 
-from basic import build_environment, cargo_bin, export_guest, run, sha, write_parts
+from toolchain import build_environment, tool_record
+from basic import cargo_bin, export_guest, run, sha, write_parts
 
 
 def sha256_arg(value):
@@ -18,13 +19,14 @@ def sha256_arg(value):
 def prepare(args, stage, work):
     if args.manifest is not None and sha(args.manifest) != args.manifest_sha256:
         raise ValueError("model manifest differs from the independently supplied SHA-256")
-    compiler = run("rustc", "-vV").strip()
+    env = build_environment(work)
+    tools = tool_record(env)
+    compiler = tools["rustc"]["version"]
     if "release: 1.97.0" not in compiler.splitlines():
         raise ValueError("this worker qualification uses rustc 1.97.0")
     bird = work / "tailorbird"
     guest_head = export_guest(args.os, args.tailorbird, args.tailorbird_head, bird,
                               ["store/apps/parrots-all-the-way-down/guest/src/heap.rs"])
-    env = build_environment(work)
     env["PCP_MODEL_MANIFEST_SHA256"] = args.manifest_sha256
     worker, features = cargo_bin(bird, "model-worker", ["model-worker"], env, work)
     output = stage / "model-worker.elf"
@@ -41,7 +43,8 @@ def prepare(args, stage, work):
         "model_manifest_sha256": args.manifest_sha256,
         "target": "x86_64-unknown-none",
         "rustc": compiler,
-        "cargo": run("cargo", "--version").strip(),
+        "cargo": tools["cargo"]["version"].splitlines()[0],
+        "rust_tools": tools,
         "worker_features": features,
         "files": {output.name: elf_digest},
     }

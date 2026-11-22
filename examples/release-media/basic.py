@@ -11,6 +11,8 @@ import sys
 import tarfile
 import tempfile
 
+from toolchain import build_environment, check_project_wrappers, tool_record
+
 
 def run(*args, cwd=None, env=None):
     return subprocess.check_output(args, cwd=cwd, env=env, text=True)
@@ -33,7 +35,8 @@ def archive(repo, head, paths, dest):
 
 
 def cargo_bin(directory, binary, features, env, work):
-    command = ["cargo", "build", "--locked", "--release", "--target", "x86_64-unknown-none",
+    check_project_wrappers(directory, work)
+    command = [env["CARGO"], "build", "--locked", "--release", "--target", "x86_64-unknown-none",
                "--bin", binary, "--no-default-features", "--message-format=json",
                "--config", f"target.x86_64-unknown-none.rustflags=['--remap-path-prefix={work}=/pcpos-build']"]
     if features:
@@ -44,15 +47,6 @@ def cargo_bin(directory, binary, features, env, work):
     if len(artifacts) != 1 or sorted(artifacts[0]["features"]) != sorted(features):
         raise ValueError(f"unexpected resolved Cargo features for {binary}")
     return Path(artifacts[0]["executable"]), artifacts[0]["features"]
-
-
-def build_environment(work):
-    env = dict(os.environ, TZ="UTC", LC_ALL="C", SOURCE_DATE_EPOCH="1794614400",
-               CARGO_TARGET_DIR=str(work / "target"))
-    for name in ("RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CARGO_BUILD_RUSTFLAGS",
-                 "CARGO_TARGET_X86_64_UNKNOWN_NONE_RUSTFLAGS"):
-        env.pop(name, None)
-    return env
 
 
 def export_guest(os_repo, tailorbird, head, bird, extra_paths=()):
@@ -116,7 +110,8 @@ def prepare(args, stage, work):
     return {"format": "pcpos-release-parts/1", "profile": "model-free",
             "os_head": args.os_head, "tailorbird_head": args.tailorbird_head, "guest_os_head": guest_head,
             "kernel_features": features, "tailorbird_features": app_features, "measurement": measurement,
-            "asset_iso_sha256": args.assets_sha256, "rustc": run("rustc", "--version").strip(),
+            "asset_iso_sha256": args.assets_sha256, "rustc": run(env["RUSTC"], "--version", env=env).strip(),
+            "rust_tools": tool_record(env),
             "grub": run("grub-mkimage", "--version").strip(),
             "files": {p.relative_to(files).as_posix(): sha(p) for p in sorted(files.rglob("*")) if p.is_file()}}
 

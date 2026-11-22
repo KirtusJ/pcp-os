@@ -2,7 +2,6 @@
 import argparse
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
 import shutil
@@ -10,6 +9,7 @@ import subprocess
 import struct
 import tempfile
 
+from toolchain import build_environment, check_project_wrappers, tool_record
 from basic import archive, sha
 from worker import sha256_arg
 
@@ -72,10 +72,13 @@ def stage(args):
         with tempfile.TemporaryDirectory() as directory:
             work = Path(directory)
             archive(args.os, record["guest_os_head"], ["PCP_OS_Rust"], work)
-            subprocess.run(["cargo", "run", "--locked", "--release", "-p", "pcpos-model-media",
+            env = build_environment(work)
+            check_project_wrappers(work / "PCP_OS_Rust", work)
+            packer_tools = tool_record(env)
+            subprocess.run([env["CARGO"], "run", "--locked", "--release", "-p", "pcpos-model-media",
                             "--example", "pack", "--", args.model.resolve(), args.model_sha256,
                             payload.resolve()], cwd=work / "PCP_OS_Rust", check=True,
-                           env=dict(os.environ, CARGO_TARGET_DIR=str(work / "target")))
+                           env=env)
         files = readback(payload, args.model_sha256, args.manifest_sha256)
         worker = payload / "WORKER.ELF"
         shutil.copyfile(args.worker_parts / "model-worker.elf", worker)
@@ -84,7 +87,7 @@ def stage(args):
             raise ValueError("copied worker ELF differs from its pinned receipt")
         receipt = {"format": "pcpos-preloaded-model-payload/1", "files": files,
                    "model_sha256": args.model_sha256, "model_manifest_sha256": args.manifest_sha256,
-                   "packer_os_head": record["guest_os_head"],
+                   "packer_os_head": record["guest_os_head"], "packer_rust_tools": packer_tools,
                    "worker_receipt_sha256": args.worker_receipt_sha256}
         lock = args.parts / "inputs.json"
         lock.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")

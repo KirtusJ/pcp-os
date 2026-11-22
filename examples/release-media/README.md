@@ -83,3 +83,9 @@ python3 examples/release-media/test_model_payload.py
 The new directory contains `PCPOS/WORKER.ELF`, `PCPOS/model.manifest` and `PCPOS/shard-00000.bin` onward. Assembly reopens each shard and checks its length and SHA-256 against the pinned manifest, checks the ordered whole-model SHA-256, and checks the copied worker against its receipt. The output `inputs.json` records every digest and stays with the build evidence.
 
 The loader contract reserves `EFI/BOOT/BOOTX64.EFI`, `PCPOS/KERNEL.ELF` and `PCPOS/TAILOR.ELF` on the same firmware-selected FAT volume. Completing the image requires the loader's tested build interface and the normal kernel build. The loader must carry the trusted kernel, Tailorbird, worker and manifest digests. [Firmware handoff](https://github.com/KirtusJ/pcp-os/pull/276#issuecomment-7077871747)
+
+### Compiler and profile used for qualification
+
+The media builders select the Rust toolchain from `rustc` on PATH, then invoke that toolchain’s Cargo by absolute path and pass its compiler to Cargo through `RUSTC`. They clear inherited compiler wrappers, build flags, target overrides and profile settings. External Cargo configurations may supply dependencies and networking settings. Keep compiler and target configuration in the pinned source tree. An external configuration that sets other sections produces a diagnostic naming the file and sections.
+
+New component receipts carry the selected Cargo and rustc binary digests, verbose versions and build profile. The worker receipt also records its target and resolved feature set. Earlier receipts still identify their actual artifacts by digest. Run `python3 examples/release-media/test_toolchain.py` with the intended toolchain on PATH to check the selection.
