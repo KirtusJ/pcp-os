@@ -11,9 +11,10 @@ The probe (probe/, built for x86_64-unknown-none) maps 64 MiB at a time and writ
 Predicates, fixed before the first run.
  L1 with 1,024 and 2,048 MiB of machine memory (none above four gibibytes) the program gets 960 MiB
     and is then refused with error 12, as before this change, and no line about high memory appears.
- L2 with 8,192 MiB (5,120 MiB of it above four gibibytes on this emulated machine) the program gets
-    6,080 MiB: all of the high memory, then the 960 MiB below. The kernel's line for high memory
-    shows 1,310,720 frames, all free at the end, and as many given back as handed out.
+ L2 with 8,192 MiB the program gets all of the memory above four gibibytes, then the 960 MiB below:
+    6,080 MiB on machine "pc" (5,120 MiB above, 1,310,720 frames) and 7,104 MiB on "q35" (6,144 MiB
+    above, 1,572,864 frames). The kernel's line for high memory shows that many frames, all free at
+    the end, and as many given back as handed out.
  L4 every page handed to the program reads zero at both ends before the program writes to it.
  L5 (with --demo-kernel, built with the high-memory-demo feature, at 8,192 MiB) what a device would be
     given, a run of frames and a single frame, lies below one gibibyte although memory above four is
@@ -32,7 +33,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-CASES = ((1024, 960, None), (2048, 960, None), (8192, 6080, 1310720))
+# What a machine of 8,192 MiB has above four gibibytes is the emulated machine's own layout, not the
+# kernel's: "pc" keeps 3 GiB below and puts 5 GiB above; "q35" keeps 2 GiB below and puts 6 GiB above
+# (B3 ran this on q35 and found 7,104 MiB where this check had only "pc"'s figure).
+MACHINES = {"pc": (6080, 1310720), "q35": (7104, 1572864)}
 
 
 def main():
@@ -41,14 +45,16 @@ def main():
     parser.add_argument("probe", type=Path)
     parser.add_argument("--qemu", default="qemu-system-x86_64")
     parser.add_argument("--demo-kernel", type=Path)
+    parser.add_argument("--machine", choices=sorted(MACHINES), default="pc")
     args = parser.parse_args()
     kernel, probe = args.kernel.resolve(), args.probe.resolve()
     if probe.name != "memory-probe":
         sys.exit("the program must be in a file named memory-probe")
     problems = []
-    for mebibytes, want, high in CASES:
+    big, frames = MACHINES[args.machine]
+    for mebibytes, want, high in ((1024, 960, None), (2048, 960, None), (8192, big, frames)):
         done = subprocess.run(
-            [args.qemu, "-machine", "pc", "-accel", "tcg", "-cpu", "max", "-m", "%dM" % mebibytes, "-kernel", kernel.name, "-initrd", str(probe),
+            [args.qemu, "-machine", args.machine, "-accel", "tcg", "-cpu", "max", "-m", "%dM" % mebibytes, "-kernel", kernel.name, "-initrd", str(probe),
              "-append", "auto=memory-probe then=off", "-display", "none", "-nic", "none", "-serial", "stdio", "-no-reboot",
              "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"],
             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, cwd=kernel.parent, timeout=900)
@@ -69,10 +75,10 @@ def main():
             problems.append("%d MiB: high memory was reported on a machine that has none: %r" % (mebibytes, above))
         if high is not None and above != [(high, high, high, high)]:
             problems.append("%d MiB: high memory reported as %r, not %d frames all handed out once and all returned" % (mebibytes, above, high))
-        print("%d MiB: %s%s" % (mebibytes, "; ".join(said), "; high frames %r" % (above,) if above else ""))
+        print("%s, %d MiB: %s%s" % (args.machine, mebibytes, "; ".join(said), "; high frames %r" % (above,) if above else ""))
     if args.demo_kernel:
         demo = args.demo_kernel.resolve()
-        done = subprocess.run([args.qemu, "-machine", "pc", "-accel", "tcg", "-cpu", "max", "-m", "8192M", "-kernel", demo.name, "-append", "then=off",
+        done = subprocess.run([args.qemu, "-machine", args.machine, "-accel", "tcg", "-cpu", "max", "-m", "8192M", "-kernel", demo.name, "-append", "then=off",
                                "-display", "none", "-nic", "none", "-serial", "stdio", "-no-reboot", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"],
                               stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, cwd=demo.parent, timeout=600)
         lines = done.stdout.decode(errors="replace").splitlines()
