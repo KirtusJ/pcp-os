@@ -7,6 +7,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import uuid
+import zlib
 
 from preloaded_gate import build, digest, inventory, verify_tree
 from hybrid_readback import verify_embedded_fat
@@ -163,6 +165,81 @@ class GateTests(unittest.TestCase):
     def test_insufficient_fat_capacity_refused(self):
         with self.assertRaisesRegex(ValueError, "FAT size"):
             build(self.root, self.records, self.model_pin, 1 << 20, self.temp / "unused.iso")
+
+
+class FinalGptGeometryTests(unittest.TestCase):
+    """Synthetic, CRC-correct final images; no claim of a genuine FAT or boot."""
+
+    def fixture(self, second=None, missing_esp_guid=False):
+        sector, block = 512, 2048
+        last_lba = 4095
+        raw = bytearray((last_lba + 1) * sector)
+        raw[2048 * sector:2304 * sector] = b"F" * (256 * sector)
+        table = bytearray(128 * 128)
+        esp_type = uuid.UUID("c12a7328-f81f-11d2-ba4b-00a0c93ec93b").bytes_le
+        table[0:16] = esp_type
+        if not missing_esp_guid:
+            table[16:32] = uuid.UUID("11111111-2222-3333-4444-555555555555").bytes_le
+        struct.pack_into("<QQ", table, 32, 2048, 2303)
+        if second is not None:
+            table[128:144] = uuid.UUID("21686148-6449-6e6f-744e-656564454649").bytes_le
+            table[144:160] = uuid.UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee").bytes_le
+            struct.pack_into("<QQ", table, 128 + 32, *second)
+        table_crc = zlib.crc32(table)
+        for lba, other, table_lba in ((1, last_lba, 2), (last_lba, 1, 4063)):
+            raw[table_lba * sector:table_lba * sector + len(table)] = table
+            header = bytearray(sector)
+            struct.pack_into("<8sIIII", header, 0, b"EFI PART", 0x10000, 92, 0, 0)
+            struct.pack_into("<QQQQ", header, 24, lba, other, 34, 4062)
+            header[56:72] = uuid.UUID("12345678-1234-5678-1234-567812345678").bytes_le
+            struct.pack_into("<QIII", header, 72, table_lba, 128, 128, table_crc)
+            struct.pack_into("<I", header, 16, zlib.crc32(header[:92]))
+            raw[lba * sector:(lba + 1) * sector] = header
+
+        for lba, kind in ((16, 1), (17, 0), (18, 2), (19, 255)):
+            descriptor = bytearray(block)
+            descriptor[0] = kind
+            descriptor[1:7] = b"CD001\\x01"
+            if kind == 0:
+                descriptor[7:39] = b"EL TORITO SPECIFICATION".ljust(32, b" ")
+                struct.pack_into("<I", descriptor, 71, 20)
+            if kind == 2:
+                descriptor[88:91] = b"%/E"
+            raw[lba * block:(lba + 1) * block] = descriptor
+        catalog = bytearray(64)
+        catalog[0:2] = b"\\x01\\xef"
+        catalog[30:34] = b"\\x55\\xaa\\x88\\x00"
+        struct.pack_into("<H", catalog, 28, (-sum(struct.unpack("<16H", catalog[:32]))) & 0xffff)
+        struct.pack_into("<HI", catalog, 38, 256, 512)
+        raw[20 * block:20 * block + len(catalog)] = catalog
+        image = self.folder / ("gpt-" + str(second) + str(missing_esp_guid) + ".iso")
+        image.write_bytes(raw)
+        return image, sha(b"F" * (256 * sector))
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.folder = Path(temp.name)
+
+    def test_exactly_one_esp_readback(self):
+        image, pin = self.fixture()
+        self.assertEqual(verify_embedded_fat(image, 131072, pin), (1048576, 131072))
+
+    def test_other_active_partitions_refused_after_recomputing_both_gpt_crcs(self):
+        for label, bounds in (
+            ("adjacent", (2304, 2400)),
+            ("overlap", (2200, 2350)),
+            ("outside_usable", (4063, 4075)),
+        ):
+            with self.subTest(label=label):
+                image, pin = self.fixture(second=bounds)
+                with self.assertRaisesRegex(ValueError, "unexpected active GPT partition"):
+                    verify_embedded_fat(image, 131072, pin)
+
+    def test_esp_without_unique_guid_refused(self):
+        image, pin = self.fixture(missing_esp_guid=True)
+        with self.assertRaisesRegex(ValueError, "ambiguous or out-of-range"):
+            verify_embedded_fat(image, 131072, pin)
 
 
 if __name__ == "__main__":
