@@ -105,6 +105,8 @@ fn launch(image: &[u8], n: u8) -> Result<u32, &'static str> {
         args: &["pcp-fib", &arg],
         grants: user::Grants::default(),
         budget: 50,
+        #[cfg(feature = "proposals")]
+        consent: user::nobody_to_ask,
     };
     let world = user::empty_world();
     let before = user::frames_free();

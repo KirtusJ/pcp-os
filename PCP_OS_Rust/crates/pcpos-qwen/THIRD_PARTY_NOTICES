@@ -1,6 +1,8 @@
 Qwen tensor graph ordering and the host QA FFI declarations follow llama.cpp
 commit a956a852c9c8bc1fb07206364838ddef299178c0 (b12387), src/models/qwen2.cpp,
-src/models/qwen3.cpp and include/llama.h. Upstream notice follows.
+src/models/qwen3.cpp and include/llama.h. The Qwen2 tokenizer profile follows
+src/llama-vocab.cpp and src/unicode.cpp; its L/N/White_Space tables are derived
+from src/unicode-data.cpp at that same commit. Upstream notice follows.
 
 MIT License
 

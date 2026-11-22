@@ -78,6 +78,32 @@ impl<'a> Row<'a> {
         let result = sum as f32;
         if result.is_finite() { Ok(result) } else { Err(Error::NonFinite) }
     }
+
+    /// Four independent f64 accumulators expose parallel arithmetic to the
+    /// compiler. Same validated rows, bounded scratch and cancellation cadence
+    /// as `dot`; summation order differs. Ill-conditioned cancellation can produce
+    /// larger differences, so model-level numerical qualification is required.
+    /// `dot` remains the sequential numerical reference.
+    pub fn dot_unrolled(&self, input: &[f32], mut keep_going: impl FnMut() -> bool) -> Result<f32, Error> {
+        if input.len() != self.columns { return Err(Error::Length); }
+        let mut scratch=[0.0f32;256];let mut sums=[0.0f64;4];
+        for (block, vector) in self.bytes.chunks_exact(self.block_bytes).zip(input.chunks_exact(self.block_values)) {
+            if !keep_going(){return Err(Error::Cancelled);}
+            decode(self.kind,block,&mut scratch[..self.block_values]);
+            let mut at=0;
+            while at+4<=vector.len() {
+                let v=&vector[at..at+4];let w=&scratch[at..at+4];
+                if !(v[0].is_finite() & v[1].is_finite() & v[2].is_finite() & v[3].is_finite()){return Err(Error::NonFinite);}
+                sums[0]+=w[0] as f64*v[0] as f64;sums[1]+=w[1] as f64*v[1] as f64;
+                sums[2]+=w[2] as f64*v[2] as f64;sums[3]+=w[3] as f64*v[3] as f64;at+=4;
+            }
+            for (&w,&v) in scratch[at..self.block_values].iter().zip(&vector[at..]) {
+                if !v.is_finite(){return Err(Error::NonFinite);}sums[0]+=w as f64*v as f64;
+            }
+        }
+        let result=((sums[0]+sums[1])+(sums[2]+sums[3])) as f32;
+        if result.is_finite(){Ok(result)}else{Err(Error::NonFinite)}
+    }
 }
 
 fn word(b: &[u8]) -> u16 { u16::from_le_bytes([b[0], b[1]]) }
