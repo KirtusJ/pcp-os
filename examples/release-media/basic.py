@@ -98,8 +98,11 @@ def prepare(args, stage, work):
     early = work / "early.cfg"
     early.write_text('configfile "$cmdpath/grub.cfg"\n', encoding="ascii")
     config = (f'multiboot /PCPOS/KERNEL.ELF image={measurement} propose_image={sha(app)}\n'
-              'module /PCPOS/TAILOR.ELF tailorbird\n'
-              'module /PCPOS/SURF.ELF surf.elf\n'
+              # What follows a file's path is the name a person reads in Programs, so it is the
+              # program's own name as the program writes it, not its file's (owner's brand, 22 November
+              # 2026). The files keep their paths. A name has no space: the kernel reads the first word.
+              'module /PCPOS/TAILOR.ELF Tailorbird\n'
+              'module /PCPOS/SURF.ELF Surfbird\n'
               'module /PCPOS/CLIP.PPM clip.ppm\n'
               'module /PCPOS/CLIP.WAV clip.wav\nboot\n')
     (efi / "grub.cfg").write_text(config, encoding="ascii")
