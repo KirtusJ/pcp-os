@@ -1,0 +1,98 @@
+{
+  "optimized_reference": {
+    "scope": "Windows host scalar Rust vs pinned llama.cpp CPU logits; no native worker, no tokenizer, no 8B inference",
+    "model_sha256": "1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32",
+    "tokens": [
+      9707,
+      11,
+      279,
+      1495
+    ],
+    "rust_seconds": 14.135495,
+    "reference_seconds": 0.49163489999773446,
+    "timing_limit": "single shared-host pass, not a controlled benchmark",
+    "rows": [
+      {
+        "position": 0,
+        "logits": 151936,
+        "max_absolute": 0.3498997688293457,
+        "rmse": 0.10497794057847758,
+        "relative_l2": 0.047828527478148024,
+        "rust_top": 82334,
+        "reference_top": 82334,
+        "mean_shift": -0.08802132981912354,
+        "centered_rmse": 0.05720676100751939,
+        "centered_max": 0.2799478985656903
+      },
+      {
+        "position": 1,
+        "logits": 151936,
+        "max_absolute": 7.845742359757423,
+        "rmse": 3.545637559091019,
+        "relative_l2": 1.366096946439273,
+        "rust_top": 25,
+        "reference_top": 25,
+        "mean_shift": 3.4502505084359156,
+        "centered_rmse": 0.8168948093081637,
+        "centered_max": 4.395491851321507
+      },
+      {
+        "position": 2,
+        "logits": 151936,
+        "max_absolute": 0.2714271545410156,
+        "rmse": 0.05873881737739225,
+        "relative_l2": 0.017579469303962765,
+        "rust_top": 3491,
+        "reference_top": 3491,
+        "mean_shift": 0.02423278506358371,
+        "centered_rmse": 0.0535072032062674,
+        "centered_max": 0.28970078642924535
+      },
+      {
+        "position": 3,
+        "logits": 151936,
+        "max_absolute": 0.5608367919921875,
+        "rmse": 0.14175352352581636,
+        "relative_l2": 0.05770661922315743,
+        "rust_top": 17921,
+        "reference_top": 17921,
+        "mean_shift": 0.10644518296714293,
+        "centered_rmse": 0.09361348436563843,
+        "centered_max": 0.45439160902504455
+      }
+    ]
+  },
+  "scalar_reference": {
+    "scope": "independent NumPy graph using pinned GGML scalar decoded weights compared to Rust; four real 0.5B token steps",
+    "rows": [
+      {
+        "position": 0,
+        "max_absolute": 1.9073486328125e-06,
+        "rmse": 5.585858367608059e-07,
+        "rust_top": 82334,
+        "reference_top": 82334
+      },
+      {
+        "position": 1,
+        "max_absolute": 0.00011610984802246094,
+        "rmse": 5.042906874381624e-05,
+        "rust_top": 25,
+        "reference_top": 25
+      },
+      {
+        "position": 2,
+        "max_absolute": 3.337860107421875e-06,
+        "rmse": 8.98015647293299e-07,
+        "rust_top": 3491,
+        "reference_top": 3491
+      },
+      {
+        "position": 3,
+        "max_absolute": 3.814697265625e-06,
+        "rmse": 9.37379126845261e-07,
+        "rust_top": 17921,
+        "reference_top": 17921
+      }
+    ]
+  }
+}
