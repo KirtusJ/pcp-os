@@ -305,7 +305,8 @@ pub fn boot_info(magic: u32, info: u32) -> BootInfo {
         let mut read = |at: u64, len: usize| -> Option<alloc::vec::Vec<u8>> {
             let end = at.checked_add(len as u64)?;
             let allowed = if by_loader { processors::inside_table_memory(&map, at, len) } else { processors::outside_free_memory(&map, at, len) };
-            (end <= 4 << 30 && len <= 1 << 20 && allowed).then(|| core::slice::from_raw_parts(at as usize as *const u8, len).to_vec())
+            // Address zero is never a table's, and a slice may not begin there.
+            (at != 0 && end <= 4 << 30 && len <= 1 << 20 && allowed).then(|| core::slice::from_raw_parts(at as usize as *const u8, len).to_vec())
         };
         let root = match named {
             Ok(Some(at)) => {
