@@ -2659,12 +2659,34 @@ fn person(args: &[String]) -> Result<i32, String> {
                 match (a, a.split_once('=')) {
                     ("BASELINE", _) => st = Standard::BASELINE,
                     ("CRITICAL", _) => st = Standard::CRITICAL,
-                    (_, Some(("method", v))) => st.method = if v == "NATIVE_ONLY" { Method::NativeOnly } else { Method::NativeOrPinned },
-                    (_, Some(("model_findings", v))) => st.model_findings = match v { "MECHANICAL_ONLY" => ModelFindings::MechanicalOnly, "HUMAN_CLOSES" => ModelFindings::HumanCloses, _ => ModelFindings::AsMethod },
-                    (_, Some(("human_adoption", v))) => st.human_adoption = v == "true",
-                    (_, Some(("dual_authorization", v))) => st.dual_authorization = v == "true",
-                    (_, Some(("static_tasks", v))) => st.static_tasks = v == "true",
-                    (_, Some(("offline_only", v))) => st.offline_only = v == "true",
+                    // Every value is one of the words the field has, exactly, or the command is refused
+                    // before anything is written. A word that is nearly right (tru, TRUE, NATIVE-ONLY) used
+                    // to be taken as the weaker setting, so a mistyped CRITICAL field relaxed the standard
+                    // without saying so (pcp issue 25).
+                    (_, Some(("method", v))) => st.method = match v {
+                        "NATIVE_ONLY" => Method::NativeOnly,
+                        "NATIVE_OR_PINNED" => Method::NativeOrPinned,
+                        _ => return Err(format!("{a}: method is NATIVE_ONLY or NATIVE_OR_PINNED; nothing was changed")),
+                    },
+                    (_, Some(("model_findings", v))) => st.model_findings = match v {
+                        "MECHANICAL_ONLY" => ModelFindings::MechanicalOnly,
+                        "HUMAN_CLOSES" => ModelFindings::HumanCloses,
+                        "AS_METHOD" => ModelFindings::AsMethod,
+                        _ => return Err(format!("{a}: model_findings is MECHANICAL_ONLY, HUMAN_CLOSES or AS_METHOD; nothing was changed")),
+                    },
+                    (_, Some((field @ ("human_adoption" | "dual_authorization" | "static_tasks" | "offline_only"), v))) => {
+                        let on = match v {
+                            "true" => true,
+                            "false" => false,
+                            _ => return Err(format!("{a}: {field} is true or false; nothing was changed")),
+                        };
+                        match field {
+                            "human_adoption" => st.human_adoption = on,
+                            "dual_authorization" => st.dual_authorization = on,
+                            "static_tasks" => st.static_tasks = on,
+                            _ => st.offline_only = on,
+                        }
+                    }
                     (_, Some(("tasks", v))) => tasks = v.split(',').filter(|t| !t.is_empty()).map(s).collect(),
                     _ => return Err(format!("{a} is not a standard or a field of one")),
                 }

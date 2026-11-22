@@ -1,0 +1,9 @@
+[package]
+name = "pcpos-gguf"
+description = "Bounded GGUF model index reader for PCP OS; no inference or device access"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]

@@ -534,6 +534,17 @@ fn a_person_at_a_terminal_acts_as_themselves() {
     assert_ne!(run(&["standard", "r.jsonl", "--by", "kj", "kj"], Some("PERSONAL")).1, 0, "an operand reading like the actor's label was dropped");
     assert_ne!(run(&["standard", "r.jsonl", "offline_only=true", "--by"], Some("PERSONAL")).1, 0, "a flag with no value was accepted");
     assert_eq!(fs::read(root.join("r.jsonl")).unwrap(), before);
+    // A value that is not exactly one of the field's words is refused and nothing is written: a
+    // mistyped field must never be taken for the weaker setting (pcp issue 25).
+    let before = fs::read(root.join("r.jsonl")).unwrap();
+    for mistyped in ["human_adoption=tru", "dual_authorization=treu", "static_tasks=tru", "offline_only=TRUE", "method=NATIVE-ONLy",
+                     "model_findings=MECHANICAL-ONLY", "human_adoption=", "method=", "model_findings=as_method"] {
+        let (out, code) = run(&["standard", "r.jsonl", "--by", "kj", mistyped], Some("PERSONAL"));
+        assert_ne!(code, 0, "{mistyped} was accepted: {out}");
+        assert_eq!(fs::read(root.join("r.jsonl")).unwrap(), before, "{mistyped} changed the register");
+    }
+    // The weaker words themselves are still words: written out in full they are taken.
+    assert_eq!(run(&["standard", "r.jsonl", "--by", "kj", "method=NATIVE_OR_PINNED", "offline_only=false"], Some("PERSONAL")).1, 0);
     assert_eq!(run(&["halt", "r.jsonl", "--by", "kj", "--words", "stop"], None).1, 0);
     let (out, code) = run(&["status", "r.jsonl"], None);
     assert!(code == 0 && out.contains("human adoption true") && out.contains("USE NOT_IN_USE"), "{out}");
