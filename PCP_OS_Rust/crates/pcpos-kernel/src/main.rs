@@ -686,6 +686,12 @@ fn check_space_cutoffs(failed: &mut u32) {
           restored && user::frames_free() == before, failed);
 }
 
+/// How many degrees short of slowing itself a processor must be to be given work. Ten is a margin
+/// chosen by judgement, not measured on any machine: wide enough that work stops before the
+/// processor's own slowing begins, narrow enough that a warm laptop still works.
+#[cfg(feature = "heat")]
+const HEAT_MARGIN: u8 = 10;
+
 /// The kernel proper, entered from `arch` in 64-bit mode with interrupts off.
 pub fn kernel_start(magic: u32, info: u32) -> ! {
     arch::serial_init();
@@ -719,6 +725,13 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     let (offered, enabled) = arch::harden();
     let on = |bit: u32| if offered >> bit & 1 == 0 { "not offered by this processor" } else if enabled >> bit & 1 == 1 { "on" } else { "OFFERED AND NOT ON" };
     say!("further protections: supervisor execution prevention {}, supervisor access prevention {}, user-mode instruction prevention {}", on(20), on(21), on(11));
+    #[cfg(feature = "heat")]
+    match arch::heat_now() {
+        Ok(h) => say!("heat: this processor is {} degrees below the temperature at which it slows itself{}{}{}; with less than {} to spare it would be given no work", h.margin,
+                      if h.slowing { ", and IS SLOWING ITSELF NOW" } else { "" }, if h.has_slowed { ", and has slowed itself before" } else { "" },
+                      if h.critical { ", and IS AT THE TEMPERATURE TO SHUT DOWN AT" } else { "" }, HEAT_MARGIN),
+        Err(why) => say!("heat: not known ({})", why),
+    }
     let measured = sha256_hex(arch::image());
     // K-12: the measurement is compared with a value the kernel did not compute, where whoever started it named one
     // (`image=<SHA-256>` on the loader's command line; tools/measure.py computes it from the image file without
