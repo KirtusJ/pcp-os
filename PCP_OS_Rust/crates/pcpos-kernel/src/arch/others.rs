@@ -422,6 +422,60 @@ pub fn relax() {
     interrupts_restore(on);
 }
 
+/// Halt until the next interrupt without keeping the lock meanwhile. The interrupt that ends the
+/// halt takes the lock for itself on its way in and gives it up on its way out, like an entry from
+/// outside; the lock is taken again before this returns. Called with interrupts allowed.
+pub fn halt_released() {
+    let me = cpu();
+    // Safety: the flag and the lock change together with interrupts off, so no interrupt sees one
+    // without the other; `sti` takes effect after the instruction that follows it, so no interrupt
+    // can arrive between allowing them and halting.
+    unsafe {
+        asm!("cli", options(nomem, nostack));
+        if !holds(me).load(Ordering::Relaxed) {
+            asm!("sti", "hlt", options(nomem, nostack));
+            return;
+        }
+        holds(me).store(false, Ordering::Relaxed);
+        release();
+        asm!("sti", "hlt", "cli", options(nomem, nostack));
+        acquire(me);
+        holds(me).store(true, Ordering::Relaxed);
+        asm!("sti", options(nomem, nostack));
+    }
+}
+
+/// The check that a wait does not keep the kernel from the others: the first processor asks
+/// another to note the time, then sleeps `sleep` ticks, halting between them. Returns how many
+/// ticks after being asked the other one got into the kernel, or `None` if it never did or there
+/// is no other. If the sleeper kept the lock, the answer would be the whole sleep.
+pub fn answer_during_a_wait(sleep: u64) -> Option<u64> {
+    static NOTED: AtomicU64 = AtomicU64::new(0);
+    fn note(_: usize) {
+        NOTED.store(ticks(), Ordering::SeqCst);
+    }
+    NOTED.store(0, Ordering::SeqCst);
+    // Begin on a fresh tick, so that the whole of one lies ahead.
+    let begun = ticks() + 1;
+    while ticks() < begun {
+        halt_released();
+    }
+    if !ask(0, note) {
+        return None;
+    }
+    while ticks() < begun + sleep {
+        #[cfg(not(feature = "processors-unlocked-demo"))]
+        halt_released();
+        // The control keeps the lock across each halt, as the kernel did before this stage.
+        #[cfg(feature = "processors-unlocked-demo")]
+        unsafe { asm!("hlt", options(nomem, nostack)) };
+    }
+    match NOTED.load(Ordering::SeqCst) {
+        0 => None,
+        at => Some(at.saturating_sub(begun)),
+    }
+}
+
 // ---- a message from one processor to another -----------------------------------------------------
 
 /// How the controller is reached, for the processors started: 0 not yet, 1 as registers, else the address.

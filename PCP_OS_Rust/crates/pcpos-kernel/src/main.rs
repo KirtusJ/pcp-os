@@ -874,7 +874,14 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
                         if o.parked > 0 && !o.silent && o.not_itself == 0 && o.different == 0 {
                             arch::interrupts_on();
                             let (count, wanted, finished) = arch::others::count_together(20_000);
+                            let waited = arch::others::answer_during_a_wait(50);
                             arch::interrupts_off();
+                            say!("other processors: while the first slept 50 ticks, halting between them, another got into the kernel {}", match waited {
+                                Some(after) => alloc::format!("{} tick(s) after it was asked", after),
+                                None => "never".into(),
+                            });
+                            check("a processor that waits does not keep the kernel from the others: one asked at the start of a 50-tick sleep is in within 2",
+                                  matches!(waited, Some(after) if after <= 2), &mut failed);
                             say!("other processors: all {} processors added to one count together, each giving the kernel's lock up and taking it again 20000 times: {} of {}", o.parked + 1, count, wanted);
                             check("every processor answers a message, and with all of them in and out of the kernel at once its one lock lets in one at a time: the count is exact",
                                   finished && count == wanted, &mut failed);

@@ -1739,7 +1739,12 @@ pub fn without_interrupts<R>(f: impl FnOnce() -> R) -> R {
 
 /// Stop the processor until the next interrupt. For kernel code that waits with interrupts allowed.
 pub fn wait_for_interrupt() {
+    // With other processors running, the kernel's lock is not kept across the wait: another
+    // processor may need the kernel while this one sleeps.
+    #[cfg(feature = "processors")]
+    others::halt_released();
     // Safety: no memory effect; an interrupt resumes execution after the instruction.
+    #[cfg(not(feature = "processors"))]
     unsafe { asm!("hlt", options(nomem, nostack)) }
 }
 
@@ -1763,9 +1768,14 @@ pub fn ticks() -> u64 {
 /// Wait until the tick count reaches `target`, giving up after a bounded number of polls so that a timer
 /// that never fires is a failed check and not a hang. Returns whether the target was reached.
 pub fn wait_until(target: u64) -> bool {
-    for _ in 0..2_000_000_000u64 {
+    for _poll in 0..2_000_000_000u64 {
         if ticks() >= target {
             return true;
+        }
+        // Every so often another processor is given the chance to have the kernel.
+        #[cfg(feature = "processors")]
+        if _poll % 1024 == 1023 {
+            others::relax();
         }
         core::hint::spin_loop();
     }
