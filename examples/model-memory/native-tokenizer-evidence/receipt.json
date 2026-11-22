@@ -1,0 +1,73 @@
+{
+  "tokenizer_commit": "0de2dd69fc441ae47336601f894e062669453b90",
+  "kernel_commit": "b65d7c45223724aa23519e12c1505981d91634c5",
+  "kernel_features": [
+    "proposals",
+    "model-memory"
+  ],
+  "ram_mib": 4096,
+  "transport": "q35, OVMF, readonly xHCI FAT32, TCG",
+  "relocation_sha256": "eb8215fa7cb0143f7361c3cf1806f825227f6e616e86808b3006ca0475f4f73e",
+  "case_pack_sha256": "f50470ae22afcd37bc860f96d433f4b7945c576e359cc643f3a1043590b8f580",
+  "worker_sha256": "6271563e71f13cc06a086322502ba90310f19ea4a37f3b92b5294dd4032b2beb",
+  "token_vectors_sha256": "55e2295e6a6dae9d8ac0da219f6f3fe25ff7ef0e76226566bced4d4cf5ba4feb",
+  "normal_pieces_sha256": "2fcefb56f07ebf27d6d4d89db448b4750abc6ef4ef9b236789f2cda8b4e65a30",
+  "measurements": {
+    "coder": {
+      "input": "https://huggingface.co/Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF/resolve/ebb2015119c907b064c512bf053e945850b5875f/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+      "prefix_bytes": 16777216,
+      "original_bytes": 491400064,
+      "prefix_sha256": "675fc8527c3ec57696d129f70aaa8424907911e7007eafd2f6b8cf9dbc1552c8",
+      "prefix_manifest_sha256": "a948bae8af9fa4193817825b2407565fa383bce95bbdb3be8ccad9e927416034",
+      "flat_kernel_sha256": "7367ff3f08b568a2c5bfaed490c05072463fba0c884efd7573a3ad4f7b27da4d",
+      "front_sha256": "04311cc468d718611f187c448c67fcc554b32affe8c03235daf3320ef83a0f29",
+      "efi_sha256": "2cee3f187a0a94a4d8d6510f63328b0677360db26ec7e764f9f1c3c43c616d8f",
+      "serial_sha256": "b5b7d38eb00ff39ec922653afe224aaac9d8ab6c7cfac0603557c363e90cc572",
+      "firmware_log_sha256": "d38700aa2d7fde3d134cdec9a6638c8e9d00d0fa65d4968d0a5f042c99a6c433",
+      "checks": 71,
+      "status": 33,
+      "frames": {
+        "low": {
+          "free": 241152,
+          "total": 241152,
+          "issued": 243817,
+          "returned": 243817
+        },
+        "high": {
+          "free": 519680,
+          "total": 519680,
+          "issued": 5829,
+          "returned": 5829
+        }
+      }
+    },
+    "qwen3": {
+      "input": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/7c41481f57cb95916b40956ab2f0b139b296d974/Qwen3-8B-Q4_K_M.gguf",
+      "prefix_bytes": 16777216,
+      "original_bytes": 5027783488,
+      "prefix_sha256": "ce8ee0a29cb34c0580ebee996e9d67b2c72858389640a77b42ecb1583c4149b1",
+      "prefix_manifest_sha256": "4819f8b3c8eb6ee57e2f33878c0d0bee18c818edcc8b0384cec242eeb594215c",
+      "flat_kernel_sha256": "7367ff3f08b568a2c5bfaed490c05072463fba0c884efd7573a3ad4f7b27da4d",
+      "front_sha256": "04311cc468d718611f187c448c67fcc554b32affe8c03235daf3320ef83a0f29",
+      "efi_sha256": "9d146af001c63d21601c804ec098aa86ed9ffc4404bba1d1634498909059f659",
+      "serial_sha256": "631cec2137d4244ddbb56344323d79dd426053f5176ec1e44ad87a1c148eb276",
+      "firmware_log_sha256": "37d9ac82e89f548d3f9d33d2651c65d2d7981d1c23b8af38784ef38d08f83d76",
+      "checks": 71,
+      "status": 33,
+      "frames": {
+        "low": {
+          "free": 241152,
+          "total": 241152,
+          "issued": 243817,
+          "returned": 243817
+        },
+        "high": {
+          "free": 519680,
+          "total": 519680,
+          "issued": 5834,
+          "returned": 5834
+        }
+      }
+    }
+  }
+}
