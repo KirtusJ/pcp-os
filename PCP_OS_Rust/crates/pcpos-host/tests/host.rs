@@ -878,6 +878,25 @@ fn remove_selects_the_exact_local_installation_and_preserves_other_directories()
 }
 
 #[test]
+fn text_artifact_reuses_identical_bytes_and_preserves_an_occupied_digest_name() {
+    let root = in_use("kept-artifact");
+    let input = r#"{"text":"collected observation","origin":"PRODUCED"}"#;
+    let path = root.join(".pcp/artifacts").join(sha256_hex(b"collected observation"));
+    for _ in 0..2 {
+        let (reply, error) = tool(&root, "acr_artifact", input);
+        assert!(!error && reply.contains("ARTIFACT_ADDED"), "{reply}");
+        assert_eq!(fs::read(&path).unwrap(), b"collected observation");
+    }
+    let before = fs::read(root.join(REG)).unwrap();
+    fs::write(&path, b"other evidence").unwrap();
+    let (reply, error) = tool(&root, "acr_artifact", input);
+    assert!(error && reply.contains("different contents"), "{reply}");
+    assert_eq!(fs::read(&path).unwrap(), b"other evidence");
+    assert_eq!(fs::read(root.join(REG)).unwrap(), before);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn repair_preserves_an_existing_fragment_and_can_resume_with_matching_bytes() {
     let root = dir("resume-repair");
     assert!(pcpos(&root).args(["init", REG, "--principal", "p"]).output().unwrap().status.success());
