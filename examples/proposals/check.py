@@ -32,6 +32,11 @@ Predicates, fixed before the first run.
     person is not asked: the kernel says the display is too small, the log says "REFUSED: this display
     is too small to show it", the receipt's outcome is 6, and nothing is created whatever is pressed
     (F12 and Enter are sent). At 640 by 480 the question is asked and the file's first line is on it.
+ K1 (in the allowed case) reads that fail take nothing: a read too small and a read of nothing are -22,
+    a read into memory that is not the program's is -14, and the read straight after, with no proposal
+    in between, gives all 100 bytes: outcome 1, attempt 7, proposal 1, lasting 0, and the content's own
+    SHA-256. The same numbers with another name are refused -16 like another content. After sixty-four
+    proposals in one run the kernel takes no more (-28); none was asked about or made.
  N1 without `propose_image` on the command line the program is refused the proposal device (-13) and
     nobody is asked: no screen, no CREATED, no DENIED.
  Every case: the emulator ends with status 33 (the kernel's own checks passed and it powered off).
@@ -190,10 +195,18 @@ def main():
     created = [line for line in log.splitlines() if "CREATED after the person allowed it" in line]
     if len(created) != 1 or NAME not in created[0] or "(%d bytes, SHA-256 %s)" % (len(CONTENT), content) not in created[0]:
         found.append("A1: not exactly one CREATED line naming the file, its size and digest: %r" % created)
-    want = [str(RECORD), "100", "1", str(RECORD), "100", "1", "-16", "100", "1", "-17", "100", "3", "-22", "100", "3", "-22", "100", "3",
-            "-22", "100", "3", "-22", "100", "3"]
-    if "probe: a read too small answered -22" not in log:
-        found.append("A1: a read too small for the receipt was not answered -22")
+    want = [str(RECORD), "100", "1", str(RECORD), "100", "1", "-16", "100", "1", "-16", "100", "1", "-17", "100", "3", "-22", "100", "3",
+            "-22", "100", "3", "-22", "100", "3", "-22", "100", "3"]
+    for words in ("probe: a read too small answered -22", "probe: a read of nothing answered -22", "probe: a read into no memory answered -14",
+                  "probe: the read straight after answered 100", "probe: its outcome 1", "probe: its attempt 7", "probe: its proposal 1",
+                  "probe: its lasting 0", "probe: its content digest " + content, "probe: answering -28"):
+        if words not in log:
+            found.append("A1: the log does not hold %r" % words)
+    # In this case seven receipts are kept before the flood (five named above and two more refusals
+    # that had a name to keep), so the sixty-fourth is reached partway through it.
+    took = [line for line in log.splitlines() if line.startswith("probe: the kernel took no more proposals at number ")]
+    if len(took) != 1 or not 100 < int(took[0].split()[-1]) < 170:
+        found.append("A1: the kernel did not stop taking proposals within the flood: %r" % took)
     if answers(log) != want:
         found.append("A1: the program was answered %r, not %r" % (answers(log), want))
     if "probe: making a file directly answered -13" not in log:

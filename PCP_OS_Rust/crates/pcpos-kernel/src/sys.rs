@@ -152,6 +152,11 @@ static LAUNCHES: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::
 const PROPOSAL_LINES: usize = 64 * 22;
 #[cfg(feature = "proposals")]
 const PROPOSAL_ACROSS: usize = 76;
+/// The most proposals one run of a program may have answered. Their receipts are kept, so that none can
+/// be asked or done twice; when there is room for no more, a new proposal is refused, and no receipt
+/// is ever dropped to make room (C3: the list grew without limit in the kernel's own memory).
+#[cfg(feature = "proposals")]
+const PROPOSALS_KEPT: usize = 64;
 
 /// A receipt, 100 bytes: version (u32, 1); outcome (u32: 1 created, 2 refused by the person, 3 the name
 /// was taken, 5 no room in the store, 6 the display could not show it so nobody was asked); the kernel's number for this run (u64); attempt and proposal
@@ -275,6 +280,10 @@ fn propose(p: &mut Process, world: &World, addr: u64, len: u64) -> Outcome {
         }
         l.proposals.receipt = Some(*kept);
         return Outcome::Return(len as u64);
+    }
+    if l.proposals.kept.len() >= PROPOSALS_KEPT {
+        crate::log(format_args!("proposal {} of attempt {} REFUSED unseen: this run has made as many proposals as the kernel keeps receipts for\n", proposal.number, proposal.attempt));
+        return Outcome::Return(err(28));
     }
     if world.store.named(&proposal.name).is_some() || world.files.iter().any(|f| f.0 == proposal.name) {
         let r = receipt(3, l.proposals.launch, &proposal);
