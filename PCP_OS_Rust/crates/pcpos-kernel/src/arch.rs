@@ -452,6 +452,16 @@ const IMAGE_START: usize = 1 << 20;
 /// The memory the kernel hands out as frames: [start, end), both multiples of 2 MiB. Zero until `protect`.
 static POOL_START: AtomicUsize = AtomicUsize::new(0);
 static POOL_END: AtomicUsize = AtomicUsize::new(0);
+/// Memory above four gibibytes that programs' own pages may be taken from: up to eight [start, end)
+/// ranges of whole 2 MiB pages, mapped like the frame memory below (each address at itself, writable,
+/// never executable, never reachable from user mode). Written once by `protect`.
+static HIGH: Single<([(usize, usize); frame_map::HIGH_RANGES], usize)> = Single::new(([(0, 0); frame_map::HIGH_RANGES], 0));
+/// The third-level tables of the sixty-four gibibytes above four, used only for those ranges.
+#[repr(align(4096))]
+struct HighTables(core::cell::UnsafeCell<[[u64; 512]; 64]>);
+// Safety: written by `protect`, before anything else uses them; afterwards only the processor reads them.
+unsafe impl Sync for HighTables {}
+static HIGH_TABLES: HighTables = HighTables(core::cell::UnsafeCell::new([[0; 512]; 64]));
 /// The loader's files, as mapped read-only: up to sixteen [start, end) ranges. Written once by `protect`.
 static MODULES: Single<([(usize, usize); 16], usize)> = Single::new(([(0, 0); 16], 0));
 /// Device memory mapped by `map_device`: up to four [start, end) ranges.
@@ -543,6 +553,24 @@ pub fn protect(boot: &mut BootInfo) -> (usize, usize) {
                 (*t.add(6 + page / 512))[page % 512] = (page << 12) as u64 | P | NX;
             }
         }
+        // Memory above four gibibytes, where the loader's map shows any and the pool below exists: mapped
+        // by the same rule as the pool, in 2 MiB leaves, from tables that are part of the kernel image.
+        let high = match (&boot.memory_map, pool_start < pool_end) {
+            (Some(map), true) => frame_map::high(map),
+            _ => ([(0, 0); frame_map::HIGH_RANGES], 0),
+        };
+        let high_tables = HIGH_TABLES.0.get() as *mut [u64; 512];
+        for &(start, stop) in &high.0[..high.1] {
+            let mut at = start;
+            while at < stop {
+                let (gibibyte, slot) = (at >> 30, (at >> 21) & 511);
+                let table = high_tables.add(gibibyte - 4);
+                (*pdpt)[gibibyte] = table as u64 | P | W;
+                (*table)[slot] = at as u64 | P | W | NX | HUGE;
+                at += MIB2;
+            }
+        }
+        HIGH.with(|h| *h = high);
         MODULES.with(|m| *m = ranges);
         POOL_START.store(pool_start, Ordering::SeqCst);
         POOL_END.store(pool_end, Ordering::SeqCst);
@@ -556,9 +584,19 @@ pub fn pool() -> (usize, usize) {
     (POOL_START.load(Ordering::Relaxed), POOL_END.load(Ordering::Relaxed))
 }
 
+/// The ranges of memory above four gibibytes that are mapped as frame memory, and how many there are.
+pub fn high_pools() -> ([(usize, usize); frame_map::HIGH_RANGES], usize) {
+    HIGH.with(|h| *h)
+}
+
+fn in_high(addr: usize, size: usize) -> bool {
+    let (ranges, count) = high_pools();
+    ranges[..count].iter().any(|&(start, end)| addr >= start && addr + size <= end)
+}
+
 fn in_pool(frame: usize) -> bool {
     let (start, end) = pool();
-    frame % 4096 == 0 && frame >= start && frame < end
+    frame % 4096 == 0 && ((frame >= start && frame < end) || in_high(frame, 4096))
 }
 
 /// Fill one frame of the pool with zeros. False if the address is not a frame of the pool.
@@ -569,6 +607,13 @@ pub fn frame_zero(frame: usize) -> bool {
     // Safety: the frame lies in the pool, which is mapped writable at its own address and holds no part of the kernel.
     unsafe { core::ptr::write_bytes(frame as *mut u8, 0, 4096) };
     true
+}
+
+/// Whether one frame of the pool holds nothing but zeros. False if the address is not a frame of the pool.
+#[cfg(feature = "high-memory-demo")]
+pub fn frame_is_zero(frame: usize) -> bool {
+    // Safety: the frame lies in the pool, which is mapped readable at its own address.
+    in_pool(frame) && unsafe { core::slice::from_raw_parts(frame as *const u8, 4096) }.iter().all(|b| *b == 0)
 }
 
 /// Copy bytes into one frame of the pool. False if the frame is not of the pool or the bytes would not fit.
@@ -828,7 +873,7 @@ pub fn kernel_map_audit() -> MapAudit {
             if e & W != 0 || e & NX == 0 {
                 a.module_pages_not_read_only += 1;
             }
-        } else if addr >= pool_start && addr + size <= pool_end {
+        } else if (addr >= pool_start && addr + size <= pool_end) || in_high(addr, size) {
             a.pool_bytes += size;
             if e & NX == 0 {
                 a.pool_or_device_executable += 1;
