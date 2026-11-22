@@ -704,8 +704,10 @@ fn emblem_plate(field: &ui::Field, h: u32) {
     let on_plate = ui::panel(px, py, wide, tall, &over_field, ui::CORE_PLATE, 255, outline(), true);
     let bird = wide * 70 / 100;
     ui::emblem_over(px + (wide - bird * 121 / 132) / 2, py + (tall - bird) / 2, bird, &on_plate);
-    // The edition is carried by the field and is also said in words, as on every cover.
-    let words = format!("Parrot Council Protocol | {} Edition", e.name);
+    // The edition is carried by the field and is also said in words, as on every cover. The desktop
+    // names the system a person is in, PCP OS, as its programs do (owner, 22 November 2026); the
+    // product's full name, Parrot Council Protocol, stays on its covers and documents.
+    let words = format!("PCP OS | {} Edition", e.name);
     ui::label(field.cx - ui::label_width(&words, false) / 2, py + tall + 30, &words, e.soft, false, &over_field);
     let motto = "Evidence before agreement.";
     ui::label(field.cx - ui::label_width(motto, false) / 2, py + tall + 60, motto, e.soft, false, &over_field);
