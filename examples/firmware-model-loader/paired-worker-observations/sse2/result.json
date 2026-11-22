@@ -1,0 +1,141 @@
+{
+  "concurrent_host_load": true,
+  "efi_input_receipt_sha256": "e7f83c87c9d8bf95f45ac65821443201301b564b7dab0e261e969cae6406f229",
+  "efi_sha256": "eb330396cf58843df024cf241a0dd72a81b96b8d948b763f9d877b1d7266c110",
+  "emulator": "q35, x86-64 TCG, cpu max, one vCPU, 4096 MiB, OVMF, read-only raw xHCI USB, no NIC or internal disk",
+  "first_text_timing": "Host monotonic seconds from Enter. Last unchanged observation began at the lower bound. First changed framebuffer capture completed at the upper bound.",
+  "host_reference": {
+    "nonterminal_ids": [
+      9707,
+      0
+    ],
+    "prompt_tokens": 41,
+    "source": "https://github.com/KirtusJ/tailorbird/blob/dd8633d8516cb1bdc0fd8f258260594ad98848f1/guest/MODEL_WORKER.md",
+    "termination": "EOS"
+  },
+  "kernel_source": "1af35d14ab5d37aaee3963be20380fff65d53a12",
+  "loader_source": "87c627b8c991cb9d2221d3ab8d7f17e2613f22f4",
+  "model_bytes": 491400064,
+  "model_sha256": "1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32",
+  "native_events": [
+    {
+      "boot_s": 116.65346033400056,
+      "event": "ready"
+    },
+    {
+      "boot_s": 126.04936710999937,
+      "event": "prefill-stop",
+      "ui_confirmation_s": 0.25053625399959856
+    },
+    {
+      "boot_s": 129.66566532899924,
+      "event": "reply-submitted",
+      "prompt": "Say hello in one short sentence.",
+      "turn": 2
+    },
+    {
+      "boot_s": 132.15351716899931,
+      "event": "reply-placeholder",
+      "readback": "(answering...)"
+    },
+    {
+      "boot_s": 921.4519881329998,
+      "event": "reply-first-text",
+      "first_observed_upper_s": 791.6005923490011,
+      "previous_lower_s": 790.2821197760004,
+      "readback": "Hello"
+    },
+    {
+      "boot_s": 972.0022902269993,
+      "event": "reply-terminal",
+      "observed_s": 842.1628547910004,
+      "readback": "Hello!",
+      "serial": "tailorbird: reply 2 kept 6 bytes and is complete"
+    },
+    {
+      "boot_s": 975.3737137080007,
+      "event": "decoding-submitted",
+      "prompt": "Count from one to ten in words.",
+      "turn": 3
+    },
+    {
+      "boot_s": 977.8842922980002,
+      "event": "decoding-placeholder",
+      "readback": "(answering...)"
+    },
+    {
+      "boot_s": 1786.6338674189992,
+      "event": "decoding-first-text",
+      "first_observed_upper_s": 811.0459342230006,
+      "previous_lower_s": 809.7219497550013,
+      "readback": "1"
+    },
+    {
+      "boot_s": 1787.2754767469996,
+      "confirmation_s": 0.641476156999488,
+      "event": "decoding-stop",
+      "serial": "tailorbird: reply 3 kept 1 bytes and is stopped by the person"
+    },
+    {
+      "boot_s": 1788.8353913659994,
+      "checks": 72,
+      "event": "shutdown",
+      "pools": [
+        [
+          248832,
+          248832,
+          251808,
+          251808
+        ],
+        [
+          403968,
+          403968,
+          14192,
+          14192
+        ]
+      ],
+      "qemu_exit": 33
+    },
+    {
+      "boot_s": 1788.835449323,
+      "code": 33,
+      "event": "process-exit"
+    }
+  ],
+  "native_rendered_additions": [
+    "Hello",
+    "!"
+  ],
+  "native_retained_bytes": 6,
+  "native_text": "Hello!",
+  "native_token_count_reported_by_guest": null,
+  "prompt": "Say hello in one short sentence.",
+  "rendered_crops": [
+    {
+      "file": "reply-crop-001.png",
+      "index": 1,
+      "rgb_sha256": "5264015bb08cbdf10000157706f8ee98058041a08a01bcfcbe814e43ece0f726",
+      "turn": "reply",
+      "utc": "2026-11-22T11:49:29.148069+00:00"
+    },
+    {
+      "file": "reply-crop-002.png",
+      "index": 2,
+      "rgb_sha256": "2a49d237ce72bdbafaa02058874bb6a4b223f09e4ecf51875af8e35f50ddb9e7",
+      "turn": "reply",
+      "utc": "2026-11-22T12:01:31.869497+00:00"
+    },
+    {
+      "file": "reply-crop-003.png",
+      "index": 3,
+      "rgb_sha256": "f66671720be34359f4028a71d7a39aadb630ce52b14eb971a1092812d7bbc1f6",
+      "turn": "reply",
+      "utc": "2026-11-22T12:01:58.266134+00:00"
+    }
+  ],
+  "serial_sha256": "a6be5c91715afdfcae7751b11a03b53b0c7a081c98ea790fc4fddde9dc38d5bf",
+  "stop_ui_confirmation": "Observed in the application. Decode confirmation time includes the 0.4-second settling delay.",
+  "volume_sha256": "891a3feef3b1c305921b26fe5ce82783c2d7474808227d27834af9d56cadceeb",
+  "worker": "2750a34540d0f4f4852b8b184ddb318cf8cc8dcd9d565233511c3cfc905dcd5b",
+  "worker_source": "494126ed46e910a621ace278b2e3b356b02a4ec7"
+}

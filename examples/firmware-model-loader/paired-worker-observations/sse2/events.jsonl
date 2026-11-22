@@ -1,0 +1,38 @@
+{"event": "ready", "boot_s": 116.65346033400056}
+{"event": "prefill-stop", "boot_s": 126.04936710999937, "ui_confirmation_s": 0.25053625399959856}
+{"event": "reply-submitted", "boot_s": 129.66566532899924, "prompt": "Say hello in one short sentence.", "turn": 2}
+{"event": "reply-placeholder", "boot_s": 132.15351716899931, "readback": "(answering...)"}
+{"event": "reply-waiting", "boot_s": 190.66425792100017, "elapsed_s": 61.0, "first_text": false}
+{"event": "reply-waiting", "boot_s": 251.13442554600078, "elapsed_s": 121.5, "first_text": false}
+{"event": "reply-waiting", "boot_s": 311.5911314420009, "elapsed_s": 181.9, "first_text": false}
+{"event": "reply-waiting", "boot_s": 372.1004954580003, "elapsed_s": 242.4, "first_text": false}
+{"event": "reply-waiting", "boot_s": 432.7992658139992, "elapsed_s": 303.1, "first_text": false}
+{"event": "reply-waiting", "boot_s": 493.4272768030005, "elapsed_s": 363.8, "first_text": false}
+{"event": "reply-waiting", "boot_s": 554.0020616420006, "elapsed_s": 424.3, "first_text": false}
+{"event": "reply-waiting", "boot_s": 614.5098835610006, "elapsed_s": 484.8, "first_text": false}
+{"event": "reply-waiting", "boot_s": 674.9955947920007, "elapsed_s": 545.3, "first_text": false}
+{"event": "reply-waiting", "boot_s": 735.7591842879992, "elapsed_s": 606.1, "first_text": false}
+{"event": "reply-waiting", "boot_s": 796.2595119060006, "elapsed_s": 666.6, "first_text": false}
+{"event": "reply-waiting", "boot_s": 856.8178437919996, "elapsed_s": 727.1, "first_text": false}
+{"event": "reply-waiting", "boot_s": 917.3353109420004, "elapsed_s": 787.7, "first_text": false}
+{"event": "reply-first-text", "boot_s": 921.4519881329998, "previous_lower_s": 790.2821197760004, "first_observed_upper_s": 791.6005923490011, "readback": "Hello"}
+{"event": "reply-terminal", "boot_s": 972.0022902269993, "observed_s": 842.1628547910004, "serial": "tailorbird: reply 2 kept 6 bytes and is complete", "readback": "Hello!"}
+{"event": "decoding-submitted", "boot_s": 975.3737137080007, "prompt": "Count from one to ten in words.", "turn": 3}
+{"event": "decoding-placeholder", "boot_s": 977.8842922980002, "readback": "(answering...)"}
+{"event": "decoding-waiting", "boot_s": 1035.9033251929995, "elapsed_s": 60.5, "first_text": false}
+{"event": "decoding-waiting", "boot_s": 1096.3928169760002, "elapsed_s": 121.0, "first_text": false}
+{"event": "decoding-waiting", "boot_s": 1156.8881806200006, "elapsed_s": 181.5, "first_text": false}
+{"event": "decoding-waiting", "boot_s": 1217.5090092650007, "elapsed_s": 242.1, "first_text": false}
+{"event": "decoding-waiting", "boot_s": 1278.1993112960008, "elapsed_s": 302.8, "first_text": false}
+{"event": "decoding-waiting", "boot_s": 1339.0310702789993, "elapsed_s": 363.7, "first_text": false}
+{"event": "decoding-waiting", "boot_s": 1399.8503389760008, "elapsed_s": 424.5, "first_text": false}
+{"event": "decoding-waiting", "boot_s": 1460.2903073279995, "elapsed_s": 484.9, "first_text": false}
+{"event": "decoding-waiting", "boot_s": 1520.8351707399997, "elapsed_s": 545.5, "first_text": false}
+{"event": "decoding-waiting", "boot_s": 1581.3770319640007, "elapsed_s": 606.0, "first_text": false}
+{"event": "decoding-waiting", "boot_s": 1641.797177337001, "elapsed_s": 666.4, "first_text": false}
+{"event": "decoding-waiting", "boot_s": 1702.2204312630001, "elapsed_s": 726.8, "first_text": false}
+{"event": "decoding-waiting", "boot_s": 1762.7783934130002, "elapsed_s": 787.4, "first_text": false}
+{"event": "decoding-first-text", "boot_s": 1786.6338674189992, "previous_lower_s": 809.7219497550013, "first_observed_upper_s": 811.0459342230006, "readback": "1"}
+{"event": "decoding-stop", "boot_s": 1787.2754767469996, "serial": "tailorbird: reply 3 kept 1 bytes and is stopped by the person", "confirmation_s": 0.641476156999488}
+{"event": "shutdown", "boot_s": 1788.8353913659994, "qemu_exit": 33, "checks": 72, "pools": [[248832, 248832, 251808, 251808], [403968, 403968, 14192, 14192]]}
+{"event": "process-exit", "boot_s": 1788.835449323, "code": 33}
