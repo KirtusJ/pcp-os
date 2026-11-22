@@ -1,0 +1,3 @@
+together on max: the back program did 80 rounds beside the front one, none wrong
+together on qemu64: the back program did 80 rounds beside the front one, none wrong
+hard float: 48 SSE arithmetic instructions against none; the same bits as software for f32 000000004e96410f, f64 41d2a247f16666af and the heap sum 0000000046c358e3; the red zone kept; two programs at once on both processors

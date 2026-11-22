@@ -1,0 +1,6 @@
+H4 max: the back program's f32 is ['000000004dd66d9c', '000000004dd66d9c']; software gives ['000000004dd66d9c'] for that series
+H4 max: the back program's f64 is ['41bad70ae9999ab5', '41bad70ae9999ab5']; software gives ['41bad70ae9999ab5'] for that series
+H4 max: the back program's heap is ['0000000046c358e3', '0000000046c358e3']; software gives ['0000000046c358e3'] for that series
+H4 qemu64: the back program's f32 is ['000000004dd66d9c', '000000004dd66d9c']; software gives ['000000004dd66d9c'] for that series
+H4 qemu64: the back program's f64 is ['41bad70ae9999ab5', '41bad70ae9999ab5']; software gives ['41bad70ae9999ab5'] for that series
+H4 qemu64: the back program's heap is ['0000000046c358e3', '0000000046c358e3']; software gives ['0000000046c358e3'] for that series

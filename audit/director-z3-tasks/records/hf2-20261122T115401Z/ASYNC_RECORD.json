@@ -1,0 +1,39 @@
+{
+ "tool": "async_run.py",
+ "plan": "plan.json",
+ "plan_sha256": "d8d1b93a6099a2fc6fb6e3a40f46a844f19b85b7e8ac9c5533d0979c727cf1d2",
+ "width": 1,
+ "tasks": [
+  {
+   "id": "T",
+   "argv": [
+    "python3",
+    "-IB",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/whf/examples/hard-float/check.py",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/ts-norm.elf32",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/hf/soft/float-probe",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/hf/hard/float-probe",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/hf/hard-back/float-probe",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/hf/hard-clobber/float-probe",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/hf/soft-series/float-probe"
+   ],
+   "exit": 1,
+   "expect_exit": 0,
+   "timed_out": false,
+   "seconds": 380.72,
+   "ended_as_expected": false,
+   "copied_in": [],
+   "files": {
+    "STDERR.txt": {
+     "sha256": "c4a88fd6d983c31a9741670a88aeb5bed5f63a2a8e03e322623082576cf1e586",
+     "bytes": 779
+    },
+    "STDOUT.txt": {
+     "sha256": "e6457bd6e1604a8f5df0af9d9ef2a13f4024918ba56aed824e9a24530f20dc42",
+     "bytes": 165
+    }
+   }
+  }
+ ],
+ "all_ended_as_expected": false
+}

@@ -1,0 +1,8 @@
+H4 max: beside another program the front one printed {}, not what it printed alone {'f32': ['000000004e96410f'], 'f64': ['41d2a247f16666af'], 'heap': ['0000000046c358e3'], 'red zone wrong': ['0000000000000000'], 'rounds wrong': ['0000000000000000'], 'done': [None]}
+H4 max: the back program's f32 is None; software gives ['000000004dd66d9c'] for that series
+H4 max: the back program's f64 is None; software gives ['41bad70ae9999ab5'] for that series
+H4 max: the back program reported [] (rounds in the high half, wrong ones in the low)
+H4 qemu64: beside another program the front one printed {}, not what it printed alone {'f32': ['000000004e96410f'], 'f64': ['41d2a247f16666af'], 'heap': ['0000000046c358e3'], 'red zone wrong': ['0000000000000000'], 'rounds wrong': ['0000000000000000'], 'done': [None]}
+H4 qemu64: the back program's f32 is None; software gives ['000000004dd66d9c'] for that series
+H4 qemu64: the back program's f64 is None; software gives ['41bad70ae9999ab5'] for that series
+H4 qemu64: the back program reported [] (rounds in the high half, wrong ones in the low)

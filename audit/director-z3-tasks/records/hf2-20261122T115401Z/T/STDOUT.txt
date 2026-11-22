@@ -1,0 +1,2 @@
+together on max: the back program did 80 rounds beside the front one, none wrong
+together on qemu64: the back program did 80 rounds beside the front one, none wrong
