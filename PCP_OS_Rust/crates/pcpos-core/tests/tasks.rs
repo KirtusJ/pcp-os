@@ -165,3 +165,35 @@ fn recording_an_earlier_product_again_as_supplied_material_does_not_make_it_this
     produced(&mut r, "old");
     end(&mut r, "T1", "DONE", Some(&h("old")), Some(&h("old"))).unwrap();
 }
+
+#[test]
+fn hook_identity_agrees_after_submit_extend_and_reopen() {
+    use pcpos_core::acr::HookAttempt;
+    let base = base(false);
+    let raw = base.ledger().bytes();
+    let key = h("session and agent");
+    for (auth, observed, keyed, expected) in [
+        ("HOST", "SUBAGENT_START", true, Some(key.as_str())),
+        ("HOST", "SUBAGENT_START", false, Some("legacy")),
+        ("DECLARED", "SUBAGENT_START", true, None),
+        ("HOST", "OTHER", true, None),
+    ] {
+        let mut live = Record::open(raw).unwrap().0;
+        let mut continued = Record::open(raw).unwrap().0;
+        let field = if keyed { format!(r#","hook_attempt_key":"{key}""#) } else { String::new() };
+        let body = v(&format!(r#"{{"label":"work","worker":"MODEL","attempt":"agent","quiet_limit":0,"budget":0,"observed":"{observed}"{field}}}"#));
+        live.submit(TS, "z", auth, "TASK_STARTED", body).unwrap();
+        let problems = continued.extend(&live.ledger().bytes()[raw.len()..]).unwrap();
+        assert!(problems.is_empty());
+        let (reopened, problems) = Record::open(live.ledger().bytes()).unwrap();
+        assert!(problems.is_empty());
+        for record in [&reopened, &continued, &live] {
+            let identity = match record.state().tasks["T1"].hook_attempt.as_ref() {
+                Some(HookAttempt::Key(k)) => Some(k.as_str()),
+                Some(HookAttempt::Legacy) => Some("legacy"),
+                None => None,
+            };
+            assert_eq!(identity, expected, "{auth} {observed} keyed={keyed}");
+        }
+    }
+}

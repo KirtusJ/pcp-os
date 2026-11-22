@@ -2011,6 +2011,7 @@ impl Record {
         ev.insert("seq".to_string(), Value::Int(seq));
         ev.insert("kind".to_string(), s(kind));
         ev.insert("actor".to_string(), s(actor));
+        ev.insert("auth".to_string(), s(auth));
         ev.insert("body".to_string(), out);
         // The guard has just accepted this body, so applying it cannot fail; if it does, the two have diverged.
         apply(&mut self.state, &Value::Map(ev)).map_err(SubmitError::Refused)?;
