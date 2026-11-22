@@ -53,11 +53,19 @@ def efi_partition(stream, image_size):
             raise ValueError("primary and backup GPT partition entries differ")
         checksum = zlib.crc32(entries, checksum)
         for offset in range(0, length, 128):
-            if entries[offset:offset + 16] == ESP_TYPE:
-                start, end = struct.unpack_from("<QQ", entries, offset + 32)
-                if esp is not None or not first <= start <= end <= last:
-                    raise ValueError("ambiguous or out-of-range EFI System Partition")
-                esp = (start * SECTOR, (end - start + 1) * SECTOR)
+            entry = entries[offset:offset + 128]
+            partition_type = entry[:16]
+            if partition_type == bytes(16):  # GPT unused entry
+                continue
+            # This candidate master has exactly one active partition. Checking
+            # only ESP entries can admit another active partition overlapping
+            # the verified FAT or lying outside the usable GPT range.
+            if partition_type != ESP_TYPE:
+                raise ValueError("unexpected active GPT partition in single-ESP image")
+            start, end = struct.unpack_from("<QQ", entry, 32)
+            if entry[16:32] == bytes(16) or esp is not None or not first <= start <= end <= last:
+                raise ValueError("ambiguous or out-of-range EFI System Partition")
+            esp = (start * SECTOR, (end - start + 1) * SECTOR)
     if checksum != expected_crc or esp is None:
         raise ValueError("GPT partition checksum differs or the EFI partition is missing")
     return esp
