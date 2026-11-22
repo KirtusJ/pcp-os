@@ -1,0 +1,42 @@
+{
+ "tool": "async_run.py",
+ "plan": "plan.json",
+ "plan_sha256": "ac817f41d6744af2f4a3116058a947f283785bea59138cfae540355df15ec76c",
+ "width": 1,
+ "tasks": [
+  {
+   "id": "T",
+   "argv": [
+    "python3",
+    "-IB",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/wtk/examples/proposals/check.py",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/tn-prop.elf32",
+    "/home/user/pcp-os/examples/proposals/guest/target/x86_64-unknown-none/release/proposal-probe",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/pe-tn-p",
+    "--filler-over",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/fill-4194247/store-filler",
+    "--filler-exact",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/fill-4194246/store-filler",
+    "--filler-after",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/fill-after57/store-after"
+   ],
+   "exit": 0,
+   "expect_exit": 0,
+   "timed_out": false,
+   "seconds": 176.48,
+   "ended_as_expected": true,
+   "copied_in": [],
+   "files": {
+    "STDERR.txt": {
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "bytes": 0
+    },
+    "STDOUT.txt": {
+     "sha256": "5d726cf818030a296ae3d159adbea303a84889727756b0a005d0acde1dd97f17",
+     "bytes": 373
+    }
+   }
+  }
+ ],
+ "all_ended_as_expected": true
+}

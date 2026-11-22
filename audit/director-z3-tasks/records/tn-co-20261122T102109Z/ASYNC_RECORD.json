@@ -1,0 +1,43 @@
+{
+ "tool": "async_run.py",
+ "plan": "plan.json",
+ "plan_sha256": "e6c807f5f586e89cf42c012b2a9c6df47c6569471daab3cb613349f62c835606",
+ "width": 1,
+ "tasks": [
+  {
+   "id": "T",
+   "argv": [
+    "python3",
+    "-IB",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/wtk/examples/companion/check.py",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/tn-both.elf32",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/tq-front/talk-front",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/tq-back/talk-back",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/tq-leave/talk-back",
+    "--never-yields",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/tq-spin/talk-back",
+    "--alone",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/tq-alone/talk-front",
+    "--waits",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/tq-wait/talk-front"
+   ],
+   "exit": 0,
+   "expect_exit": 0,
+   "timed_out": false,
+   "seconds": 8.36,
+   "ended_as_expected": true,
+   "copied_in": [],
+   "files": {
+    "STDERR.txt": {
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "bytes": 0
+    },
+    "STDOUT.txt": {
+     "sha256": "7e2a530184ad89191984faff4223f4a50287fd922d87b36d6a8bb9495da9fa13",
+     "bytes": 1459
+    }
+   }
+  }
+ ],
+ "all_ended_as_expected": true
+}
