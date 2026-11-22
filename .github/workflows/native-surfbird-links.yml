@@ -4,6 +4,7 @@ on:
     paths:
       - 'apps/surfbird/guest/**'
       - 'store/native/guest/src/device.rs'
+      - 'store/native/guest/tests/display_present.rs'
       - '.github/workflows/native-surfbird-links.yml'
   workflow_dispatch:
 
@@ -24,6 +25,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends qemu-system-x86 seabios lld python3-scapy
           rustup component add rust-src
           rustup target add x86_64-unknown-none
+      - name: Test guest display presentation
+        run: cargo test --offline --manifest-path store/native/guest/Cargo.toml --test display_present
       - name: Check the guest parser and capture verifier
         working-directory: apps/surfbird/guest
         run: |
