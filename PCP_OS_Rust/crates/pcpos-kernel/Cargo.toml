@@ -25,6 +25,7 @@ lost-key-demo = []         # the controller answers the replay probe and then lo
 keyboard-busy-demo = []    # keyboard start-up ends as a controller that did not take its set-up, without touching a port
 keyboard-silent-demo = []  # keyboard start-up ends as a keyboard that did not acknowledge, without touching a port
 proposals = []           # one hash-granted program may propose one new text file; the kernel asks and creates it
+vector-state-demo = []     # at start-up, save two different 256-bit register states and load each back: shows that what is saved is what returns
 fault-demo = []            # after the self-tests, fault on purpose to show that an unexpected exception is reported and stops the kernel
 
 overflow-demo = []         # after the self-tests, exhaust the stack on purpose to show that it is reported

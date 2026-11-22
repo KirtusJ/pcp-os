@@ -702,6 +702,8 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     let (pool_start, pool_end) = arch::protect(&mut boot);
     let frames = mem::init();
     arch::fpu_init();
+    #[cfg(feature = "vector-state-demo")]
+    arch::vector_state_demo();
     arch::syscall_init();
     say!("memory for programs: {} frames of 4 KiB, {:#x}..{:#x}", frames, pool_start, pool_end);
     for m in &boot.modules {

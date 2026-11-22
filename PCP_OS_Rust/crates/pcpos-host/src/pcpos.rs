@@ -2431,6 +2431,31 @@ fn flag(args: &[String], name: &str) -> Option<String> {
     args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
 }
 
+/// The operands of a command: every argument after the register that is neither a flag nor the value
+/// that follows one of the flags in `valued`. A value is skipped because of where it stands, never
+/// because of what it says: an operand that happens to read the same as a flag's value (a person
+/// labelled CRITICAL setting the CRITICAL standard, a module named like the actor) used to be dropped
+/// with it (pcp issue 27).
+fn operands<'a>(args: &'a [String], valued: &[&str]) -> Result<Vec<&'a str>, String> {
+    let mut found = Vec::new();
+    let mut at = 2;
+    while at < args.len() {
+        let word = args[at].as_str();
+        if valued.contains(&word) {
+            if at + 1 >= args.len() {
+                return Err(format!("{word} needs a value after it"));
+            }
+            at += 2;
+        } else {
+            if !word.starts_with("--") {
+                found.push(word);
+            }
+            at += 1;
+        }
+    }
+    Ok(found)
+}
+
 /// A register named at a terminal: its own directory is the directory served.
 fn at_terminal(path: &str, create: bool) -> Result<(PathBuf, String), String> {
     let p = Path::new(path);
@@ -2621,7 +2646,7 @@ fn person(args: &[String]) -> Result<i32, String> {
         "adopt" => tx.put(&by, "DECLARED", "ADOPTED", obj(vec![("by", s(&by)), ("basis", s(&clip(&flag(args, "--basis").ok_or("give the instruction with --basis")?, 2000))), ("observed", s("ENTERED_AT_A_TERMINAL"))]))?,
         "halt" => tx.put(&by, "DECLARED", "HALTED", obj(vec![("by", s(&by)), ("words", flag(args, "--words").map(|w| s(&clip(&w, 2000))).unwrap_or(Value::Null))]))?,
         "workspace" => {
-            let names: Vec<&str> = args.iter().skip(2).filter(|a| !a.starts_with("--") && Some(*a) != flag(args, "--by").as_ref() && Some(*a) != flag(args, "--method").as_ref()).map(String::as_str).collect();
+            let names: Vec<&str> = operands(args, &["--by", "--method"])?;
             if let Some(m) = flag(args, "--method") {
                 se.method = Some(PathBuf::from(m));
             }
@@ -2630,16 +2655,38 @@ fn person(args: &[String]) -> Result<i32, String> {
         "standard" => {
             let mut st = tx.state().standard();
             let mut tasks: Vec<Value> = Vec::new();
-            for a in args.iter().skip(2).filter(|a| !a.starts_with("--") && Some(*a) != flag(args, "--by").as_ref() && Some(*a) != flag(args, "--second").as_ref()) {
-                match (a.as_str(), a.split_once('=')) {
+            for a in operands(args, &["--by", "--second"])? {
+                match (a, a.split_once('=')) {
                     ("BASELINE", _) => st = Standard::BASELINE,
                     ("CRITICAL", _) => st = Standard::CRITICAL,
-                    (_, Some(("method", v))) => st.method = if v == "NATIVE_ONLY" { Method::NativeOnly } else { Method::NativeOrPinned },
-                    (_, Some(("model_findings", v))) => st.model_findings = match v { "MECHANICAL_ONLY" => ModelFindings::MechanicalOnly, "HUMAN_CLOSES" => ModelFindings::HumanCloses, _ => ModelFindings::AsMethod },
-                    (_, Some(("human_adoption", v))) => st.human_adoption = v == "true",
-                    (_, Some(("dual_authorization", v))) => st.dual_authorization = v == "true",
-                    (_, Some(("static_tasks", v))) => st.static_tasks = v == "true",
-                    (_, Some(("offline_only", v))) => st.offline_only = v == "true",
+                    // Every value is one of the words the field has, exactly, or the command is refused
+                    // before anything is written. A word that is nearly right (tru, TRUE, NATIVE-ONLY) used
+                    // to be taken as the weaker setting, so a mistyped CRITICAL field relaxed the standard
+                    // without saying so (pcp issue 25).
+                    (_, Some(("method", v))) => st.method = match v {
+                        "NATIVE_ONLY" => Method::NativeOnly,
+                        "NATIVE_OR_PINNED" => Method::NativeOrPinned,
+                        _ => return Err(format!("{a}: method is NATIVE_ONLY or NATIVE_OR_PINNED; nothing was changed")),
+                    },
+                    (_, Some(("model_findings", v))) => st.model_findings = match v {
+                        "MECHANICAL_ONLY" => ModelFindings::MechanicalOnly,
+                        "HUMAN_CLOSES" => ModelFindings::HumanCloses,
+                        "AS_METHOD" => ModelFindings::AsMethod,
+                        _ => return Err(format!("{a}: model_findings is MECHANICAL_ONLY, HUMAN_CLOSES or AS_METHOD; nothing was changed")),
+                    },
+                    (_, Some((field @ ("human_adoption" | "dual_authorization" | "static_tasks" | "offline_only"), v))) => {
+                        let on = match v {
+                            "true" => true,
+                            "false" => false,
+                            _ => return Err(format!("{a}: {field} is true or false; nothing was changed")),
+                        };
+                        match field {
+                            "human_adoption" => st.human_adoption = on,
+                            "dual_authorization" => st.dual_authorization = on,
+                            "static_tasks" => st.static_tasks = on,
+                            _ => st.offline_only = on,
+                        }
+                    }
                     (_, Some(("tasks", v))) => tasks = v.split(',').filter(|t| !t.is_empty()).map(s).collect(),
                     _ => return Err(format!("{a} is not a standard or a field of one")),
                 }
