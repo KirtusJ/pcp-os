@@ -124,3 +124,55 @@ which was verified against the official b12387 archive. `tests/scalar_reference.
 DLL_DIR MODEL PROFILE_JSON NEW_OUTPUT_DIR TOKEN...` uses NumPy for the independent
 Qwen2 graph; the profile supplies the directory and pinned model hash. These are
 host QA tools, not native dependencies. See `THIRD_PARTY_NOTICES` for provenance.
+
+## Qwen byte BPE tokenizer
+
+`tokenizer::Tokenizer` admits only the GGUF `gpt2` / `qwen2` profile, with complete
+byte coverage, distinct vocabulary strings and merge pairs, typed control IDs,
+and existing normal-token operands/results for every merge. Unknown tokenizer
+settings, normalization, automatic prefix space/BOS/EOS and unsupported kinds
+are refused. The chat-template string is retained by GGUF but is not executed.
+
+The ordered Qwen2 Unicode pre-tokenizer and byte alphabet follow pinned llama.cpp
+`a956a852c9c8bc1fb07206364838ddef299178c0`. Unicode L/N/White_Space tables are
+generated from its checksum-pinned `unicode-data.cpp`, independent of the host's
+Unicode version. BPE merges use a bounded heap, ordered by rank then leftmost
+position; they do not scan quadratically for the next merge. Normal vocabulary
+strings borrow the prefix. Admission uses fallible allocations and in-place
+heapsort with cancellation. The actual candidate tables request 6,676,400 bytes
+on the 64-bit target; allocator page rounding, struct and stack are additional.
+
+`encode` accepts at most 16 KiB of UTF-8, a caller token limit and an explicit
+scratch/output budget. All vectors reserve fallibly before use. Scratch holds
+at most one node and three heap entries per input byte; output at most one token
+per byte. Cancellation is polled during pre-splitting, node/heap processing,
+table validation and each heapsort sift. An error yields no partial token vector.
+These operation boundaries do not establish native wall-clock Stop latency.
+
+User input is literal. Added/control spellings in it are not interpreted as role,
+tool or reasoning delimiters. A trusted template can obtain their IDs explicitly
+with `special_id`. This intentionally differs from llama.cpp's automatic parsing
+of USER_DEFINED token spellings even with `parse_special=false`. `piece` returns
+raw normal/user-defined bytes and refuses controls/unused entries. `Utf8Stream`
+retains at most three unfinished bytes, emits only whole UTF-8, and reports invalid
+or unfinished sequences instead of silently replacing them. None of this grants
+tool permission or constitutes a chat-template interpreter or a native service.
+
+Host qualification on each pinned real 0.5B and 8B vocabulary: 541 cases and all
+50,223 token IDs agree with b12387, including all 25 whitespace codepoints,
+contractions, numbers, code, multilingual/combining/emoji text, literal control
+delimiters and 400 seeded randomized inputs. All 151,643 normal-token raw pieces
+agree byte-for-byte. No 8B weights are loaded: reference uses `vocab_only`; Rust
+reads a 16 MiB prefix. Model-prefix, vector and piece hashes are asserted by the
+ignored `actual_vocabulary_matches_reference_vectors_and_all_normal_pieces` test.
+Generate its files with `tests/tokenizer_reference.py DLL_DIR MODEL NEW_DIR`, set
+`QWEN_TOKENIZER_MODEL` / `QWEN_TOKENIZER_VECTORS`, and run that test explicitly.
+The ordinary suite covers synthetic merge priorities, limits/refusals, cancellation,
+literal delimiters, raw-byte round trips and UTF-8 token boundaries without models.
+
+One reference-policy difference is preserved: b12387 guesses normal Qwen token
+128247 (`</s>`) is a control and hides it when `token_to_piece(..., special=false)`
+is called. Qwen's GGUF marks it normal; this decoder emits its four literal bytes.
+The raw-piece comparison enables special display in the reference and records
+the single override. It does not adopt the runtime's cross-model name heuristic
+as a Qwen end-of-generation rule. Earlier failing comparison is retained locally.
