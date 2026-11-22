@@ -25,8 +25,18 @@ pcp_game_guest::entry!(probe_main);
 #[no_mangle]
 pub extern "C" fn probe_main() -> ! {
     let features = core::arch::x86_64::__cpuid(1).ecx;
-    // AVX offered, and the operating system has said it keeps the state.
-    if features & (1 << 28) == 0 || features & (1 << 27) == 0 {
+    // The whole of the processor maker's test, in its order: the operating system has turned on the
+    // register that says which states it keeps (bit 27); the processor has AVX (bit 28); and that
+    // register says the 128-bit and 256-bit states are both kept. Only then is a 256-bit instruction
+    // run. (AVX2 and FMA are further bits, which this program neither tests nor uses.)
+    let offered = features & (1 << 27) != 0 && features & (1 << 28) != 0;
+    let kept = offered && {
+        let (low, _high): (u32, u32);
+        // Safety: XGETBV is allowed here because bit 27 says so.
+        unsafe { asm!("xgetbv", in("ecx") 0u32, out("eax") low, out("edx") _high, options(nomem, nostack)) };
+        low & 0b110 == 0b110
+    };
+    if !kept {
         log(b"vector: none\n");
         exit(0);
     }
