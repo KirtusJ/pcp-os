@@ -13,7 +13,7 @@ fn paper(c: &mut Canvas<'_>, x: usize, y: usize, w: usize, h: usize) {
 }
 /// Visit word-wrapped slices without allocating. Original punctuation and intentional
 /// paragraph breaks survive in the printed dossier.
-fn lines(s: &str, width: usize, mut visit: impl FnMut(&str)) {
+pub(super) fn lines(s: &str, width: usize, mut visit: impl FnMut(&str)) {
     for raw in s.split('\n') {
         let mut p = raw.trim();
         if p.is_empty() {

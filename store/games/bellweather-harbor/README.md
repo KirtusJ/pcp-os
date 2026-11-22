@@ -1,4 +1,4 @@
-# Bellweather Harbor
+# Bellweather Harbor · Standing Order Thirteen
 
 You have one rowboat, an empty till, and a brass bell. Ring for a one-coin tip and send the boat out. Two seconds later it brings home eight more coins. What happens to the waterfront after that is up to you.
 
@@ -23,6 +23,42 @@ At 10, 25, 50, 100, 150 and 200 units, a business doubles its payout. Trips also
 **Charters.** The first offer comes at 500,000 qualifying coins. Fares and tips count in full. Exchange receipts first recover outstanding raw-material purchases and processing fees, then the excess qualifies. Selling purchased crates straight back cannot manufacture charter progress. You may keep growing the port. When you sign, you return to the starting rowboat and receive a permanent 25% business payout bonus per charter. Two charters in a single offer take two million qualifying coins. Three take 4.5 million.
 
 **Saves.** The browser saves in local storage when available. Open the logbook to export a `bellweather.sav` file or to import one on another device. Keep an export before moving the HTML to a different folder or clearing browser data. The native edition uses the same binary ledger.
+
+## A day on the quay
+
+A harbor day takes six minutes. Four watches of three tides each carry the town from dawn at 06:00 through daylight, dusk and night. The sky and the water follow the same clock as the exchange. Sea mist, rain and wind move through on a five-day weather pattern. On the browser's Sound setting you can hear the oars, gulls or foghorn between actions.
+
+Nell Reed tends the lower light, Ada Pike feeds the late shift, and Kit Sayer meets the mail packet. One of them visits the public quay every tide. In the browser, select the visitor in the waterfront scene or choose **On the quay**. On PCP OS, press **Q**. Ring the ordinary harbor bell and listen for an answer from whoever was on duty when you rang. The caption works with sound off.
+
+Ask about work to see the exact cargo and payment. Favors use crates from your hold. The cashbook records their payments with freight orders, and the cargo account records each delivery. You can fill one request per tide. An unfinished request comes back on that person's next visit, and the first three favors for each person unlock a keepsake you can read again. When you have helped all three, watch the channel at dusk. The neighbors sail paper lanterns every evening after that.
+
+The clock, friendships and keepsakes carry across charters. Time continues when you close the game, under the existing offline limit. Favors wait for you to choose them.
+
+## An envelope under the sugar bowl
+
+Launch the lightship Northstar and complete a favor for each of Nell, Ada and Kit. You can do these in either order. When the last condition is met, an envelope appears on the waterfront. Open it in the browser or press **T** on PCP OS. You can leave the envelope unsigned for as long as you like.
+
+To try this chapter immediately, the [invited harbor](scenarios/Committee_Invitation.sav) has Northstar afloat, all three friends, 19 salt, two crab and three crates of provisions. This harbor was played from the starting rowboat. In the browser, export your own harbor from the **Logbook** before importing the invited harbor in its place.
+
+<details>
+<summary>Open the minute book (chapter spoilers)</summary>
+
+Beatrice Brine chairs the Emergency Tea Committee. Vera Doig brings the folding chairs. Maud Spooner takes the minutes. Nobody can explain who brought the fourth saucer.
+
+![The committee sets the table on the pier and the harbor takes its seat](docs/high-tea.gif)
+
+| Proceeding | What you do | What happens on the quay |
+| --- | --- | --- |
+| Tea Service | Sign Standing Order Thirteen. File three motions at one salt crate apiece. | The grannies set the table. Vera measures the damp patch in the spare chair. |
+| Quorum | File three further motions at one provisions crate apiece. The cannery can make them from salt and crab. | The chairs move offshore. The minutes secretary has to turn the register sideways for the guest to finish signing. |
+| High Tea | Leave the meeting in session. Ring the harbor bell or open the sea’s barter ticket. | Your neighbor answers first. The sea casts its vote on sugar. It offers a different exchange of freight each tide. |
+| Adjournment | Adjourn at High Tea when you are ready to end the sitting. | Claim the rest of the tin, thirteen attendance coins, and the fourth teaspoon. The sea takes its chair home. |
+
+While the committee sits, one out of every eight coins from **business fares** goes into the tea tin. Tips, trades and freight orders go straight to the till. You can empty the tin whenever you like. Fares count toward your charter when earned. Collecting the same coins from the tin adds no second charter credit.
+
+The sea offers one barter per tide. Read both cargo amounts before accepting. Market prices still change independently. Spent crates appear under deliveries in the cargo account, and the freight dredged up by the sea appears under landings. Chartering preserves the sitting and the tin. Time away can bring in fares, but motions and barter need your hand. An adjourned committee leaves its receipts and its souvenir in the minute book.
+
+</details>
 
 ## The freight exchange
 
@@ -63,7 +99,7 @@ The cashbook posts cargo sales, settled freight orders, raw purchases, processin
 
 Select a commodity in the cargo account to follow its opening inventory, landings, purchases, production, sales, usage and consignments to its closing balance. Older saves import their existing cargo as opening inventory and begin the new cash accounts at zero.
 
-The starting hold fits 24 crates per good. Expansion costs 1,800 coins for 48, then 14,000 for 96. Signing a charter restarts the market, works, trading accounts and outstanding orders. The mail album, shipyard register and paid construction carry over. Earlier public saves import into this edition, including both lengths of the BWH5 ledger.
+The starting hold fits 24 crates per good. Expansion costs 1,800 coins for 48, then 14,000 for 96. Signing a charter restarts the market, works, trading accounts and outstanding orders. The mail album, shipyard register and paid construction carry over. Earlier public saves import into this edition, including both lengths of BWH5 and the BWH6 mystery journal. Existing harbors meet the neighbors at their current tide.
 
 ## An odd receipt
 
@@ -105,6 +141,14 @@ qemu-system-x86_64 -cpu max -m 256M -vga std \
 | X | Cycle between one, ten and maximum |
 | M | Hire a captain |
 | P, then Space | Open harbor mail and catch the bag |
+| Q | Visit the quay |
+| 1–3 / V on the quay | Select a neighbor / visit the person on duty |
+| Enter / D on the quay | Deliver the displayed request / decline it |
+| L on the quay | Open the selected neighbor’s keepsakes |
+| T when the envelope appears | Open the envelope or return to the meeting |
+| S / Enter / C / M in the meeting | Sign the order / file the shown motion / collect the tin / read the minutes |
+| B during High Tea | Read the sea’s offer. Enter trades the listed cargo. R fetches a fresh slip if the tide has changed. |
+| A during High Tea, then Enter | Adjourn the sitting and collect the final payment |
 | J | Examine the odd receipt, then reopen the casebook |
 | 1–4 / Space / Enter in a case | Read a lead / tag it / file the pair |
 | H / N in a case | Read the hint / continue after a finding |

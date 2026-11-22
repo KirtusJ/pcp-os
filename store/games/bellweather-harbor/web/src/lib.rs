@@ -2,11 +2,16 @@
 
 mod manifest;
 mod market;
+mod quay;
+mod tea;
 
-use bellweather::art::{draw_harbor, draw_home_fleet, draw_quay_room, ART_H, ART_W};
+use bellweather::art::{
+    draw_harbor, draw_harbor_watch, draw_home_fleet, draw_quay_room, draw_tea_committee, ART_H,
+    ART_W,
+};
 use bellweather::economy::{
     Bulk, Economy, Shop, LEGACY_SAVE_LEN, SAVE_LEN, V2_SAVE_LEN, V3_SAVE_LEN, V4_SAVE_LEN,
-    V5_INITIAL_SAVE_LEN, V5_SAVE_LEN,
+    V5_INITIAL_SAVE_LEN, V5_SAVE_LEN, V6_SAVE_LEN, V7_SAVE_LEN, V8_INITIAL_SAVE_LEN,
 };
 use bellweather::freight::TIDE_MS;
 use bellweather::yard::PLANS;
@@ -394,6 +399,15 @@ pub extern "C" fn render_yard(tick: u32, selected: usize, launch_stage: u32) -> 
 /// The renderer and JavaScript share a buffer of little-endian 0x00RRGGBB words.
 #[no_mangle]
 pub extern "C" fn render(tick: u32, selected: usize) -> *const u32 {
+    render_waterfront(tick, selected, u32::from(game().freight.elapsed_ms))
+}
+
+#[no_mangle]
+pub extern "C" fn render_still(selected: usize) -> *const u32 {
+    render_waterfront(0, selected, TIDE_MS / 2)
+}
+
+fn render_waterfront(tick: u32, selected: usize, elapsed: u32) -> *const u32 {
     let shops = &game().shops;
     let units = shops.map(|shop| u32::from(shop.owned));
     let mut managers = 0;
@@ -406,6 +420,19 @@ pub extern "C" fn render(tick: u32, selected: usize) -> *const u32 {
     draw_harbor(frame, tick, units, managers, running, selected);
     draw_home_fleet(frame, tick, game().yard.completed);
     draw_quay_room(frame, tick, game().manifest.ending);
+    draw_harbor_watch(
+        frame,
+        game().freight.tide,
+        elapsed,
+        game().neighbors.lanterns_unlocked(),
+    );
+    let committee = game().committee.stage as u8;
+    let scene = if committee == 0 {
+        u8::from(game().committee_invited())
+    } else {
+        committee + 1
+    };
+    draw_tea_committee(frame, tick, scene);
     frame.as_ptr()
 }
 
@@ -429,6 +456,9 @@ pub extern "C" fn valid_save_size(len: usize) -> u32 {
             | V4_SAVE_LEN
             | V5_INITIAL_SAVE_LEN
             | V5_SAVE_LEN
+            | V6_SAVE_LEN
+            | V7_SAVE_LEN
+            | V8_INITIAL_SAVE_LEN
             | SAVE_LEN
     ))
 }
@@ -465,6 +495,7 @@ pub extern "C" fn restore_sized(now_s: f64, len: usize) -> f64 {
                 }
             }
         }
+        quay::quay_bell_clear();
         unsafe { GAME = port };
         gain as f64
     } else {

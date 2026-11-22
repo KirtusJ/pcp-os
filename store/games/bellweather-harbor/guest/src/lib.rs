@@ -5,7 +5,9 @@ mod glyph;
 mod journal;
 mod mail;
 mod order;
+mod quay;
 mod sound;
+mod tea;
 mod ui;
 mod works;
 mod yard;
@@ -45,9 +47,16 @@ enum Outcome {
 
 fn handle(key: usize, game: &mut Economy, desk: &mut Desk, now: u64) -> Outcome {
     let i = desk.selected;
+    if let Book::Tea(meeting) = &mut desk.book {
+        if key == 20 || (key == 1 && meeting.page == tea::Page::Business) {
+            desk.book = Book::Harbor;
+            return Outcome::None;
+        }
+        return meeting.handle(key, game);
+    }
     if matches!(
         desk.book,
-        Book::Harbor | Book::Yard(_) | Book::Freight(_) | Book::Works(_)
+        Book::Harbor | Book::Yard(_) | Book::Freight(_) | Book::Works(_) | Book::Quay(_)
     ) {
         if let Book::Freight(exchange) = &mut desk.book {
             if key == 1 && exchange.order.is_some() {
@@ -55,12 +64,18 @@ fn handle(key: usize, game: &mut Economy, desk: &mut Desk, now: u64) -> Outcome 
             }
         }
         let next = match (&desk.book, key) {
+            (Book::Harbor, 20) if tea::Meeting::visible(game) => {
+                Some(Book::Tea(tea::Meeting::open(game)))
+            }
+            (Book::Quay(quay), 1) if quay.in_letters() => None,
+            (Book::Quay(_), 16 | 1) => Some(Book::Harbor),
             (Book::Freight(_), 33 | 1) | (Book::Yard(_), 21 | 1) | (Book::Works(_), 17 | 1) => {
                 Some(Book::Harbor)
             }
             (_, 33) => Some(Book::Freight(freight::Exchange::new())),
             (_, 21) => Some(Book::Yard(yard::Slipway::open(game))),
             (_, 17) => Some(Book::Works(works::WorksDesk::new())),
+            (_, 16) => Some(Book::Quay(quay::QuayDesk::open(game))),
             _ => None,
         };
         if let Some(page) = next {
@@ -69,6 +84,7 @@ fn handle(key: usize, game: &mut Economy, desk: &mut Desk, now: u64) -> Outcome 
         }
     }
     match &mut desk.book {
+        Book::Quay(quay) => return quay.handle(key, game),
         Book::Journal(journal) => {
             if journal.close(key) {
                 desk.book = Book::Harbor;
@@ -128,6 +144,12 @@ fn handle(key: usize, game: &mut Economy, desk: &mut Desk, now: u64) -> Outcome 
         25 => desk.book = Book::Mail(mail::MailRun::open(game, i, now)),
         19 => {
             game.ring();
+            if desk
+                .bell_reply
+                .ring(now, bellweather::neighbors::visitor(game.freight.tide))
+            {
+                desk.sea_echo.ring(now, game.committee.stage);
+            }
             set_notice(desk, Notice::Bell, now);
             return Outcome::Changed(Cue::Bell);
         }
@@ -206,6 +228,7 @@ pub extern "C" fn main() -> i32 {
         None => (Economy::new(), Notice::Welcome),
     };
     let mut last = device::clock_ms(1);
+    let mut last_frame = None;
     let mut last_save = last;
     let mut desk = Desk {
         selected: 0,
@@ -214,6 +237,10 @@ pub extern "C" fn main() -> i32 {
         notice,
         notice_until: last + 6000,
         store_ok: device::save(&game),
+        bell_reply: bellweather::neighbors::BellReply::new(),
+        answer: None,
+        sea_echo: bellweather::committee::SeaEcho::new(),
+        sea_caption_until: 0,
     };
     let mut speaker = sound::Speaker::open();
     let mut failed_exit = false;
@@ -283,12 +310,24 @@ pub extern "C" fn main() -> i32 {
                 failed_exit = false;
             }
         }
+        if let Some(person) = desk.bell_reply.poll(now) {
+            desk.answer = Some((person, now + 2800));
+            speaker.play(Cue::Answer(person));
+        }
+        if desk.sea_echo.poll(now, game.committee.stage) {
+            desk.sea_caption_until = now + 2600;
+            speaker.play(Cue::Sea);
+        }
         speaker.pump();
-        ui::render(screen, harbor, &game, &mut desk, now);
-        if !console.show(screen) {
-            device::save(&game);
-            device::log("Bellweather: display update failed\n");
-            return 2;
+        // The small audio DMA queue is serviced more frequently than the display.
+        if last_frame.is_none_or(|frame| now.saturating_sub(frame) >= 40) {
+            ui::render(screen, harbor, &game, &mut desk, now);
+            if !console.show(screen) {
+                device::save(&game);
+                device::log("Bellweather: display update failed\n");
+                return 2;
+            }
+            last_frame = Some(now);
         }
         device::sleep_ms(
             speaker
