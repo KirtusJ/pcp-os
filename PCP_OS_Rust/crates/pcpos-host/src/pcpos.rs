@@ -974,6 +974,7 @@ impl Session {
 
 struct MethodCheck {
     fingerprint: String,
+    native: bool,
     listed: usize,
     equal: usize,
     absent: usize,
@@ -985,7 +986,7 @@ struct MethodCheck {
 
 impl MethodCheck {
     fn is_native(&self) -> bool {
-        self.fingerprint == acr::METHOD_FINGERPRINT
+        self.native
     }
 
     fn complete(&self) -> bool {
@@ -1026,8 +1027,8 @@ impl MethodManifest {
     }
 
     /// Only the compiled-in release can supply pins for released module discovery.
-    fn release_specs(&self, dir: &Path) -> Option<BTreeMap<PathBuf, String>> {
-        if self.fingerprint != acr::METHOD_FINGERPRINT {
+    fn release_specs(&self, dir: &Path, expected_release: &str) -> Option<BTreeMap<PathBuf, String>> {
+        if self.fingerprint != expected_release {
             return None;
         }
         Some(self.files.iter().filter(|(path, _)| path.starts_with("MODULES/") && path.ends_with("/SOURCE/Specification.md"))
@@ -1037,9 +1038,14 @@ impl MethodManifest {
 
 /// Compare a method packet's files with its own manifest, and the manifest with the release this core implements.
 fn method_check(dir: &Path) -> Result<MethodCheck, String> {
+    check_method_against(dir, acr::METHOD_FINGERPRINT)
+}
+
+fn check_method_against(dir: &Path, expected_release: &str) -> Result<MethodCheck, String> {
     let manifest = MethodManifest::read(dir)?;
+    let native = manifest.fingerprint == expected_release;
     let mut unlisted_specs = Vec::new();
-    if let Some(pins) = manifest.release_specs(dir) {
+    if let Some(pins) = manifest.release_specs(dir, expected_release) {
         let modules = dir.join("MODULES");
         match fs::read_dir(&modules) {
             Ok(scan) => {
@@ -1057,7 +1063,7 @@ fn method_check(dir: &Path) -> Result<MethodCheck, String> {
         }
         unlisted_specs.sort();
     }
-    let mut c = MethodCheck { fingerprint: manifest.fingerprint, listed: manifest.files.len(), equal: 0, absent: 0, absent_text: 0, differing: Vec::new(), unlisted_specs };
+    let mut c = MethodCheck { fingerprint: manifest.fingerprint, native, listed: manifest.files.len(), equal: 0, absent: 0, absent_text: 0, differing: Vec::new(), unlisted_specs };
     for (path, want) in &manifest.files {
         match fs::read(dir.join(path)) {
             Ok(b) if sha256_hex(&b) == *want => c.equal += 1,
@@ -1135,10 +1141,14 @@ fn modules_in(se: &Session) -> Vec<Module> {
 /// An identifier that two folders claim is not served from either: which text a review was held to must
 /// never depend on the order of folder names. A module of the method text is never displaced by an added one.
 fn modules_and_oddities(se: &Session) -> (Vec<Module>, Vec<String>) {
+    discover_modules(se, acr::METHOD_FINGERPRINT)
+}
+
+fn discover_modules(se: &Session, expected_release: &str) -> (Vec<Module>, Vec<String>) {
     let mut odd: Vec<String> = Vec::new();
     let mut out: Vec<Module> = Vec::new();
     let mut ambiguous: Vec<String> = Vec::new();
-    let release = se.method.as_deref().and_then(|dir| MethodManifest::read(dir).ok()?.release_specs(dir));
+    let release = se.method.as_deref().and_then(|dir| MethodManifest::read(dir).ok()?.release_specs(dir, expected_release));
     if se.method.is_some() && release.is_none() {
         odd.push("this method directory has no manifest matching the compiled-in release; its module identities are declared by their sources".to_string());
     }
@@ -1297,7 +1307,10 @@ fn commission_modules(se: &Session, body: &Value) -> Result<(), String> {
     if se.method.is_none() {
         return Ok(()); // nothing to compare with: the record keeps what was declared, and METHOD_PINNED says the text was not at hand
     }
-    let found = modules_in(se);
+    check_selected_modules(&modules_in(se), list)
+}
+
+fn check_selected_modules(found: &[Module], list: &[Value]) -> Result<(), String> {
     let mut seen: Vec<&str> = Vec::new();
     for m in list {
         let id = m.get("id").and_then(Value::as_str).unwrap_or("");
@@ -2942,5 +2955,68 @@ fn main() {
             }
         }
         _ => usage(),
+    }
+}
+
+#[cfg(test)]
+mod released_module_tests {
+    use super::*;
+
+    // This fixture is independent of the published packet. Production entry points always pass
+    // acr::METHOD_FINGERPRINT; the test supplies a pinned digest of these exact manifest bytes.
+    const PIN: &str = "d6fb0d73d9f5326afc1d780e9ce312fd99273129e49e2e6ec1f81f564eb16dfb";
+    const MANIFEST: &str = r#"{"files":[{"path":"MODULES/Core/SOURCE/Specification.md","sha256":"ff273d898de138a7b08e9b0f3d69ba97dad816ca388b40be3457c210932013c1"},{"path":"MODULES/Science/SOURCE/Specification.md","sha256":"e1dc7d2951ca0ce344a9f6febdf8b26cae47e0a12601fbc0bc541dde9354b8c7"}]}"#;
+    const CORE: &[u8] = b"**Component:** `acr.core`, Version 1.0\n";
+    const SCIENCE: &[u8] = b"**Component:** `acr.science`, Version 1.0\n";
+
+    fn write_spec(folder: &Path, bytes: &[u8]) -> PathBuf {
+        let source = folder.join("SOURCE");
+        fs::create_dir_all(&source).unwrap();
+        let file = source.join("Specification.md");
+        fs::write(&file, bytes).unwrap();
+        file
+    }
+
+    #[test]
+    fn release_selection_requires_the_pinned_path_and_bytes_and_keeps_local_modules() {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = env::temp_dir().join(format!("pcpos-release-test-{}-{now}", std::process::id()));
+        fs::create_dir(&root).unwrap();
+        let root = root.canonicalize().unwrap();
+        let method = root.join("packet");
+        let modules = method.join("MODULES");
+        write_spec(&modules.join("Core"), CORE);
+        let science = write_spec(&modules.join("Science"), SCIENCE);
+        fs::write(method.join("MANIFEST.json"), MANIFEST).unwrap();
+        write_spec(&root.join("modules/sample"), b"**Component:** `local.sample`, Version 1.0\n");
+
+        let mut session = session(root.to_str()).unwrap();
+        session.method = Some(method.clone());
+        session.register = "register.jsonl".into();
+        assert!(check_method_against(&method, PIN).unwrap().complete());
+        let (intact, _) = discover_modules(&session, PIN);
+        let official = intact.iter().find(|m| m.id == "acr.science").unwrap().record();
+        let local = intact.iter().find(|m| m.id == "local.sample" && m.added).unwrap().record();
+        assert!(check_selected_modules(&intact, std::slice::from_ref(&official)).is_ok());
+        assert!(check_selected_modules(&intact, std::slice::from_ref(&local)).is_ok());
+
+        // A backup of the authentic bytes at another path does not displace Science.
+        write_spec(&modules.join("backup"), SCIENCE);
+        let inventory = check_method_against(&method, PIN).unwrap();
+        assert!(!inventory.complete());
+        assert_eq!(inventory.unlisted_specs.len(), 1);
+        let (with_backup, notes) = discover_modules(&session, PIN);
+        assert!(notes.iter().any(|n| n.contains("backup") && n.contains("absent from the released manifest")));
+        assert_eq!(with_backup.iter().filter(|m| m.id == "acr.science").count(), 1);
+        assert_eq!(with_backup.iter().find(|m| m.id == "acr.science").unwrap().file, science);
+
+        // Once the listed bytes change, neither the edited copy nor the backup can satisfy the commission.
+        fs::write(&science, [SCIENCE, b"edited"].concat()).unwrap();
+        let inventory = check_method_against(&method, PIN).unwrap();
+        assert_eq!(inventory.differing, ["MODULES/Science/SOURCE/Specification.md"]);
+        let (changed, _) = discover_modules(&session, PIN);
+        assert!(check_selected_modules(&changed, &[official]).is_err());
+        assert!(check_selected_modules(&changed, &[local]).is_ok());
+        fs::remove_dir_all(root).unwrap();
     }
 }
