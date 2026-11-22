@@ -847,7 +847,11 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
         .and_then(|s| s.split_once('x')).and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)));
     let display = dev::display_init(&bus, &boot, requested);
     match display {
-        Some(d) => say!("display: {:?}, {}x{}, {} page(s), {} KiB of its memory mapped at {:#x}", d.kind, d.width, d.height, d.pages, d.mapped / 1024, d.memory),
+        Some(d) => {
+            say!("display: {:?}, {}x{}, {} page(s), {} KiB of its memory mapped at {:#x}", d.kind, d.width, d.height, d.pages, d.mapped / 1024, d.memory);
+            say!("display: a program that asks {}", if sys::display_needs_shadow(&d) { "draws to memory of its own, and the kernel shows each finished picture" }
+                                                       else { "draws on the page that is not shown, and the kernel shows it when it is finished" });
+        }
         None => say!("display: none this kernel can drive"),
     }
     let keyboard_start = dev::keyboard_init();
