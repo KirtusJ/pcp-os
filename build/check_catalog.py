@@ -13,7 +13,9 @@ Predicates.
     symbolic link is scanned as the path it names and is not followed.
  K6 every relative link in every tracked Markdown file names a tracked path, so that a move which
     breaks a link fails here. Two spellings are read: the inline "[words](target)" and the
-    reference definition "[label]: target" on its own line. A definition is checked whether or
+    reference definition "[label]: target" on its own line. A target in angle brackets is read
+    through the closing bracket; a bare one ends at white space. Percent-encoding is not decoded.
+    A definition is checked whether or
     not anything uses it. Other ways a renderer can make a link (raw HTML, a bare address) are
     not read. Links inside code fences are not looked at; links to another site and links within
     a page are counted and reported, not checked.
@@ -52,9 +54,11 @@ def listed(text):
 
 
 FENCE = re.compile(rb"```.*?```", re.S)
-LINK = re.compile(rb"\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
+# A target is either in angle brackets, read through the closing bracket and so able to hold
+# spaces, or bare, ending at the first white space (C3).
+LINK = re.compile(rb"\]\((?:<([^<>\n]*)>|([^)\s<][^)\s]*))(?:\s+\"[^\"]*\")?\)")
 # A reference definition, "[label]: target" on a line of its own, indented at most three spaces (B3).
-DEFINITION = re.compile(rb"^ {0,3}\[[^\]\n]+\]:[ \t]*<?([^\s>]+)>?", re.M)
+DEFINITION = re.compile(rb"^ {0,3}\[[^\]\n]+\]:[ \t]*(?:<([^<>\n]*)>|([^\s<]\S*))", re.M)
 ELSEWHERE = re.compile(r"[a-z][a-z0-9+.-]*:|//")
 
 
@@ -64,7 +68,7 @@ def links(name, data, tracked):
     link to a place within another file is checked for the file only."""
     broken, paths, elsewhere, within = [], 0, 0, 0
     text = FENCE.sub(b"", data)
-    for found in [m.group(1) for m in LINK.finditer(text)] + [m.group(1) for m in DEFINITION.finditer(text)]:
+    for found in [m.group(1) if m.group(1) is not None else m.group(2) for m in list(LINK.finditer(text)) + list(DEFINITION.finditer(text))]:
         link = found.decode("utf-8", "replace")
         if link.startswith("#"):
             within += 1
@@ -143,6 +147,10 @@ def selftest():
     reference = b"[Trial instructions][trial-guide]\n\n[trial-guide]: docs/obsolete-guide.md\n"
     require(problems(files, good, [("README.md", reference)]) == ["K6: README.md links to docs/obsolete-guide.md, which is not tracked"], "a reference definition to a path that is gone (B3)")
     require(problems(files, good, [("README.md", reference.replace(b"docs/obsolete-guide.md", b"<examples/a/x.py> \"title\""))]) == [], "a reference definition that holds, in angle brackets with a title")
+    spaced = b"[guide]: <docs/Trial guide.md>\n[inline](<docs/Trial guide.md>)\n"
+    require(links("a.md", spaced, {"docs/Trial guide.md"}) == ([], 2, 0, 0), "a bracketed target with a space, tracked, holds in both spellings (C3)")
+    require(links("a.md", spaced, {"docs/Trial"})[0] == ["K6: a.md links to docs/Trial guide.md, which is not tracked"] * 2, "a bracketed target with a space is not cut at the space (C3)")
+    require(links("a.md", b"[x]: docs/Trial guide.md\n", {"docs/Trial"}) == ([], 1, 0, 0), "a bare target still ends at white space")
     require(links("a.md", b"   [x]: README.md\n    [y]: gone.md\n[z]: https://x.org\n", {"README.md"}) == ([], 1, 1, 0), "a definition indented four spaces is code, not a definition")
     with tempfile.TemporaryDirectory() as folder:
         require(read(folder, "100644") is None, "a tracked file whose path is a folder is not read (C3)")
