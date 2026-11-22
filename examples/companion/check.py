@@ -42,9 +42,14 @@ from pathlib import Path
 
 
 def boot(qemu, kernel, files, append):
-    done = subprocess.run([qemu, "-machine", "pc", "-accel", "tcg", "-cpu", "max", "-m", "256M", "-kernel", kernel.name, "-initrd", ",".join(str(f) for f in files),
-                           "-append", append, "-display", "none", "-nic", "none", "-serial", "stdio", "-no-reboot", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"],
-                          stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, cwd=kernel.parent, timeout=600)
+    # A run that passes takes a few seconds. One that has not ended in two minutes has two programs
+    # waiting on each other, and is reported with what was said until then.
+    try:
+        done = subprocess.run([qemu, "-machine", "pc", "-accel", "tcg", "-cpu", "max", "-m", "256M", "-kernel", kernel.name, "-initrd", ",".join(str(f) for f in files),
+                               "-append", append, "-display", "none", "-nic", "none", "-serial", "stdio", "-no-reboot", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"],
+                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, cwd=kernel.parent, timeout=120)
+    except subprocess.TimeoutExpired as late:
+        return None, (late.stdout or b"").decode(errors="replace").splitlines()
     return done.returncode, done.stdout.decode(errors="replace").splitlines()
 
 
