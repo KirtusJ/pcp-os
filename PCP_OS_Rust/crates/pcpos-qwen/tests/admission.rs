@@ -1,68 +1,8 @@
 use pcpos_gguf::Index;
 use pcpos_qwen::{Architecture, Error, Model};
 
-#[derive(Clone)]
-enum V { U(u32), F(f32), S(String), Tokens }
-struct Fixture {
-    meta: Vec<(String,V)>,
-    tensors: Vec<(String,Vec<u64>,u32)>,
-}
-impl Fixture {
-    fn new(arch: &str) -> Self {
-        let mut meta=vec![("general.architecture".into(),V::S(arch.into())),
-            ("general.type".into(),V::S("model".into())),
-            ("tokenizer.ggml.tokens".into(),V::Tokens)];
-        for (k,v) in [("block_count",2),("embedding_length",32),("feed_forward_length",64),
-            ("attention.head_count",4),("attention.head_count_kv",2),("context_length",1024)] {
-            meta.push((format!("{arch}.{k}"),V::U(v)));
-        }
-        meta.push((format!("{arch}.rope.freq_base"),V::F(1e6)));
-        meta.push((format!("{arch}.attention.layer_norm_rms_epsilon"),V::F(1e-6)));
-        let mut tensors=vec![("token_embd.weight".into(),vec![32,16],0),
-            ("output.weight".into(),vec![32,16],0),("output_norm.weight".into(),vec![32],0)];
-        for i in 0..2 {
-            for (k,d) in [("attn_norm.weight",vec![32]),("attn_q.weight",vec![32,32]),
-                ("attn_k.weight",vec![32,16]),("attn_v.weight",vec![32,16]),
-                ("attn_output.weight",vec![32,32]),("ffn_norm.weight",vec![32]),
-                ("ffn_gate.weight",vec![32,64]),("ffn_up.weight",vec![32,64]),("ffn_down.weight",vec![64,32])] {
-                tensors.push((format!("blk.{i}.{k}"),d,0));
-            }
-            let extras=if arch=="qwen2" {vec![("attn_q.bias",32),("attn_k.bias",16),("attn_v.bias",16)]}
-                else {vec![("attn_q_norm.weight",8),("attn_k_norm.weight",8)]};
-            for (k,n) in extras { tensors.push((format!("blk.{i}.{k}"),vec![n],0)); }
-        }
-        Self{meta,tensors}
-    }
-    fn set(&mut self,k:&str,v:V) { if let Some(e)=self.meta.iter_mut().find(|e|e.0==k){e.1=v}else{self.meta.push((k.into(),v));} }
-    fn bytes(&self)->(Vec<u8>,u64) {
-        fn text(b:&mut Vec<u8>,s:&str){b.extend((s.len() as u64).to_le_bytes());b.extend(s.as_bytes());}
-        let mut b=b"GGUF".to_vec(); b.extend(3u32.to_le_bytes());
-        b.extend((self.tensors.len() as u64).to_le_bytes());b.extend((self.meta.len() as u64).to_le_bytes());
-        for (key,v) in &self.meta {
-            text(&mut b,key);
-            match v {
-                V::U(n)=>{b.extend(4u32.to_le_bytes());b.extend(n.to_le_bytes());},
-                V::F(n)=>{b.extend(6u32.to_le_bytes());b.extend(n.to_le_bytes());},
-                V::S(s)=>{b.extend(8u32.to_le_bytes());text(&mut b,s);},
-                V::Tokens=>{b.extend(9u32.to_le_bytes());b.extend(8u32.to_le_bytes());b.extend(16u64.to_le_bytes());for i in 0..16 {text(&mut b,&format!("t{i}"));}},
-            }
-        }
-        let mut offset=0u64;
-        for (name,dims,kind) in &self.tensors {
-            text(&mut b,name);b.extend((dims.len() as u32).to_le_bytes());
-            for d in dims {b.extend(d.to_le_bytes());}
-            b.extend(kind.to_le_bytes());b.extend(offset.to_le_bytes());
-            let n:u64=dims.iter().product();
-            let size=match kind {0=>n*4,1|30=>n*2,2=>n/32*18,6=>n/32*22,8=>n/32*34,12=>n/256*144,14=>n/256*210,_=>panic!()};
-            offset=(offset+size).div_ceil(32)*32;
-        }
-        b.resize(b.len().div_ceil(32)*32,0);
-        let len=b.len() as u64+offset;(b,len)
-    }
-    fn error(&self)->Error {
-        let (b,n)=self.bytes();let idx=Index::parse(&b,n).unwrap();Model::admit(&idx).unwrap_err()
-    }
-}
+mod common;
+use common::{Fixture,V};
 
 #[test]
 fn both_architectures_tied_output_and_exact_kv_budget() {
