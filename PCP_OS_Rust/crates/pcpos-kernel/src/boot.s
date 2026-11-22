@@ -360,13 +360,13 @@ USER_PROGRAM spinner               # never yields: stores its pid in its data pa
 USER_END spinner
 
 USER_PROGRAM read_kernel           # reads the kernel's code
-    movq 0x101000, %rax
+    movq __text_start, %rax
     movl $99, %edi
     SYS_EXIT
 USER_END read_kernel
 
 USER_PROGRAM write_kernel          # writes into the kernel's memory
-    movabsq $0x101000, %rax
+    movabsq $__text_start, %rax
     movq $0, (%rax)
     movl $99, %edi
     SYS_EXIT
@@ -400,7 +400,7 @@ USER_PROGRAM overflow              # recurses until its stack is exhausted
 USER_END overflow
 
 USER_PROGRAM bad_calls             # hands the kernel a kernel address, an unmapped address and an undefined call number
-    movq $0x101000, %rdi
+    movq $__text_start, %rdi
     movq $16, %rsi
     movl $1, %eax
     int $0x80

@@ -4,6 +4,7 @@ on:
     paths:
       - 'PCP_OS_Rust/crates/pcpos-kernel/**'
       - 'examples/guarded-uefi/**'
+      - 'examples/firmware-owned-uefi/load-base.patch'
       - 'examples/heat/**'
       - 'examples/processors/**'
       - '.github/workflows/guarded-uefi.yml'
@@ -33,6 +34,8 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends lld ovmf qemu-system-x86 grub-common grub-efi-amd64-bin xorriso mtools dosfstools tesseract-ocr
           rustup toolchain install 1.100.0 --profile minimal --component rust-src
+      - name: The relocation patch of the firmware recipe still applies to this kernel
+        run: git apply --check examples/firmware-owned-uefi/load-base.patch
       - name: Check the frame selector and build the demo kernel
         run: |
           rustc --edition=2021 --test examples/guarded-uefi/test_frame_map.rs -o "$RUNNER_TEMP/frame-map-tests"
