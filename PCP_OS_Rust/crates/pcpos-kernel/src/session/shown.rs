@@ -2,7 +2,7 @@
 //! written the way a file is.
 //!
 //! The loader names files: `tailorbird`, `surfbird`. People read products: Tailorbird, Surfbird.
-//! This says which words the list of programs and the pinned row show. It changes nothing else:
+//! This says which words the list of programs and the pinned row show (not Details, which shows files). It changes nothing else:
 //! the file's own name is what the kernel starts, says on the serial line, writes in the register
 //! and shows in Details, beside the digest, so that a reviewer still reads exactly what the loader
 //! handed over. It is also no claim of identity. Any file with that name is shown with that

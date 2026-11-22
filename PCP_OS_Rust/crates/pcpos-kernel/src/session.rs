@@ -1688,7 +1688,7 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
         let ground = if i == chosen { PANEL } else { GROUND };
         ui::fill(ui::CELL_W, row * ui::CELL_H, (cols - 2) * ui::CELL_W, 2 * ui::CELL_H, ground);
         at(2, row, if i == chosen { ">" } else { " " }, ui::AMBER, ground);
-        at(4, row, shown::shown(&p.name), TEXT, ground);
+        at(4, row, &p.name, TEXT, ground);
         at(26, row, &size_text(p.image.len()), SOFT, ground);
         at(38, row, &format!("SHA-256 {}...", &p.digest[..16]), SOFT, ground);
         if !p.arguments.is_empty() {
