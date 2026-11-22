@@ -17,6 +17,9 @@ D6  On every kernel the Details screen carries the two sentences on how the scre
     (how many of its pages are mapped write-combining) and `display: a program that asks ...`, and each is the
     serial line's sentence.
 
+D7  On every kernel the Details screen carries the `elapsed clock:` sentence and it is the serial line's: the
+    HPET on the machines above, and on a machine built without one (q35,hpet=off) the fallback's sentence.
+
 What this does not show: a reading of a real sensor, which no emulator here offers.
 
 Usage: check_details.py <plain kernel> <kernel with processors,heat> <new output directory>
@@ -36,7 +39,7 @@ def squeeze(text):
     return " ".join(text.split())
 
 
-def details(kernel, cpus, output, size=None, documents=0):
+def details(kernel, cpus, output, size=None, documents=0, machine="q35"):
     """Boot on `cpus` processors straight to Details; return (every page read from the screen, the serial text).
     With `size` the desktop is asked for that mode; `documents` small files are handed over by the loader."""
     output.mkdir(parents=True)
@@ -46,7 +49,7 @@ def details(kernel, cpus, output, size=None, documents=0):
         names.append("note%d.txt" % index)
         (output / names[-1]).write_text("a file from the loader, number %d\n" % index)
     command = "first=details" + ((" desktop=" + size) if size else "")
-    invocation = ["qemu-system-x86_64", "-machine", "q35", "-accel", "tcg", "-cpu", "max", "-smp", str(cpus), "-m", "256M",
+    invocation = ["qemu-system-x86_64", "-machine", machine, "-accel", "tcg", "-cpu", "max", "-smp", str(cpus), "-m", "256M",
                   "-kernel", str(kernel)] + (["-initrd", ",".join(names)] if names else []) + [
                   "-append", command, "-vga", "std", "-display", "none", "-nic", "none",
                   "-serial", "file:" + str(serial.resolve()), "-no-reboot", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-qmp", "stdio"]
@@ -85,7 +88,7 @@ def sentence(pages, start):
             if row.startswith(start):
                 words = [row]
                 for more in body[index + 1:]:
-                    if not more or more.split(":")[0] in ("heat", "other processors", "processors", "display", "display memory", "keyboard", "store") or "Esc back" in more or "Up/Down" in more:
+                    if not more or more.split(":")[0] in ("heat", "other processors", "processors", "display", "display memory", "elapsed clock", "keyboard", "store") or "Esc back" in more or "Up/Down" in more:
                         break
                     words.append(more)
                 found = squeeze(" ".join(words))
@@ -115,6 +118,8 @@ def main():
         # The serial line also names where the root pointer is; the sentence compared is the one after it.
         said = serial_sentence("\n".join(l for l in serial.splitlines() if "root pointer" not in l), "processors: ")
         check("D1 %s: the processors sentence on Details is the serial line's" % label, shown is not None and shown == said, "%r / %r" % (shown, said))
+        shown, told = sentence(pages, "elapsed clock: "), serial_sentence(serial, "elapsed clock: ")
+        check("D7 %s: the elapsed clock on Details is the serial line's, the HPET" % label, shown is not None and shown == told and "HPET" in shown, "%r / %r" % (shown, told))
         for start in ("display memory: ", "display: a program that asks "):
             shown, told = sentence(pages, start), serial_sentence(serial, start)
             check("D6 %s: %r on Details is the serial line's" % (label, start.strip()), shown is not None and told is not None and shown == told, "%r / %r" % (shown, told))
@@ -137,6 +142,9 @@ def main():
                  and fixed(sentence(pages, "heat:")) == fixed(serial_sentence(serial, "heat: ")))
         check("D5 %s: Details scrolls, and all three sentences are read whole" % label, scrolls and whole,
               "scrolls=%r pages=%d %r / %r / %r" % (scrolls, len(pages), sentence(pages, "processors:"), sentence(pages, "other processors:"), sentence(pages, "heat:")))
+    pages, serial = details(plain, 1, output / "no-hpet", machine="q35,hpet=off")
+    shown, told = sentence(pages, "elapsed clock: "), serial_sentence(serial, "elapsed clock: ")
+    check("D7 no-hpet: without the timer, Details says the fallback, as the serial line does", shown is not None and shown == told and "delivered PIT interrupts" in shown, "%r / %r" % (shown, told))
     print("%s: %d failed" % ("FAILED" if failed else "ALL PASS", failed))
     sys.exit(1 if failed else 0)
 

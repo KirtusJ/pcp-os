@@ -11,6 +11,12 @@ const WINDOW: usize = PHYSICAL as usize;
 const UNCACHED: u64 = (1 << 3) | (1 << 4);
 const PIT_TICK_NS: u64 = 999_847;
 const FALLBACK: &str = "delivered PIT interrupts (elapsed time can be lost under load)";
+const ADMITTED: &str = "64-bit ACPI HPET main counter";
+
+/// Which clock elapsed time is read from now, in the words `init` returned when it chose.
+pub fn source() -> &'static str {
+    if active() { ADMITTED } else { FALLBACK }
+}
 
 #[repr(align(4096))]
 struct TimerTables(UnsafeCell<[u64; 512]>);
@@ -155,7 +161,7 @@ pub fn init(boot: &BootInfo) -> &'static str {
     );
     COUNTER_START.store(first, Ordering::Relaxed);
     PERIOD_FS.store(period, Ordering::Release);
-    "64-bit ACPI HPET main counter"
+    ADMITTED
 }
 
 pub fn now_ns() -> u64 {
