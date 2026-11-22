@@ -70,6 +70,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "pcpos-gguf"
+version = "1.0.22"
+
+[[package]]
 name = "pcpos-host"
 version = "1.0.22"
 dependencies = [

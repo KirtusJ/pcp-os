@@ -77,8 +77,27 @@ pub fn game_link_write(byte: u8) -> bool {
 
 const COM1: u16 = 0x3F8;
 
-/// Prepare the first serial port: 115200 baud, 8 bits, no parity, one stop bit.
+/// Whether a serial port answered at the usual address and is still taking bytes.
+static SERIAL: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+/// Prepare the first serial port, if there is one: 115200 baud, 8 bits, no parity, one stop bit.
+///
+/// Most laptops have no such port. Nothing is known about what answers at its address before it is
+/// tried, so it is tried in the way that changes least: first by reading (a line-status register that
+/// reads all ones is no port), then by writing two values to its scratch register, which exists to hold
+/// a byte and does nothing else, and reading each back. Only a port that kept both is set up and written
+/// to. Where there is none, the report is not written anywhere and nothing waits for it.
 pub fn serial_init() {
+    use core::sync::atomic::Ordering;
+    if inb(COM1 + 5) == 0xFF {
+        return;
+    }
+    for value in [0x5Au8, 0xA5] {
+        outb(COM1 + 7, value);
+        if inb(COM1 + 7) != value {
+            return;
+        }
+    }
     outb(COM1 + 1, 0x00);
     outb(COM1 + 3, 0x80);
     outb(COM1, 0x01);
@@ -86,17 +105,35 @@ pub fn serial_init() {
     outb(COM1 + 3, 0x03);
     outb(COM1 + 2, 0xC7);
     outb(COM1 + 4, 0x0B);
+    SERIAL.store(true, Ordering::SeqCst);
+}
+
+/// Whether the report is being written to a serial port.
+pub fn serial_present() -> bool {
+    SERIAL.load(core::sync::atomic::Ordering::SeqCst)
 }
 
 /// Write one byte to the serial port, waiting until the port can take it.
 pub fn serial_put(byte: u8) {
-    // Bounded: a port that never becomes ready costs the message, not the machine.
+    use core::sync::atomic::Ordering;
+    if !SERIAL.load(Ordering::SeqCst) {
+        return;
+    }
+    // Bounded: a port that never becomes ready costs the rest of the report, not the machine. It is
+    // not written to, and not waited for, again.
     for _ in 0..1_000_000u32 {
-        if inb(COM1 + 5) & 0x20 != 0 {
+        let status = inb(COM1 + 5);
+        // A status of all ones is no port, here as at the start: a port that was there and has gone
+        // is not written to (B3).
+        if status == 0xFF {
             break;
         }
+        if status & 0x20 != 0 {
+            outb(COM1, byte);
+            return;
+        }
     }
-    outb(COM1, byte);
+    SERIAL.store(false, Ordering::SeqCst);
 }
 
 /// Whether the processor says it is run by an emulator or a hypervisor (CPUID leaf 1, ECX bit 31). Hardware
