@@ -144,8 +144,10 @@ def main():
             status = guest.wait(timeout=18)
             log = serial.read_text(errors="replace")
             assert status == 33 and "ALL SELF-TESTS PASS" in log, (status, log[-900:])
+            passes = sum(row.lstrip().startswith("pass ") for row in log.splitlines())
+            assert passes > 0, "No individual kernel check results found"
             result = {"cpu": cpu, "geometry": [1920, 1080], "page_count": 1, "ui_scale": scale,
-                      "checks_passed": sum(row.startswith("pass ") for row in log.splitlines()),
+                      "checks_passed": passes,
                       "exit": status, "observations": [found[0], found[1]]}
             (out / "result.json").write_text(json.dumps(result, indent=2) + "\n")
             print(json.dumps(result), flush=True)

@@ -61,6 +61,42 @@ jobs:
         if: ${{ !cancelled() && steps.medium.outcome == 'success' }}
         run: |
           "$RUNNER_TEMP/pcp-helper/release/pcp-delegate" "$PWD/evidence/desk.redb" 43403 no-pat -- /usr/bin/python3 examples/processors/a3_details_colours.py no-pat "$RUNNER_TEMP/details.img" evidence/no-pat
+      - name: Collect the two measured rows and verification records
+        run: |
+          /usr/bin/python3 - <<'PY'
+          import base64
+          import hashlib
+          import io
+          import json
+          import textwrap
+          from pathlib import Path
+          from zipfile import ZIP_DEFLATED, ZipFile
+          from PIL import Image
+
+          evidence = Path("evidence")
+          bundle = io.BytesIO()
+          with ZipFile(bundle, "w", ZIP_DEFLATED) as archive:
+              for name in ("grub.cfg", "medium.sha256", "kernel.sha256"):
+                  archive.write(evidence / name, name)
+              for case in ("pat", "no-pat"):
+                  directory = evidence / case
+                  for name in ("result.json", "serial.log", "stderr.log"):
+                      archive.write(directory / name, case + "/" + name)
+                  result = json.loads((directory / "result.json").read_text())
+                  for index, row in enumerate(result["observations"]):
+                      with Image.open(directory / row["capture"]) as frame:
+                          width, _ = frame.size
+                          line_height = 20 * result["ui_scale"]
+                          first, last = row["rows"]
+                          crop = frame.crop((0, first * line_height, width, (last + 1) * line_height))
+                          image = io.BytesIO()
+                          crop.save(image, format="PNG")
+                          archive.writestr(case + "/sentence-" + str(index + 1) + ".png", image.getvalue())
+          data = bundle.getvalue()
+          print("A3-EVIDENCE-SHA256", hashlib.sha256(data).hexdigest())
+          for chunk in textwrap.wrap(base64.b64encode(data).decode("ascii"), 1200):
+              print("A3-EVIDENCE-BYTES", chunk)
+          PY
       - name: Retain the serial logs, screenshots and parsed rows
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
