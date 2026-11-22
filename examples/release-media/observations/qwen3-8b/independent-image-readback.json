@@ -1,0 +1,338 @@
+{
+  "iso_bytes": 10283481088,
+  "iso_sha256": "a0298480bf5e8773206369fda4b0e6a00d4ce31e8c83367db71c9541a9fa9f88",
+  "efi_partition_offset": 81920,
+  "efi_partition_bytes": 5253365760,
+  "efi_partition_sha256": "74a073346aa83f9a9c8e2aa0c78834325c0f8f02258a699ad5f3dd81f20650ee",
+  "primary_and_backup_gpt_crc_ok": true,
+  "el_torito_matches_gpt": true,
+  "fat_file_count": 80,
+  "joliet_file_count": 80,
+  "shards": 75,
+  "model_bytes": 5027783488,
+  "model_sha256_from_both_views": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
+  "manifest_sha256": "2c02ff6f00a2ee802ce09648dfbc56dda38a64b009635f0aeb383f09e1af67dc",
+  "input_receipt_sha256": "b019212c01f780ca9c5c22c2aa11f76fa00079189b784e53d59d2d8507a6c036",
+  "files_verified_in_both_views": {
+    "EFI/BOOT/BOOTX64.EFI": {
+      "bytes": 354304,
+      "sha256": "cb52da03c3b153edbee98e7be23e09e36a08069aa4eb70077c956892856f5145"
+    },
+    "PCPOS/KERNEL.ELF": {
+      "bytes": 1130124,
+      "sha256": "6a3cb8bf80a110ee7d765e31012ae6feed0b5e0429035ee8e86dd9b555e69e66"
+    },
+    "PCPOS/TAILOR.ELF": {
+      "bytes": 212352,
+      "sha256": "97da808610494446a0be3f2ab5d65b41b8e2a2ce98a12d2ec43517c5ea9b48ff"
+    },
+    "PCPOS/WORKER.ELF": {
+      "bytes": 200960,
+      "sha256": "955df6cced1106dc913379c07c513166ccbe42225d70c407ad56432c90125541"
+    },
+    "PCPOS/model.manifest": {
+      "bytes": 2456,
+      "sha256": "2c02ff6f00a2ee802ce09648dfbc56dda38a64b009635f0aeb383f09e1af67dc"
+    },
+    "PCPOS/shard-00000.bin": {
+      "bytes": 67108864,
+      "sha256": "69bcc303b5237980e20669c0fb627e8bc9e01ae782bb654108768772f75f2135"
+    },
+    "PCPOS/shard-00001.bin": {
+      "bytes": 67108864,
+      "sha256": "e980182dc6799df0642d378bd32bc0a6f1fcf7a8349faed7d40faef845020702"
+    },
+    "PCPOS/shard-00002.bin": {
+      "bytes": 67108864,
+      "sha256": "d672e0d5acb021792d57d22c5ce189d7085d092823c91a6b40d00e80a81fb9ce"
+    },
+    "PCPOS/shard-00003.bin": {
+      "bytes": 67108864,
+      "sha256": "b17614abd3d55df500068f10ead90a0d4239d3f88d114a7311bd7176964a5beb"
+    },
+    "PCPOS/shard-00004.bin": {
+      "bytes": 67108864,
+      "sha256": "74ce7f12d12d52ae2bb497a69ca0d78b4aae23a8c5ba0feaf56bb398e5e2d4b7"
+    },
+    "PCPOS/shard-00005.bin": {
+      "bytes": 67108864,
+      "sha256": "fff4559d157a5779937eddecb0b27e8b7e9a613fd90e130e742fa2c6f04fabbe"
+    },
+    "PCPOS/shard-00006.bin": {
+      "bytes": 67108864,
+      "sha256": "2f62057a801d4844f3f0d4814bc1fc3c262fa0bee30264280c8e6fd43b33727c"
+    },
+    "PCPOS/shard-00007.bin": {
+      "bytes": 67108864,
+      "sha256": "7500894239f995165542171bc6674a6bf9ac65146f7f868e9f3c276b58266856"
+    },
+    "PCPOS/shard-00008.bin": {
+      "bytes": 67108864,
+      "sha256": "c52ead15b582c37b51fd0e6b7ade5c08bb41ec8ffdc94ac58040282dbeadf669"
+    },
+    "PCPOS/shard-00009.bin": {
+      "bytes": 67108864,
+      "sha256": "5232555a0aeaf46fe581f298eddebd7b10f4df1d35b9a739064665c74946feb6"
+    },
+    "PCPOS/shard-00010.bin": {
+      "bytes": 67108864,
+      "sha256": "22b16d93cf5c1c765495b9bb4a2588b8566cc84c1ea03ff96c39b8c11408bba0"
+    },
+    "PCPOS/shard-00011.bin": {
+      "bytes": 67108864,
+      "sha256": "8c5f30adb979bf7e5dc2b9d28892fe2ef2df5440a77128f6ecebd4b9e6d81321"
+    },
+    "PCPOS/shard-00012.bin": {
+      "bytes": 67108864,
+      "sha256": "30644f569555cac3a0927080ee5277ea1a5e27754027838f90355212b7a7f60f"
+    },
+    "PCPOS/shard-00013.bin": {
+      "bytes": 67108864,
+      "sha256": "2f3750895e27d3576f52aadc1d09b55cbcf8f2f933ef18ae76d23b85e81d720b"
+    },
+    "PCPOS/shard-00014.bin": {
+      "bytes": 67108864,
+      "sha256": "8b4b38f2117a6f6eaa11002f74f9c836120811acd26f530d335b73d66fc28035"
+    },
+    "PCPOS/shard-00015.bin": {
+      "bytes": 67108864,
+      "sha256": "c713010dc6b6d61799d84b48144d3ba78bf5d22c8069094224e1bd382bacb095"
+    },
+    "PCPOS/shard-00016.bin": {
+      "bytes": 67108864,
+      "sha256": "312d787f336b8e1fefa4bfa4a5ec7c914581897e36372e1c3fc5d9c74854e4b4"
+    },
+    "PCPOS/shard-00017.bin": {
+      "bytes": 67108864,
+      "sha256": "ce4002abf4198ec550af7f522b75fcd7f631a631978835bc930c2eecb9242bd2"
+    },
+    "PCPOS/shard-00018.bin": {
+      "bytes": 67108864,
+      "sha256": "fc2cf750a72d269c05a50c55e6c0d8e8341bd604c0497a070a5abfebae9645b6"
+    },
+    "PCPOS/shard-00019.bin": {
+      "bytes": 67108864,
+      "sha256": "0e41f49b4681aa21b128d9a87be73ff3c98c669a6cfeae8ab65d57afcdf88586"
+    },
+    "PCPOS/shard-00020.bin": {
+      "bytes": 67108864,
+      "sha256": "ded029b41f96eb1afbfa7c5a5c761021b6cede027c15c43ed595332cbdc73c8d"
+    },
+    "PCPOS/shard-00021.bin": {
+      "bytes": 67108864,
+      "sha256": "8152f179e125b0f6c700103f2ea286e70fb9f2651136ca7483d0c2e82efa1d17"
+    },
+    "PCPOS/shard-00022.bin": {
+      "bytes": 67108864,
+      "sha256": "720d2c4ab028fc92c2ab7d00a3eb91d27ccd6e2ce46e15063d13e906c6def2cf"
+    },
+    "PCPOS/shard-00023.bin": {
+      "bytes": 67108864,
+      "sha256": "1d5e64ba106df58cfe69f3dead422071d437cc44d7c7da919805ede6e57dcd47"
+    },
+    "PCPOS/shard-00024.bin": {
+      "bytes": 67108864,
+      "sha256": "c20f88965032b4e412aff3d8be16457a09472027be1234183f00e9ad6886c0cb"
+    },
+    "PCPOS/shard-00025.bin": {
+      "bytes": 67108864,
+      "sha256": "75cfe783866f23baa78bbbdf39423d0384d31c020db6eb0f75be04a2cd67e144"
+    },
+    "PCPOS/shard-00026.bin": {
+      "bytes": 67108864,
+      "sha256": "a460e01413cb464a13d1f26101dfa2b5472ac08288c9e2f94e22fdadbcacf5f9"
+    },
+    "PCPOS/shard-00027.bin": {
+      "bytes": 67108864,
+      "sha256": "c58cbbdf81a21b0ca9e02b3bc66498c9f2848ed98c1ac153497635d4db81934e"
+    },
+    "PCPOS/shard-00028.bin": {
+      "bytes": 67108864,
+      "sha256": "ac764535c2661515bc42479f7dfd262ac54eea0999a821c9560fd4924f0d6fd4"
+    },
+    "PCPOS/shard-00029.bin": {
+      "bytes": 67108864,
+      "sha256": "5c5be31a7c72d2db11b94e89a38532820e3b8844b73ca77628c14a610542754c"
+    },
+    "PCPOS/shard-00030.bin": {
+      "bytes": 67108864,
+      "sha256": "d56871608e34edbc8a10336331a25a04cdcc936d151169f43010834399e0fbc6"
+    },
+    "PCPOS/shard-00031.bin": {
+      "bytes": 67108864,
+      "sha256": "a662609bf60eaea2f65fc177d13be6f879c2831f703fb44b07f0c9b37dda674e"
+    },
+    "PCPOS/shard-00032.bin": {
+      "bytes": 67108864,
+      "sha256": "54863f97fef29bdf5095d96da00e38ba450f09d8109367b153ee53c8e511ae7a"
+    },
+    "PCPOS/shard-00033.bin": {
+      "bytes": 67108864,
+      "sha256": "a27260392c8f818993df12fa50aaa20a5b1e75c42383bd0b2fbea91918c35199"
+    },
+    "PCPOS/shard-00034.bin": {
+      "bytes": 67108864,
+      "sha256": "d37e10d00032821a8db136384e1c94936a1a05149b1415cdc0d67dff9b0b0feb"
+    },
+    "PCPOS/shard-00035.bin": {
+      "bytes": 67108864,
+      "sha256": "8afeeaf611d16b4268e40987860629207e9bbb76604cc489db28b79c1aafcd86"
+    },
+    "PCPOS/shard-00036.bin": {
+      "bytes": 67108864,
+      "sha256": "c8d9f2cb8a87d9f83cbdc64528b5563882e540ea3288bd863da5142643acd5ed"
+    },
+    "PCPOS/shard-00037.bin": {
+      "bytes": 67108864,
+      "sha256": "6930a180f11687e6a035c0d37939f4f948bc8fa28a71efdc158b9823969d8049"
+    },
+    "PCPOS/shard-00038.bin": {
+      "bytes": 67108864,
+      "sha256": "b81ead26906b6aae94d2b4dcfab9decbfd1c9a245bf01a33c9aea3aa78461fe9"
+    },
+    "PCPOS/shard-00039.bin": {
+      "bytes": 67108864,
+      "sha256": "f4c8983661528dd22dadd69124df91ba7bdec384f0bda5116439e669362e38cf"
+    },
+    "PCPOS/shard-00040.bin": {
+      "bytes": 67108864,
+      "sha256": "69882b91f43ab1cca87ad312aa69d9a74a7b76655ae478039a76c6aeff30398e"
+    },
+    "PCPOS/shard-00041.bin": {
+      "bytes": 67108864,
+      "sha256": "b241d1bedbf4631cb328c982da11c52e0e15be39d7220313097b960451816861"
+    },
+    "PCPOS/shard-00042.bin": {
+      "bytes": 67108864,
+      "sha256": "9f2f5ab8c46d0b5f5596d0312b014ebce2e049c3c8afb215034be3b28d3a239f"
+    },
+    "PCPOS/shard-00043.bin": {
+      "bytes": 67108864,
+      "sha256": "6e39c938bae56add79cba3997b17b9446ad1671db235985ba7a1da616c2772d2"
+    },
+    "PCPOS/shard-00044.bin": {
+      "bytes": 67108864,
+      "sha256": "986a3c78e1d8cb6640baee75eac664a37a0ccdf2c35adee9135f4524f1fbab44"
+    },
+    "PCPOS/shard-00045.bin": {
+      "bytes": 67108864,
+      "sha256": "e2dc5e9b8f801a0927bb859dbb9fb13bd7c23a756a96796355e0174b48804e38"
+    },
+    "PCPOS/shard-00046.bin": {
+      "bytes": 67108864,
+      "sha256": "b078889df8b451fa36bda408455325278a4d4df858c851dfa3ca64e802cf2b0e"
+    },
+    "PCPOS/shard-00047.bin": {
+      "bytes": 67108864,
+      "sha256": "a3ce202ecce7473cd1d85d7fb5d57eb6710ec52dda67acd69818f44961a2bfec"
+    },
+    "PCPOS/shard-00048.bin": {
+      "bytes": 67108864,
+      "sha256": "ffda59deeb66f7f2d3c2fb6e132f0c5b27fb55a059c10317449116c6100a2826"
+    },
+    "PCPOS/shard-00049.bin": {
+      "bytes": 67108864,
+      "sha256": "42ff3e8f12ee2a7d7fd6084158d7ca5cbc25cdc081039e6635cbee901a5432b0"
+    },
+    "PCPOS/shard-00050.bin": {
+      "bytes": 67108864,
+      "sha256": "18d0747191794c9f52ab1951ea8e9655ba6d993ef273b1d74bf58669f75d3e6f"
+    },
+    "PCPOS/shard-00051.bin": {
+      "bytes": 67108864,
+      "sha256": "991a5413764348d71e8e24c885847e5c4dc8dd37342e1ae281768f41f32873bb"
+    },
+    "PCPOS/shard-00052.bin": {
+      "bytes": 67108864,
+      "sha256": "f43941fdd3193aac48fd953e63ca58d648df11e1f42d269745fea421af52cbb5"
+    },
+    "PCPOS/shard-00053.bin": {
+      "bytes": 67108864,
+      "sha256": "29088595a4210d3b2eb8c53528e1645402abe42a8b947ebb78527ae0d0763c17"
+    },
+    "PCPOS/shard-00054.bin": {
+      "bytes": 67108864,
+      "sha256": "e247d08984e90eb9ec0b45685f2f0947fadd52f0b968d80b699c7009771552ae"
+    },
+    "PCPOS/shard-00055.bin": {
+      "bytes": 67108864,
+      "sha256": "e392a16c5b76aef4dfbb7dfb2b73473a62f900e4bba665a6c397ceb6b6ed8136"
+    },
+    "PCPOS/shard-00056.bin": {
+      "bytes": 67108864,
+      "sha256": "269600b3e33e71958c63df2e4d463307347465cb6b758720faf69c96b3724c12"
+    },
+    "PCPOS/shard-00057.bin": {
+      "bytes": 67108864,
+      "sha256": "2c908d52cde51edd069e72781d422a549474bbee28d105cf19e0c34c19edb639"
+    },
+    "PCPOS/shard-00058.bin": {
+      "bytes": 67108864,
+      "sha256": "5207787b46b90971e923377974e8cfd741654676080edbdc2f2aac4540ffa67e"
+    },
+    "PCPOS/shard-00059.bin": {
+      "bytes": 67108864,
+      "sha256": "5adda583c95fc56b7ee7d3b987dc42d1df1d26bb56391ae4e8443ba5c0acc05f"
+    },
+    "PCPOS/shard-00060.bin": {
+      "bytes": 67108864,
+      "sha256": "927a3a1fb263ab3455725a1aed84e58d8d96d6295965a1b4b08019efb00478f8"
+    },
+    "PCPOS/shard-00061.bin": {
+      "bytes": 67108864,
+      "sha256": "3db520caef201f0db7e9de13447092d763172bd47021fe41a02a564494c04b18"
+    },
+    "PCPOS/shard-00062.bin": {
+      "bytes": 67108864,
+      "sha256": "aa2edac8655abf633ffef4c1454623cc65986a6847617aedd083b7e3f042b94a"
+    },
+    "PCPOS/shard-00063.bin": {
+      "bytes": 67108864,
+      "sha256": "35848623d4957682d3df9b72f32a3e6528741feafb48daea6e83ec2b1080220c"
+    },
+    "PCPOS/shard-00064.bin": {
+      "bytes": 67108864,
+      "sha256": "db82f440afbd72a4c0d5cb2832791876be9e3b96895854bc366d95fc76a9c542"
+    },
+    "PCPOS/shard-00065.bin": {
+      "bytes": 67108864,
+      "sha256": "0be84e52a8e2b4fc0f55b96d38d0a6af42aaf93f2a3fb82f3fdd8830749bbf1e"
+    },
+    "PCPOS/shard-00066.bin": {
+      "bytes": 67108864,
+      "sha256": "77047d06b0f3b952f401f5777ca228dfd926af078dfaba6f04ccd2cf85407377"
+    },
+    "PCPOS/shard-00067.bin": {
+      "bytes": 67108864,
+      "sha256": "fe2a272c18b7670509def67433ca460f167b096292e2bb0ddcae49406aed6425"
+    },
+    "PCPOS/shard-00068.bin": {
+      "bytes": 67108864,
+      "sha256": "3855a9a9479eab9b2c3a454e3e0f20429e29ad3dd2f5ba3a894d0eb18441738d"
+    },
+    "PCPOS/shard-00069.bin": {
+      "bytes": 67108864,
+      "sha256": "f2c138d3ff86f6a01717017bc890040bebf237f435f1c27683456ac49ba538fb"
+    },
+    "PCPOS/shard-00070.bin": {
+      "bytes": 67108864,
+      "sha256": "94def400d44b937200f8b4a2f24bd3f530f64f3a90ce9f5e784071d997e22920"
+    },
+    "PCPOS/shard-00071.bin": {
+      "bytes": 67108864,
+      "sha256": "08cf9fa619ce7bfc127ab3b254a07835a05b861a173910fc5b395e382f3f140c"
+    },
+    "PCPOS/shard-00072.bin": {
+      "bytes": 67108864,
+      "sha256": "5f8eeaebb98187669c39f617b65d87d8219fa4bab438ab070099846f3ebdb9fc"
+    },
+    "PCPOS/shard-00073.bin": {
+      "bytes": 67108864,
+      "sha256": "ad54a8577feb2135abc21ff7bf6f0c39a6bb16580f8a3979413cac2b9a291e3f"
+    },
+    "PCPOS/shard-00074.bin": {
+      "bytes": 61727552,
+      "sha256": "e48eb9b3b4fa347811c8edc69b852a02f8a7b898edebb94d5400ad166f13a263"
+    }
+  }
+}

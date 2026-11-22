@@ -1,0 +1,10 @@
+{
+  "image_sha256": "8de0bbcce21d44925b23c2f5d444ce67c8daf8f3189404199782200e5332569f",
+  "worker": "Tailorbird #20 scalar",
+  "prompt": "Hello",
+  "input_ack_utc": "2026-11-22T11:12:42.896065+00:00",
+  "last_frame_utc": "2026-11-22T12:10:18.422222+00:00",
+  "last_frame_seconds_after_input": 3455.53,
+  "last_frame_identical_to": "prefill-sample.png",
+  "outcome": "Observation interrupted. The last retained display still said (answering...). No terminal reply or shutdown was recorded. The original execution handles disappeared and a new display request went unanswered."
+}
