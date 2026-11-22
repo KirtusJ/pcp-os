@@ -1,0 +1,13 @@
+pc, 256M, 1 processor(s): 1 listed
+pc, 256M, 2 processor(s): 2 listed
+pc, 256M, 4 processor(s): 4 listed
+pc, 256M, 8 processor(s): 8 listed
+q35, 6G, 4 processor(s): 4 listed
+pc, 2G, 3 processor(s): 3 listed
+acpi_rsdp=0x0000000000100000: refused, a table lies outside what can be read at start, or in memory given as free
+acpi_rsdp=0x0000001ffffffff0: refused, a table lies outside what can be read at start, or in memory given as free
+acpi_rsdp=0x100000: refused, the loader's line is cut short, or its acpi_rsdp= is not the one form taken
+acpi_rsdp=0x00000000000F5000: refused, the loader's line is cut short, or its acpi_rsdp= is not the one form taken
+acpi_rsdp=0x00000000000f5000 acpi_rsdp=0x00000000000f5000: refused, the loader's line is cut short, or its acpi_rsdp= is not the one form taken
+acpi_rsdp=0x00000000000f52b0: 2 listed at the address named
+processors: the firmware's count is read rightly on every machine tried, and a wrong address is refused
