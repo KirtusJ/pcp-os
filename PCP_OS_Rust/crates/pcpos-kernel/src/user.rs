@@ -461,12 +461,12 @@ pub fn idle_in_key_read() -> bool {
 }
 
 /// Number of completed idle timer periods in the single-sleeper boot test, while its deadline is still ahead.
-pub fn sleeping_idle_ticks(now: u64) -> Option<u64> {
+pub fn sleeping_idle_ticks() -> Option<u64> {
     TABLE.with(|slot| {
         let table = slot.as_ref()?;
         let [process] = table.procs.as_slice() else { return None };
         (table.current.is_none() && process.end.is_none() &&
-            matches!(process.waiting, Waiting::Until(deadline) if deadline > now)).then_some(table.idle)
+            matches!(process.waiting, Waiting::Until(deadline) if deadline > arch::elapsed::now_ns())).then_some(table.idle)
     })
 }
 
@@ -657,7 +657,7 @@ impl Table {
     /// them, in its own address space.
     fn next(&mut self, frame: &mut Frame, from: usize) {
         let n = self.procs.len();
-        let now = arch::ticks();
+        let mut now = None;
         // F12 with nothing waiting: the program that may propose is stopped where it is, running or
         // asleep, and the kernel's own screen says that nothing waits. Its state has been saved by
         // whoever called this.
@@ -671,7 +671,7 @@ impl Table {
         let key = dev::keys_waiting();
         for p in self.procs.iter_mut() {
             match p.waiting {
-                Waiting::Until(t) if now >= t => p.waiting = Waiting::Nothing,
+                Waiting::Until(t) if *now.get_or_insert_with(arch::elapsed::now_ns) >= t => p.waiting = Waiting::Nothing,
                 Waiting::Key if key => p.waiting = Waiting::Nothing,
                 // A program waiting on the channel is woken when what it waits for is there, or when
                 // the other program is gone; it then makes its call again and is answered.

@@ -213,7 +213,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     };
     let mut world = World { files: files.iter().map(|f| (f.0.clone(), f.1)).collect(), store: Default::default(), #[cfg(feature = "proposals")] build_folder,
         #[cfg(feature = "vm-store")] volume: None, #[cfg(feature = "model-memory")] model: None,
-                            epoch_at_start: epoch(y, mo, d, h, mi, s).saturating_sub(arch::ticks() / arch::TICKS_PER_SECOND), unanswered: Vec::new() };
+                            epoch_at_start: epoch(y, mo, d, h, mi, s).saturating_sub(arch::elapsed::now_ns() / 1_000_000_000), unanswered: Vec::new() };
     let line = start.boot.command_line.as_str();
     // A kernel that has the emulator fixture in it says so at every start, used or not, so that one
     // can never be taken for a release kernel by its log.
@@ -942,7 +942,7 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
     if widgets[2] {
         let on_session = plate(x, y, 420, 140, PLATE, edge(), false);
         label(x + 20, y + 20, "SESSION", TEAL, false, &on_session);
-        let up = arch::ticks() / arch::TICKS_PER_SECOND;
+        let up = arch::elapsed::now_ns() / 1_000_000_000;
         label(x + 20, y + 60, &format!("up {} min, {} program(s) run, {} file(s)", up / 60, run, store.len()), TEXT, false, &on_session);
         label(x + 20, y + 80, files_line, TEXT, false, &on_session);
         label(x + 20, y + 100, if safe { "SAFE: programs are disabled" } else { "network: none" }, if safe { BAD } else { TEXT }, false, &on_session);
@@ -2170,6 +2170,7 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
     if none {
         say!("{} is started with the console and no other grant (grant=none)", entry.name);
     }
+    let start_ns = arch::elapsed::now_ns();
     let (free0, shows0, t0) = (user::frames_free(), dev::display_shows(), arch::ticks());
     let (_, sound0, dry0) = dev::sound_state();
     // The companion of this program, if the loader's line (taken whole) names this program by its
@@ -2221,6 +2222,7 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
     } else { run() };
     #[cfg(not(feature = "guest-ethernet"))]
     let (result, world) = run();
+    let elapsed_ns = arch::elapsed::now_ns().saturating_sub(start_ns);
     let (ticks, shows) = (arch::ticks() - t0, dev::display_shows() - shows0);
     let (_, sound1, dry1) = dev::sound_state();
     let (sound_ms, dry) = ((sound1 - sound0) / (dev::SOUND_RATE as u64 * 4 / 1000), dry1 - dry0);
@@ -2257,8 +2259,8 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
                 Some(End::Stopped) => ("STOPPED", Value::Null, "stopped by the person with Ctrl+Alt+Delete".to_string()),
                 None => ("LOST", Value::Null, "no end was observed".to_string()),
             };
-            let seconds = ticks / arch::TICKS_PER_SECOND;
-            let rate = if ticks > 0 { shows * arch::TICKS_PER_SECOND * 10 / ticks } else { 0 };
+            let seconds = elapsed_ns / 1_000_000_000;
+            let rate = ((shows as u128) * 10_000_000_000).checked_div(elapsed_ns as u128).unwrap_or(0);
             let idle = if ticks > 0 { p.idle * 100 / ticks } else { 0 };
             let note = format!("{} after {} s; {} system calls; {} frames shown ({}.{} a second); the processor idled {}% of the time; {} ms of sound played, the device ran out of sound {} time(s); {} music register writes so far, the latest {} ms late; {} pages at the end, {} of them the display's, {} both writable and executable; {} frames given back, {} free before and {} after; the store holds {} file(s), {} bytes",
                                how, seconds, p.calls, shows, rate / 10, rate % 10, idle, sound_ms, dry, fm_written, fm_late, p.census.0, p.census.2, p.census.1, p.released, free0, user::frames_free(), world.store.len(), world.store.iter().map(|f| f.1.len()).sum::<usize>());
