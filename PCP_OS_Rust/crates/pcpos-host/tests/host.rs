@@ -844,6 +844,40 @@ fn a_prompt_that_is_only_a_word_to_stop_is_a_halt_the_host_saw_and_other_prompts
 }
 
 #[test]
+fn remove_selects_the_exact_local_installation_and_preserves_other_directories() {
+    let root = dir("exact-module-removal");
+    let method = small_method(&root);
+    let cli = |args: &[&str]| {
+        let mut command = with_method(&root, &method);
+        command.args(args);
+        feed(command, b"")
+    };
+    for name in ["My-Notes", "My_Notes"] {
+        let source = root.join(name);
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("Specification.md"), format!("**Component:** `local.{name}`, Version 1.0\n")).unwrap();
+        assert_eq!(cli(&["module", "add", REG, name, "--by", "p"]).1, 0);
+    }
+    let modules = root.join(".pcp/modules");
+    fs::create_dir(modules.join("drafts")).unwrap();
+    fs::write(modules.join("drafts/note"), b"keep").unwrap();
+    let before = fs::read(root.join(REG)).unwrap();
+    for name in ["acr.My-Notes", "my-notes", "drafts", "absent"] {
+        assert_ne!(cli(&["module", "remove", REG, name, "--by", "p"]).1, 0);
+        assert_eq!(fs::read(root.join(REG)).unwrap(), before);
+    }
+    assert_eq!(fs::read(modules.join("drafts/note")).unwrap(), b"keep");
+    assert_eq!(cli(&["module", "remove", REG, "local.My-Notes", "--by", "p"]).1, 0);
+    assert!(!modules.join("My-Notes").exists());
+    assert!(modules.join("My_Notes/SOURCE/Specification.md").is_file());
+    let ledger = events(&root);
+    let body = ledger.last().unwrap().get("body").unwrap();
+    assert_eq!(body.get("event").and_then(Value::as_str), Some("MODULE_REMOVED"));
+    assert_eq!(body.get("module").unwrap().get("id").and_then(Value::as_str), Some("local.My-Notes"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn concurrent_installers_share_one_module_registration() {
     let root = dir("same-module");
     let method = small_method(&root);
