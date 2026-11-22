@@ -900,6 +900,28 @@ fn repair_preserves_an_existing_fragment_and_can_resume_with_matching_bytes() {
 }
 
 #[test]
+fn concurrent_installers_share_one_module_registration() {
+    let root = dir("same-module");
+    let method = small_method(&root);
+    let initialize = pcpos(&root).args(["init", REG, "--principal", "p"]).output().unwrap();
+    assert!(initialize.status.success());
+    let spec = "**Component:** `local.shared`, Version 1.0\n";
+    fs::write(root.join("incoming.md"), spec).unwrap();
+    let mut children = Vec::new();
+    for _ in 0..8 {
+        let mut command = with_method(&root, &method);
+        children.push(command.args(["module", "add", REG, "incoming.md", "--by", "p"])
+            .stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap());
+    }
+    let successes = children.into_iter().map(|mut c| c.wait().unwrap()).filter(|s| s.success()).count();
+    assert_eq!(successes, 1);
+    assert_eq!(fs::read_to_string(root.join(".pcp/modules/shared/SOURCE/Specification.md")).unwrap(), spec);
+    let ledger = events(&root);
+    assert_eq!(ledger.iter().filter(|e| e.get("body").and_then(|b| b.get("event")).and_then(Value::as_str) == Some("MODULE_ADDED")).count(), 1);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn a_person_adds_a_module_beside_the_register_and_it_never_displaces_the_method_s_own() {
     let root = dir("module-add");
     let m = small_method(&root);

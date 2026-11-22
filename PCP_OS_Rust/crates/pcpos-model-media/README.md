@@ -42,6 +42,21 @@ cannot interrupt a blocked device read: the native adapter must bound each
 read's wait. Peak memory includes all model bytes plus index/allocator overhead;
 this loader does not make a 5 GB model fit the current sub-1-GiB native frame pool.
 
+For model bytes already held in immutable memory, `VerifiedSlices::verify` checks
+the same independently pinned manifest and both digest levels without allocating
+or copying weights. It borrows a slice of immutable shard slices for the entire
+verified value's lifetime. Each slice must be exactly one manifest shard; extra,
+missing, short or long shards fail. Hashing and cancellation use at-most-64-KiB
+steps. `shard` returns the original verified slice; `copy_into` spans boundaries.
+
+This is the boundary for a later UEFI-loaded model mapping, not that mapping's
+implementation. The native adapter must establish valid, read-only/NX pages,
+no writable aliases, lifetime through the worker's use, and exclusion from every
+allocator before constructing Rust slices. The bytes hashed must be the same
+pages the engine reads. Borrowing a descriptor or re-reading a mutable device
+does not provide this guarantee. Passing firmware-loaded bytes through the owned
+`VerifiedModel::load` path instead costs a second model-sized allocation.
+
 From `PCP_OS_Rust`:
 
 ```sh

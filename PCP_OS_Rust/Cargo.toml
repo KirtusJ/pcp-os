@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/pcpos-core", "crates/pcpos-pkg", "crates/pcpos-host", "crates/pcpos-gguf", "crates/pcpos-model-media"]
+members = ["crates/pcpos-core", "crates/pcpos-pkg", "crates/pcpos-host", "crates/pcpos-gguf", "crates/pcpos-model-media", "crates/pcpos-model-tensor"]
 exclude = ["crates/pcpos-kernel"]        # built for a bare-metal target with its own settings; see crates/pcpos-kernel/README.md
 
 [workspace.package]
