@@ -1,0 +1,7 @@
+PASS O1 the loader's display is one page of 1920 by 1080, mapped whole | ['display: Loader, 1920x1080, 1 page(s), 8100 KiB of its memory mapped at 0x80000000']
+PASS O2 the kernel says a program that asks draws to memory of its own | ['display: a program that asks draws to memory of its own, and the kernel shows each finished picture']
+PASS O3 the program presented, and all four screens are whole 1920x1080 pictures of more than one colour | colours [1787, 1787, 1786, 1786]
+PASS O4 left alone the screen does not change; each accepted key changes it, in part | keys accepted True, idle the same True, rows changed by h 38, by i 36
+PASS O2 control: the kernel as it was does not say so
+PASS O3 control: the kernel as it was shows the same three pictures, byte for byte
+ALL PASS: 0 failed
