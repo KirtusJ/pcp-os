@@ -1,0 +1,22 @@
+0772ca68f9985328b0a615edc5d0df4543252dc522739b01c360a5c1960c0670  /tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/kp/kernel-plain.elf32
+4ab2fbca527537b140e29e752c9c0843f703146272285741715e262fdfc1fc69  /tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/kp/kernel-processors,heat.elf32
+a86889d8f0124fa36767bdeeb80ae0129cfd56ec11197d6e625b070b4ba45400  /tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/kp/kernel-processors-extended-demo.elf32
+c1d544c26625d332b05478c2227a24bcc690b0f11ee302999edc4df22a0b4d86  /tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/kp/kernel-processors-silent-demo.elf32
+023c118c3db292fd201a7643eaf31e2404283ebe58a70e8c5d2b6dd16fbb7df8  /tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/kp/kernel-processors-unlocked-demo.elf32
+ce3990934cb3c7c200ee3df58612df5c6ddb9bdc69bcb32c71b2fe2b8119d99e  /tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/kp/kernel-processors.elf32
+S1 pc, 256M, 1: other processors: 0 of 0 started and parked, the interrupt controller reached through memory; 1 thread(s) on 1 core(s) in all; none runs any work yet
+S1 pc, 256M, 2: other processors: 1 of 1 started and parked, the interrupt controller reached through memory; 2 thread(s) on 2 core(s) in all; none runs any work yet
+S1 pc, 256M, 4: other processors: 3 of 3 started and parked, the interrupt controller reached through memory; 4 thread(s) on 4 core(s) in all; none runs any work yet
+S1 pc, 256M, 8: other processors: 7 of 7 started and parked, the interrupt controller reached through memory; 8 thread(s) on 8 core(s) in all; none runs any work yet
+S1 q35, 6G, 4: other processors: 3 of 3 started and parked, the interrupt controller reached through memory; 4 thread(s) on 4 core(s) in all; none runs any work yet
+S8: other processors: 3 came up holding other memory ranges than the first; their registers are left as they came, and no processor is given work
+S2: other processors: 3 of 3 started and parked, the interrupt controller reached through memory; 4 thread(s) on 2 core(s) in all; none runs any work yet
+S3: processors: the firmware lists 2 usable (found where a BIOS puts it); 0 more than this kernel would start, 2 not to be used; this kernel runs on one | other processors: 1 of 1 started and parked, the interrupt controller reached through memory; 2 thread(s) on 2 core(s) in all; none runs any work yet
+S4: by the emulator's account (VM status: paused (shutdown)) all four are in ring 0, the other three halted with interrupts on in 64-bit mode with CR0 80010033, CR4 00340e20, CR3 0000000001242000, segment tables at 0000000001240000, 00000000012a0000, 00000000012b9000, 00000000012d2000
+S5: without the feature nothing is said of other processors, and their CR0 is 00000011, 00000011, 00000011: paging off, never on the kernel's map
+S6: NOT RUN: this emulator does not offer the extended mode (qemu-system-x86_64: warning: TCG doesn't support requested feature: CPUID.01H:ECX.x2apic [bit 21])
+S7: other processors: 3 of 4 started and parked, the interrupt controller reached through memory; 4 thread(s) on 4 core(s) in all; none runs any work yet; the one check fails and the map check passes; 1.7 s against 1.7 s
+S10: without waiting for the lock the count was 23031 of 80000, and that one check failed
+S9: in every boot with more than one processor the count was exact
+S11: every processor started in S1 to S3 was given the first's table, its ranges untouched, and said so
+other processors: started and parked as the predicates require, on every machine tried
