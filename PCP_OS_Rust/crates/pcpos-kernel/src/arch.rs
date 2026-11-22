@@ -188,6 +188,7 @@ pub struct LoaderDisplay {
 mod boot_text;
 mod frame_map;
 mod framebuffer;
+pub mod processors;
 
 /// Everything the loader said, copied out of its own structures while they can still be read.
 #[derive(Clone, Debug, Default)]
@@ -201,6 +202,12 @@ pub struct BootInfo {
     command_line_exact: bool,
     pub modules: alloc::vec::Vec<Module>,
     pub display: Option<LoaderDisplay>,
+    /// The processors the firmware's tables list, if they could be read and add up.
+    pub processors: Option<processors::Found>,
+    /// Where the tables were looked for, and if nothing came of it, why.
+    pub processors_note: &'static str,
+    /// Where the root pointer was taken to be, if anywhere.
+    pub processors_root: Option<u64>,
 }
 
 impl BootInfo {
@@ -276,6 +283,55 @@ pub fn boot_info(magic: u32, info: u32) -> BootInfo {
             // Where it lies is judged when it is mapped (`map_loader_display`), with the reason said if refused.
             if kind == 1 && addr != 0 {
                 out.display = Some(LoaderDisplay { address: addr as usize, pitch, width, height, bits });
+            }
+        }
+        // The firmware's tables of processors. They are read here, while the loader-time map still
+        // reaches the first four gibibytes; only memory is read, and everything is copied.
+        // Where the root pointer is said to be decides which memory a table may be read from. One the
+        // loader named (a UEFI start) is believed only in what the map gives as the firmware's own
+        // tables. One looked for where a BIOS puts it lies in memory such firmware calls reserved, so
+        // there the rule is that nothing is read from memory the map gives as free.
+        let named = if out.command_line_exact { processors::named_root(&out.command_line) } else { Err(()) };
+        let by_loader = matches!(named, Ok(Some(_)));
+        let map = out.memory_map.clone().unwrap_or_default();
+        let mut read = |at: u64, len: usize| -> Option<alloc::vec::Vec<u8>> {
+            let end = at.checked_add(len as u64)?;
+            let allowed = if by_loader { processors::inside_table_memory(&map, at, len) } else { processors::outside_free_memory(&map, at, len) };
+            // Address zero is never a table's, and a slice may not begin there.
+            (at != 0 && end <= 4 << 30 && len <= 1 << 20 && allowed).then(|| core::slice::from_raw_parts(at as usize as *const u8, len).to_vec())
+        };
+        let root = match named {
+            Ok(Some(at)) => {
+                out.processors_note = "at the address the loader named";
+                Some(at)
+            }
+            Err(()) => {
+                out.processors_note = "the loader's line is cut short, or its acpi_rsdp= is not the one form taken";
+                None
+            }
+            Ok(None) => {
+                let area = (((0x40E as *const u16).read_unaligned() as u64) << 4, 1024u64);
+                let found = [area, (0xE_0000, 0x2_0000)].into_iter().filter(|(start, _)| *start >= 0x400).find_map(|(start, length)| {
+                    (start..start + length).step_by(16).find(|at| read(*at, 36).is_some_and(|b| processors::root_holds(&b)))
+                });
+                out.processors_note = if found.is_some() { "found where a BIOS puts it" } else { "no root pointer where a BIOS puts it, and the loader named none" };
+                found
+            }
+        };
+        out.processors_root = root;
+        if let Some(root) = root {
+            match processors::find(root, &mut read) {
+                Ok(found) => out.processors = Some(found),
+                Err(why) => {
+                    out.processors_note = match why {
+                        processors::Refused::Unreadable => if by_loader { "a table lies outside what can be read at start, or outside the firmware's own table memory" } else { "a table lies outside what can be read at start, or in memory given as free" },
+                        processors::Refused::NoRoot => "the root pointer does not hold",
+                        processors::Refused::BadTable => "a table's signature, length or checksum is wrong",
+                        processors::Refused::NoProcessorTable => "the firmware lists no table of processors",
+                        processors::Refused::BadEntry => "the table of processors has a malformed entry",
+                        processors::Refused::BadProcessors => "the table of processors names one twice, none, or no controller",
+                    }
+                }
             }
         }
     }

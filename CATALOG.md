@@ -46,6 +46,7 @@ Every entry at the top of the repository, and every folder one level down in the
 | `examples/method-readback` | CI check: a guest reads the selected Core Specification. | no |
 | `examples/model-media-iso` | Mastering a UEFI model-media ISO. | no |
 | `examples/optical-disk-check` | CI check: booting the CD does not write to an attached disk. | no |
+| `examples/processors` | Check: the kernel reads from the firmware's tables how many processors the machine has (issue 396, stage 1). | no |
 | `examples/proposals` | Checks: a program proposes a file, the kernel asks, records and shows it (kernel feature proposals). | no |
 | `examples/qwen` | Example: a local model reading a PCP register through llama.cpp on the host. | no |
 | `examples/release-media` | Tools for assembling and verifying release media. | no |
