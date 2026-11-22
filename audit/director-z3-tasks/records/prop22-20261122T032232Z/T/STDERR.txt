@@ -1,0 +1,1 @@
+allowed: cut-line: the kernel did not say the program was not started, or why
