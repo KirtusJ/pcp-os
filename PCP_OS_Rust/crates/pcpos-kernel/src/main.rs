@@ -857,6 +857,8 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
             say!("display: {:?}, {}x{}, {} page(s), {} KiB of its memory mapped at {:#x}", d.kind, d.width, d.height, d.pages, d.mapped / 1024, d.memory);
             let (with, all) = arch::combining_readback(d.memory, d.pitch as usize * d.height as usize * d.pages as usize);
             say!("display memory: {} of the {} pages a picture is written to are mapped write-combining, read back from the kernel's tables", with, all);
+            say!("display: a program that asks {}", if sys::display_needs_shadow(&d) { "draws to memory of its own, and the kernel shows each finished picture" }
+                                                       else { "draws on the page that is not shown, and the kernel shows it when it is finished" });
         }
         None => say!("display: none this kernel can drive"),
     }

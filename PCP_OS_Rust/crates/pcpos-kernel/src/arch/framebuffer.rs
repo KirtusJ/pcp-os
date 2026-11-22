@@ -139,6 +139,17 @@ pub fn decide(address: u64, pitch: u32, width: u32, height: u32, bits: u8, map: 
     Ok(Window { pages: (first as usize, last as usize), bytes: (address as usize, end as usize) })
 }
 
+/// Whether a program that asks is to draw to memory of its own, which the kernel then shows whole.
+/// Every display with one page: there is nowhere else to draw but the picture on the screen, and a
+/// program drawing there is seen clearing and repainting. Whether the display's memory could be
+/// mapped whole into the program does not enter into it. It once did: only a one-page display that
+/// could NOT be mapped whole (800 by 600, ending partway through a page) was drawn off the screen,
+/// and one of 1920 by 1080, exactly 2,025 pages, was handed to the program as it stood (the owner's
+/// HP EliteBook 840 G7). `mappable_whole` is taken so that the tests can say it makes no difference.
+pub fn draws_off_screen(pages: u32, _mappable_whole: bool) -> bool {
+    pages == 1
+}
+
 /// Whether a program may be given `pages` whole pages of a device beginning at `phys`, when `bytes` is
 /// the [start, end) the kernel may write there. Every byte of every page must be inside it: a picture
 /// that ends partway through a page does not make the rest of that page the program's.

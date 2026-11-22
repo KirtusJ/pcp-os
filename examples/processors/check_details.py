@@ -52,7 +52,10 @@ def details(kernel, cpus, output, size=None, documents=0):
             monitor.call("qmp_capabilities")
             screens = OPTICAL["DesktopScreens"](monitor, output.resolve(), 60)
             screens.read = READ
-            pages = [screens.wait("details-00", lambda rows: any("PROGRAMS" in row for row in rows))]
+            # A frame is read only once it is whole: the keys' line is the last thing either Details view draws
+            # (B3 saw a frame accepted at its PROGRAMS heading, before the MACHINE lines were on it).
+            pages = [screens.wait("details-00", lambda rows: any("PROGRAMS" in row for row in rows)
+                                  and any("Esc back" in row or "P off" in row for row in rows))]
             # The screen of text scrolls with Down, half a page at a time; the plain list does not scroll.
             if any("Up/Down scroll" in row for row in pages[0]):
                 for step in range(1, 40):
