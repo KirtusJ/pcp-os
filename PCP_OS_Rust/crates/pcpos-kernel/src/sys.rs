@@ -173,7 +173,6 @@ pub const E_INVALID: u64 = (-EINVAL) as u64;
 
 /// The folder a program that may propose files builds into. It is fixed when the program starts; the
 /// program may list and read what is under it and nothing else in the store.
-#[cfg(feature = "proposals")]
 pub const BUILD_FOLDER: &str = "taylor";
 #[cfg(feature = "proposals")]
 const LISTED: usize = 256;

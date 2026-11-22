@@ -1022,6 +1022,10 @@ fn files_view(store: &crate::regular::Files, mounted: bool) {
 
 const FILE_APPROVAL: &str = "Creating a file needs your approval.";
 
+fn build_folder_access() -> String {
+    format!("Can list and read {}/", crate::sys::BUILD_FOLDER)
+}
+
 fn file_proposals(start: &Start, entry: &Entry, none: bool) -> bool {
     cfg!(feature = "proposals") && !none && option(&start.boot.command_line, "propose_image") == Some(entry.digest.as_str())
 }
@@ -1084,7 +1088,10 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
             }
         }
         lines.push(line);
-        if proposes { lines.push(String::from(FILE_APPROVAL)); }
+        if proposes {
+            lines.push(build_folder_access());
+            lines.push(String::from(FILE_APPROVAL));
+        }
         lines
     };
     let height_of = |i: usize, p: &Entry| 40 + 20 * (access_of(p).len() as u32 + shortcuts.contains(&i) as u32);
@@ -1143,7 +1150,12 @@ fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message:
         } else if start.sound {
             "Access: console, display, keyboard, files, store, sound"
         } else { "Access: console, display, keyboard, files and store" }), SOFT));
-        if proposes { access.push((String::from(FILE_APPROVAL), SOFT)); }
+        if proposes {
+            access.push((build_folder_access(), SOFT));
+            // At 320 pixels the creation rule and the folder scope each get their own line.
+            let approval = if across < FILE_APPROVAL.len() { "You approve each new file." } else { FILE_APPROVAL };
+            access.push((String::from(approval), SOFT));
+        }
         #[cfg(feature = "guest-ethernet")]
         if !none && ethernet_grant(start.boot.exact_command_line(), &entry.digest) {
             access.push((String::from("Access: raw Ethernet frames"), ui::AMBER));
@@ -1357,6 +1369,8 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
         at(4, row + 1, detail_access(none, proposes, start.sound), SOFT, ground);
         row += 2;
         if proposes {
+            at(4, row, &build_folder_access(), SOFT, GROUND);
+            row += 1;
             at(4, row, FILE_APPROVAL, SOFT, GROUND);
             row += 1;
         }
@@ -1494,7 +1508,10 @@ fn details_view(start: &Start, programs: &[Entry], files: &[(String, &'static [u
         }
         let proposes = file_proposals(start, p, none);
         lines.extend(lines_of(4, detail_access(none, proposes, start.sound), SOFT));
-        if proposes { lines.extend(lines_of(4, FILE_APPROVAL, SOFT)); }
+        if proposes {
+            lines.extend(whole(4, &build_folder_access(), SOFT));
+            lines.extend(whole(4, FILE_APPROVAL, SOFT));
+        }
         #[cfg(feature = "guest-ethernet")]
         if !none && ethernet_grant(start.boot.exact_command_line(), &p.digest) {
             lines.extend(lines_of(4, "Ethernet grant: this program can send and receive raw network frames.", ui::AMBER));
