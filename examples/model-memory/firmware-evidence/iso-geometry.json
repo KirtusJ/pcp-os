@@ -1,0 +1,10 @@
+{
+  "iso_bytes": 10282561536,
+  "primary_and_backup_gpt_crc": true,
+  "efi_start_byte": 77824,
+  "efi_byte_count": 5253365760,
+  "iso_volume_bytes": 10282561536,
+  "el_torito_sector_count": 0,
+  "partition_sha256": "a4335b59dffb0d6da7d6a779b83331e3c24c2e9e3522d71b616c4bd9fc693f34",
+  "both_catalog_and_gpt_reference_the_same_bytes": true
+}

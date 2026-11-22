@@ -1,0 +1,121 @@
+{
+  "source_commit": "16806df35ddbf8963a0907684df786abc77cdb53",
+  "kernel_variation": "Repository firmware-owned UEFI 32 MiB link relocation with the current context; proposals and model-memory enabled, model-memory-fixture disabled.",
+  "compiler": "rustc 1.100.0 (0ef1bc386 2026-11-09)",
+  "qemu": "Debian 10.0.13, q35 TCG, cpu max, 8192 MiB, no network, fresh OVMF variables; USB is xHCI",
+  "model": "Known synthetic bytes; no model weights, inference, physical devices or device installations.",
+  "fixture": {
+    "shard_count": 75,
+    "shard_bytes": 67108864,
+    "last_shard_bytes": 61727552,
+    "logical_bytes": 5027783488,
+    "contents": "The first and last seven bytes of each shard are ASCII shard followed by its ordinal as little-endian uint16. Every interior byte is zero.",
+    "sha256": "4cc60a31858e2351a7737c5871dbc7966a62286334cb30ea6d57bc4b353277f7",
+    "gap_bytes": 4096,
+    "padding_bytes": 3264,
+    "manifest_start": 67108864,
+    "manifest_length": 2456,
+    "typed_memory_map_kind": "0x80000001",
+    "manifest_pin_source": "Expected manifest, generated from source shards before the EFI build; digest compiled into the EFI image, independent of the runtime FAT reads."
+  },
+  "measurements": {
+    "firmware": {
+      "bytes": 193915,
+      "sha256": "9bc039f7adab9794e4276751e145d86b61ca5c32a1c826d034957c28e6277243"
+    },
+    "relocated_elf": {
+      "bytes": 1119900,
+      "sha256": "d433ac6d8c03bc9c32a2066937c5c28be0fdc35e4285f753e7fcb93bba7095c2"
+    },
+    "loaded_kernel_bytes": {
+      "bytes": 756528,
+      "sha256": "e359c52930d37134241e19b8685ca6965faa4a88d2a989eee405f607f1ec6399"
+    },
+    "front": {
+      "bytes": 11120,
+      "sha256": "04311cc468d718611f187c448c67fcc554b32affe8c03235daf3320ef83a0f29"
+    },
+    "companion": {
+      "bytes": 15904,
+      "sha256": "c0f713c8984f10e4d6506225c16762471b3e63e98ebbc7a3d30bbbaec16c1b33"
+    },
+    "manifest": {
+      "bytes": 2456,
+      "sha256": "51dff8693cd823dfcac1d7d26c2ce3dad14cd34137d6f2196b5420ccc67cae0e"
+    },
+    "ovmf_code": {
+      "bytes": 3653632,
+      "sha256": "624e06de18b4fa535e90db7160d00d3d07d206422b89999bf1e27d920264e4e0"
+    },
+    "ovmf_vars_template": {
+      "bytes": 540672,
+      "sha256": "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e"
+    },
+    "hybrid_iso": {
+      "bytes": 10282561536,
+      "sha256": "bf4e8622a16fb10e97a3c0956449b6f34114c9d84152530a0def80304715987e"
+    }
+  },
+  "boots": {
+    "prepared-fat": {
+      "qemu_exit": 33,
+      "kernel_selftests": 71,
+      "map_descriptors": 142,
+      "traces": {
+        "uefi": {
+          "file": "prepared-fat-uefi.txt",
+          "sha256": "61fc2b7921d2af447a9ad277bd1b618f72eea165eca6ca8389f40c04e5c18c75"
+        },
+        "serial": {
+          "file": "prepared-fat-serial.txt",
+          "sha256": "db82eeeb3d3c9ddfcb2e13068e133927cf5e20b9983a97df01de6c08cb499dce"
+        }
+      }
+    },
+    "optical": {
+      "qemu_exit": 33,
+      "kernel_selftests": 71,
+      "map_descriptors": 142,
+      "traces": {
+        "uefi": {
+          "file": "optical-uefi.txt",
+          "sha256": "3b811826416ef95e14925eac10979a2b1c111f260d2ad7ff554a7bfbe00fae95"
+        },
+        "serial": {
+          "file": "optical-serial.txt",
+          "sha256": "a85497148ee5eb9bb39e8d7a636a3335efe49831702cbe2e98fb77bad9b6e66c"
+        }
+      }
+    },
+    "raw-usb": {
+      "qemu_exit": 33,
+      "kernel_selftests": 71,
+      "map_descriptors": 142,
+      "traces": {
+        "uefi": {
+          "file": "raw-usb-uefi.txt",
+          "sha256": "54c9cae3d229d0bad72463983630222dc5b8bbd2fb89488d61fcc4d7b05124b2"
+        },
+        "serial": {
+          "file": "raw-usb-serial.txt",
+          "sha256": "6857fe5e4442a85d15f890fe6b8b0c10d35ef2b39121ca891a424cb3611ea68a"
+        }
+      }
+    },
+    "copied-usb": {
+      "qemu_exit": 33,
+      "kernel_selftests": 71,
+      "map_descriptors": 142,
+      "traces": {
+        "uefi": {
+          "file": "copied-usb-uefi.txt",
+          "sha256": "61fc2b7921d2af447a9ad277bd1b618f72eea165eca6ca8389f40c04e5c18c75"
+        },
+        "serial": {
+          "file": "copied-usb-serial.txt",
+          "sha256": "d0ca7a03e40d2da2b84866d667beb46d36c3eadf96f088067c0bf7d5b67f2546"
+        }
+      }
+    }
+  }
+}
