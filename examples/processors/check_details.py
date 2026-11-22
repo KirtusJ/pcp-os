@@ -24,11 +24,14 @@ D8  Every boot above is on processors with no memory-range registers (cpu "max,m
     emulator's started processors can be given work. On the ordinary cpu "max" a restarted processor comes back
     with those registers cleared; the kernel leaves them so, and a kernel built with `processors` on a machine
     of four shows `other processors: 3 of 3 started; 3 hold other memory ranges than the first, so none is given work`.
+    The three numbers are those of the same boot's serial line, which has exactly one line of how many started,
+    exactly one of how many are held, and no line of a count made together (Director 2).
 
 What this does not show: the colour of that sentence (it is read by the font, not its colour); a reading of a real sensor, which no emulator here offers.
 
 Usage: check_details.py <plain kernel> <kernel with processors,heat> <new output directory>
 """
+import re
 import runpy
 import subprocess
 import sys
@@ -149,8 +152,17 @@ def main():
               "scrolls=%r pages=%d %r / %r / %r" % (scrolls, len(pages), sentence(pages, "processors:"), sentence(pages, "other processors:"), sentence(pages, "heat:")))
     pages, serial = details(full, 4, output / "held-4", cpu="max")
     others = sentence(pages, "other processors:")
-    check("D8 held-4: processors whose memory ranges are not the first's are said to be given no work",
-          others == "other processors: 3 of 3 started; 3 hold other memory ranges than the first, so none is given work", repr(others))
+    # The screen and the serial line word this differently, so it is the three numbers that are compared, from this one boot.
+    on_screen = re.fullmatch(r"other processors: (\d+) of (\d+) started; (\d+) hold other memory ranges than the first, so none is given work", others or "")
+    started = [re.match(r"other processors: (\d+) of (\d+) started and parked", l) for l in serial.splitlines() if "started and parked" in l]
+    held = [re.fullmatch(r"other processors: (\d+) came up holding other memory ranges than the first; their registers are left as they came, and no processor is given work", l.strip())
+            for l in serial.splitlines() if l.startswith("other processors:") and "memory ranges" in l]
+    counted = [l for l in serial.splitlines() if l.startswith("other processors: all ")]
+    agree = (on_screen is not None and len(started) == 1 and started[0] is not None and len(held) == 1 and held[0] is not None and not counted
+             and on_screen.groups() == (started[0].group(1), started[0].group(2), held[0].group(1)))
+    check("D8 held-4: processors whose memory ranges are not the first's are said to be given no work, in the numbers this boot's serial line gives",
+          others == "other processors: 3 of 3 started; 3 hold other memory ranges than the first, so none is given work" and agree,
+          "%r / %r" % (others, [l for l in serial.splitlines() if l.startswith("other processors:")]))
     pages, serial = details(plain, 1, output / "no-hpet", machine="q35,hpet=off")
     shown, told = sentence(pages, "elapsed clock: "), serial_sentence(serial, "elapsed clock: ")
     check("D7 no-hpet: without the timer, Details says the fallback, as the serial line does", shown is not None and shown == told and "delivered PIT interrupts" in shown, "%r / %r" % (shown, told))
