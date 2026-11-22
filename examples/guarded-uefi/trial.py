@@ -29,16 +29,37 @@ def until(predicate, description, vm, seconds=60):
     raise TimeoutError(description)
 
 
-def confirm_decision(answer, serial_in, serial, vm):
+def echoed(serial, prefix, vm, seconds):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if serial.read_bytes().partition(b"AWAIT-PLACEMENT")[2].lstrip(b"\r\n").startswith(prefix):
+            return True
+        if vm.poll() is not None:
+            raise RuntimeError(f"QEMU exited during GRUB serial echo for {prefix.decode('ascii')}")
+        time.sleep(.1)
+    return False
+
+
+def confirm_decision(answer, serial_in, serial, vm, resent=None):
     # A burst on the emulated UART can leave GRUB waiting on a partial word.
     # Keep the writer open and wait for each serial echo before sending more.
+    #
+    # A single character can also be lost on its way in: GRUB then echoes nothing and waits. Such a
+    # character is sent again, at most twice, after five seconds without its echo. This cannot turn
+    # one decision into another. If the first copy was only slow and both arrive, GRUB reads a word
+    # that is neither ALLOW nor DENY: it does not hand off, the echo no longer matches, and this
+    # function fails. The word GRUB acted on is still confirmed, whole, on its own line below.
     with serial_in.open("wb", buffering=0) as stream:
         for length in range(1, len(answer) + 1):
             prefix = answer[:length]
-            stream.write(prefix[-1:])
-            until(lambda: serial.read_bytes().partition(b"AWAIT-PLACEMENT")[2]
-                  .lstrip(b"\r\n").startswith(prefix),
-                  f"GRUB serial echo for {prefix.decode('ascii')}", vm)
+            for attempt in range(3):
+                stream.write(prefix[-1:])
+                if echoed(serial, prefix, vm, 5 if attempt < 2 else 50):
+                    break
+                if resent is not None:
+                    resent.append(prefix.decode("ascii"))
+            else:
+                raise TimeoutError(f"GRUB serial echo for {prefix.decode('ascii')}")
         stream.write(b"\r")
         decision = answer.decode("ascii")
         marker = f"\nPLACEMENT-DECISION-{decision}\n"
@@ -132,7 +153,7 @@ def trial(iso, kernel, measurement, out, ram):
                 if not kernel:
                     if not any("ACPI non-volatile storage RAM" in b["types"] for b in blocked):
                         raise RuntimeError("Public kernel control no longer shows the expected NVS conflict")
-                    report["placement_decision"] = confirm_decision(b"DENY", serial_in, serial, vm)
+                    report["placement_decision"] = confirm_decision(b"DENY", serial_in, serial, vm, report.setdefault("characters_sent_again", []))
                     vm.wait(timeout=20)
                     if vm.returncode or "ATTEMPT-HANDOFF" in log() or "PCP OS kernel" in log():
                         raise RuntimeError("Public kernel did not halt at the placement gate")
@@ -152,7 +173,7 @@ def trial(iso, kernel, measurement, out, ram):
                         raise ValueError("Missing NVS comparison ranges")
                     return hashes
                 report["nvs_before"] = nvs_hashes()
-                report["placement_decision"] = confirm_decision(b"ALLOW", serial_in, serial, vm)
+                report["placement_decision"] = confirm_decision(b"ALLOW", serial_in, serial, vm, report.setdefault("characters_sent_again", []))
                 report["admitted"] = True
                 until(lambda: "leaves no memory behind" in log() or "it is in SAFE" in log(), "kernel startup", vm)
                 screen = out / "launcher.ppm"
