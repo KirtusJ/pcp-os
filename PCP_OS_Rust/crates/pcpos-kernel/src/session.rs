@@ -214,6 +214,10 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
         #[cfg(feature = "vm-store")] volume: None, #[cfg(feature = "model-memory")] model: None,
                             epoch_at_start: epoch(y, mo, d, h, mi, s).saturating_sub(arch::ticks() / arch::TICKS_PER_SECOND), unanswered: Vec::new() };
     let line = start.boot.command_line.as_str();
+    // A kernel that has the emulator fixture in it says so at every start, used or not, so that one
+    // can never be taken for a release kernel by its log.
+    #[cfg(feature = "model-memory-fixture")]
+    say!("THIS KERNEL IS BUILT WITH model-memory-fixture, AN EMULATOR TEST FIXTURE. IT IS NOT A RELEASE KERNEL.");
     #[cfg(feature = "model-memory-fixture")]
     if arch::model_fixture_used(&start.boot) {
         say!("FIXTURE, NOT FOR ANY RELEASE: the loader's line (fixture_model_ram=), not the loader's map, marks memory as holding a model in this boot");

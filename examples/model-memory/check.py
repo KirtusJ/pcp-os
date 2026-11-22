@@ -129,6 +129,8 @@ def main():
         passes = sum(1 for line in lines if line.startswith("  pass "))
         if status != 33 or passes != 71 or any(line.startswith("  FAIL") for line in lines):
             problems.append("%s: status %r, %d passes, or a failure" % (name, status, passes))
+        if "THIS KERNEL IS BUILT WITH model-memory-fixture, AN EMULATOR TEST FIXTURE. IT IS NOT A RELEASE KERNEL." not in lines:
+            problems.append("%s: a kernel with the fixture in it did not say so at start" % name)
         if (fixture_words in lines) != ("fixture_model_ram=" in words):
             problems.append("%s: the kernel did not say the fixture was in use exactly when it was" % name)
         low = [m.groups() for line in lines if (m := re.search(r"frames: (\d+) of (\d+) free", line))]
