@@ -21,6 +21,8 @@ mod register_wire;
 mod session;
 mod regular;
 mod sys;
+#[cfg(feature = "companion")]
+mod talk;
 mod ui;
 #[cfg(feature = "vm-store")]
 mod store;

@@ -94,6 +94,12 @@ pub enum Waiting {
     /// The kernel's answer to a proposal the program has made.
     #[cfg(feature = "proposals")]
     Consent,
+    /// Bytes from the companion, or its going.
+    #[cfg(feature = "companion")]
+    TalkBytes,
+    /// Room to write to the companion, or its going.
+    #[cfg(feature = "companion")]
+    TalkRoom,
 }
 
 pub struct Process {
@@ -181,6 +187,12 @@ pub struct Table {
     /// waiting), and what it was waiting for, which it goes back to.
     #[cfg(feature = "proposals")]
     parked: Option<(usize, Waiting)>,
+    /// The channel between the foreground program and its companion, while both were started together.
+    #[cfg(feature = "companion")]
+    pub talk: Option<crate::talk::Channel>,
+    /// The process whose end is the end of the run: when it ends, every other is ended by the kernel.
+    #[cfg(feature = "companion")]
+    foreground: Option<usize>,
 }
 
 static TABLE: arch::Single<Option<Table>> = arch::Single::new(None);
@@ -212,7 +224,7 @@ pub fn nobody_to_ask(_: Option<&sys::Proposal>) -> sys::Answer {
 }
 
 fn new_table(world: World) -> Table {
-    Table { procs: Vec::new(), current: None, kernel: None, tasks: TaskTable::new(), caps: CapSpace::new(64), fpu_owner: None, fs_loaded: 0, world, idle: 0, #[cfg(feature = "proposals")] parked: None }
+    Table { procs: Vec::new(), current: None, kernel: None, tasks: TaskTable::new(), caps: CapSpace::new(64), fpu_owner: None, fs_loaded: 0, world, idle: 0, #[cfg(feature = "proposals")] parked: None, #[cfg(feature = "companion")] talk: None, #[cfg(feature = "companion")] foreground: None }
 }
 
 pub(crate) fn empty_world() -> World {
@@ -300,39 +312,18 @@ pub fn run(programs: &[Start]) -> Option<Vec<Process>> {
     run_table(t).map(|t| t.procs)
 }
 
-/// Load one program the loader handed over and run it until it ends. Returns what the kernel observed of
-/// it, or why it could not be started, and the world as the program left it.
-/// Interrupts must be off when this is called; it returns with them off.
-pub fn run_program(program: &Program, world: World) -> (Result<Process, &'static str>, World) {
-    let mut t = new_table(world);
-    let mut space = match Space::empty() {
-        Some(s) => s,
-        None => return (Err("out of memory"), t.world),
-    };
-    let (seed, _) = arch::seed();
-    let loaded = match exec::load(&mut space, program.image, program.args, seed) {
-        Ok(l) => l,
-        Err(e) => {
-            space.release();
-            return (Err(e), t.world);
-        }
-    };
-    #[allow(unused_mut)]
-    let mut linux = sys::Linux::new(loaded.image_end);
-    #[cfg(feature = "proposals")]
-    linux.allow_proposals(program.grants.propose, t.world.build_folder.as_deref().unwrap_or(""));
-    if t.admit(program.name, space, Frame::user(loaded.entry, loaded.stack), program.grants, program.budget, Some(linux)).is_none() {
-        return (Err("the program could not be admitted as a task"), t.world);
-    }
-    dev::keys_forget();
-    #[cfg(feature = "proposals")]
+/// Run the table until no process is left, asking the person through `consent` each time a program
+/// stops with a proposal (or F12 is pressed with none waiting), then settle. `None` if the table was lost.
+#[cfg(feature = "proposals")]
+fn run_asking(mut t: Table, program: &Program) -> Option<Table> {
     dev::ask_reserve(program.grants.propose);
-    let _ = dev::stop_requested(); // a stop asked for before the program existed is not a stop of it
-    #[cfg(feature = "proposals")]
     loop {
         t = match entered(t) {
             Some(t) => t,
-            None => return (Err("the process table was lost"), empty_world()),
+            None => {
+                dev::ask_reserve(false);
+                return None;
+            }
         };
         let Some(i) = t.procs.iter().position(|p| p.end.is_none() && p.waiting == Waiting::Consent) else { break };
         // The program is stopped where it asked. The kernel's own code asks the person and acts.
@@ -362,16 +353,101 @@ pub fn run_program(program: &Program, world: World) -> (Result<Process, &'static
         dev::keys_forget();
         dev::ask_reserve(true);
     }
-    #[cfg(feature = "proposals")]
     dev::ask_reserve(false);
+    Some(settled(t))
+}
+
+/// Load one program the loader handed over and run it until it ends. Returns what the kernel observed of
+/// it, or why it could not be started, and the world as the program left it.
+/// Interrupts must be off when this is called; it returns with them off.
+pub fn run_program(program: &Program, world: World) -> (Result<Process, &'static str>, World) {
+    let mut t = new_table(world);
+    let mut space = match Space::empty() {
+        Some(s) => s,
+        None => return (Err("out of memory"), t.world),
+    };
+    let (seed, _) = arch::seed();
+    let loaded = match exec::load(&mut space, program.image, program.args, seed) {
+        Ok(l) => l,
+        Err(e) => {
+            space.release();
+            return (Err(e), t.world);
+        }
+    };
+    #[allow(unused_mut)]
+    let mut linux = sys::Linux::new(loaded.image_end);
     #[cfg(feature = "proposals")]
-    let t = Some(settled(t));
+    linux.allow_proposals(program.grants.propose, t.world.build_folder.as_deref().unwrap_or(""));
+    if t.admit(program.name, space, Frame::user(loaded.entry, loaded.stack), program.grants, program.budget, Some(linux)).is_none() {
+        return (Err("the program could not be admitted as a task"), t.world);
+    }
+    dev::keys_forget();
+    let _ = dev::stop_requested(); // a stop asked for before the program existed is not a stop of it
+    #[cfg(feature = "proposals")]
+    let t = run_asking(t, program);
     #[cfg(not(feature = "proposals"))]
     let t = run_table(t);
     match t {
         Some(mut t) => (t.procs.pop().ok_or("the process table was lost"), t.world),
         None => (Err("the process table was lost"), empty_world()),
     }
+}
+
+/// Run a program with its companion beside it. The companion is loaded and admitted first, the two are
+/// given the two ends of a channel, and they run in turn until the foreground program ends; the kernel
+/// then ends the companion. Returns the foreground program as `run_program` does, and the companion.
+#[cfg(feature = "companion")]
+pub fn run_pair(program: &Program, companion: &Program, world: World) -> (Result<Process, &'static str>, Option<Process>, World) {
+    let mut t = new_table(world);
+    let Some(channel) = crate::talk::Channel::new() else { return (Err("out of memory"), None, t.world) };
+    for (index, one) in [companion, program].into_iter().enumerate() {
+        let mut space = match Space::empty() {
+            Some(s) => s,
+            None => return (Err("out of memory"), None, abandon(t)),
+        };
+        let (seed, _) = arch::seed();
+        let loaded = match exec::load(&mut space, one.image, one.args, seed) {
+            Ok(l) => l,
+            Err(e) => {
+                space.release();
+                return (Err(e), None, abandon(t));
+            }
+        };
+        let mut linux = sys::Linux::new(loaded.image_end);
+        linux.talk = Some(index);
+        #[cfg(feature = "proposals")]
+        linux.allow_proposals(one.grants.propose, t.world.build_folder.as_deref().unwrap_or(""));
+        if t.admit(one.name, space, Frame::user(loaded.entry, loaded.stack), one.grants, one.budget, Some(linux)).is_none() {
+            return (Err("the program could not be admitted as a task"), None, abandon(t));
+        }
+    }
+    t.talk = Some(channel);
+    t.foreground = Some(1);
+    dev::keys_forget();
+    let _ = dev::stop_requested();
+    #[cfg(feature = "proposals")]
+    let t = run_asking(t, program);
+    #[cfg(not(feature = "proposals"))]
+    let t = run_table(t);
+    match t {
+        Some(mut t) => {
+            let front = t.procs.pop().ok_or("the process table was lost");
+            (front, t.procs.pop(), t.world)
+        }
+        None => (Err("the process table was lost"), None, empty_world()),
+    }
+}
+
+/// Give back the memory of whatever was admitted before a start failed, and hand the world back.
+#[cfg(feature = "companion")]
+fn abandon(mut t: Table) -> World {
+    for p in t.procs.iter_mut() {
+        t.caps.revoke_holder(p.pid);
+        if let Some(space) = p.space.take() {
+            space.release();
+        }
+    }
+    t.world
 }
 
 /// Called by the keyboard self-test on a timer interrupt, before the scheduler handles that interrupt.
@@ -540,11 +616,35 @@ impl Table {
         if self.fpu_owner == Some(i) {
             self.fpu_owner = None; // its registers are nobody's now, and are replaced before any program runs again
         }
-        dev::sound_quiet();
-        dev::fm_quiet();
-        if end == End::Stopped || matches!(end, End::Refused { .. }) || end == End::OverBudget {
+        // With a companion beside it, a program that held neither sound nor the display leaves both as
+        // the other program has them.
+        let (had_sound, had_display) = if cfg!(feature = "companion") {
+            (self.procs[i].caps[Object::Sound as usize].is_some(), self.procs[i].caps[Object::Display as usize].is_some())
+        } else {
+            (true, true)
+        };
+        if had_sound {
+            dev::sound_quiet();
+            dev::fm_quiet();
+        }
+        if had_display && (end == End::Stopped || matches!(end, End::Refused { .. }) || end == End::OverBudget) {
             // A program that did not leave of its own accord may have left the display in a state of its own.
             dev::display_show(0);
+        }
+        #[cfg(feature = "companion")]
+        {
+            // Its end of the channel is closed: the other program reads what was written and then 0.
+            if let (Some(channel), Some(e)) = (self.talk.as_mut(), self.procs[i].linux.as_ref().and_then(|l| l.talk)) {
+                channel.leave(e);
+            }
+            // The foreground program's end is the end of the run: the kernel ends every other.
+            if self.foreground == Some(i) {
+                for other in 0..self.procs.len() {
+                    if other != i && self.procs[other].end.is_none() {
+                        self.end(other, End::Stopped, now);
+                    }
+                }
+            }
         }
     }
 
@@ -569,6 +669,19 @@ impl Table {
             match p.waiting {
                 Waiting::Until(t) if now >= t => p.waiting = Waiting::Nothing,
                 Waiting::Key if key => p.waiting = Waiting::Nothing,
+                // A program waiting on the channel is woken when what it waits for is there, or when
+                // the other program is gone; it then makes its call again and is answered.
+                #[cfg(feature = "companion")]
+                Waiting::TalkBytes | Waiting::TalkRoom => {
+                    let end = p.linux.as_ref().and_then(|l| l.talk);
+                    let ready = match (self.talk.as_ref(), end) {
+                        (Some(c), Some(e)) => !c.peer(e) || if p.waiting == Waiting::TalkBytes { c.readable(e) } else { c.room(e) > 0 },
+                        _ => true,
+                    };
+                    if ready {
+                        p.waiting = Waiting::Nothing;
+                    }
+                }
                 _ => {}
             }
         }
