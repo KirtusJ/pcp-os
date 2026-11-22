@@ -21,22 +21,23 @@ Use this page to choose an image, find its source and reproduce its checks. The 
 | Editions and plugins | [Release builder](../build/release.sh), [method inputs](../build/method/) and [source-to-package reconciliation](../RECONCILIATION.md) | Identify the edition, build and method-manifest digest. The build requires the implementation packet. The public Enterprise build 19 and the Commercial build 22 adapters have different method pins. |
 | Applications and review modules | [Store and package index](../store/README.md), [hosted Surfbird import and native guest](../apps/surfbird/README.md), [method modules](../README.md#method-modules) | Use the application’s own manifest, runtime and tests. The hosted browser, Windows window and native guest have distinct acceptance records. |
 
-The [repository tree map](https://github.com/KirtusJ/pcp-os/blob/7324d627935075064591c927574c46d56ba86f41/CATALOG.md) describes individual directories and their release status. Z3 maintains the inventory and its [consistency check](https://github.com/KirtusJ/pcp-os/pull/387). Proposed moves and compatibility requirements are tracked in the [tidying plan](https://github.com/KirtusJ/pcp-os/issues/368#issuecomment-7078265625).
+The [repository tree map](https://github.com/KirtusJ/pcp-os/blob/9691d758efc831a0f5306d38c10744e8f2c1cb5c/CATALOG.md) describes individual directories and their release status. Z3 maintains the inventory and its [consistency check](https://github.com/KirtusJ/pcp-os/pull/387). Proposed moves and compatibility requirements are tracked in the [tidying plan](https://github.com/KirtusJ/pcp-os/issues/368#issuecomment-7078265625).
 
 ## Repository ownership
 
 The [dated ecosystem audit](https://github.com/KirtusJ/pcp-os/pull/276#issuecomment-7078182236) records exact commits, executed tests, package digests and exceptions for all nine repositories below.
 
-| Work | Source of record |
-| --- | --- |
-| OS, kernel, host, Store and native Surfbird guest | [pcp-os](../README.md) |
-| Enterprise edition and historical live CD | [pcp](https://github.com/KirtusJ/pcp) |
-| Lightweight Claude adapter and native-host Claude adapter | [pcp-claude](https://github.com/KirtusJ/pcp-claude) · [pcp-os-claude](https://github.com/KirtusJ/pcp-os-claude) |
-| Experimental audit method, pinned references and reproducible ZIP | [pcp-fidelity-lab](https://github.com/KirtusJ/pcp-fidelity-lab) |
-| Tailorbird UI and model worker candidates | [tailorbird](https://github.com/KirtusJ/tailorbird) |
-| Hosted Surfbird reader and Windows window | [surfbird](https://github.com/KirtusJ/surfbird) |
-| Android companion for the research director exchange | [android-helpdesk](https://github.com/KirtusJ/android-helpdesk) |
-| Downstream research edition and register | [From Prephysical Hypotheses to Physical Models](https://github.com/KirtusJ/From-Prephysical-Hypotheses-to-Physical-Models) |
+| Repository | Source, build or verification entry | What the inventory covers |
+| --- | --- | --- |
+| PCP OS | [Build and test](#build-and-test-from-this-repository) · [Store package index](../store/README.md#package-index) | Each Store listing identifies its payload commit, paths, byte lengths and SHA-256 digests. The release images have separate receipts above. |
+| Enterprise PCP | [Edition guide](https://github.com/KirtusJ/pcp/blob/03d68793f754a6057d6fcde87c210a1931e53ee2/EDITION_GUIDE.md) · [Edition manifest](https://github.com/KirtusJ/pcp/blob/03d68793f754a6057d6fcde87c210a1931e53ee2/MANIFEST.json) | The build 19 manifest identifies 205 edition payloads. The historical BIOS CD has a separate first-boot record above. |
+| Lightweight Claude adapter | [Package manifest](https://github.com/KirtusJ/pcp-claude/blob/3187dc226cd9f51b81a940f7d986bc124b26bc12/MANIFEST.json) · [Method manifest](https://github.com/KirtusJ/pcp-claude/blob/3187dc226cd9f51b81a940f7d986bc124b26bc12/method/MANIFEST.json) | The Commercial build 22 package declares 74 payloads. The method manifest describes the larger source packet. |
+| Native-host Claude adapter | [Package manifest](https://github.com/KirtusJ/pcp-os-claude/blob/c0fbde739b4cc3bc409878d901de0974702c506e/MANIFEST.json) · [Method manifest](https://github.com/KirtusJ/pcp-os-claude/blob/c0fbde739b4cc3bc409878d901de0974702c506e/method/MANIFEST.json) | The Commercial build 22 package declares 84 payloads, including the shipped host executables. |
+| PCP Fidelity Audit Lab | [Release manifest](https://github.com/KirtusJ/pcp-fidelity-lab/blob/bb9aab903aef119b6e3c93d304f49742ac1f0d40/releases/0.1.0.json) · [Source index](https://github.com/KirtusJ/pcp-fidelity-lab/blob/bb9aab903aef119b6e3c93d304f49742ac1f0d40/plugin/references/source_snapshot.json) | Release 0.1.0 contains 16 package files. The source index identifies ten reference documents and records their governing or proposed status. |
+| Tailorbird | [Source and build guide](https://github.com/KirtusJ/tailorbird/blob/ab12d96a24c4d461971123dfb57b3f18f01ec103/README.md) · [Guest build and tests](https://github.com/KirtusJ/tailorbird/blob/ab12d96a24c4d461971123dfb57b3f18f01ec103/.github/workflows/tailorbird-guest.yml) | The default-branch snapshot documents the UI and OS submodule. The dated worker and image trials below identify their own revisions. |
+| Surfbird | [Hosted build and tests](https://github.com/KirtusJ/surfbird/blob/73882fbf82285c9e1c2627f97cb222d808a0ed5f/README.md) · [OS import and native guest](../apps/surfbird/README.md) | The standalone repository owns the hosted reader and Windows window. The OS import and native guest have their own pins and checks. |
+| Android HelpDesk | [Project ZIP, signed APK and build instructions](https://github.com/KirtusJ/android-helpdesk/blob/917ce899581db79ad5b421a3a1159798caf7c934/README.md) · [Android project checks](https://github.com/KirtusJ/android-helpdesk/blob/917ce899581db79ad5b421a3a1159798caf7c934/.github/workflows/android-project.yml) | The README gives the APK digest and the Android Studio entry point for this companion. |
+| From Prephysical Hypotheses to Physical Models | [Paper catalog](https://github.com/KirtusJ/From-Prephysical-Hypotheses-to-Physical-Models/blob/aca29276aa180af3c81ccc9f3aa06b4e2ae4d404/papers/catalog.csv) · [Catalog verifier](https://github.com/KirtusJ/From-Prephysical-Hypotheses-to-Physical-Models/blob/aca29276aa180af3c81ccc9f3aa06b4e2ae4d404/tools/verify_papers.py) | This downstream research register distinguishes 40 reader PDFs and their issued counterparts from one planned paper. |
 
 ## Open release decisions
 
