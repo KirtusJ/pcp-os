@@ -731,6 +731,13 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     let (offered, enabled) = arch::harden();
     let on = |bit: u32| if offered >> bit & 1 == 0 { "not offered by this processor" } else if enabled >> bit & 1 == 1 { "on" } else { "OFFERED AND NOT ON" };
     say!("further protections: supervisor execution prevention {}, supervisor access prevention {}, user-mode instruction prevention {}", on(20), on(21), on(11));
+    #[cfg(feature = "heat")]
+    match arch::heat_now() {
+        Ok(h) => say!("heat: this processor reports {} degrees below its highest junction temperature{}{}{}; it may begin to limit itself before that reaches zero, by a setting not read here", h.below_highest,
+                      if h.limiting { "; IT IS LIMITING ITSELF NOW" } else { "" }, if h.has_limited { "; it has limited itself before" } else { "" },
+                      if h.critical { "; ITS CRITICAL-TEMPERATURE STATUS IS SET" } else { "" }),
+        Err(why) => say!("heat: not known ({})", why),
+    }
     let measured = sha256_hex(arch::image());
     // K-12: the measurement is compared with a value the kernel did not compute, where whoever started it named one
     // (`image=<SHA-256>` on the loader's command line; tools/measure.py computes it from the image file without

@@ -40,6 +40,7 @@ Every entry at the top of the repository, and every folder one level down in the
 | `examples/firmware-model-loader` | Builds and tests the UEFI loader for preloaded model media. | no |
 | `examples/firmware-owned-uefi` | Experiment and CI check: a UEFI loader handing the full-size kernel over under OVMF. | no |
 | `examples/guarded-uefi` | Experiment and CI check: the kernel under Q35/OVMF, with the frame-map tests. | no |
+| `examples/heat` | Host tests of the kernel's reading of how many degrees a processor reports below its highest junction temperature (kernel feature `heat`, off by default). | no |
 | `examples/large-memory` | Check: memory above four gibibytes. | no |
 | `examples/loader-line` | Check: what the kernel accepts on the loader's line. | no |
 | `examples/model-memory` | Check: memory a loader filled with a model is kept out of the pool and given read-only to the companion alone (kernel feature model-memory). | no |

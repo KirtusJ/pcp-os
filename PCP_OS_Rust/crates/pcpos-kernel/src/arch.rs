@@ -143,6 +143,22 @@ pub fn emulated() -> bool {
     unsafe { core::arch::x86_64::__cpuid(1).ecx & (1 << 31) != 0 }
 }
 
+/// What the processor this runs on says about its heat: `Err` with the reason where it cannot say.
+/// Reads one register, and only on a processor that says it has the sensor.
+#[cfg(feature = "heat")]
+pub fn heat_now() -> Result<heat::Heat, &'static str> {
+    let highest = core::arch::x86_64::__cpuid(0).eax;
+    let six = if highest >= 6 { core::arch::x86_64::__cpuid(6).eax } else { 0 };
+    if !heat::offered(highest, six) {
+        return Err("this processor offers no sensor");
+    }
+    let (low, high): (u32, u32);
+    // Safety: IA32_THERM_STATUS exists on every processor that reports the sensor just checked;
+    // reading it changes nothing.
+    unsafe { asm!("rdmsr", in("ecx") 0x19Cu32, out("eax") low, out("edx") high, options(nomem, nostack, preserves_flags)) };
+    heat::read((high as u64) << 32 | low as u64).ok_or("the sensor gives no valid reading")
+}
+
 /// Stop the machine. Under an emulator with the exit device this ends the emulator with a status, and
 /// otherwise its power device is asked to switch off. On hardware none of those ports is written: they are
 /// not a power interface there and what answers at them is not known, so the processor is only halted.
@@ -188,6 +204,8 @@ pub struct LoaderDisplay {
 mod boot_text;
 mod frame_map;
 mod framebuffer;
+#[cfg(feature = "heat")]
+pub mod heat;
 pub mod processors;
 #[cfg(feature = "processors")]
 pub mod others;

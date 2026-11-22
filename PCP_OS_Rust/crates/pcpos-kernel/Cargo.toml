@@ -26,6 +26,7 @@ lost-key-demo = []         # the controller answers the replay probe and then lo
 keyboard-busy-demo = []    # keyboard start-up ends as a controller that did not take its set-up, without touching a port
 keyboard-silent-demo = []  # keyboard start-up ends as a keyboard that did not acknowledge, without touching a port
 proposals = []           # one hash-granted program may propose one new text file; the kernel asks and creates it
+heat = []                  # say at start how many degrees the processor reports below its highest junction temperature (Intel's digital sensor); reads one register, decides nothing
 processors = []            # start the machine's other processors and park them (stage 2 of using them all); none runs work yet
 processors-extended = ["processors"]      # also start them where firmware left the controller in its extended mode. NOT YET RUN ANYWHERE: without this the kernel then stays on one
 processors-extended-demo = ["processors-extended"] # under an emulator that offers the extended mode: put the controller in it first, as some firmware leaves it

@@ -4,6 +4,7 @@ on:
     paths:
       - 'PCP_OS_Rust/crates/pcpos-kernel/**'
       - 'examples/guarded-uefi/**'
+      - 'examples/heat/**'
       - 'examples/processors/**'
       - '.github/workflows/guarded-uefi.yml'
   workflow_dispatch:
@@ -36,6 +37,8 @@ jobs:
         run: |
           rustc --edition=2021 --test examples/guarded-uefi/test_frame_map.rs -o "$RUNNER_TEMP/frame-map-tests"
           "$RUNNER_TEMP/frame-map-tests"
+          rustc --edition=2021 --test -C overflow-checks=on examples/heat/test_heat.rs -o "$RUNNER_TEMP/heat-tests"
+          "$RUNNER_TEMP/heat-tests"
           rustc --edition=2021 --test -C overflow-checks=on examples/processors/test_processors.rs -o "$RUNNER_TEMP/processor-table-tests"
           "$RUNNER_TEMP/processor-table-tests"
           bash PCP_OS_Rust/crates/pcpos-kernel/run.sh build
