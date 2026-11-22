@@ -7,6 +7,15 @@ use crate::{Config, Model};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error { Shape, Weights, Budget, Allocation, Cancelled, Token, ContextFull, NonFinite }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PrefillEvent {
+    /// Check whether the caller still wants this request to run.
+    Poll,
+    /// Number of fully processed tokens in this prompt, including the current one.
+    /// The decoder commits the entire prompt only when prefill returns successfully.
+    TokenProcessed { completed: usize, total: usize },
+}
 impl From<pcpos_model_tensor::Error> for Error {
     fn from(e: pcpos_model_tensor::Error) -> Self {
         match e {
@@ -88,14 +97,33 @@ impl<'m, 'i, 'b, 'w> Decoder<'m, 'i, 'b, 'w> {
     /// On any failure the logical position returns to its entry value; prior
     /// context remains untouched and the entire same prompt can be retried.
     pub fn prefill(&mut self, tokens: &[u32], mut keep_going: impl FnMut() -> bool) -> Result<&[f32], Error> {
+        self.prefill_with_progress(tokens, |event| match event {
+            PrefillEvent::Poll => keep_going(),
+            PrefillEvent::TokenProcessed { .. } => true,
+        })
+    }
+
+    /// As in `prefill`, with one progress notification after each completed token.
+    /// Returning false at either kind of event rolls back the whole call, including
+    /// when cancellation arrives after the last projection. Invalid prompts emit no events.
+    pub fn prefill_with_progress(
+        &mut self,
+        tokens: &[u32],
+        mut observe: impl FnMut(PrefillEvent) -> bool,
+    ) -> Result<&[f32], Error> {
         if tokens.is_empty() { return Err(Error::Token); }
         if tokens.len() > self.context - self.position { return Err(Error::ContextFull); }
         if tokens.iter().any(|&id| id as usize >= self.model.config().vocabulary) { return Err(Error::Token); }
         let start = self.position;
         for (i, &token) in tokens.iter().enumerate() {
-            if let Err(error) = self.advance(token, i + 1 == tokens.len(), &mut keep_going) {
+            let completed = i + 1;
+            if let Err(error) = self.advance(token, completed == tokens.len(), || observe(PrefillEvent::Poll)) {
                 self.position = start;
                 return Err(error);
+            }
+            if !observe(PrefillEvent::TokenProcessed { completed, total: tokens.len() }) {
+                self.position = start;
+                return Err(Error::Cancelled);
             }
         }
         Ok(&self.logits)
