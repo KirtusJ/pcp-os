@@ -878,6 +878,28 @@ fn remove_selects_the_exact_local_installation_and_preserves_other_directories()
 }
 
 #[test]
+fn repair_preserves_an_existing_fragment_and_can_resume_with_matching_bytes() {
+    let root = dir("resume-repair");
+    assert!(pcpos(&root).args(["init", REG, "--principal", "p"]).output().unwrap().status.success());
+    let register = root.join(REG);
+    let complete = fs::read(&register).unwrap();
+    let fragment = b"interrupted append";
+    let sidecar = register.with_extension(format!("fragment-{}", &sha256_hex(fragment)[..12]));
+    let mut interrupted = complete.clone();
+    interrupted.extend_from_slice(fragment);
+    fs::write(&register, &interrupted).unwrap();
+    fs::write(&sidecar, b"previous evidence").unwrap();
+    assert!(!pcpos(&root).args(["repair", REG]).output().unwrap().status.success());
+    assert_eq!(fs::read(&register).unwrap(), interrupted);
+    assert_eq!(fs::read(&sidecar).unwrap(), b"previous evidence");
+    fs::write(&sidecar, fragment).unwrap();
+    assert!(pcpos(&root).args(["repair", REG]).output().unwrap().status.success());
+    assert_eq!(fs::read(&register).unwrap(), complete);
+    assert_eq!(fs::read(&sidecar).unwrap(), fragment);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn concurrent_installers_share_one_module_registration() {
     let root = dir("same-module");
     let method = small_method(&root);
