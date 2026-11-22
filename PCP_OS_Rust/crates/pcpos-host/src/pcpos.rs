@@ -258,6 +258,7 @@ enum Access {
     Read,
     Append,
     Rewrite,
+    CreateNew,
 }
 
 /// The same confinement for any file under the root. `single_name`: refuse a file that has a second name
@@ -330,6 +331,9 @@ fn confined_open(root: &Path, given: &str, access: Access, create: bool, single_
         }
         Access::Rewrite => {
             o.write(true);
+        }
+        Access::CreateNew => {
+            o.write(true).create_new(true);
         }
     }
     if !exists {
@@ -411,6 +415,33 @@ fn confined_open(root: &Path, given: &str, access: Access, create: bool, single_
         }
     }
     Ok(Some(Handle { file, path: leaf }))
+}
+
+/// Keep immutable bytes in a new file, or accept an existing file with exactly those bytes.
+fn keep_exact_bytes(root: &Path, given: &str, bytes: &[u8]) -> Result<(), String> {
+    if let Some(mut existing) = confined_open(root, given, Access::Rewrite, false, true)? {
+        lock(&existing, false)?;
+        let different = || format!("{given} already exists with different contents");
+        if existing.file.metadata().map_err(|e| e.to_string())?.len() != bytes.len() as u64 {
+            return Err(different());
+        }
+        let mut buf = [0u8; 8192];
+        for chunk in bytes.chunks(buf.len()) {
+            existing.file.read_exact(&mut buf[..chunk.len()]).map_err(|e| e.to_string())?;
+            if &buf[..chunk.len()] != chunk {
+                return Err(different());
+            }
+        }
+        if existing.file.read(&mut buf[..1]).map_err(|e| e.to_string())? != 0 {
+            return Err(different());
+        }
+        return existing.file.sync_all().map_err(|e| format!("could not sync {given}: {e}"));
+    }
+    let mut new_file = confined_open(root, given, Access::CreateNew, true, true)?
+        .ok_or_else(|| format!("could not create {given}"))?;
+    lock(&new_file, true)?;
+    new_file.file.write_all(bytes).and_then(|_| new_file.file.sync_all())
+        .map_err(|e| format!("could not complete {given}: {e}"))
 }
 
 /// One writer at a time, and no reader in the middle of a write. The wait is bounded: a held lock is reported, not waited out.
@@ -2480,7 +2511,9 @@ fn repair(path: &str) -> Result<String, String> {
     let keep = raw.iter().rposition(|b| *b == b'\n').map(|i| i + 1).unwrap_or(0);
     ledger::verify(&raw[..keep]).map_err(|e| format!("the part before the unfinished line is not intact either ({:?}); nothing was changed", e))?;
     let aside = h.path.with_extension(format!("fragment-{}", sha256_hex(&raw[keep..]).get(..12).unwrap_or("x")));
-    fs::write(&aside, &raw[keep..]).map_err(|e| format!("the fragment could not be saved ({e}); nothing was changed"))?;
+    let fragment = aside.file_name().and_then(|s| s.to_str()).ok_or("invalid fragment name")?;
+    keep_exact_bytes(&root, fragment, &raw[keep..])
+        .map_err(|e| format!("the fragment could not be saved ({e}); the register was not shortened"))?;
     h.file.set_len(keep as u64).and_then(|_| h.file.sync_all()).map_err(|e| format!("the register could not be shortened: {e}"))?;
     Ok(format!("an unfinished last line of {} byte(s) was moved to {}. The register now ends at its last whole event. Run verify, and record what happened.\n", raw.len() - keep, aside.display()))
 }
@@ -2523,12 +2556,14 @@ fn module_command(args: &[String]) -> Result<i32, String> {
             if core.as_deref().map(|c| c != acr::CORE_DESCRIPTOR).unwrap_or(false) {
                 return Err(format!("{id} says it was written for another Core than this program implements ({})", acr::CORE_DESCRIPTOR));
             }
-            if modules_in(&se).iter().any(|m| m.key == key) || modules_and_oddities(&se).1.iter().any(|o| o.contains(&format!(".{key} ")) || o.contains(&format!(".{key};"))) {
-                return Err(format!("{key} is already the name of a module here. Remove it first (pcpos module remove), or give the new one its own identifier"));
-            }
             let mut tx = Tx::begin(&se.root, &name, true)?.ok_or("the register could not be created")?;
             if !tx.problems.is_empty() {
                 return Err("the register does not verify; nothing was added".to_string());
+            }
+            // Serialize identity discovery with publication by other installers using this register.
+            let (installed, oddities) = modules_and_oddities(&se);
+            if installed.iter().any(|m| m.key == key) || oddities.iter().any(|o| o.contains(&format!(".{key} ")) || o.contains(&format!(".{key};"))) {
+                return Err(format!("{key} is already the name of a module here. Remove it first (pcpos module remove), or give the new one its own identifier"));
             }
             begin(&mut tx, &se, None, false)?;
             let dest = home.join(&key).join("SOURCE");

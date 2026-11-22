@@ -1211,6 +1211,7 @@ fn files_view(store: &crate::regular::Files, mounted: bool) {
 }
 
 const CUT_LINE_NOTICE: &str = "Loader line cut. Cannot run.";
+const CUT_LINE_HELP: &str = "Shorten or correct the start-up settings and restart. No files changed.";
 
 #[cfg(feature = "proposals")]
 fn cut_blocks_launch(start: &Start) -> bool {
@@ -1278,8 +1279,12 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
     // What a program may use is never cut short and never drawn over: it takes as many lines as it needs,
     // and that a program is pinned is said on a line of its own.
     let across = (list_width / 10).saturating_sub(6) as usize;
-    let access_of = |p: &Entry| -> Vec<String> {
-        if cut_blocks_launch(start) { return alloc::vec![String::from(CUT_LINE_NOTICE)]; }
+    let access_of = |i: usize, p: &Entry| -> Vec<String> {
+        if cut_blocks_launch(start) {
+            let mut lines = alloc::vec![String::from(CUT_LINE_NOTICE)];
+            if i == chosen { lines.extend(wrapped_words(CUT_LINE_HELP, across)); }
+            return lines;
+        }
         let proposes = file_proposals(start, p, none);
         let mut access = String::from(if none { "console only" } else if start.sound { "display, keyboard, sound, loader files" } else { "display, keyboard, loader files" });
         if !none && !proposes { access.push_str(", store"); }
@@ -1305,7 +1310,7 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
         }
         lines
     };
-    let height_of = |i: usize, p: &Entry| 40 + 20 * (access_of(p).len() as u32 + shortcuts.contains(&i) as u32);
+    let height_of = |i: usize, p: &Entry| 40 + 20 * (access_of(i, p).len() as u32 + shortcuts.contains(&i) as u32);
     let tallest = programs.iter().enumerate().map(|(i, p)| height_of(i, p)).max().unwrap_or(60);
     let mut y = 170;
     let room = ((foot.saturating_sub(y + 120)) / (tallest + 20)).max(1) as usize;
@@ -1325,7 +1330,7 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
         label(left + 40, y + 10, &cut(&p.name, name_room.min(28)), TEXT, false, &on_row);
         label((left + list_width - 20 - label_width(&digest, false)) / 10 * 10, y + 10, &digest, SOFT, false, &on_row);
         label(size_at, y + 10, &size, SOFT, false, &on_row);
-        let lines = access_of(p);
+        let lines = access_of(i, p);
         for (n, line) in lines.iter().enumerate() {
             label(left + 40, y + 30 + n as u32 * 20, line, SOFT, false, &on_row);
         }
@@ -1356,6 +1361,7 @@ fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message:
     let blocked = cut_blocks_launch(start);
     if blocked && start.failed == 0 && !programs.is_empty() {
         access.push((String::from(CUT_LINE_NOTICE), ui::BAD));
+        access.extend(wrapped_words(CUT_LINE_HELP, across).into_iter().map(|line| (line, SOFT)));
     } else if let Some(entry) = programs.get(chosen).filter(|_| start.failed == 0) {
         let none = option(&start.boot.command_line, "grant") == Some("none");
         let proposes = file_proposals(start, entry, none);
@@ -1564,6 +1570,12 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
     let mut row = 9;
     at(2, row, "PROGRAMS", ui::TEAL, GROUND);
     row += 1;
+    if !programs.is_empty() && cut_blocks_launch(start) {
+        for line in wrapped_words(CUT_LINE_HELP, cols.saturating_sub(6) as usize) {
+            at(4, row, &line, SOFT, GROUND);
+            row += 1;
+        }
+    }
     if programs.is_empty() {
         at(4, row, "The loader handed over no program.", SOFT, GROUND);
         row += 1;
@@ -1715,6 +1727,9 @@ fn details_view(start: &Start, programs: &[Entry], files: &[(String, &'static [u
     lines.extend(lines_of(2, &format!("Register: {} events. F5 shows the head of its chain.", rec.ledger().len()), SOFT));
     lines.extend(lines_of(2, "", TEXT));
     lines.extend(lines_of(2, "PROGRAMS", ui::TEAL));
+    if !programs.is_empty() && cut_blocks_launch(start) {
+        lines.extend(lines_of(4, CUT_LINE_HELP, SOFT));
+    }
     if programs.is_empty() {
         lines.extend(lines_of(4, "The loader handed over no program.", SOFT));
     }
@@ -1991,7 +2006,7 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
     #[cfg(feature = "proposals")]
     if cut_blocks_launch(start) {
         say!("{} was not started: {}", entry.name, CUT_LINE);
-        return (format!("{} was not started: {}", entry.name, CUT_LINE), world, Some(CUT_LINE));
+        return (format!("{} was not started. {}", entry.name, CUT_LINE_HELP), world, Some(CUT_LINE));
     }
     // A program that would be started with the right to propose files is not started at all while the
     // build folder setting is not a name a folder may have: said where the person sees it, and no other

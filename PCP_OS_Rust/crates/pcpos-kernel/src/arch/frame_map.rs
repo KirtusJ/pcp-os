@@ -66,6 +66,66 @@ pub(super) fn pool(bytes: &[u8], minimum: usize) -> (usize, usize) {
     best
 }
 
+/// The most ranges of memory above four gibibytes that are used, and where they may lie.
+pub(super) const HIGH_RANGES: usize = 8;
+pub(super) const HIGH_START: u64 = 4 << 30;
+pub(super) const HIGH_END: u64 = HIGH_START + (64 << 30);
+
+/// The usable memory above four gibibytes, as up to eight ranges of whole 2 MiB pages in ascending
+/// order, each free of every reserved descriptor, by the same sweep and the same rules as the pool
+/// below one gibibyte. A map that is malformed anywhere yields none. Ranges beyond the eighth, and
+/// memory beyond the ceiling, are left unused.
+pub(super) fn high(bytes: &[u8]) -> ([(usize, usize); HIGH_RANGES], usize) {
+    let mut found = ([(0usize, 0usize); HIGH_RANGES], 0usize);
+    if bytes.len() > MAX_MAP_BYTES {
+        return found;
+    }
+    let mut boundaries = Vec::new();
+    let mut rest = bytes;
+    while !rest.is_empty() {
+        if rest.len() < 24 {
+            return found;
+        }
+        let size = u32::from_le_bytes(rest[0..4].try_into().unwrap()) as usize;
+        if size < 20 || size > rest.len() - 4 {
+            return found;
+        }
+        let base = u64::from_le_bytes(rest[4..12].try_into().unwrap());
+        let length = u64::from_le_bytes(rest[12..20].try_into().unwrap());
+        let kind = u32::from_le_bytes(rest[20..24].try_into().unwrap());
+        let Some(end) = base.checked_add(length) else { return found };
+        let (first, last) = (base.max(HIGH_START), end.min(HIGH_END));
+        if first < last {
+            let (usable, reserved) = if kind == 1 { (1_i32, 0_i32) } else { (0, 1) };
+            boundaries.push((first as usize, usable, reserved));
+            boundaries.push((last as usize, -usable, -reserved));
+        }
+        rest = &rest[4 + size..];
+    }
+    boundaries.sort_unstable();
+    let mut start = None;
+    let (mut usable, mut reserved) = (0, 0);
+    let mut iter = boundaries.into_iter().peekable();
+    while let Some((at, add_usable, add_reserved)) = iter.next() {
+        usable += add_usable;
+        reserved += add_reserved;
+        while let Some((_, u, r)) = iter.next_if(|b| b.0 == at) {
+            usable += u;
+            reserved += r;
+        }
+        if usable > 0 && reserved == 0 {
+            start.get_or_insert(at);
+        } else if let Some(first) = start.take() {
+            let (from, to) = (first.div_ceil(PAGE) * PAGE, at / PAGE * PAGE);
+            if from < to && found.1 < HIGH_RANGES {
+                found.0[found.1] = (from, to);
+                found.1 += 1;
+            }
+        }
+    }
+    found
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -92,6 +152,35 @@ mod tests {
         let entries = [entry(p, p + 7, 1), entry(p + 7, 3 * p, 1), entry(2 * p, 2 * p + 1, 88)];
         assert_eq!(pool(&entries.concat(), PAGE), (PAGE, 2 * PAGE));
         assert_eq!(pool(&entry(0, 2 * LIMIT as u64, 1), LIMIT - PAGE), (LIMIT - PAGE, LIMIT));
+    }
+
+    #[test]
+    fn memory_above_four_gibibytes_is_whole_pages_between_reserved_holes() {
+        let g = 1u64 << 30;
+        let p = PAGE as u64;
+        // Below four gibibytes nothing is taken, whatever the map says is usable there.
+        assert_eq!(high(&entry(0, 4 * g, 1)).1, 0);
+        // One range, cut to whole pages; a reserved hole in it makes two; order of records does not matter.
+        let big = entry(4 * g + 5, 6 * g - 5, 1);
+        let hole = entry(5 * g, 5 * g + 1, 2);
+        let (ranges, count) = high(&[hole.clone(), big.clone()].concat());
+        assert_eq!((count, ranges[0], ranges[1]), (2, ((4 * g + p) as usize, (5 * g) as usize), ((5 * g + p) as usize, (6 * g - p) as usize)));
+        assert_eq!(high(&[big, hole].concat()), (ranges, count));
+        // A usable range that begins below four gibibytes keeps the whole of its part above (the cut
+        // to the window comes before the cut to whole pages), and loses all of its part below.
+        let (crossing, n) = high(&entry(3 * g + 5, 6 * g, 1));
+        assert_eq!((n, crossing[0]), (1, ((4 * g) as usize, (6 * g) as usize)));
+        // A reserved record that only touches a usable one at its end removes nothing; one that
+        // overlaps it by a byte removes that page and nothing is invented beyond what is usable.
+        assert_eq!(high(&[entry(4 * g, 5 * g, 1), entry(5 * g, 6 * g, 2)].concat()).0[0], ((4 * g) as usize, (5 * g) as usize));
+        assert_eq!(high(&[entry(4 * g, 5 * g, 1), entry(5 * g - 1, 6 * g, 2)].concat()).0[0], ((4 * g) as usize, (5 * g - p) as usize));
+        assert_eq!(high(&entry(4 * g, 4 * g + p - 1, 1)).1, 0);
+        // Memory past the ceiling is left; more than eight ranges keep the first eight; a bad map gives none.
+        let (far, n) = high(&entry(60 * g, 80 * g, 1));
+        assert_eq!((n, far[0]), (1, ((60 * g) as usize, HIGH_END as usize)));
+        let many: Vec<u8> = (0..10u64).flat_map(|i| entry(4 * g + i * 4 * p, 4 * g + i * 4 * p + 2 * p, 1)).collect();
+        assert_eq!(high(&many).1, HIGH_RANGES);
+        assert_eq!(high(&[entry(4 * g, 8 * g, 1), vec![1]].concat()).1, 0);
     }
 
     #[test]
