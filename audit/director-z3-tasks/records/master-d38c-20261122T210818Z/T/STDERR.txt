@@ -1,0 +1,169 @@
+   Compiling compiler_builtins v0.1.160 (/root/.rustup/toolchains/1.97.0-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/compiler-builtins/compiler-builtins)
+   Compiling core v0.0.0 (/root/.rustup/toolchains/1.97.0-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core)
+   Compiling version_check v0.9.5
+   Compiling generic-array v0.14.7
+   Compiling alloc v0.0.0 (/root/.rustup/toolchains/1.97.0-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc)
+   Compiling typenum v1.20.1
+   Compiling cfg-if v1.0.5
+   Compiling cpufeatures v0.2.17
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling digest v0.10.7
+   Compiling sha2 v0.10.9
+   Compiling pcpos-core v1.0.22 (/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/stage-m/crates/pcpos-core)
+   Compiling pcpos-kernel v0.3.1 (/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/stage-m/crates/pcpos-kernel)
+warning: unnecessary braces around function argument
+   --> src/session.rs:443:152
+    |
+443 | ...ounted, { #[cfg(feature = "proposals")] { world.build_folder.as_deref() } #[cfg(not(feature = "proposals"))] { None } }),
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                                           ^^
+    |
+    = note: `#[warn(unused_braces)]` (part of `#[warn(unused)]`) on by default
+help: remove these braces
+    |
+443 -             (Surface::Launcher, (0x20, false)) if ctrl && ui::grid().0 < 96 => details_view(start, &programs, &files, rec, world.store.len(), mounted, { #[cfg(feature = "proposals")] { world.build_folder.as_deref() } #[cfg(not(feature = "proposals"))] { None } }),
+443 +             (Surface::Launcher, (0x20, false)) if ctrl && ui::grid().0 < 96 => details_view(start, &programs, &files, rec, world.store.len(), mounted, #[cfg(not(feature = "proposals"))] { None }),
+    |
+
+warning: unused imports: `BAD` and `GOOD`
+   --> src/session.rs:481:34
+    |
+481 |     use ui::{label, label_width, BAD, GOOD, SOFT, TEXT};
+    |                                  ^^^  ^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unnecessary `unsafe` block
+   --> src/arch.rs:143:5
+    |
+143 |     unsafe { core::arch::x86_64::__cpuid(1).ecx & (1 << 31) != 0 }
+    |     ^^^^^^ unnecessary `unsafe` block
+    |
+    = note: `#[warn(unused_unsafe)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `serial_present` is never used
+   --> src/arch.rs:112:8
+    |
+112 | pub fn serial_present() -> bool {
+    |        ^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `TICKS_PER_SECOND` is never used
+    --> src/arch.rs:1891:11
+     |
+1891 | pub const TICKS_PER_SECOND: u64 = 1000;
+     |           ^^^^^^^^^^^^^^^^
+
+warning: constant `MODEL_RAM` is never used
+   --> src/arch/frame_map.rs:133:18
+    |
+133 | pub(super) const MODEL_RAM: u32 = 0x8000_0001;
+    |                  ^^^^^^^^^
+
+warning: constant `MODEL_EXTENTS` is never used
+   --> src/arch/frame_map.rs:136:18
+    |
+136 | pub(super) const MODEL_EXTENTS: usize = 8;
+    |                  ^^^^^^^^^^^^^
+
+warning: function `model_extents` is never used
+   --> src/arch/frame_map.rs:140:15
+    |
+140 | pub(super) fn model_extents(word: &str) -> Option<([(u64, u64); MODEL_EXTENTS], usize)> {
+    |               ^^^^^^^^^^^^^
+
+warning: function `model_allowed` is never used
+   --> src/arch/frame_map.rs:168:15
+    |
+168 | pub(super) fn model_allowed(bytes: &[u8], extents: &[(u64, u64)]) -> Result<u64, &'static str> {
+    |               ^^^^^^^^^^^^^
+
+warning: function `low_free_page` is never used
+   --> src/arch/processors.rs:293:8
+    |
+293 | pub fn low_free_page(map: &[u8]) -> Option<u64> {
+    |        ^^^^^^^^^^^^^
+
+warning: function `keyboard_state` is never used
+   --> src/dev.rs:819:8
+    |
+819 | pub fn keyboard_state() -> (bool, u64) {
+    |        ^^^^^^^^^^^^^^
+
+warning: field `pages` is never read
+  --> src/exec.rs:26:9
+   |
+19 | pub struct Loaded {
+   |            ------ field in this struct
+...
+26 |     pub pages: usize,
+   |         ^^^^^
+   |
+   = note: `Loaded` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: function `take_run` is never used
+   --> src/mem.rs:111:8
+    |
+111 | pub fn take_run(count: usize) -> Option<usize> {
+    |        ^^^^^^^^
+
+warning: methods `fits` and `detached` are never used
+  --> src/regular.rs:46:12
+   |
+40 | impl Files {
+   | ---------- methods in this implementation
+...
+46 |     pub fn fits(&self, bytes: usize) -> bool {
+   |            ^^^^
+...
+63 |     pub fn detached(&self, bytes: Vec<u8>) -> File {
+   |            ^^^^^^^^
+
+warning: function `stack_bytes` is never used
+    --> src/sys.rs:1666:8
+     |
+1666 | pub fn stack_bytes() -> usize {
+     |        ^^^^^^^^^^^
+
+warning: function `bar` is never used
+   --> src/ui.rs:292:8
+    |
+292 | pub fn bar(y: u32, height: u32, width: u32, top: u32, bottom: u32, line: u32) -> impl Fn(u32, u32) -> u32 {
+    |        ^^^
+
+warning: field `name` is never read
+   --> src/user.rs:107:9
+    |
+105 | pub struct Process {
+    |            ------- field in this struct
+106 |     pub pid: u32,
+107 |     pub name: String,
+    |         ^^^^
+
+warning: direct cast of function item into an integer
+    --> src/arch.rs:1499:38
+     |
+1499 |     wrmsr(0xC000_0082, syscall_entry as usize as u64);
+     |                                      ^^^^^^^^
+     |
+     = note: `#[warn(function_casts_as_integer)]` on by default
+help: first cast to a pointer `as *const ()`
+     |
+1499 |     wrmsr(0xC000_0082, syscall_entry as *const () as usize as u64);
+     |                                      ++++++++++++
+
+warning: direct cast of function item into an integer
+    --> src/arch.rs:1618:68
+     |
+1618 |         Frame { regs: [0; 15], vector: 0, error: 0, rip: idle_loop as usize as u64, cs: 0x08, rflags: 0x202,
+     |                                                                    ^^^^^^^^
+     |
+help: first cast to a pointer `as *const ()`
+     |
+1618 |         Frame { regs: [0; 15], vector: 0, error: 0, rip: idle_loop as *const () as usize as u64, cs: 0x08, rflags: 0x202,
+     |                                                                    ++++++++++++
+
+warning: `pcpos-kernel` (bin "pcpos-kernel") generated 19 warnings (run `cargo fix --bin "pcpos-kernel" -p pcpos-kernel` to apply 4 suggestions)
+    Finished `release` profile [optimized] target(s) in 20.48s
+qemu-system-x86_64: terminating on signal 15 from pid 1632 ()

@@ -1,0 +1,4 @@
+qemu=0
+0
+elapsed clock: 64-bit ACPI HPET main counter
+  pass the kernel's device mappings account for exactly the display and elapsed clock in use

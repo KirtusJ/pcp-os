@@ -1,0 +1,1 @@
+[Errno 2] No such file or directory: 'cd /home/user/pcp-os/PCP_OS_Rust/crates/pcpos-kernel && RUSTUP_TOOLCHAIN=1.97.0 PCPOS_KERNEL_STAGE=/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/stage-o3 bash run.sh build && cp target/pcpos-kernel.elf32 /tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/stage-o3/k.elf32'
