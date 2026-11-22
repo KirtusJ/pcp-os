@@ -7,8 +7,12 @@ from the keyboard itself. This check boots the kernel under an emulator, gives t
 reads the kernel's serial log and its screen (with the kernel's own font).
 
 Predicates, fixed before the first run.
- A1 allowed (Down is not needed: one page; F12, then Enter): the screen held "PCP OS ASKS YOU", the name
-    and the first line of the content before any key; the log has exactly one "CREATED after the person
+ A1 allowed (Down is not needed: one page; F12, then Enter): before any key the screen is exactly
+    the question for this file and nothing else (title, that nothing has been made, the whole folder
+    and file name, the size, every line of the content, the end-of-file line, the page and keys
+    line), and after F12 it is exactly the same with the words for Enter; a screen that differs in
+    any line, or has a line more or fewer, is refused (twelve altered screens are tried on the
+    comparison itself before anything is booted); the log has exactly one "CREATED after the person
     allowed it" naming the file, its size and the SHA-256 of the content; the program's first write is
     answered with the record's length and outcome 1; a read too small for the receipt is answered -22
     and loses nothing; the same proposal again is answered outcome 1 with no second CREATED; the same
@@ -74,6 +78,68 @@ PINS = runpy.run_path(str(HERE.parent / "tester-cd/check_compact_pins.py"))
 NAME = "taylor/first-project/note.txt"
 CONTENT = b"Hello.\nThis file was made by PCP OS after you allowed it.\n"
 RECORD = 32 + len(NAME) + len(CONTENT)
+
+
+ASK = "Page 1 of 1. To allow: press F12, then Enter. Esc refuses. Arrows turn pages."
+CONFIRM = "Now press Enter to allow it. Any other key refuses."
+
+
+def question(last):
+    """Every line the kernel's question shows for the probe's one file, in order."""
+    folder, _, name = NAME.rpartition("/")
+    return ["PCP OS ASKS YOU",
+            "Taylor wants to make a new file. Nothing has been made yet.",
+            "Folder: %s File: %s" % (folder, name),
+            "Size: %d characters. It will last until the computer is switched off." % len(CONTENT),
+            *CONTENT.decode().splitlines(),
+            "(end of the file)",
+            last]
+
+
+def exactly(rows, lines):
+    """Whether the rows read off the display are these lines and nothing else.
+
+    A narrow display wraps a line at a space, so one line may arrive as several rows; joined by one
+    space they must be the line. No row may be left over, none may be missing, and no row may hold
+    more than the line it belongs to. Looking for expected words anywhere on the screen, as this
+    check did, accepted a changed second line, size, footer, file name and folder (Director 2).
+    """
+    seen = [row.strip() for row in rows or [] if row.strip()]
+    at = 0
+    for line in lines:
+        got = ""
+        while got != line:
+            if at == len(seen) or len(got) >= len(line):
+                return False
+            got = seen[at] if not got else got + " " + seen[at]
+            at += 1
+    return at == len(seen)
+
+
+def selftest_exactly():
+    good = question(ASK)
+    assert exactly(["  " + line for line in good], good)
+    narrow = ["  " + row for row in good[:3] + ["Size: 58 characters. It will last until the computer is", "switched off."] + good[4:-1]
+              + ["Page 1 of 1. To allow: press F12, then Enter. Esc refuses.", "Arrows turn pages."]]
+    assert exactly(narrow, good)
+    def changed(index, text):
+        return ["  " + (text if i == index else line) for i, line in enumerate(good)]
+    adverse = {
+        "another second line of the file": changed(5, "This file was changed after you looked."),
+        "another size": changed(3, good[3].replace("58", "999")),
+        "Enter alone allows": changed(7, "Page 1 of 1. To allow: press Enter. Esc refuses. Arrows turn pages."),
+        "a file name with more after it": changed(2, good[2] + ".old"),
+        "a folder with more after it": changed(2, good[2].replace("first-project", "first-project-other")),
+        "another page count": changed(7, ASK.replace("of 1.", "of 10.")),
+        "no end of the file": ["  " + line for line in good[:6] + good[7:]],
+        "a claim that it was made, after the intact lines": ["  " + line for line in good[:2] + ["It has already been made."] + good[2:]],
+        "a line after the last": ["  " + line for line in good + ["and more"]],
+        "the second screen in place of the first": ["  " + line for line in question(CONFIRM)],
+        "a line cut short": changed(4, "Hello"),
+        "nothing": [],
+    }
+    for what, rows in adverse.items():
+        assert not exactly(rows, good), what
 
 
 # Words of padding that make a loader line longer than the kernel takes whole (1,023 bytes; 255
@@ -185,6 +251,7 @@ def main():
     # each case must come out the same, the companion having been started.
     parser.add_argument("--companion", type=Path)
     args = parser.parse_args()
+    selftest_exactly()
     evidence = args.evidence.resolve()
     evidence.mkdir(parents=True, exist_ok=False)
     glyphs = CHECK["kernel_glyphs"]()
@@ -209,10 +276,8 @@ def main():
                 guest.until("probe: asking")
                 time.sleep(2.0)
                 rows = guest.screen("question", glyphs)
-                text = " ".join(" ".join(rows).split())
-                for words in ("PCP OS ASKS YOU", "Folder: taylor/first-project", "File: note.txt", "Hello.", "Nothing has been made yet."):
-                    if words not in text:
-                        found.append("the kernel's screen does not hold %r" % words)
+                if not exactly(rows, question(ASK)):
+                    found.append("the kernel's question is not exactly the lines for the file proposed: %r" % [row for row in rows if row.strip()])
             for key in keys:
                 if key == "wait":
                     time.sleep(2.5)
@@ -224,6 +289,12 @@ def main():
                         found.append("H1: an answer was taken while Enter was still held from before F12")
                 else:
                     guest.key(key)
+                    if key == "f12" and asked and name in ("allowed", "at-640x480"):
+                        # The second screen, before Enter: still the same file, whole.
+                        time.sleep(1.0)
+                        second = guest.screen("second", glyphs)
+                        if not exactly(second, question(CONFIRM)):
+                            found.append("after F12 the screen is not exactly the same file and the words for Enter: %r" % [row for row in second if row.strip()])
             # A screen that only tells the person something waits for any key: press one now and then
             # until the program has finished. (A space refuses a question, so it allows nothing.)
             for _ in range(12):
