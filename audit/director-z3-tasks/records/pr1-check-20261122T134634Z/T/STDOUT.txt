@@ -1,0 +1,10 @@
+pc, 256M, 1 processor(s): 1 listed
+pc, 256M, 2 processor(s): 2 listed
+pc, 256M, 4 processor(s): 4 listed
+pc, 256M, 8 processor(s): 8 listed
+q35, 6G, 4 processor(s): 4 listed
+pc, 2G, 3 processor(s): 3 listed
+acpi_rsdp=0x100000: refused, the root pointer does not hold
+acpi_rsdp=0xzz: refused, the loader's acpi_rsdp= is not a number
+acpi_rsdp=0x1ffffffff0: refused, a table lies outside what can be read at start
+processors: the firmware's count is read rightly on every machine tried, and a wrong address is refused

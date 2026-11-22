@@ -1,0 +1,44 @@
+usage: check.py [-h] [--qemu QEMU] [--demo-kernel DEMO_KERNEL]
+                [--machine {pc,q35}]
+                kernel probe
+
+One program can be given the machine's memory above four gibibytes, and it all comes back.
+
+The kernel used only the memory below one gibibyte: a program got 960 MiB whatever the machine had,
+which a large language model cannot be loaded into. A program's own pages are now taken from the
+usable memory above four gibibytes where there is any (page tables, and frames a device is told the
+address of, stay below one gibibyte), and from the pool below as before when there is none.
+
+The probe (probe/, built for x86_64-unknown-none) maps 64 MiB at a time and writes to every page.
+
+Predicates, fixed before the first run.
+ L1 with 1,024 and 2,048 MiB of machine memory (none above four gibibytes) the program gets 960 MiB
+    and is then refused with error 12, as before this change, and no line about high memory appears.
+ L2 with 8,192 MiB the program gets all of the memory above four gibibytes, then the 960 MiB below:
+    6,080 MiB on machine "pc" (5,120 MiB above, 1,310,720 frames) and 7,104 MiB on "q35" (6,144 MiB
+    above, 1,572,864 frames). The kernel's line for high memory shows that many frames, all free at
+    the end, and as many given back as handed out.
+ L4 every page handed to the program reads zero at both ends before the program writes to it.
+ L6 every page is written with a value of its own at both ends, and after the last piece has been
+    written every page of every piece is read again: all of them hold what was written (no two pages
+    are one piece of memory, and none lost its contents).
+ L5 (with --demo-kernel, built with the high-memory-demo feature, at 8,192 MiB) what a device would be
+    given, a run of frames and a single frame, lies below one gibibyte although memory above four is
+    free; a program's frame lies above four gibibytes, takes a write, is given back, and reads zero
+    when taken again.
+ L3 at every size the emulator ends with status 33, 71 self-tests pass and none fails, and the pool
+    below one gibibyte has every frame free at the end.
+
+Usage: check.py <kernel.elf32> <memory-probe> [--qemu qemu-system-x86_64]
+This is an emulator. It says nothing of a real machine's memory map, of memory between one and four
+gibibytes (not used), or of speed.
+
+positional arguments:
+  kernel
+  probe
+
+options:
+  -h, --help            show this help message and exit
+  --qemu QEMU
+  --demo-kernel DEMO_KERNEL
+  --machine {pc,q35}

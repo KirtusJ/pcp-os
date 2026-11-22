@@ -1,0 +1,34 @@
+{
+ "tool": "async_run.py",
+ "plan": "plan.json",
+ "plan_sha256": "8c44beaa9fd4f3c49e43158501fe233055832295a4c70f8404aaecbb4e82882f",
+ "width": 1,
+ "tasks": [
+  {
+   "id": "T",
+   "argv": [
+    "python3",
+    "-IB",
+    "/home/user/pcp-os/examples/large-memory/check.py",
+    "--help"
+   ],
+   "exit": 0,
+   "expect_exit": 0,
+   "timed_out": false,
+   "seconds": 0.03,
+   "ended_as_expected": true,
+   "copied_in": [],
+   "files": {
+    "STDERR.txt": {
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "bytes": 0
+    },
+    "STDOUT.txt": {
+     "sha256": "95cab4206b963e3d1028110131ef41c6851a9ceba1f113bdb87ded716dfe3570",
+     "bytes": 2515
+    }
+   }
+  }
+ ],
+ "all_ended_as_expected": true
+}
