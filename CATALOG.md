@@ -61,6 +61,7 @@ Every entry at the top of the repository, and every folder one level down in the
 | `os-docs/installed-acceptance` | CI check: installed recovery and desktop acceptance. | not determined |
 | `os-docs/review-modules` | Review modules. | not determined |
 | `os-docs/tailorbird-stop` | Regression: Tailorbird Stop and cold readback. | not determined |
+| `os-docs/working` | Working records of the tidying (issue 368): which branches were removed, with their tips. | no |
 | `store/apps` | Store applications. | not determined |
 | `store/art` | Pictures used by the Store pages. | not determined |
 | `store/engines` | Store engines (Heliograph). | not determined |
