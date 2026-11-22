@@ -207,3 +207,43 @@ fn export_reference_models() {
         std::io::Write::write_all(&mut f,&Fixture::full(arch)).unwrap();
     }
 }
+
+#[test]
+fn inference_tiles_preserve_context_progress_and_retries_for_every_tail() {
+    use pcpos_qwen::forward::PrefillEvent;
+    for arch in ["qwen2", "qwen3"] {
+        let bytes=Fixture::full(arch);
+        let index=Index::parse(&bytes,bytes.len() as u64).unwrap();
+        let model=Model::admit(&index).unwrap();
+        let minimum = Decoder::buffer_bytes(&model,16).unwrap();
+        assert!(matches!(Decoder::for_inference(&model,&bytes,16,minimum-1,||true), Err(Error::Budget)));
+        let mut limited = Decoder::for_inference(&model,&bytes,16,minimum,||true).unwrap();
+        let mut ordered = Decoder::new(&model,&bytes,16,minimum,||true).unwrap();
+        assert_eq!(limited.prefill(&[3,2,1],||true).unwrap(), ordered.prefill(&[3,2,1],||true).unwrap());
+        for len in 1..=14 {
+            let prompt: Vec<_> = (0..len).map(|i| [7,5,2,1][i%4]).collect();
+            let mut reference=Decoder::new(&model,&bytes,16,1<<20,||true).unwrap();
+            reference.step(3,||true).unwrap();
+            let expected=reference.prefill(&prompt,||true).unwrap().to_vec();
+            let next=reference.step(4,||true).unwrap().to_vec();
+            let mut decoder=Decoder::for_inference(&model,&bytes,16,1<<20,||true).unwrap();
+            decoder.step(3,||true).unwrap();
+            for stop in 1..=len {
+                let mut seen=0;
+                let result=decoder.prefill_with_progress(&prompt,|event| {
+                    if let PrefillEvent::TokenProcessed {completed,total}=event {
+                        seen+=1;
+                        assert_eq!((completed,total),(seen,len));
+                        return completed!=stop;
+                    }
+                    true
+                });
+                assert_eq!(result,Err(Error::Cancelled));
+                assert_eq!(seen,stop);
+                assert_eq!(decoder.position(),1);
+            }
+            assert_eq!(decoder.prefill(&prompt,||true).unwrap(),expected);
+            assert_eq!(decoder.step(4,||true).unwrap(),next);
+        }
+    }
+}

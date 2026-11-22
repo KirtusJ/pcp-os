@@ -9,5 +9,4 @@ publish.workspace = true
 [dependencies]
 pcpos-gguf = { path = "../pcpos-gguf" }
 
-[target.'cfg(all(target_arch = "x86_64", target_feature = "sse2"))'.dependencies]
 pcpos-model-simd = { path = "../pcpos-model-simd" }

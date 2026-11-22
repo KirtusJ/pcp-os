@@ -3,7 +3,7 @@
 use alloc::vec::Vec;
 use pcpos_gguf::Tensor;
 pub use pcpos_model_tensor::Projection;
-use pcpos_model_tensor::Row;
+use pcpos_model_tensor::{packed::{PackedKernel, Q8Block}, Row};
 use crate::{Config, Model};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -31,15 +31,24 @@ impl From<pcpos_model_tensor::Error> for Error {
 /// A failed/cancelled step does not advance the sequence or return partial logits.
 /// Retrying overwrites the uncommitted KV position; all previous positions remain intact.
 pub struct Decoder<'m, 'i, 'b, 'w> {
-    model: &'m Model<'i, 'b>, weights: &'w [u8], context: usize, position: usize, projection: Projection,
+    model: &'m Model<'i, 'b>, weights: &'w [u8], context: usize, position: usize,
+    math: MatrixMath, lanes: usize,
     keys: Vec<f32>, values: Vec<f32>,
     x: Vec<f32>, norm: Vec<f32>, temp: Vec<f32>, norm_weights: Vec<f32>,
     q: Vec<f32>, k: Vec<f32>, v: Vec<f32>, attention: Vec<f32>,
     gate: Vec<f32>, up: Vec<f32>, scores: Vec<f32>, logits: Vec<f32>, frequencies: Vec<f32>,
 }
 
+const PROMPT_TILE: usize = 4;
+
+struct MatrixMath {
+    ordered: Projection,
+    kernel: Option<PackedKernel>,
+    scratch: Vec<Q8Block>,
+}
+
 impl<'m, 'i, 'b, 'w> Decoder<'m, 'i, 'b, 'w> {
-    /// Payload bytes of all f32 buffers, including KV. Excludes allocator overhead,
+    /// Minimum decoder payload, including KV. Larger budgets enable prompt batching. Excludes allocator overhead,
     /// model, index/tokenizer, decoder struct, stack, page tables and OS storage.
     pub fn buffer_bytes(model: &Model<'_, '_>, context: usize) -> Result<u64, Error> {
         let kv = model.kv_bytes(context, u64::MAX).map_err(|_| Error::Budget)?;
@@ -54,20 +63,54 @@ impl<'m, 'i, 'b, 'w> Decoder<'m, 'i, 'b, 'w> {
         Self::with_projection(model, weights, context, budget, Projection::detect(), keep_going)
     }
 
-    /// Construct a decoder with an explicit reference or locally detected projection.
+    /// The worker may use ggml's quantized activation arithmetic on capable CPUs.
+    /// The ordered decoder remains available for numerical controls and fallback.
+    pub fn for_inference(model: &'m Model<'i, 'b>, weights: &'w [u8], context: usize,
+        budget: u64, keep_going: impl FnMut() -> bool) -> Result<Self, Error> {
+        Self::allocate(model, weights, context, budget, Projection::detect(), PackedKernel::detect(), keep_going)
+    }
+
+    pub fn projection_name(&self) -> &'static str {
+        if self.math.kernel.is_some() { "AVX2 Q8_K" } else { self.math.ordered.name() }
+    }
+
+    /// Construct a decoder with an explicit reference or locally detected ordered projection.
     pub fn with_projection(model: &'m Model<'i, 'b>, weights: &'w [u8], context: usize,
-        budget: u64, projection: Projection, mut keep_going: impl FnMut() -> bool) -> Result<Self, Error> {
+        budget: u64, projection: Projection, keep_going: impl FnMut() -> bool) -> Result<Self, Error> {
+        Self::allocate(model, weights, context, budget, projection, None, keep_going)
+    }
+
+    fn allocate(model: &'m Model<'i, 'b>, weights: &'w [u8], context: usize, budget: u64,
+        ordered: Projection, kernel: Option<PackedKernel>, mut keep_going: impl FnMut() -> bool) -> Result<Self, Error> {
         if weights.len() as u64 != model.file_bytes { return Err(Error::Weights); }
-        if Self::buffer_bytes(model, context)? > budget { return Err(Error::Budget); }
+        let base = Self::buffer_bytes(model, context)?;
         let c = model.config();
-        let kv = c.layers.checked_mul(context).and_then(|v|v.checked_mul(c.kv_heads*c.head_width)).ok_or(Error::Budget)?;
+        let q = c.heads*c.head_width;
+        let k = c.kv_heads*c.head_width;
+        let remaining = budget.checked_sub(base).ok_or(Error::Budget)?;
+        let blocks_per_lane = c.embedding.max(c.feed_forward).max(q) / 256;
+        let floats_per_lane = 3*c.embedding + 2*q + 2*k + 2*c.feed_forward;
+        let affordable = |&lanes: &usize| {
+            let extra = (lanes - 1) * floats_per_lane * 4
+                + lanes * blocks_per_lane * core::mem::size_of::<Q8Block>();
+            extra as u64 <= remaining
+        };
+        // A small approved budget can still run the ordered decoder.
+        let width = kernel.and_then(|_| (1..=PROMPT_TILE.min(context)).rev().find(affordable));
+        let lanes = width.unwrap_or(1);
+        let blocks = width.unwrap_or(0) * blocks_per_lane;
+        let kernel = width.and(kernel);
+        let kv = c.layers.checked_mul(context).and_then(|v| v.checked_mul(k)).ok_or(Error::Budget)?;
+        let mut scratch = Vec::new();
+        scratch.try_reserve_exact(blocks).map_err(|_| Error::Allocation)?;
+        scratch.resize(blocks, Q8Block::ZERO);
         let mut new = |n| zeros(n, &mut keep_going);
         let mut result = Self {
-            model, weights, context, position:0, projection,
-            keys:new(kv)?, values:new(kv)?, x:new(c.embedding)?, norm:new(c.embedding)?, temp:new(c.embedding)?,
-            norm_weights:new(c.embedding.max(c.head_width))?, q:new(c.heads*c.head_width)?,
-            k:new(c.kv_heads*c.head_width)?, v:new(c.kv_heads*c.head_width)?, attention:new(c.heads*c.head_width)?,
-            gate:new(c.feed_forward)?, up:new(c.feed_forward)?, scores:new(context)?, logits:new(c.vocabulary)?,
+            model, weights, context, position:0, lanes, math: MatrixMath { ordered, kernel, scratch },
+            keys:new(kv)?, values:new(kv)?, x:new(lanes*c.embedding)?, norm:new(lanes*c.embedding)?, temp:new(lanes*c.embedding)?,
+            norm_weights:new(c.embedding.max(c.head_width))?, q:new(lanes*q)?, k:new(lanes*k)?, v:new(lanes*k)?,
+            attention:new(lanes*q)?, gate:new(lanes*c.feed_forward)?, up:new(lanes*c.feed_forward)?,
+            scores:new(context)?, logits:new(c.vocabulary)?,
             frequencies:new(c.head_width/2)?,
         };
         for (i,f) in result.frequencies.iter_mut().enumerate() {
@@ -86,8 +129,8 @@ impl<'m, 'i, 'b, 'w> Decoder<'m, 'i, 'b, 'w> {
 
     pub fn position(&self) -> usize { self.position }
 
-    /// Arithmetic selected for this decoder's matrix projections.
-    pub fn projection(&self) -> Projection { self.projection }
+    /// Ordered arithmetic available for unsupported formats and reference comparisons.
+    pub fn projection(&self) -> Projection { self.math.ordered }
 
     /// Start a new logical sequence. Old positions become inaccessible immediately.
     /// This does not promise secure erasure of the worker's private memory.
@@ -97,7 +140,7 @@ impl<'m, 'i, 'b, 'w> Decoder<'m, 'i, 'b, 'w> {
     /// polled at initialization chunks, row/block boundaries and attention positions.
     /// Row validation itself scans at most 65536 weights; there is no wall-clock Stop claim.
     pub fn step(&mut self, token: u32, mut keep_going: impl FnMut() -> bool) -> Result<&[f32], Error> {
-        self.advance(token, true, &mut keep_going)?;
+        self.advance(&[token], true, &mut keep_going)?;
         Ok(&self.logits)
     }
 
@@ -124,68 +167,103 @@ impl<'m, 'i, 'b, 'w> Decoder<'m, 'i, 'b, 'w> {
         if tokens.len() > self.context - self.position { return Err(Error::ContextFull); }
         if tokens.iter().any(|&id| id as usize >= self.model.config().vocabulary) { return Err(Error::Token); }
         let start = self.position;
-        for (i, &token) in tokens.iter().enumerate() {
-            let completed = i + 1;
-            if let Err(error) = self.advance(token, completed == tokens.len(), || observe(PrefillEvent::Poll)) {
+        // Report the first token promptly. Subsequent groups share each weight row;
+        // only fully computed tokens are reported, in order, even after a partial tile.
+        let mut completed = 0;
+        while completed < tokens.len() {
+            let count = if completed == 0 { 1 } else { self.lanes.min(tokens.len()-completed) };
+            let end = completed + count;
+            if let Err(error) = self.advance(&tokens[completed..end], end == tokens.len(), || observe(PrefillEvent::Poll)) {
                 self.position = start;
                 return Err(error);
             }
-            if !observe(PrefillEvent::TokenProcessed { completed, total: tokens.len() }) {
-                self.position = start;
-                return Err(Error::Cancelled);
+            while completed < end {
+                completed += 1;
+                if !observe(PrefillEvent::TokenProcessed { completed, total: tokens.len() }) {
+                    self.position = start;
+                    return Err(Error::Cancelled);
+                }
             }
         }
         Ok(&self.logits)
     }
 
-    fn advance(&mut self, token: u32, project: bool, mut keep_going: impl FnMut() -> bool) -> Result<(), Error> {
+    fn advance(&mut self, tokens: &[u32], project: bool, mut go: impl FnMut() -> bool) -> Result<(), Error> {
         let c = self.model.config();
-        if token as usize >= c.vocabulary { return Err(Error::Token); }
-        if self.position == self.context { return Err(Error::ContextFull); }
-        check(&mut keep_going)?;
-        row(self.weights, self.model.embedding(), token as usize)?.decode(&mut self.x)?;
-        let kv_width = c.kv_heads*c.head_width;
-        for layer_index in 0..c.layers {
-            let l = self.model.layer(layer_index).ok_or(Error::Shape)?;
-            normalize(self.weights, l.attention_norm, &self.x, &mut self.norm, &mut self.norm_weights, c.rms_epsilon)?;
-            matmul(self.weights, l.query, &self.norm, &mut self.q, self.projection, &mut keep_going)?;
-            matmul(self.weights, l.key, &self.norm, &mut self.k, self.projection, &mut keep_going)?;
-            matmul(self.weights, l.value, &self.norm, &mut self.v, self.projection, &mut keep_going)?;
-            for (bias, output) in [(l.query_bias, &mut self.q), (l.key_bias, &mut self.k), (l.value_bias, &mut self.v)] {
-                if let Some(bias) = bias { add_bias(self.weights,bias,output)?; }
+        let lanes = tokens.len();
+        if lanes == 0 || lanes > self.lanes { return Err(Error::Shape); }
+        if tokens.iter().any(|&id| id as usize >= c.vocabulary) { return Err(Error::Token); }
+        if lanes > self.context - self.position { return Err(Error::ContextFull); }
+        check(&mut go)?;
+        let emb = c.embedding;
+        let qw = c.heads*c.head_width;
+        let kw = c.kv_heads*c.head_width;
+        let x = &mut self.x[..lanes*emb];
+        let norm = &mut self.norm[..lanes*emb];
+        let temp = &mut self.temp[..lanes*emb];
+        let query = &mut self.q[..lanes*qw];
+        let key = &mut self.k[..lanes*kw];
+        let value = &mut self.v[..lanes*kw];
+        let attn = &mut self.attention[..lanes*qw];
+        let gate = &mut self.gate[..lanes*c.feed_forward];
+        let up = &mut self.up[..lanes*c.feed_forward];
+        let mut matrix = |t: &Tensor<'_>, a: &[f32], out: &mut [f32], go: &mut _| {
+            self.math.multiply(self.weights, t, a, out, lanes, go)
+        };
+        for (&token, dst) in tokens.iter().zip(x.chunks_exact_mut(emb)) {
+            row(self.weights, self.model.embedding(), token as usize)?.decode(dst)?;
+        }
+        for index in 0..c.layers {
+            let l = self.model.layer(index).ok_or(Error::Shape)?;
+            for (src, dst) in x.chunks_exact(emb).zip(norm.chunks_exact_mut(emb)) {
+                normalize(self.weights, l.attention_norm, src, dst, &mut self.norm_weights, c.rms_epsilon)?;
             }
-            if let (Some(qn), Some(kn)) = (l.query_norm,l.key_norm) {
-                normalize_heads(self.weights,qn,&mut self.q,&mut self.norm_weights,c.head_width,c.rms_epsilon)?;
-                normalize_heads(self.weights,kn,&mut self.k,&mut self.norm_weights,c.head_width,c.rms_epsilon)?;
+            matrix(l.query, norm, query, &mut go)?;
+            matrix(l.key, norm, key, &mut go)?;
+            matrix(l.value, norm, value, &mut go)?;
+            for lane in 0..lanes {
+                let pos = self.position + lane;
+                let q = &mut query[lane*qw..(lane+1)*qw];
+                let k = &mut key[lane*kw..(lane+1)*kw];
+                let v = &mut value[lane*kw..(lane+1)*kw];
+                for (bias, dst) in [(l.query_bias, &mut *q), (l.key_bias, &mut *k), (l.value_bias, &mut *v)] {
+                    if let Some(bias) = bias { add_bias(self.weights, bias, dst)?; }
+                }
+                if let (Some(qn), Some(kn)) = (l.query_norm, l.key_norm) {
+                    normalize_heads(self.weights, qn, q, &mut self.norm_weights, c.head_width, c.rms_epsilon)?;
+                    normalize_heads(self.weights, kn, k, &mut self.norm_weights, c.head_width, c.rms_epsilon)?;
+                }
+                rotate(q, &self.frequencies, pos, c.head_width)?;
+                rotate(k, &self.frequencies, pos, c.head_width)?;
+                let at = (index*self.context + pos)*kw;
+                self.keys[at..at+kw].copy_from_slice(k);
+                self.values[at..at+kw].copy_from_slice(v);
+                attention(c, self.context, pos, index, q, &self.keys, &self.values, &mut self.scores,
+                    &mut attn[lane*qw..(lane+1)*qw], &mut go)?;
             }
-            rotate(&mut self.q,&self.frequencies,self.position,c.head_width)?;
-            rotate(&mut self.k,&self.frequencies,self.position,c.head_width)?;
-            let at = (layer_index*self.context + self.position)*kv_width;
-            self.keys[at..at+kv_width].copy_from_slice(&self.k);
-            self.values[at..at+kv_width].copy_from_slice(&self.v);
-            attention(c,self.context,self.position,layer_index,&self.q,&self.keys,&self.values,
-                &mut self.scores,&mut self.attention,&mut keep_going)?;
-            matmul(self.weights,l.attention_output,&self.attention,&mut self.temp,self.projection,&mut keep_going)?;
-            add(&mut self.x,&self.temp)?;
-            normalize(self.weights,l.feed_forward_norm,&self.x,&mut self.norm,&mut self.norm_weights,c.rms_epsilon)?;
-            matmul(self.weights,l.gate,&self.norm,&mut self.gate,self.projection,&mut keep_going)?;
-            matmul(self.weights,l.up,&self.norm,&mut self.up,self.projection,&mut keep_going)?;
-            for (i,(gate,up)) in self.gate.iter_mut().zip(&self.up).enumerate() {
-                if i%256==0 {check(&mut keep_going)?;}
-                // Stable sigmoid: avoid overflow in exp(-gate) for finite large negatives.
-                let sigmoid = if *gate >= 0.0 {1.0/(1.0+libm::expf(-*gate))}
-                    else {let e=libm::expf(*gate); e/(1.0+e)};
-                *gate=finite(*gate*sigmoid*up)?;
+            matrix(l.attention_output, attn, temp, &mut go)?;
+            add(x,temp)?;
+            for (src, dst) in x.chunks_exact(emb).zip(norm.chunks_exact_mut(emb)) {
+                normalize(self.weights, l.feed_forward_norm, src, dst, &mut self.norm_weights, c.rms_epsilon)?;
             }
-            matmul(self.weights,l.down,&self.gate,&mut self.temp,self.projection,&mut keep_going)?;
-            add(&mut self.x,&self.temp)?;
+            matrix(l.gate, norm, gate, &mut go)?;
+            matrix(l.up, norm, up, &mut go)?;
+            for (i,(g,u)) in gate.iter_mut().zip(up.iter()).enumerate() {
+                if i%256==0 { check(&mut go)?; }
+                let sigmoid = if *g >= 0.0 {1.0/(1.0+libm::expf(-*g))}
+                    else {let e=libm::expf(*g); e/(1.0+e)};
+                *g=finite(*g*sigmoid*u)?;
+            }
+            matrix(l.down, gate, temp, &mut go)?;
+            add(x,temp)?;
         }
         if project {
-            normalize(self.weights,self.model.output_norm(),&self.x,&mut self.norm,&mut self.norm_weights,c.rms_epsilon)?;
-            matmul(self.weights,self.model.output(),&self.norm,&mut self.logits,self.projection,&mut keep_going)?;
+            normalize(self.weights, self.model.output_norm(), &x[(lanes-1)*emb..], &mut norm[..emb],
+                &mut self.norm_weights, c.rms_epsilon)?;
+            self.math.multiply(self.weights, self.model.output(), &norm[..emb], &mut self.logits, 1, &mut go)?;
         }
-        check(&mut keep_going)?;
-        self.position += 1;
+        check(&mut go)?;
+        self.position += lanes;
         Ok(())
     }
 }
@@ -210,11 +288,35 @@ fn row<'a>(weights:&'a[u8],t:&Tensor<'_>,r:usize)->Result<Row<'a>,Error>{
     let end=start.checked_add(bytes).ok_or(Error::Weights)?;
     Ok(Row::new(t.kind,columns,weights.get(start..end).ok_or(Error::Weights)?)?)
 }
-fn matmul(weights:&[u8],t:&Tensor<'_>,input:&[f32],output:&mut[f32],projection:Projection,go:&mut impl FnMut()->bool)->Result<(),Error>{
-    if t.dimensions()!=[input.len() as u64,output.len() as u64]{return Err(Error::Shape);}
-    for (i,out) in output.iter_mut().enumerate(){check(go)?;let row=row(weights,t,i)?;
-        *out=projection.dot(&row,input,&mut *go)?;}
-    Ok(())
+impl MatrixMath {
+    fn multiply(&mut self, weights: &[u8], t: &Tensor<'_>, input: &[f32], output: &mut [f32],
+        lanes: usize, go: &mut impl FnMut()->bool) -> Result<(),Error> {
+        let (columns, rows) = (input.len()/lanes, output.len()/lanes);
+        if t.dimensions()!=[columns as u64,rows as u64] { return Err(Error::Shape); }
+        if let Some(kernel) = self.kernel {
+            if matches!(t.kind, pcpos_gguf::TensorType::Q4K | pcpos_gguf::TensorType::Q6K) {
+                let start = usize::try_from(t.offset).map_err(|_| Error::Weights)?;
+                let size = usize::try_from(t.bytes).map_err(|_| Error::Weights)?;
+                let end = start.checked_add(size).ok_or(Error::Weights)?;
+                let data = weights.get(start..end).ok_or(Error::Weights)?;
+                let used = match lanes {
+                    1 => kernel.project::<1>(t.kind, data, input, output, &mut self.scratch, go),
+                    2 => kernel.project::<2>(t.kind, data, input, output, &mut self.scratch, go),
+                    3 => kernel.project::<3>(t.kind, data, input, output, &mut self.scratch, go),
+                    4 => kernel.project::<4>(t.kind, data, input, output, &mut self.scratch, go),
+                    _ => return Err(Error::Shape),
+                }?;
+                if used { return Ok(()); }
+            }
+        }
+        for (src, dst) in input.chunks_exact(columns).zip(output.chunks_exact_mut(rows)) {
+            for (i,out) in dst.iter_mut().enumerate() {
+                check(go)?;
+                *out = self.ordered.dot(&row(weights,t,i)?,src,&mut *go)?;
+            }
+        }
+        Ok(())
+    }
 }
 fn add(a:&mut[f32],b:&[f32])->Result<(),Error>{
     if a.len()!=b.len(){return Err(Error::Shape);}

@@ -5,6 +5,7 @@
 #![forbid(unsafe_code)]
 
 pub use pcpos_gguf::TensorType;
+pub mod packed;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error { Unsupported, Shape, Length, NonFinite, Cancelled }

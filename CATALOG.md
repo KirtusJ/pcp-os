@@ -73,10 +73,10 @@ Every entry at the top of the repository, and every folder one level down in the
 | `PCP_OS_Rust/crates/pcpos-host` | The host program and tool server. | yes |
 | `PCP_OS_Rust/crates/pcpos-kernel` | The kernel, its built-in programs and its emulator checks. | yes |
 | `PCP_OS_Rust/crates/pcpos-model-media` | Verifies model bytes before an engine sees them. | not determined |
-| `PCP_OS_Rust/crates/pcpos-model-simd` | Checks CPU and OS vector support and computes eight Q4_K or Q6_K weights at a time. | not determined |
-| `PCP_OS_Rust/crates/pcpos-model-tensor` | Decodes model tensor rows. | not determined |
+| `PCP_OS_Rust/crates/pcpos-model-simd` | Checks CPU and OS vector support and computes ordered or ggml-compatible packed Q4_K and Q6_K products. | not determined |
+| `PCP_OS_Rust/crates/pcpos-model-tensor` | Decodes tensor rows and reuses packed activations across quantized matrix rows. | not determined |
 | `PCP_OS_Rust/crates/pcpos-pkg` | Package reading and checking. | not determined |
-| `PCP_OS_Rust/crates/pcpos-qwen` | Scalar execution of a dense Qwen model. | not determined |
+| `PCP_OS_Rust/crates/pcpos-qwen` | Runs dense Qwen inference with bounded causal prompt batches and a scalar fallback. | not determined |
 
 ## Session context
 
