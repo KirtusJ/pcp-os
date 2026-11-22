@@ -10,7 +10,7 @@ import unittest
 import uuid
 import zlib
 
-from preloaded_gate import build, digest, inventory, verify_tree
+from preloaded_gate import build, digest, inventory, verify_notices, verify_tree
 from hybrid_readback import verify_embedded_fat
 
 
@@ -78,6 +78,26 @@ class GateTests(unittest.TestCase):
         (self.root / "PCPOS/TAILOR.ELF").write_bytes(b"Foreground")
         with self.assertRaisesRegex(ValueError, "payload size or digest differs"):
             verify_tree(self.root, self.records, self.model_pin)
+
+    def test_qwen_model_requires_the_exact_publisher_license_with_any_worker(self):
+        model = "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785"
+        license_record = {"bytes": 11544, "sha256": "5de36594c10839788a8c589443a8ef9d8b8d17c65a1b5807206ae037fc36c6bd"}
+        with self.assertRaisesRegex(ValueError, "publisher license"):
+            verify_tree(self.root, self.records, model)
+        self.records["PCPOS/MODEL-LICENSE.txt"] = {"bytes": 11544, "sha256": "0" * 64}
+        with self.assertRaisesRegex(ValueError, "publisher license"):
+            verify_tree(self.root, self.records, model)
+        self.records["PCPOS/MODEL-LICENSE.txt"] = license_record
+        verify_notices(self.records, model)
+        with self.assertRaisesRegex(ValueError, "missing=.*MODEL-LICENSE"):
+            verify_tree(self.root, self.records, model)
+
+    def test_case_variant_of_runtime_notice_is_refused(self):
+        record = {"bytes": 3, "sha256": sha(b"abc")}
+        self.records["PCPOS/RUNTIME-NOTICE.txt"] = record
+        self.records["PCPOS/runtime-notice.txt"] = record
+        with self.assertRaisesRegex(ValueError, "unexpected release path|case-colliding"):
+            self.approved(self.records)
 
     def test_extra_file_in_reused_staging_refused(self):
         (self.root / "PCPOS/UNLISTED.BIN").write_bytes(b"surplus")

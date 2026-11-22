@@ -33,6 +33,8 @@ PACKED_WORKERS = {
     "1400620be191ec0d6d18e6ff4da363cb6983913115067e3ee424abce5131a32c",
 }
 GGML_NOTICE = {"bytes": 1308, "sha256": "aa99af64d67d449bcff124bb9d449e624c5aac78484cbd36de8426a8624db348"}
+QWEN3_8B_Q4_K_M = "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785"
+QWEN_MODEL_LICENSE = {"bytes": 11544, "sha256": "5de36594c10839788a8c589443a8ef9d8b8d17c65a1b5807206ae037fc36c6bd"}
 SHARD = re.compile(r"PCPOS/shard-([0-9]{5})\.bin\Z")
 HEX = re.compile(r"[0-9a-f]{64}\Z")
 EPOCH = "1794614400"
@@ -50,6 +52,13 @@ def unique_pairs(pairs):
             raise ValueError("duplicate JSON key: " + name)
         found[name] = value
     return found
+
+
+def verify_notices(expected, model_sha256=None):
+    if expected["PCPOS/WORKER.ELF"]["sha256"] in PACKED_WORKERS and expected.get(RUNTIME_NOTICE) != GGML_NOTICE:
+        raise ValueError("packed worker requires the exact ggml runtime notice at " + RUNTIME_NOTICE)
+    if model_sha256 == QWEN3_8B_Q4_K_M and expected.get("PCPOS/MODEL-LICENSE.txt") != QWEN_MODEL_LICENSE:
+        raise ValueError("Qwen3-8B Q4_K_M requires the publisher license at PCPOS/MODEL-LICENSE.txt")
 
 
 def inventory(path, approved_sha256):
@@ -82,8 +91,7 @@ def inventory(path, approved_sha256):
             shard_numbers.append(int(match.group(1)))
     if not FIXED.issubset(found):
         raise ValueError("missing fixed executable or manifest path")
-    if found["PCPOS/WORKER.ELF"]["sha256"] in PACKED_WORKERS and found.get(RUNTIME_NOTICE) != GGML_NOTICE:
-        raise ValueError("packed worker requires the exact ggml runtime notice at " + RUNTIME_NOTICE)
+    verify_notices(found)
     if not shard_numbers or sorted(shard_numbers) != list(range(len(shard_numbers))):
         raise ValueError("shards must be contiguous and start at zero")
     return found
@@ -93,6 +101,7 @@ def verify_tree(root, expected, model_sha256):
     """Check every path, length, SHA-256 and model shard against the independent pins."""
     if not HEX.fullmatch(model_sha256):
         raise ValueError("expected an exact lowercase publisher model SHA-256")
+    verify_notices(expected, model_sha256)
     if root.is_symlink() or not root.is_dir():
         raise ValueError("payload root must be a real directory")
     actual_files = set()
