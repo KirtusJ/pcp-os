@@ -1667,13 +1667,8 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
                 return match tx.put(&se.actor, "HOST", "ARTIFACT_ADDED", obj(body))? {
                     Put::Refused(r) => Ok(refusal_text(&r)),
                     Put::Written { seq, head, prev } => {
-                        // Kept only once the event is accepted, and never through a link.
-                        let dir = se.root.join(&beside).join("artifacts");
-                        let safe = fs::create_dir_all(&dir).is_ok() && dir.canonicalize().map(|c| c.starts_with(&se.root)).unwrap_or(false)
-                            && !fs::symlink_metadata(se.root.join(&kept)).map(|m| m.file_type().is_symlink()).unwrap_or(false);
-                        if !safe || fs::write(se.root.join(&kept), text.as_bytes()).is_err() {
-                            return Err("the text could not be kept beside the register; nothing was recorded".to_string());
-                        }
+                        keep_exact_bytes(&se.root, &kept_name, text.as_bytes())
+                            .map_err(|e| format!("the text could not be kept beside the register ({e}); nothing was recorded"))?;
                         tx.commit()?;
                         Ok(format!("{}sha256 {digest}\nsize {}\nThe server computed the digest from the text it was handed and kept those bytes at {kept_name}. It did not read them from a file.\n{origin_note}", receipt(seq, &head, &prev, "ARTIFACT_ADDED", &se.actor, "HOST"), text.len()))
                     }
