@@ -89,6 +89,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "pcpos-model-tensor"
+version = "1.0.22"
+dependencies = [
+ "pcpos-gguf",
+]
+
+[[package]]
 name = "pcpos-pkg"
 version = "1.0.22"
 dependencies = [
