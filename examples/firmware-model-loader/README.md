@@ -27,11 +27,11 @@ Stage the resulting ELF32 kernel as `KERNEL.ELF`, both ELF64 guest binaries and 
 }
 ```
 
-Supply the receipt digest through the independent assembly record. From the repository root, run:
+Supply the receipt digest through the independent assembly record. Choose a staging directory on a filesystem that supports hard links. The builder uses a hard link to publish each new output, including the optional build record. From the repository root, build the EFI in that directory and copy it to the prepared FAT32 boot volume during assembly.
 
 ```sh
 python3 examples/firmware-model-loader/build.py parts/PCPOS preloaded-inputs.json \
-  --receipt-sha256 "$APPROVED_RECEIPT_SHA256" parts/EFI/BOOT/BOOTX64.EFI
+  --receipt-sha256 "$APPROVED_RECEIPT_SHA256" staging/BOOTX64.EFI
 ```
 
 The reference implementation lives in [pcpos-efi-loader](../../PCP_OS_Rust/crates/pcpos-efi-loader). Its Rust host program binds the assembly receipt and inputs. Its freestanding Rust library calls GNU-EFI through the read-only ABI adapter in `firmware.c`. The existing assembly transition enters the Multiboot kernel.
