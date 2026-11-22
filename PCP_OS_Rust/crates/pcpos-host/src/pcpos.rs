@@ -2518,23 +2518,33 @@ fn module_command(args: &[String]) -> Result<i32, String> {
             event(&mut tx, "MODULE_ADDED", obj(vec![("id", s(&id)), ("version", s(&version)), ("sha256", s(&sha256_hex(&bytes)))])).map(|p| (tx, p))?
         }
         "remove" => {
-            let want = what.to_ascii_lowercase().replace('-', "_");
-            let want = want.strip_prefix("acr.").or_else(|| want.strip_prefix("local.")).unwrap_or(&want).to_string();
-            if !label_ok(&want) || !home.join(&want).is_dir() {
-                return Err(format!("{what} is not an added module here. A module of the method text is not removed"));
+            let key = what.strip_prefix("local.").unwrap_or(what);
+            if !label_ok(key) || key.contains('.') {
+                return Err(format!("{what} is not a local module name"));
             }
-            let found = modules_in(&se).into_iter().find(|m| m.added && m.key == want);
             let mut tx = Tx::begin(&se.root, &name, false)?.ok_or(format!("there is no register at {}", args[2]))?;
-            fs::remove_dir_all(home.join(&want)).map_err(|e| format!("the module could not be removed: {e}"))?;
-            println!("removed the added module {want}. Reviews already commissioned with it keep its digest in the record.");
-            let m = found.map(|m| m.record()).unwrap_or_else(|| obj(vec![("id", s(&format!("local.{want}")))]));
-            event(&mut tx, "MODULE_REMOVED", m).map(|p| (tx, p))?
+            let directory = home.join(key);
+            let specification = directory.join("SOURCE").join("Specification.md");
+            let module = modules_in(&se).into_iter().find(|m| m.added && m.key == key && m.file == specification)
+                .ok_or_else(|| format!("{what} is not a recognized installed module in its own directory"))?;
+            // Discovery reads text. Removing its directory also needs the actual, unredirected installation path.
+            if specification.canonicalize().map_err(|e| format!("cannot resolve {what}: {e}"))? != specification {
+                return Err(format!("{what} is not installed directly under the modules directory"));
+            }
+            let accepted = event(&mut tx, "MODULE_REMOVED", module.record())?;
+            if matches!(accepted, Put::Written { .. }) {
+                fs::remove_dir_all(&directory).map_err(|e| format!("the module could not be removed: {e}"))?;
+            }
+            (tx, accepted)
         }
         _ => return Err("usage".to_string()),
     };
     match put {
         (mut tx, Put::Written { seq, head, .. }) => {
             tx.commit()?;
+            if verb == "remove" {
+                println!("removed the added module {}. Reviews already commissioned with it keep its digest in the record.", what.strip_prefix("local.").unwrap_or(what));
+            }
             println!("WRITTEN as event {seq}\nhead {head}");
             Ok(0)
         }
