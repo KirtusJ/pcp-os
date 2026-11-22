@@ -10,9 +10,10 @@ cd "$(dirname "$0")"
 HERE="$(pwd)"; STAGE="${PCPOS_KERNEL_STAGE:-/tmp/pcpos-kernel-build}"
 mkdir -p "$STAGE" target
 # The compiled files of an earlier build are kept; the sources are replaced whole.
+# Give the staged sources fresh timestamps so Cargo rebuilds when switching to an older checkout.
 [ -d "$STAGE/crates/pcpos-kernel/target" ] && { rm -rf "$STAGE/kept-target"; mv "$STAGE/crates/pcpos-kernel/target" "$STAGE/kept-target"; }
 rm -rf "$STAGE/crates" "$STAGE/vectors" "$STAGE/Cargo.toml" "$STAGE/Cargo.lock"
-(cd ../.. && tar -cf - --exclude=target --exclude=programs --exclude=tests --exclude=guard_cases.jsonl Cargo.toml Cargo.lock crates vectors) | tar -xf - -C "$STAGE"
+(cd ../.. && tar -cf - --exclude=target --exclude=programs --exclude=tests --exclude=guard_cases.jsonl Cargo.toml Cargo.lock crates vectors) | tar -xmf - -C "$STAGE"
 [ -d "$STAGE/kept-target" ] && mv "$STAGE/kept-target" "$STAGE/crates/pcpos-kernel/target"
 (cd "$STAGE/crates/pcpos-kernel" && RUSTC_BOOTSTRAP=1 cargo build --release ${PCPOS_KERNEL_FEATURES:+--features "$PCPOS_KERNEL_FEATURES"} --config "target.x86_64-unknown-none.rustflags=['--remap-path-prefix=$STAGE=pcpos']")
 objcopy -I elf64-x86-64 -O elf32-i386 "$STAGE/crates/pcpos-kernel/target/x86_64-unknown-none/release/pcpos-kernel" target/pcpos-kernel.elf32
