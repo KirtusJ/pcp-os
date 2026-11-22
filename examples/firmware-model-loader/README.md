@@ -4,7 +4,7 @@ The application at `EFI/BOOT/BOOTX64.EFI` opens the firmware volume from which i
 
 ## Build interface
 
-Build the normal kernel with `proposals,model-memory` and record its resolved features (model-memory enables companion). For the OVMF trial at kernel commit `b65d7c45223724aa23519e12c1505981d91634c5`, use a fresh kernel checkout and apply the repository's 32 MiB link relocation before invoking the normal build:
+Build the normal kernel with `proposals,model-memory` and record its resolved features (model-memory enables companion). For the OVMF trials at kernel commits `b65d7c45223724aa23519e12c1505981d91634c5` and `1af35d14ab5d37aaee3963be20380fff65d53a12`, use a fresh kernel checkout and apply the repository's 32 MiB link relocation before invoking the normal build:
 
 ```sh
 git apply -C0 examples/firmware-owned-uefi/load-base.patch
@@ -34,6 +34,8 @@ python3 examples/firmware-model-loader/build.py parts/PCPOS preloaded-inputs.jso
   --receipt-sha256 "$APPROVED_RECEIPT_SHA256" parts/EFI/BOOT/BOOTX64.EFI
 ```
 
+The reference implementation lives in [pcpos-efi-loader](../../PCP_OS_Rust/crates/pcpos-efi-loader). Its Rust host program binds the assembly receipt and inputs. Its freestanding Rust library calls GNU-EFI through the read-only ABI adapter in `firmware.c`. The existing assembly transition enters the Multiboot kernel.
+
 The command needs Python 3, Cargo with the locked crates available, the Rust `x86_64-unknown-none` target, GNU cc/binutils and x86-64 GNU-EFI headers, CRT and libraries. `--gnu-efi /prefix` selects an installation outside `/usr`. The output must be a new file. The builder checks the receipt and four inputs, the kernel features and fixture banner, the worker's supplied and embedded manifest binding, and the bounded GGUF-media manifest shape. It derives load segments and the kernel's runtime measurement from the checked kernel ELF. It compiles the pins into the EFI binary. Copy the numbered shards from the pinned pack into the same PCPOS directory before mastering.
 
 ## Firmware handoff
@@ -55,4 +57,4 @@ python3 examples/firmware-model-loader/check_media.py prepared.fat \
   --code /usr/share/OVMF/OVMF_CODE_4M.fd --vars /usr/share/OVMF/OVMF_VARS_4M.fd --logs refusal-logs
 ```
 
-The native C-function tests exercise restricted firmware descriptors above and below 4 GiB, fragmented allocation, partial and full rollback, memory refusal before reads, short successful reads, read errors, EOF, actual bytes across a physical split, zero final-page padding, surrounding sentinels and a stale firmware exit key. The media checks use QEMU, OVMF and mtools. They keep the supplied FAT volume read-only and change private copies for the file controls. The order control requires at least two full-size shards. The small placement test uses a stand-in digest to isolate copying; the EFI media controls run the real SHA-256 implementation.
+The Rust policy tests exercise restricted firmware descriptors above and below 4 GiB, fragmented allocation, partial and full rollback, memory refusal before reads, short successful reads, read errors, EOF, actual bytes across a physical split, zero final-page padding, surrounding sentinels and a stale firmware exit key. The media checks use QEMU, OVMF and mtools. They keep the supplied FAT volume read-only and change private copies for the file controls. The order control requires at least two full-size shards. The Rust placement tests and the booted EFI image both use SHA-256 and the shared PCP OS manifest parser. The default `pcpos-model-media` feature retains the owned model API. The firmware builds it without heap allocation.

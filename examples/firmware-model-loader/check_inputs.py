@@ -5,7 +5,20 @@ import json
 from pathlib import Path
 import shutil
 import tempfile
-from build import FILES, FIXTURE, header
+import subprocess
+from build import CRATE
+
+FILES = ("KERNEL.ELF", "TAILOR.ELF", "WORKER.ELF", "model.manifest")
+FIXTURE = b"THIS KERNEL IS BUILT WITH model-memory-fixture"
+
+def header(directory, receipt, pin):
+    output = directory / "pins.rs"
+    run = subprocess.run(["cargo", "run", "--quiet", "--locked", "--manifest-path", str(CRATE),
+                          "--features", "assembly", "--bin", "pin-inputs", "--", str(directory),
+                          str(receipt), pin, str(output)], capture_output=True, text=True)
+    if run.returncode:
+        raise ValueError(run.stderr.strip())
+    return output.read_text()
 
 def digest(p):
     return hashlib.sha256(p.read_bytes()).hexdigest()
@@ -27,7 +40,7 @@ def main():
                 if part in str(e): return
                 raise
             raise AssertionError("accepted "+part)
-        pin=write();assert "MEASUREMENT_TEXT" in header(d,lock,pin)
+        pin=write();assert "MEASUREMENT" in header(d,lock,pin)
         refuses("0"*64,"independent pin")
         receipt["kernel_features"].append("model-memory-fixture");refuses(write(),"fixture")
         receipt["kernel_features"].remove("model-memory-fixture")
