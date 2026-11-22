@@ -202,6 +202,7 @@ pub struct LoaderDisplay {
 }
 
 mod boot_text;
+pub mod elapsed;
 mod frame_map;
 mod framebuffer;
 #[cfg(feature = "heat")]
@@ -224,6 +225,8 @@ pub struct BootInfo {
     pub display: Option<LoaderDisplay>,
     /// The processors the firmware's tables list, if they could be read and add up.
     pub processors: Option<processors::Found>,
+    /// Identity of the primary 64-bit HPET if firmware describes it outside usable RAM.
+    pub hpet_id: Option<u32>,
     /// Where the tables were looked for, and if nothing came of it, why.
     pub processors_note: &'static str,
     /// Where the root pointer was taken to be, if anywhere.
@@ -346,6 +349,9 @@ pub fn boot_info(magic: u32, info: u32) -> BootInfo {
         };
         out.processors_root = root;
         if let Some(root) = root {
+            if processors::hpet_page_available(&map) {
+                out.hpet_id = processors::hpet_id(root, &mut read);
+            }
             match processors::find(root, &mut read) {
                 Ok(found) => out.processors = Some(found),
                 Err(why) => {
@@ -849,6 +855,9 @@ pub fn map_device(phys: usize, len: usize) -> bool {
     if phys < 1 << 30 || end > 4 << 30 || phys % MIB2 != 0 || len % MIB2 != 0 || len == 0 {
         return false;
     }
+    if elapsed::active() && phys <= processors::HPET_ADDRESS as usize && end > processors::HPET_ADDRESS as usize {
+        return false;
+    }
     #[cfg(feature = "processors")]
     if others::controller_stretch(phys, end) {
         return false; // the interrupt controller's own page is there
@@ -1031,6 +1040,8 @@ pub struct MapAudit {
     pub pool_or_device_executable: u32,
     /// Pages of the interrupt controller's registers (feature `processors`), and how many are executable.
     pub controller_pages: u32,
+    /// Private read-only, uncached elapsed-clock register pages.
+    pub clock_pages: u32,
     /// Leaves that are both writable and executable, anywhere.
     pub writable_and_executable: u32,
     /// Leaves that map something that is none of the four things above.
@@ -1083,6 +1094,8 @@ pub fn kernel_map_audit() -> MapAudit {
             if e & NX == 0 {
                 a.pool_or_device_executable += 1;
             }
+        } else if elapsed::is_timer_leaf(addr, size, e) {
+            a.clock_pages += 1;
         } else if in_device(addr) && in_device(addr + size - 1) {
             a.device_bytes += size;
             if e & NX == 0 {

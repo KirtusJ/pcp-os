@@ -583,13 +583,13 @@ fn asynchronous(failed: &mut u32, replays: bool) {
     check("a program the person stopped is STOPPED in the kernel's task table, as it is in what the kernel observed of it", keyed && settled == Some(Task::Stopped), failed);
     }
 
-    // 2. Sleep and wake. 50 ms is 50,000,000 ns; a tick is 999,847 ns; the deadline is the tick of the call plus
-    // ceil(50,000,000 / 999,847) = 51. The processor idles through exactly those 51 ticks if the program is woken at its tick.
+    // The guest measures its sleep on its own monotonic clock. In PIT fallback 50 ms still needs
+    // precisely 51 idle periods. With a free-running clock a delayed interrupt can cover many periods.
     let (r, free0, free1, took) = loaded("sleeper", &["sleeper"], &[], 0, Timed);
     let (end, idle) = r.as_ref().map(|p| (p.end, p.idle)).unwrap_or((None, 0));
     say!("  note sleep of 50 ms: {:?}, end {:?}, idle {} of {} timer periods", r.as_ref().err(), end, idle, took);
-    check("a program that sleeps 50 ms is woken at its millisecond: the processor idled 51 timer periods, no fewer and no more, and the sleep answered 0",
-          end == Some(End::Exited(0)) && idle == 51 && took >= 51 && free0 == free1, failed);
+    check("a program that sleeps 50 ms observes its full deadline and a successful return",
+          end == Some(End::Exited(0)) && (arch::elapsed::active() || (idle == 51 && took >= 51)) && free0 == free1, failed);
 
     if replays {
     // 3. The reader checks each two-byte event in order: Shift down, Shift up, then A down.
@@ -829,7 +829,7 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
                        ("address zero is not mapped, nor anything below the image", map.address_zero_unmapped && map.low_mebibyte_unmapped),
                        ("what is mapped is the kernel image, the loader's files read-only, and frame memory that is never executable; nothing else, each at its own address, none of it for user mode",
                         map.image_pages == image_pages && map.module_pages == module_pages && map.module_pages_not_read_only == 0 && map.pool_bytes == pool_end - pool_start + high_bytes
-                            && map.pool_or_device_executable == 0 && map.outside == 0 && map.not_identity == 0 && map.user_reachable == 0 && map.other_top_entries == 0 && map.device_bytes == 0),
+                            && map.pool_or_device_executable == 0 && map.outside == 0 && map.not_identity == 0 && map.user_reachable == 0 && map.other_top_entries == 0 && map.device_bytes == 0 && map.clock_pages == 0),
                        ("every further protection the processor offers is on", offered == enabled)] {
         check(name, ok, &mut failed);
     }
@@ -873,6 +873,8 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
         }
         None => say!("display: none this kernel can drive"),
     }
+    let elapsed_source = arch::elapsed::init(&boot);
+    say!("elapsed clock: {}", elapsed_source);
     let keyboard_start = dev::keyboard_init();
     let keyboard = keyboard_start == dev::KeyboardStart::Ready;
     say!("keyboard: {}", match keyboard_start {
@@ -887,14 +889,13 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     // before knowing that anything is there, and on hardware what answers at those ports is not known.
     let music = arch::emulated() && dev::fm_init();
     say!("music: {}", if music { "an FM synthesiser of the AdLib kind answered at its usual ports" } else { "no FM synthesiser" });
-    if display.is_some() {
-        // With device memory mapped the kernel's map is read back once more: what was added is the display's
-        // memory, never executable, and nothing else changed.
-        let after = arch::kernel_map_audit();
-        check("with the display mapped, the kernel's memory map is as it was plus the display's memory, which is never executable",
-              after.device_bytes == display.map(|d| d.mapped).unwrap_or(0) && after.pool_or_device_executable == 0 && after.writable_and_executable == 0 && after.outside == 0
-                  && after.user_reachable == 0 && after.not_identity == 0 && after.image_pages == map.image_pages && after.module_pages == map.module_pages && after.pool_bytes == map.pool_bytes, &mut failed);
-    }
+    // Read the tables again even on a machine without a display. Hardware mappings must account
+    // for the entire change, including exactly one read-only UC timer page if the HPET was admitted.
+    let after = arch::kernel_map_audit();
+    check("the kernel's device mappings account for exactly the display and elapsed clock in use",
+          after.device_bytes == display.map(|d| d.mapped).unwrap_or(0)
+              && after.clock_pages == u32::from(arch::elapsed::active())
+              && arch::MapAudit { device_bytes: 0, clock_pages: 0, ..after } == map, &mut failed);
     // The machine's other processors are started and parked here, by a kernel that verified itself on
     // the one it runs on. None runs any work yet (stage 2 of using them all).
     #[cfg(feature = "processors")]

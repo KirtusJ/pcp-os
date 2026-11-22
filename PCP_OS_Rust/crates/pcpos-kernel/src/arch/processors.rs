@@ -91,8 +91,8 @@ pub fn root_holds(bytes: &[u8]) -> bool {
     bytes[15] < 2 || (bytes.len() >= 36 && u32_at(bytes, 20) == Some(36) && sums_to_zero(&bytes[..36]))
 }
 
-/// The processors, starting from the root pointer at `root`.
-pub fn find(root: u64, read: &mut dyn FnMut(u64, usize) -> Option<Vec<u8>>) -> Result<Found, Refused> {
+/// Look up a checked ACPI table using the root and the caller's existing firmware-memory bounds.
+fn named_table(root: u64, read: &mut dyn FnMut(u64, usize) -> Option<Vec<u8>>, signature: &[u8; 4]) -> Result<Option<Vec<u8>>, Refused> {
     let pointer = read(root, 36).ok_or(Refused::Unreadable)?;
     if !root_holds(&pointer) {
         return Err(Refused::NoRoot);
@@ -107,17 +107,29 @@ pub fn find(root: u64, read: &mut dyn FnMut(u64, usize) -> Option<Vec<u8>>) -> R
     if (listing.len() - 36) % width != 0 {
         return Err(Refused::BadTable);
     }
-    let mut processors_table = None;
     for entry in listing[36..].chunks_exact(width) {
         let at = if width == 8 { u64_at(entry, 0) } else { u32_at(entry, 0).map(u64::from) }.ok_or(Refused::BadTable)?;
-        // Only the signature is read here; a table that is not the one wanted is not judged.
-        let signature = read(at, 4).ok_or(Refused::Unreadable)?;
-        if signature.as_slice() == b"APIC" {
-            processors_table = Some(table(read, at, b"APIC")?);
-            break;
+        if read(at, 4).ok_or(Refused::Unreadable)?.as_slice() == signature {
+            return table(read, at, signature).map(Some);
         }
     }
-    let madt = processors_table.ok_or(Refused::NoProcessorTable)?;
+    Ok(None)
+}
+
+pub const HPET_ADDRESS: u64 = 0xfed0_0000;
+
+/// A standard 64-bit HPET block at the PC's primary timer address. Other layouts use the fallback.
+pub fn hpet_id(root: u64, read: &mut dyn FnMut(u64, usize) -> Option<Vec<u8>>) -> Option<u32> {
+    let hpet = named_table(root, read, b"HPET").ok()??;
+    if hpet.len() < 56 || hpet[40] != 0 || hpet[42] != 0 || u64_at(&hpet, 44)? != HPET_ADDRESS {
+        return None;
+    }
+    u32_at(&hpet, 36).filter(|id| id & (1 << 13) != 0)
+}
+
+/// The processors, starting from the root pointer at `root`.
+pub fn find(root: u64, read: &mut dyn FnMut(u64, usize) -> Option<Vec<u8>>) -> Result<Found, Refused> {
+    let madt = named_table(root, read, b"APIC")?.ok_or(Refused::NoProcessorTable)?;
     if madt.len() < 44 {
         return Err(Refused::BadTable);
     }
@@ -200,6 +212,16 @@ pub fn named_root(line: &str) -> Result<Option<u64>, ()> {
 /// never in memory it hands out as free; an address that is must not be believed, and is not read.
 /// A map that cannot be followed to its end answers no.
 pub fn outside_free_memory(map: &[u8], at: u64, length: usize) -> bool {
+    outside_kinds(map, at, length, |kind| kind == 1)
+}
+
+/// A timer register may be in an unlisted MMIO hole or in an explicitly reserved range. Never
+/// access it if even part of its page is described as usable, ACPI, defective or unknown memory.
+pub fn hpet_page_available(map: &[u8]) -> bool {
+    outside_kinds(map, HPET_ADDRESS, 4096, |kind| kind != 2)
+}
+
+fn outside_kinds(map: &[u8], at: u64, length: usize, refused: impl Fn(u32) -> bool) -> bool {
     let Some(end) = at.checked_add(length as u64) else { return false };
     let mut entry = 0usize;
     let mut seen = false;
@@ -211,7 +233,7 @@ pub fn outside_free_memory(map: &[u8], at: u64, length: usize) -> bool {
             return false;
         }
         let Some(top) = base.checked_add(extent) else { return false };
-        if kind == 1 && at < top && base < end {
+        if refused(kind) && at < top && base < end {
             return false;
         }
         seen = true;
@@ -488,6 +510,27 @@ mod tests {
     }
 
     #[test]
+    fn only_the_checked_primary_64_bit_hpet_is_admitted() {
+        let id = 0x8086_a201u32;
+        let mut body = [0u8; 20];
+        body[..4].copy_from_slice(&id.to_le_bytes());
+        body[8..16].copy_from_slice(&HPET_ADDRESS.to_le_bytes());
+        for revision in [0, 2] {
+            assert_eq!(hpet_id(ROOT, &mut machine(revision, sdt(b"HPET", &body)).read()), Some(id));
+            assert_eq!(hpet_id(ROOT, &mut machine(revision, sdt(b"FACP", &body)).read()), None);
+        }
+        for (offset, mask) in [(1, 0x20), (4, 1), (6, 1), (9, 1)] {
+            let mut wrong = body;
+            wrong[offset] ^= mask;
+            assert_eq!(hpet_id(ROOT, &mut machine(2, sdt(b"HPET", &wrong)).read()), None);
+        }
+        let mut corrupt = sdt(b"HPET", &body);
+        corrupt[9] ^= 1;
+        assert_eq!(hpet_id(ROOT, &mut machine(2, corrupt).read()), None);
+        assert_eq!(hpet_id(ROOT, &mut machine(2, sdt(b"HPET", &body[..19])).read()), None);
+    }
+
+    #[test]
     fn nothing_is_read_from_memory_the_map_gives_as_free() {
         let entry = |base: u64, extent: u64, kind: u32| {
             let mut e = 20u32.to_le_bytes().to_vec();
@@ -497,6 +540,14 @@ mod tests {
             e
         };
         let map = [entry(0, 0x9fc00, 1), entry(0xf0000, 0x10000, 2), entry(0x10_0000, 0x7ef_0000, 1), entry(0x7ff_0000, 0x1_0000, 3)].concat();
+        assert!(hpet_page_available(&map)); // MMIO hole
+        assert!(hpet_page_available(&entry(HPET_ADDRESS, 4096, 2)));
+        for kind in [1, 3, 4, 5, 99] {
+            let overlap = [entry(HPET_ADDRESS, 4096, 2), entry(HPET_ADDRESS + 4095, 1, kind)].concat();
+            assert!(!hpet_page_available(&overlap));
+        }
+        assert!(!hpet_page_available(&[]));
+        assert!(!hpet_page_available(&map[..map.len() - 1]));
         assert!(outside_free_memory(&map, 0xf5000, 36));
         assert!(outside_free_memory(&map, 0x7ff_0000, 0x1_0000));
         assert!(outside_free_memory(&map, 0xa0000, 16)); // a hole the map does not mention
