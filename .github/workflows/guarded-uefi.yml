@@ -40,6 +40,7 @@ jobs:
           "$RUNNER_TEMP/processor-table-tests"
           bash PCP_OS_Rust/crates/pcpos-kernel/run.sh build
       - name: Check the default 16 MiB heap kernel on BIOS
+        shell: bash # with this GitHub adds pipefail, so the checker's failure is not lost in the pipe to tee (A3)
         run: |
           kernel=PCP_OS_Rust/crates/pcpos-kernel
           cp "$kernel/target/pcpos-kernel.elf32" "$RUNNER_TEMP/uefi-demo.elf32"

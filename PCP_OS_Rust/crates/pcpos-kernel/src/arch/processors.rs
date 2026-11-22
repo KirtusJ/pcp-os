@@ -150,7 +150,10 @@ pub fn find(root: u64, read: &mut dyn FnMut(u64, usize) -> Option<Vec<u8>>) -> R
             // is not enabled now is not started.) The identity 255, in the short form, means no one.
             if flags & 1 == 0 || (!extended && apic == 0xFF) {
                 found.disabled += 1;
-            } else if found.processors.iter().any(|p| p.apic == apic) {
+            } else if apic == u32::MAX || found.processors.iter().any(|p| p.apic == apic) {
+                // An entry in use must name exactly one processor. The identity of all ones is, in the
+                // extended way of addressing, every processor at once: a table that lists it as one
+                // is wrong, like a table that lists one twice.
                 return Err(Refused::BadProcessors);
             } else if found.processors.len() == MOST {
                 found.beyond += 1;
@@ -214,7 +217,8 @@ pub fn outside_free_memory(map: &[u8], at: u64, length: usize) -> bool {
 
 /// Whether `length` bytes at `at` lie wholly inside what the loader's memory map gives as the
 /// firmware's own tables: ACPI memory that may be reclaimed (kind 3) or must be kept (kind 4). The
-/// bytes may run across ranges of those kinds that touch. This is the rule for a root pointer the
+/// bytes may run across ranges of those kinds that touch, and no range of any other kind may claim
+/// any of them. This is the rule for a root pointer the
 /// loader named, which a UEFI machine's firmware keeps in such memory; a map that cannot be followed
 /// to its end answers no.
 pub fn inside_table_memory(map: &[u8], at: u64, length: usize) -> bool {
@@ -235,8 +239,12 @@ pub fn inside_table_memory(map: &[u8], at: u64, length: usize) -> bool {
             if size < 20 {
                 return false;
             }
-            if (kind == 3 || kind == 4) && base <= reached && reached < top {
-                next = next.max(top);
+            if kind == 3 || kind == 4 {
+                if base <= reached && reached < top {
+                    next = next.max(top);
+                }
+            } else if at < top && base < end {
+                return false; // a range of another kind claims some of the same bytes: the map contradicts itself there
             }
             entry += size as usize + 4;
         }
@@ -487,8 +495,24 @@ mod tests {
         assert!(!inside_table_memory(&map, 0xf5000, 36)); // reserved: where a BIOS keeps them, not a UEFI machine
         assert!(!inside_table_memory(&map, 0xa0000, 16)); // a hole the map does not mention
         assert!(!inside_table_memory(&map, 0x7fe0_0000, 0));
+        // A map in which reserved memory claims some of the same bytes as table memory, listed before or after it.
+        for conflicting in [[entry(0x7fe0_0000, 0x10_0000, 3), entry(0x7fe0_8000, 0x1000, 2)].concat(), [entry(0x7fe0_8000, 0x1000, 1), entry(0x7fe0_0000, 0x10_0000, 3)].concat()] {
+            assert!(!inside_table_memory(&conflicting, 0x7fe0_0000, 0x10_0000));
+            assert!(!inside_table_memory(&conflicting, 0x7fe0_8ff0, 36));
+            assert!(inside_table_memory(&conflicting, 0x7fe0_0000, 36)); // bytes the other range does not claim
+        }
         assert!(!inside_table_memory(&map, u64::MAX - 4, 36));
         assert!(!inside_table_memory(&[], 0x7fe0_0000, 36));
         assert!(!inside_table_memory(&map[..map.len() - 3], 0x7fe0_0000, 36));
+    }
+
+    #[test]
+    fn an_entry_in_use_that_names_every_processor_at_once_is_refused() {
+        let all = machine(2, madt(&[local(0, 1), wide(u32::MAX, 1)]));
+        assert_eq!(find(ROOT, &mut all.read()), Err(Refused::BadProcessors));
+        // Not in use, it is counted with the others that are not, and the table holds.
+        let unused = machine(2, madt(&[local(0, 1), wide(u32::MAX, 0)]));
+        let found = find(ROOT, &mut unused.read()).unwrap();
+        assert_eq!((ids(&found), found.disabled), (vec![0], 1));
     }
 }
