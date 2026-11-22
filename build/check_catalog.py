@@ -17,7 +17,9 @@ Predicates.
     through the closing bracket; a bare one ends at white space. A definition is checked whether
     or not anything uses it. Not read: a definition whose target is on the following line,
     percent-encoded paths (they are not decoded), raw HTML and bare addresses. Links inside code
-    fences, of backticks or tildes, read a line at a time, are not looked at; links to another site and links within a
+    fences, of backticks or tildes, are not looked at: assured for a fence at the top level of a
+    page, best effort inside a list item or quotation, where a link after the container ends
+    can be missed (see outside_fences); links to another site and links within a
     page are counted and reported, not checked.
  K7 every row says what its path is, and its last column is yes, no or not determined.
  K5 the comparison refuses, before the tree is read, a catalogue with a row missing, a row for a
@@ -73,8 +75,13 @@ def outside_fences(data):
     It also ends, and the line is read as ordinary text, where the block that held it ends: a
     line with fewer quotation marks, or, for a fence indented four or more columns (which is
     inside a list item, or is an indented code block and no fence at all), a line that is not
-    blank and is indented less than the opening one. This is not a Markdown parser: it is wrong
-    in the direction of reading text as links wherever those two rules end a fence early."""
+    blank and is indented less than the opening one.
+    This is not a Markdown parser. What is assured is the fence at the top level of a page.
+    Inside a list item or a quotation the handling is best effort and errs both ways: it can
+    read code as links, and it can miss a real link after the container ends. The known miss
+    (B3): an unclosed fence indented under four columns inside a list item is taken for a
+    top-level fence and runs to the end of the file. A control below records that it is missed.
+    Full coverage of what a renderer links would need a check that uses a renderer."""
     kept, fence = [], None
     for line in data.split(b"\n"):
         quotes, indent, rest = placed(line)
@@ -204,6 +211,8 @@ def selftest():
     require(links("a.md", b"> ~~~md\n> code\n" + after, set())[0] == gone, "a fence in a quotation ends with the quotation (B3)")
     require(links("a.md", b"- item\n\n      ~~~\n      [x](gone.md)\n\ntext [y](docs/after.md)\n", set())[0] == gone, "an unclosed fence in a list item ends with the item")
     require(links("a.md", b" ~~~\n[x](gone.md)\n\n[t]: gone.md\n", set()) == ([], 0, 0, 0), "a top-level fence indented under four columns still runs to the end of the file")
+    # Recorded limit, not a property: this link is real and missing, and is NOT reported (B3).
+    require(links("a.md", b"- Example\n  ~~~md\n  code\n" + after, set()) == ([], 0, 0, 0), "the known miss after a list item has changed: update the statement of what K6 assures")
     spaced = b"[guide]: <docs/Trial guide.md>\n[inline](<docs/Trial guide.md>)\n"
     require(links("a.md", spaced, {"docs/Trial guide.md"}) == ([], 2, 0, 0), "a bracketed target with a space, tracked, holds in both spellings (C3)")
     require(links("a.md", spaced, {"docs/Trial"})[0] == ["K6: a.md links to docs/Trial guide.md, which is not tracked"] * 2, "a bracketed target with a space is not cut at the space (C3)")
