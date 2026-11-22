@@ -25,11 +25,13 @@ jobs:
       - name: Build PCP worker and the requested kernel
         run: |
           mkdir evidence
-          cargo build --release --locked --manifest-path store/apps/parrots-all-the-way-down/host/Cargo.toml --target-dir "$RUNNER_TEMP/pcp-helper" --bin pcp-delegate
+          cargo build --release --locked --manifest-path store/apps/parrots-all-the-way-down/host/Cargo.toml --target-dir "$RUNNER_TEMP/pcp-helper" --bins
+          "$RUNNER_TEMP/pcp-helper/release/parrots-all-the-way-down" init "$PWD/evidence/desk.redb" 4 3 12
           delegate="$RUNNER_TEMP/pcp-helper/release/pcp-delegate"
           PCPOS_KERNEL_FEATURES=proposals,model-memory "$delegate" "$PWD/evidence/desk.redb" 43401 build -- sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
           sha256sum PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 | tee evidence/kernel.sha256
       - name: Build private desktop boot volume
+        id: medium
         run: |
           cat >evidence/grub.cfg <<'GRUB'
           set timeout=0
@@ -56,7 +58,7 @@ jobs:
         run: |
           "$RUNNER_TEMP/pcp-helper/release/pcp-delegate" "$PWD/evidence/desk.redb" 43402 pat -- /usr/bin/python3 examples/processors/a3_details_colours.py pat "$RUNNER_TEMP/details.img" evidence/pat
       - name: Read the framebuffer with PAT hidden
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.medium.outcome == 'success' }}
         run: |
           "$RUNNER_TEMP/pcp-helper/release/pcp-delegate" "$PWD/evidence/desk.redb" 43403 no-pat -- /usr/bin/python3 examples/processors/a3_details_colours.py no-pat "$RUNNER_TEMP/details.img" evidence/no-pat
       - name: Retain the serial logs, screenshots and parsed rows
