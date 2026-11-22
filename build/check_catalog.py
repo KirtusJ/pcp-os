@@ -17,7 +17,7 @@ Predicates.
     through the closing bracket; a bare one ends at white space. A definition is checked whether
     or not anything uses it. Not read: a definition whose target is on the following line,
     percent-encoded paths (they are not decoded), raw HTML and bare addresses. Links inside code
-    fences, of backticks or tildes, are not looked at; links to another site and links within a
+    fences, of backticks or tildes, read a line at a time, are not looked at; links to another site and links within a
     page are counted and reported, not checked.
  K7 every row says what its path is, and its last column is yes, no or not determined.
  K5 the comparison refuses, before the tree is read, a catalogue with a row missing, a row for a
@@ -53,8 +53,28 @@ def listed(text):
     return [m.group(1) for line in text.splitlines() for m in [re.match(r"\| `([^`]+)` \|", line)] if m]
 
 
-# A code fence: three backticks anywhere, or three tildes opening a line, to the next such (B3).
-FENCE = re.compile(rb"```.*?```|^ {0,3}~~~.*?^ {0,3}~~~", re.S | re.M)
+OPENING = re.compile(rb"[ \t>]*(`{3,}|~{3,})(.*)")
+
+
+def outside_fences(data):
+    """The text with fenced code taken out, read a line at a time as a renderer reads it (B3). A
+    fence opens on a line that starts, after any indentation or quotation marks, with three or
+    more backticks or tildes; a backtick fence's opening line holds no further backtick. It
+    closes on a line holding only a run of the same character at least as long as the opening
+    one, or at the end of the file."""
+    kept, fence = [], None
+    for line in data.split(b"\n"):
+        match = OPENING.match(line)
+        if fence is None:
+            if match and not (match.group(1)[:1] == b"`" and b"`" in match.group(2)):
+                fence = match.group(1)
+            else:
+                kept.append(line)
+        elif match and match.group(1)[:1] == fence[:1] and len(match.group(1)) >= len(fence) and not match.group(2).strip():
+            fence = None
+    return b"\n".join(kept)
+
+
 # A target is either in angle brackets, read through the closing bracket and so able to hold
 # spaces, or bare, ending at the first white space (C3).
 LINK = re.compile(rb"\]\((?:<([^<>\n]*)>|([^)\s<][^)\s]*))(?:\s+\"[^\"]*\")?\)")
@@ -68,7 +88,7 @@ def links(name, data, tracked):
     site, within the same page). Only the second kind is checked, against the tracked paths; a
     link to a place within another file is checked for the file only."""
     broken, paths, elsewhere, within = [], 0, 0, 0
-    text = FENCE.sub(b"", data)
+    text = outside_fences(data)
     for found in [m.group(1) if m.group(1) is not None else m.group(2) for m in list(LINK.finditer(text)) + list(DEFINITION.finditer(text))]:
         link = found.decode("utf-8", "replace")
         if link.startswith("#"):
@@ -152,6 +172,13 @@ def selftest():
     require(links("a.md", tilde, set()) == ([], 0, 0, 0), "nothing inside a tilde fence is a link (B3)")
     require(links("a.md", tilde + b"[trial]: docs/obsolete.md\n", set())[0] == ["K6: a.md links to docs/obsolete.md, which is not tracked"], "and what follows the closed tilde fence is read")
     require(links("a.md", b"[Read][t]\n\n[t]: <os-docs/B3 trial notes.md>\n", {"os-docs/B3 trial notes.md"}) == ([], 1, 0, 0), "B3's tracked name with spaces, in brackets, holds")
+    longer = b"~~~~md\n~~~\n[trial]: docs/obsolete.md\n~~~~\n"
+    require(links("a.md", longer, set()) == ([], 0, 0, 0), "a four-tilde fence is not closed by three tildes (B3)")
+    require(links("a.md", longer + b"[real]: docs/obsolete.md\n", set())[0] == ["K6: a.md links to docs/obsolete.md, which is not tracked"], "and a definition right after it is read")
+    require(links("a.md", b"text\n~~~\n[trial]: docs/obsolete.md\n[x](gone.md)\n", set()) == ([], 0, 0, 0), "an unclosed fence is code to the end of the file (B3)")
+    require(links("a.md", b"```` md\n```\n[x](gone.md)\n````\n[y](gone.md)\n", set())[0] == ["K6: a.md links to gone.md, which is not tracked"], "the same for backticks: one link read, the one after the fence")
+    require(links("a.md", b"```not a fence``` [x](gone.md)\n", set())[0] != [], "three backticks opening and closing on one line are not a fence")
+    require(links("a.md", b"- item\n\n      ~~~\n      [x](gone.md)\n      ~~~\n", set()) == ([], 0, 0, 0), "a fence inside a list item, indented")
     spaced = b"[guide]: <docs/Trial guide.md>\n[inline](<docs/Trial guide.md>)\n"
     require(links("a.md", spaced, {"docs/Trial guide.md"}) == ([], 2, 0, 0), "a bracketed target with a space, tracked, holds in both spellings (C3)")
     require(links("a.md", spaced, {"docs/Trial"})[0] == ["K6: a.md links to docs/Trial guide.md, which is not tracked"] * 2, "a bracketed target with a space is not cut at the space (C3)")
