@@ -609,6 +609,13 @@ pub fn frame_zero(frame: usize) -> bool {
     true
 }
 
+/// Whether one frame of the pool holds nothing but zeros. False if the address is not a frame of the pool.
+#[cfg(feature = "high-memory-demo")]
+pub fn frame_is_zero(frame: usize) -> bool {
+    // Safety: the frame lies in the pool, which is mapped readable at its own address.
+    in_pool(frame) && unsafe { core::slice::from_raw_parts(frame as *const u8, 4096) }.iter().all(|b| *b == 0)
+}
+
 /// Copy bytes into one frame of the pool. False if the frame is not of the pool or the bytes would not fit.
 pub fn frame_write(frame: usize, offset: usize, data: &[u8]) -> bool {
     if !in_pool(frame) || offset > 4096 || data.len() > 4096 - offset {

@@ -172,6 +172,23 @@ pub fn give(frame: usize) -> bool {
     })
 }
 
+/// Only with the `high-memory-demo` feature, at start-up: take what a device would be given (a run of
+/// frames, and one single frame) and what a program would be given, say where each lies, write to the
+/// program's frame and read it back, and give everything back. With memory above four gibibytes present
+/// the first two must lie below one gibibyte and the third above four.
+#[cfg(feature = "high-memory-demo")]
+pub fn high_memory_demo() {
+    let (run, single, data) = (take_run(4), take(), take_data());
+    let low = |f: Option<usize>| f.is_some_and(|f| f < 1 << 30);
+    let written = data.is_some_and(|f| arch::frame_write(f, 0, &[0xA5; 4096]));
+    let returned = [run, single, data].iter().all(|f| f.is_some_and(give)) && (1..4).all(|n| run.is_some_and(|f| give(f + n * 4096)));
+    // Taken again, the program's frame comes back zeroed whatever was written to it.
+    let again = take_data();
+    let zeroed = again.is_some_and(|f| arch::frame_is_zero(f)) && again.is_some_and(give);
+    crate::log(format_args!("high memory demo: run below one gibibyte {}, single frame below one gibibyte {}, program frame above four gibibytes {}, written {}, all given back {}, zeroed when taken again {}\n",
+        low(run) as u8, low(single) as u8, data.is_some_and(|f| f >= 4 << 30) as u8, written as u8, returned as u8, zeroed as u8));
+}
+
 /// The same four figures for the memory above four gibibytes, all its ranges together.
 pub fn census_high() -> (usize, usize, u64, u64) {
     arch::without_interrupts(|| {

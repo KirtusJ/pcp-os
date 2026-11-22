@@ -701,6 +701,8 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
          cr0 >> 31 & 1 == 1, cr0 >> 16 & 1 == 1, efer >> 11 & 1 == 1, efer >> 10 & 1 == 1);
     let (pool_start, pool_end) = arch::protect(&mut boot);
     let frames = mem::init();
+    #[cfg(feature = "high-memory-demo")]
+    mem::high_memory_demo();
     arch::fpu_init();
     arch::syscall_init();
     say!("memory for programs: {} frames of 4 KiB, {:#x}..{:#x}", frames, pool_start, pool_end);

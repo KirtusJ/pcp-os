@@ -17,12 +17,18 @@ pcp_game_guest::entry!(probe_main);
 pub extern "C" fn probe_main() -> ! {
     const CHUNK: usize = 64 << 20;
     let mut got = 0usize;
+    let mut dirty = 0usize;
     loop {
         let at = call(9, 0, CHUNK, 3, 0x22, usize::MAX, 0);
         if at < 0 { say(b"memory: refused with ", (-at) as usize); break; }
         let base = at as usize as *mut u8;
         let mut offset = 0;
         while offset < CHUNK {
+            // Memory is handed over holding nothing: every page reads zero before this program writes it.
+            // Safety: as below.
+            if unsafe { base.add(offset).read_volatile() } != 0 || unsafe { base.add(offset + 4095).read_volatile() } != 0 {
+                dirty += 1;
+            }
             // Safety: the kernel returned this mapping, readable and writable, of CHUNK bytes.
             unsafe { base.add(offset).write_volatile((offset >> 12) as u8) };
             offset += 4096;
@@ -31,6 +37,7 @@ pub extern "C" fn probe_main() -> ! {
         if got % 8 == 0 { say(b"memory: mebibytes so far ", got * 64); }
         if got == 160 { break; }
     }
+    say(b"memory: pages that did not read zero ", dirty);
     say(b"memory: mebibytes mapped and touched ", got * 64);
     exit(0);
 }

@@ -166,6 +166,15 @@ mod tests {
         let (ranges, count) = high(&[hole.clone(), big.clone()].concat());
         assert_eq!((count, ranges[0], ranges[1]), (2, ((4 * g + p) as usize, (5 * g) as usize), ((5 * g + p) as usize, (6 * g - p) as usize)));
         assert_eq!(high(&[big, hole].concat()), (ranges, count));
+        // A usable range that begins below four gibibytes keeps the whole of its part above (the cut
+        // to the window comes before the cut to whole pages), and loses all of its part below.
+        let (crossing, n) = high(&entry(3 * g + 5, 6 * g, 1));
+        assert_eq!((n, crossing[0]), (1, ((4 * g) as usize, (6 * g) as usize)));
+        // A reserved record that only touches a usable one at its end removes nothing; one that
+        // overlaps it by a byte removes that page and nothing is invented beyond what is usable.
+        assert_eq!(high(&[entry(4 * g, 5 * g, 1), entry(5 * g, 6 * g, 2)].concat()).0[0], ((4 * g) as usize, (5 * g) as usize));
+        assert_eq!(high(&[entry(4 * g, 5 * g, 1), entry(5 * g - 1, 6 * g, 2)].concat()).0[0], ((4 * g) as usize, (5 * g - p) as usize));
+        assert_eq!(high(&entry(4 * g, 4 * g + p - 1, 1)).1, 0);
         // Memory past the ceiling is left; more than eight ranges keep the first eight; a bad map gives none.
         let (far, n) = high(&entry(60 * g, 80 * g, 1));
         assert_eq!((n, far[0]), (1, ((60 * g) as usize, HIGH_END as usize)));

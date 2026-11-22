@@ -14,6 +14,11 @@ Predicates, fixed before the first run.
  L2 with 8,192 MiB (5,120 MiB of it above four gibibytes on this emulated machine) the program gets
     6,080 MiB: all of the high memory, then the 960 MiB below. The kernel's line for high memory
     shows 1,310,720 frames, all free at the end, and as many given back as handed out.
+ L4 every page handed to the program reads zero at both ends before the program writes to it.
+ L5 (with --demo-kernel, built with the high-memory-demo feature, at 8,192 MiB) what a device would be
+    given, a run of frames and a single frame, lies below one gibibyte although memory above four is
+    free; a program's frame lies above four gibibytes, takes a write, is given back, and reads zero
+    when taken again.
  L3 at every size the emulator ends with status 33, 71 self-tests pass and none fails, and the pool
     below one gibibyte has every frame free at the end.
 
@@ -35,6 +40,7 @@ def main():
     parser.add_argument("kernel", type=Path)
     parser.add_argument("probe", type=Path)
     parser.add_argument("--qemu", default="qemu-system-x86_64")
+    parser.add_argument("--demo-kernel", type=Path)
     args = parser.parse_args()
     kernel, probe = args.kernel.resolve(), args.probe.resolve()
     if probe.name != "memory-probe":
@@ -48,7 +54,7 @@ def main():
             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, cwd=kernel.parent, timeout=900)
         lines = done.stdout.decode(errors="replace").splitlines()
         said = [line for line in lines if line.startswith("memory: ") and "so far" not in line]
-        if said != ["memory: refused with 12", "memory: mebibytes mapped and touched %d" % want]:
+        if said != ["memory: refused with 12", "memory: pages that did not read zero 0", "memory: mebibytes mapped and touched %d" % want]:
             problems.append("%d MiB: the program said %r, not refused with 12 after %d MiB" % (mebibytes, said, want))
         passes = sum(1 for line in lines if line.startswith("  pass "))
         if done.returncode != 33 or passes != 71 or any(line.startswith("  FAIL") for line in lines):
@@ -64,6 +70,19 @@ def main():
         if high is not None and above != [(high, high, high, high)]:
             problems.append("%d MiB: high memory reported as %r, not %d frames all handed out once and all returned" % (mebibytes, above, high))
         print("%d MiB: %s%s" % (mebibytes, "; ".join(said), "; high frames %r" % (above,) if above else ""))
+    if args.demo_kernel:
+        demo = args.demo_kernel.resolve()
+        done = subprocess.run([args.qemu, "-machine", "pc", "-accel", "tcg", "-cpu", "max", "-m", "8192M", "-kernel", demo.name, "-append", "then=off",
+                               "-display", "none", "-nic", "none", "-serial", "stdio", "-no-reboot", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"],
+                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, cwd=demo.parent, timeout=600)
+        lines = done.stdout.decode(errors="replace").splitlines()
+        said = [line for line in lines if line.startswith("high memory demo: ")]
+        want = "high memory demo: run below one gibibyte 1, single frame below one gibibyte 1, program frame above four gibibytes 1, written 1, all given back 1, zeroed when taken again 1"
+        if said != [want] or done.returncode != 33 or any(line.startswith("  FAIL") for line in lines):
+            problems.append("the demonstration kernel said %r (status %r)" % (said, done.returncode))
+        print("demo: %s" % "; ".join(said))
+    else:
+        print("L5 not run: no --demo-kernel given")
     if problems:
         for problem in problems:
             print("FAIL " + problem, file=sys.stderr)
