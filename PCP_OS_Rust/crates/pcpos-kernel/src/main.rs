@@ -729,6 +729,12 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     let (cr0, _cr4, efer) = arch::protection_registers();
     say!("protections: paging {}, supervisor write protection {}, no-execute {}, long mode {}",
          cr0 >> 31 & 1 == 1, cr0 >> 16 & 1 == 1, efer >> 11 & 1 == 1, efer >> 10 & 1 == 1);
+    // Before any display is mapped and before any other processor is started.
+    match arch::combining_init() {
+        Some((was, now)) if arch::combining_on() => say!("display memory: writes will be combined (page-attribute table {:#018x}, was {:#018x})", now, was),
+        Some((was, now)) => say!("display memory: writes will NOT be combined: the page-attribute table reads {:#018x} after it was written (was {:#018x})", now, was),
+        None => say!("display memory: writes will not be combined: this processor has no page-attribute table"),
+    }
     #[cfg(feature = "processors")]
     arch::others::prepare();
     let (pool_start, pool_end) = arch::protect(&mut boot);
@@ -849,6 +855,8 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     match display {
         Some(d) => {
             say!("display: {:?}, {}x{}, {} page(s), {} KiB of its memory mapped at {:#x}", d.kind, d.width, d.height, d.pages, d.mapped / 1024, d.memory);
+            let (with, all) = arch::combining_readback(d.memory, d.pitch as usize * d.height as usize * d.pages as usize);
+            say!("display memory: {} of the {} pages a picture is written to are mapped write-combining, read back from the kernel's tables", with, all);
             say!("display: a program that asks {}", if sys::display_needs_shadow(&d) { "draws to memory of its own, and the kernel shows each finished picture" }
                                                        else { "draws on the page that is not shown, and the kernel shows it when it is finished" });
         }
@@ -897,6 +905,9 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
                         }
                         if o.given_types > 0 {
                             say!("other processors: {} came up holding other memory types than the first and were given the first's", o.given_types);
+                        }
+                        if o.given_table > 0 {
+                            say!("other processors: {} came up with another page-attribute table than the first and were given the first's; their memory ranges agreed and were not touched", o.given_table);
                         }
                         if o.out_of_reach > 0 {
                             say!("other processors: {} not tried: their identities need a mode the machine is not in", o.out_of_reach);
