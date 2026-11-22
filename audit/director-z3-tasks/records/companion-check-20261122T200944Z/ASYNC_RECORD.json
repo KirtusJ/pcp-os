@@ -1,0 +1,36 @@
+{
+ "tool": "async_run.py",
+ "plan": "plan.json",
+ "plan_sha256": "5289007fa8055f41d130370642933cd1fd9bb0cb76b03d463b14414c5854f65c",
+ "width": 1,
+ "tasks": [
+  {
+   "id": "T",
+   "argv": [
+    "python3",
+    "/home/user/pcp-os/examples/companion/check.py",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/cp-companion.elf32",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/tq-front/talk-front",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/tq-back/talk-back",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/tq-leave/talk-back"
+   ],
+   "exit": 1,
+   "expect_exit": 0,
+   "timed_out": false,
+   "seconds": 3.21,
+   "ended_as_expected": false,
+   "copied_in": [],
+   "files": {
+    "STDERR.txt": {
+     "sha256": "1062e5442660407d7baa993ae63c4cb4a7c986744f4040cac60f47839ee6fd76",
+     "bytes": 247
+    },
+    "STDOUT.txt": {
+     "sha256": "df102904987b87878f4c74037d9d9a9a1dac69c69cf4375ff3bfdd5a66dc0493",
+     "bytes": 1098
+    }
+   }
+  }
+ ],
+ "all_ended_as_expected": false
+}

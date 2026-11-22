@@ -1,0 +1,2 @@
+FAIL no companion named: the channel was not refused, or a companion was started: ['opening the channel answered -13']
+FAIL a worker that is not loaded: the channel was not refused, or a companion was started: ['opening the channel answered -13']

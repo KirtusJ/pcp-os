@@ -1,0 +1,17 @@
+Traceback (most recent call last):
+  File "/home/user/pcp-os/examples/companion/check_listed.py", line 133, in <module>
+    main()
+    ~~~~^^
+  File "/home/user/pcp-os/examples/companion/check_listed.py", line 112, in main
+    listed, pages, serial, status = boot(kernel, output, "paired", files, f" worker_for={df} worker_image={dw}")
+                                    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/pcp-os/examples/companion/check_listed.py", line 62, in boot
+    listed = screens.wait("programs", lambda rows: any("Enter" in r for r in rows) and any("front-program" in r for r in rows))
+  File "/home/user/pcp-os/examples/optical-disk-check/check.py", line 251, in wait
+    return self.wait_frame(name, lambda rows, frame: predicate(rows))
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/pcp-os/examples/optical-disk-check/check.py", line 262, in wait_frame
+    return wait_for(inspect, 'waiting for ' + name + ' framebuffer', self.timeout)
+  File "/home/user/pcp-os/examples/optical-disk-check/check.py", line 173, in wait_for
+    raise TimeoutError(description)
+TimeoutError: waiting for programs framebuffer
