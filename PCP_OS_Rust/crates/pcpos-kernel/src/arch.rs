@@ -870,7 +870,7 @@ pub fn map_device(phys: usize, len: usize) -> bool {
             let t = TABLES.0.get() as *mut [u64; 512];
             let mut at = phys;
             while at < end {
-                (*t.add(2 + (at >> 30)))[(at >> 21) & 511] = at as u64 | P | W | NX | HUGE;
+                (*t.add(2 + (at >> 30)))[(at >> 21) & 511] = at as u64 | P | W | NX | HUGE | combining();
                 at += MIB2;
             }
         }
@@ -942,7 +942,7 @@ pub fn map_loader_display(boot: &BootInfo) -> Result<usize, &'static str> {
                 let slot = (stretch >> 21) & 511;
                 if (*directory)[slot] & P == 0 {
                     if whole(stretch) {
-                        (*directory)[slot] = stretch as u64 | P | W | NX | HUGE;
+                        (*directory)[slot] = stretch as u64 | P | W | NX | HUGE | combining();
                         continue;
                     }
                     let table = t.add(6 + SMALL_TABLES + next);
@@ -952,7 +952,7 @@ pub fn map_loader_display(boot: &BootInfo) -> Result<usize, &'static str> {
                 }
                 let table = ((*directory)[slot] & ADDRESS) as *mut [u64; 512];
                 for page in (stretch.max(first)..(stretch + MIB2).min(last)).step_by(4096) {
-                    (*table)[(page >> 12) & 511] = page as u64 | P | W | NX;
+                    (*table)[(page >> 12) & 511] = page as u64 | P | W | NX | combining();
                 }
             }
             SPARE_USED.store(next, Ordering::SeqCst);
@@ -1369,6 +1369,98 @@ pub fn vector_state_demo() {
     let clean = read();
     crate::log(format_args!("vector demo: first state returned {}, second state returned {}, first again {}, left clean {}\n",
         (got_first == first) as u8, (got_second == second) as u8, (again == first) as u8, (clean == [0u8; 32]) as u8));
+}
+
+/// The page-table bit that asks for a display's memory to be written combining, once the processor
+/// has been told what that bit means; zero until then and where the processor cannot be told.
+static COMBINING: AtomicU64 = AtomicU64::new(0);
+/// The second entry of the processor's table of page attributes is chosen by this bit of a page's
+/// entry, alone (Intel SDM volume 3, 13.12; the position is the same in a 4 KiB and a 2 MiB entry).
+const PWT: u64 = 1 << 3;
+const PAT_REGISTER: u32 = 0x277;
+const WRITE_COMBINING: u64 = 0x01;
+
+/// What is added to an entry that maps a display's memory: the write-combining bit, or nothing.
+fn combining() -> u64 {
+    COMBINING.load(Ordering::SeqCst)
+}
+
+/// Tell the processor that the second entry of its page-attribute table means write-combining, so
+/// that a display's memory can be mapped that way. A display's memory is written a great deal and
+/// read hardly at all; firmware commonly leaves it uncached, where every four bytes go out singly,
+/// and a whole picture of 1920 by 1080 was seen being drawn on the owner's laptop. Combining writes
+/// is the usual practice for framebuffers (Linux maps the firmware's with `ioremap_wc`).
+///
+/// Called once, on the first processor, before any display is mapped and before any other processor
+/// is started: no entry of any table has the bit yet, so no translation in use changes meaning, and
+/// the others are given the first's registers when theirs differ (`others`). Done by the makers'
+/// procedure for changing memory types. Returns the register as it was and as it is, or `None` where
+/// the processor has no such table. The new meaning is used only if the register reads back as written.
+pub fn combining_init() -> Option<(u64, u64)> {
+    if core::arch::x86_64::__cpuid(1).edx & (1 << 16) == 0 {
+        return None;
+    }
+    // Safety: the register exists (checked). Reading changes nothing.
+    let read = || -> u64 {
+        let (low, high): (u32, u32);
+        unsafe { asm!("rdmsr", in("ecx") PAT_REGISTER, out("eax") low, out("edx") high, options(nomem, nostack, preserves_flags)) };
+        (high as u64) << 32 | low as u64
+    };
+    let was = read();
+    let want = (was & !(0xFF << 8)) | (WRITE_COMBINING << 8);
+    if was != want {
+        let on = interrupts_save_off();
+        // Safety: interrupts are off and this is the only processor running. Caches are put in
+        // no-fill mode and emptied, translations forgotten, the register written, and both emptied
+        // again before the caches are turned back on (Intel SDM volume 3, 13.11.8, as for the
+        // memory-type registers).
+        unsafe {
+            let cr0: u64;
+            asm!("mov {}, cr0", out(reg) cr0, options(nomem, nostack, preserves_flags));
+            asm!("mov cr0, {}", in(reg) (cr0 | 1 << 30) & !(1 << 29), options(nomem, nostack, preserves_flags));
+            asm!("wbinvd", "mov {t}, cr3", "mov cr3, {t}", t = out(reg) _, options(nostack, preserves_flags));
+            wrmsr(PAT_REGISTER, want);
+            asm!("wbinvd", "mov {t}, cr3", "mov cr3, {t}", t = out(reg) _, options(nostack, preserves_flags));
+            asm!("mov cr0, {}", in(reg) cr0, options(nomem, nostack, preserves_flags));
+        }
+        interrupts_restore(on);
+    }
+    let now = read();
+    if now == want {
+        COMBINING.store(PWT, Ordering::SeqCst);
+    }
+    Some((was, now))
+}
+
+/// Whether a display's memory is mapped write-combining.
+pub fn combining_on() -> bool {
+    combining() != 0
+}
+
+/// Read back from the kernel's own tables how the memory from `phys` for `len` bytes is mapped: how
+/// many of its pages carry the write-combining bit, and how many pages there are. Unmapped pages
+/// count as not carrying it.
+pub fn combining_readback(phys: usize, len: usize) -> (usize, usize) {
+    let (mut with, mut all) = (0, 0);
+    for addr in (phys & !4095..phys + len).step_by(4096) {
+        all += 1;
+        // Safety: reads this kernel's own page tables, which are static storage.
+        unsafe {
+            let mut table = TABLES.0.get() as *const u64;
+            for level in (0..4).rev() {
+                let e = table.add((addr >> (12 + 9 * level)) & 511).read();
+                if e & P == 0 {
+                    break;
+                }
+                if level == 0 || e & HUGE != 0 {
+                    with += (e & PWT != 0) as usize;
+                    break;
+                }
+                table = (e & ADDRESS) as *const u64;
+            }
+        }
+    }
+    (with, all)
 }
 
 fn wrmsr(msr: u32, value: u64) {
@@ -2098,7 +2190,7 @@ impl Space {
         for n in 0..pages {
             match self.slot(addr + n * 4096, true) {
                 // Safety: as above; the pass before found this slot and found it free.
-                Some(e) => unsafe { *e = (phys + n * 4096) as u64 | P | U | W | NX | NOT_OWNED },
+                Some(e) => unsafe { *e = (phys + n * 4096) as u64 | P | U | W | NX | NOT_OWNED | combining() },
                 None => return false,
             }
         }
@@ -2163,7 +2255,7 @@ impl Space {
                 if *e & P == 0 || *e & SEALED != 0 {
                     return false;
                 }
-                *e = (*e & (ADDRESS | NOT_OWNED)) | P | U | if write { W } else { 0 } | if exec { 0 } else { NX };
+                *e = (*e & (ADDRESS | NOT_OWNED | PWT)) | P | U | if write { W } else { 0 } | if exec { 0 } else { NX };
                 self.flush(addr);
                 true
             },

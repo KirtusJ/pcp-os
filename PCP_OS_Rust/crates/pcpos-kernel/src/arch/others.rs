@@ -240,6 +240,41 @@ unsafe fn take_memory_types(types: &Types) {
     asm!("wbinvd", "mov {t}, cr3", "mov cr3, {t}", t = out(reg) _, options(nostack, preserves_flags));
 }
 
+/// Whether two processors' memory-type registers differ in the ranges (everything but the
+/// page-attribute table), and whether they differ in that table.
+fn differences(first: &Types, mine: &Types) -> (bool, bool) {
+    let ranges = |t: &Types| -> ([(u32, u64); TYPE_REGISTERS], usize) {
+        let mut out = ([(0, 0); TYPE_REGISTERS], 0);
+        for &entry in t.0[..t.1].iter().filter(|(register, _)| *register != 0x277) {
+            out.0[out.1] = entry;
+            out.1 += 1;
+        }
+        out
+    };
+    let table = |t: &Types| t.0[..t.1].iter().find(|(register, _)| *register == 0x277).map(|&(_, value)| value);
+    (ranges(first) != ranges(mine), table(first) != table(mine))
+}
+
+/// Give this processor the first one's page-attribute table and nothing else, by the same
+/// procedure: caches in no-fill mode and emptied, translations forgotten, the one register written,
+/// both emptied again, and the caches turned back on as they were.
+///
+/// # Safety
+/// As `take_memory_types`. The table is this processor's own; no other processor's state is touched.
+unsafe fn take_page_attributes(types: &Types) {
+    let value = match types.0[..types.1].iter().find(|(register, _)| *register == 0x277) {
+        Some(&(_, value)) => value,
+        None => return,
+    };
+    let cr0: u64;
+    asm!("mov {}, cr0", out(reg) cr0, options(nomem, nostack, preserves_flags));
+    asm!("mov cr0, {}", in(reg) (cr0 | 1 << 30) & !(1 << 29), options(nomem, nostack, preserves_flags));
+    asm!("wbinvd", "mov {t}, cr3", "mov cr3, {t}", t = out(reg) _, options(nostack, preserves_flags));
+    wrmsr(0x277, value);
+    asm!("wbinvd", "mov {t}, cr3", "mov cr3, {t}", t = out(reg) _, options(nostack, preserves_flags));
+    asm!("mov cr0, {}", in(reg) cr0, options(nomem, nostack, preserves_flags));
+}
+
 /// What the first processor is set to, for the others to be set the same.
 static FIRST_TYPES: Single<Types> = Single::new(([(0, 0); TYPE_REGISTERS], 0));
 static FIRST_CR0: AtomicU64 = AtomicU64::new(0);
@@ -254,6 +289,7 @@ const UNKNOWN_THREADS: u64 = 1 << 40;
 const NOT_ITSELF: u64 = 1 << 41;
 const DIFFERENT: u64 = 1 << 42;
 const GIVEN_TYPES: u64 = 1 << 43;
+const GIVEN_TABLE: u64 = 1 << 44;
 static SAID: [AtomicU64; OTHERS] = [const { AtomicU64::new(0) }; OTHERS];
 
 /// Where another processor arrives from `ap_entry` in others.s: in 64-bit mode on the kernel's map, on
@@ -269,10 +305,23 @@ extern "C" fn ap_main() -> ! {
     }
     // The first processor wrote these before any other was started and does not write them again.
     let mut same = FIRST_ABILITIES.with(|first| *first == abilities());
-    if same && FIRST_TYPES.with(|first| *first != memory_types()) {
-        // Safety: its abilities equal the first's, it runs nothing else, and interrupts are off.
-        unsafe { FIRST_TYPES.with(|first| take_memory_types(first)) };
-        said |= GIVEN_TYPES;
+    if same {
+        // The ranges and the page-attribute table are compared apart (C3). The table is each
+        // processor's own, and the first's was changed by this kernel (`combining_init`), so a
+        // processor fresh from its start differs there even where firmware set every range alike.
+        // The ranges can be shared between the two threads of a core, and rewriting them while the
+        // first processor runs is not to be done for a difference that is only the table's.
+        let mine = memory_types();
+        let (ranges_differ, table_differs) = FIRST_TYPES.with(|first| differences(first, &mine));
+        if ranges_differ {
+            // Safety: its abilities equal the first's, it runs nothing else, and interrupts are off.
+            unsafe { FIRST_TYPES.with(|first| take_memory_types(first)) };
+            said |= GIVEN_TYPES;
+        } else if table_differs {
+            // Safety: as above; only this processor's own table is written.
+            unsafe { FIRST_TYPES.with(|first| take_page_attributes(first)) };
+            said |= GIVEN_TABLE;
+        }
         same = FIRST_TYPES.with(|first| *first == memory_types());
     }
     // Safety: the segment table and task state segment are this processor's own, filled by `prepare`;
@@ -605,6 +654,8 @@ pub struct Started {
     pub different: usize,
     /// How many came up holding other memory types than the first and were given the first's.
     pub given_types: usize,
+    /// How many differed from the first only in the page-attribute table and were given the first's table, their ranges untouched.
+    pub given_table: usize,
     /// How many were not tried because their identity needs the extended mode and the machine is not in it.
     pub out_of_reach: usize,
     /// Whether one did not answer (it was returned to waiting, and no further one was tried).
@@ -797,6 +848,7 @@ pub fn start(found: &processors::Found, page: Option<u64>) -> Result<Started, &'
         out.not_itself += (said & NOT_ITSELF != 0) as usize;
         out.different += (said & DIFFERENT != 0) as usize;
         out.given_types += (said & GIVEN_TYPES != 0) as usize;
+        out.given_table += (said & GIVEN_TABLE != 0) as usize;
         known &= said & UNKNOWN_THREADS == 0;
         let core = (said as u32) >> (said >> 32 & 31);
         if !cores.contains(&core) {
