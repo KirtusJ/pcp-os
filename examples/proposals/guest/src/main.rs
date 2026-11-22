@@ -251,6 +251,10 @@ pub extern "C" fn probe_main() -> ! {
     say(b"probe: renaming the note answered ", call(82, b"taylor/first-project/note.txt\0".as_ptr() as usize, b"taylor/x.txt\0".as_ptr() as usize, 0, 0, 0, 0));
     say(b"probe: a name outside the folder answered ", open(b"elsewhere/note.txt\0", 0));
     say(b"probe: a name beside the folder answered ", open(b"taylorx/note.txt\0", 0));
+    // What a program that may propose is not given: sound, and the loader's other files (its own
+    // program is one of them, so the name is certain to exist).
+    say(b"probe: opening the sound device answered ", open(b"/dev/audio\0", 1));
+    say(b"probe: opening its own program among the loader's files answered ", open(b"proposal-probe\0", 0));
     log(b"probe: done\n");
     exit(0);
 }
