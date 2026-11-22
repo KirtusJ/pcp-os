@@ -1,0 +1,19 @@
+[package]
+name = "float-probe"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Test programs for examples/hard-float/check.py: the same sums built with software and with hardware floating point, two programs computing at once, the red zone, and a heap"
+
+[dependencies]
+pcp-game-guest = { path = "../../../store/native/guest" }
+
+[features]
+hard = ["pcp-game-guest/hard-float-target"]
+
+[profile.release]
+panic = "abort"
+opt-level = 3
+codegen-units = 1
+
+[workspace]

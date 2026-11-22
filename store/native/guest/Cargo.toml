@@ -3,3 +3,9 @@ name = "pcp-game-guest"
 version = "0.1.0"
 edition = "2021"
 publish = false
+
+[features]
+# Build the PCP OS calls, entry and panic handler on a target that is not the bare one. For a guest
+# built for x86_64-unknown-linux-gnu with no C library, so that its floating point is the
+# processor's and not software. Never enable it for a program that runs on a host.
+hard-float-target = []
