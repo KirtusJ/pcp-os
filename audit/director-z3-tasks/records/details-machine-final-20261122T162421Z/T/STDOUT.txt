@@ -1,0 +1,11 @@
+PASS D1 plain-1: the processors sentence on Details is the serial line's | 'processors: the firmware lists 1 usable (found where a BIOS puts it); 0 more than this kernel would start, 0 not to be used; this kernel runs on one' / 'processors: the firmware lists 1 usable (found where a BIOS puts it); 0 more than this kernel would start, 0 not to be used; this kernel runs on one'
+PASS D4 plain-1: no other-processors or heat line without the features | None / None
+PASS D1 plain-4: the processors sentence on Details is the serial line's | 'processors: the firmware lists 4 usable (found where a BIOS puts it); 0 more than this kernel would start, 0 not to be used; this kernel runs on one' / 'processors: the firmware lists 4 usable (found where a BIOS puts it); 0 more than this kernel would start, 0 not to be used; this kernel runs on one'
+PASS D4 plain-4: no other-processors or heat line without the features | None / None
+PASS D1 full-1: the processors sentence on Details is the serial line's | 'processors: the firmware lists 1 usable (found where a BIOS puts it); 0 more than this kernel would start, 0 not to be used; this kernel runs on one' / 'processors: the firmware lists 1 usable (found where a BIOS puts it); 0 more than this kernel would start, 0 not to be used; this kernel runs on one'
+PASS D2 full-1: other processors as started | 'other processors: 0 of 0 started and parked; none runs any work yet'
+PASS D3 full-1: the heat sentence on Details is the serial line's | 'heat: not known (this processor offers no sensor)' / 'heat: not known (this processor offers no sensor)'
+PASS D1 full-4: the processors sentence on Details is the serial line's | 'processors: the firmware lists 4 usable (found where a BIOS puts it); 0 more than this kernel would start, 0 not to be used; this kernel runs on one' / 'processors: the firmware lists 4 usable (found where a BIOS puts it); 0 more than this kernel would start, 0 not to be used; this kernel runs on one'
+PASS D2 full-4: other processors as started | 'other processors: 3 of 3 started and parked; none runs any work yet'
+PASS D3 full-4: the heat sentence on Details is the serial line's | 'heat: not known (this processor offers no sensor)' / 'heat: not known (this processor offers no sensor)'
+ALL PASS: 0 failed

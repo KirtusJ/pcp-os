@@ -1,0 +1,18 @@
+Traceback (most recent call last):
+  File "/home/user/pcp-os/examples/processors/check_details.py", line 107, in <module>
+    main()
+    ~~~~^^
+  File "/home/user/pcp-os/examples/processors/check_details.py", line 89, in main
+    pages, serial = details(kernel, cpus, output / label)
+                    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/pcp-os/examples/processors/check_details.py", line 50, in details
+    pages.append(screens.wait("details-%02d" % step, lambda rows: any("Esc back" in row for row in rows)))
+                 ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/pcp-os/examples/optical-disk-check/check.py", line 251, in wait
+    return self.wait_frame(name, lambda rows, frame: predicate(rows))
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/pcp-os/examples/optical-disk-check/check.py", line 262, in wait_frame
+    return wait_for(inspect, 'waiting for ' + name + ' framebuffer', self.timeout)
+  File "/home/user/pcp-os/examples/optical-disk-check/check.py", line 173, in wait_for
+    raise TimeoutError(description)
+TimeoutError: waiting for details-01 framebuffer
