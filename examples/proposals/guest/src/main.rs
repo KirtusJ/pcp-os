@@ -97,14 +97,17 @@ pub extern "C" fn probe_main() -> ! {
     say(b"probe: its attempt ", u64::from_le_bytes([whole[16], whole[17], whole[18], whole[19], whole[20], whole[21], whole[22], whole[23]]) as isize);
     say(b"probe: its proposal ", u64::from_le_bytes([whole[24], whole[25], whole[26], whole[27], whole[28], whole[29], whole[30], whole[31]]) as isize);
     say(b"probe: its lasting ", u32::from_le_bytes([whole[96], whole[97], whole[98], whole[99]]) as isize);
-    log(b"probe: its content digest ");
-    let mut hex = [0u8; 65];
-    for (i, byte) in whole[64..96].iter().enumerate() {
-        hex[i * 2] = b"0123456789abcdef"[(byte >> 4) as usize];
-        hex[i * 2 + 1] = b"0123456789abcdef"[(byte & 15) as usize];
+    say(b"probe: its run ", u64::from_le_bytes([whole[8], whole[9], whole[10], whole[11], whole[12], whole[13], whole[14], whole[15]]) as isize);
+    for (what, from) in [(&b"probe: its request digest "[..], 32usize), (&b"probe: its content digest "[..], 64)] {
+        log(what);
+        let mut hex = [0u8; 65];
+        for (i, byte) in whole[from..from + 32].iter().enumerate() {
+            hex[i * 2] = b"0123456789abcdef"[(byte >> 4) as usize];
+            hex[i * 2 + 1] = b"0123456789abcdef"[(byte & 15) as usize];
+        }
+        hex[64] = b'\n';
+        log(&hex);
     }
-    hex[64] = b'\n';
-    log(&hex);
     ask(fd, 7, 1, NAME, CONTENT); // the same proposal again: answered from the receipt, nobody asked
     ask(fd, 7, 1, NAME, b"other words"); // the same numbers for other content: refused, the receipt unchanged
     ask(fd, 7, 1, b"taylor/first-project/other.txt", CONTENT); // the same numbers for another name: refused likewise
@@ -129,6 +132,11 @@ pub extern "C" fn probe_main() -> ! {
     }
     say(b"probe: the kernel took no more proposals at number ", number as isize);
     say(b"probe: answering ", last);
+    if first == 1 {
+        // With the kernel taking no more, the first proposal of all is still answered from its receipt.
+        log(b"probe: after the flood\n");
+        ask(fd, 7, 1, NAME, CONTENT);
+    }
     log(b"probe: done\n");
     exit(0);
 }

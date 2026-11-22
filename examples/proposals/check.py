@@ -35,8 +35,11 @@ Predicates, fixed before the first run.
  K1 (in the allowed case) reads that fail take nothing: a read too small and a read of nothing are -22,
     a read into memory that is not the program's is -14, and the read straight after, with no proposal
     in between, gives all 100 bytes: outcome 1, attempt 7, proposal 1, lasting 0, and the content's own
-    SHA-256. The same numbers with another name are refused -16 like another content. After sixty-four
-    proposals in one run the kernel takes no more (-28); none was asked about or made.
+    SHA-256, the kernel's number 1 for the run, and the SHA-256 of the whole request as the check
+    computes it itself (lengths, name, content). The same numbers with another name are refused -16
+    like another content. The sixty-fifth proposal of the run, and it exactly, is not taken (-28);
+    none of the flood was asked about or made; and after it the first proposal of all is still answered
+    from its receipt, outcome 1, with no second CREATED.
  N1 without `propose_image` on the command line the program is refused the proposal device (-13) and
     nobody is asked: no screen, no CREATED, no DENIED.
  Every case: the emulator ends with status 33 (the kernel's own checks passed and it powered off).
@@ -146,6 +149,7 @@ def main():
     glyphs = CHECK["kernel_glyphs"]()
     digest = hashlib.sha256(args.probe.read_bytes()).hexdigest()
     content = hashlib.sha256(CONTENT).hexdigest()
+    request = hashlib.sha256(len(NAME).to_bytes(4, "little") + len(CONTENT).to_bytes(4, "little") + NAME.encode() + CONTENT).hexdigest()
     granted = "auto=proposal-probe then=off propose_image=%s" % digest
     problems, results = [], {}
 
@@ -196,17 +200,20 @@ def main():
     if len(created) != 1 or NAME not in created[0] or "(%d bytes, SHA-256 %s)" % (len(CONTENT), content) not in created[0]:
         found.append("A1: not exactly one CREATED line naming the file, its size and digest: %r" % created)
     want = [str(RECORD), "100", "1", str(RECORD), "100", "1", "-16", "100", "1", "-16", "100", "1", "-17", "100", "3", "-22", "100", "3",
-            "-22", "100", "3", "-22", "100", "3", "-22", "100", "3"]
+            "-22", "100", "3", "-22", "100", "3", "-22", "100", "3", str(RECORD), "100", "1"]
     for words in ("probe: a read too small answered -22", "probe: a read of nothing answered -22", "probe: a read into no memory answered -14",
                   "probe: the read straight after answered 100", "probe: its outcome 1", "probe: its attempt 7", "probe: its proposal 1",
-                  "probe: its lasting 0", "probe: its content digest " + content, "probe: answering -28"):
+                  "probe: its lasting 0", "probe: its run 1", "probe: its request digest " + request,
+                  "probe: its content digest " + content, "probe: answering -28", "probe: after the flood"):
         if words not in log:
             found.append("A1: the log does not hold %r" % words)
-    # In this case seven receipts are kept before the flood (five named above and two more refusals
-    # that had a name to keep), so the sixty-fourth is reached partway through it.
+    # Two receipts are kept before the flood, for (7,1) created and (7,2) name taken: a proposal refused
+    # unseen or as a conflict keeps none. The flood's numbers 100 to 161 fill the other sixty-two places,
+    # so 162 is the first the kernel does not take (C3 worked this out; a range would have passed a
+    # smaller limit).
     took = [line for line in log.splitlines() if line.startswith("probe: the kernel took no more proposals at number ")]
-    if len(took) != 1 or not 100 < int(took[0].split()[-1]) < 170:
-        found.append("A1: the kernel did not stop taking proposals within the flood: %r" % took)
+    if took != ["probe: the kernel took no more proposals at number 162"]:
+        found.append("A1: the kernel did not stop taking proposals exactly at number 162: %r" % took)
     if answers(log) != want:
         found.append("A1: the program was answered %r, not %r" % (answers(log), want))
     if "probe: making a file directly answered -13" not in log:
