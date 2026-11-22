@@ -18,6 +18,6 @@ From the repository root, on Linux with QEMU, after building the kernel:
     sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
     python3 -B examples/program-pictures/check.py PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 /a/new/folder
 
-[`check.py`](check.py) states its eight predicates before its code: the two pictures where named, nothing anywhere else, not by name, by digest when the options are exchanged, nothing on a small display, nothing on a cut line, and the same tiles in all three editions' themes. It makes its own two small files for the kernel to list and starts neither. [`FIRST_RUN.txt`](FIRST_RUN.txt) keeps the first two runs, in which one predicate failed, and says why.
+[`check.py`](check.py) states its nine predicates before its code: the two pictures where named, nothing anywhere else, not by name, by digest when the options are exchanged, nothing on a small display, nothing on a cut line, and the same tiles in all three editions' themes. It makes its own two small files for the kernel to list and starts neither. [`FIRST_RUN.txt`](FIRST_RUN.txt) keeps the first two runs, in which one predicate failed, and says why.
 
 These are emulated screens at two sizes. Nothing here was shown on a physical display.

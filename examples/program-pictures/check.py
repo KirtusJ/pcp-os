@@ -31,14 +31,22 @@ edition.
                    the check: it looked at the margin of every row and found the "Esc" of the key
                    legend at the foot. Both outputs are in FIRST_RUN.txt.)
  P4 not by name    two other files with the same two NAMES and different bytes, the line still
-                   naming the first files' digests: both names are on the screen and the frame
-                   holds no pixel of the six colours.
+                   naming the first files' digests: both names are on the screen, the frame holds
+                   no pixel of the six colours, and where each tile would stand the 36 by 36 pixels
+                   are exactly those of the no-option frame at the same place.
  P5 by digest      the options exchanged (taylor_image= the surfbird file's digest and the reverse):
                    Taylor's map is beside the row named surfbird and Surfbird's beside tailorbird.
  P6 small display  800x600 with both options: the plain list names both programs and the frame
                    holds no pixel of the six colours.
  P7 cut line       1280x720, both options, and the line made longer than the kernel takes whole:
-                   both programs are listed and the frame holds no pixel of the six colours.
+                   both programs are listed, the frame holds no pixel of the six colours, and
+                   where each tile would stand the pixels are exactly the no-option frame's.
+ P9 the controls   the "nothing drawn" reading of P4 and P7 must refuse a frame with a tile-place
+                   pixel changed to a colour that is not one of the six: on copies of P4's and P7's
+                   own frames, one pixel inside each tile's place is set in turn to each of the
+                   pictures' four other colours (9fb4c8, 0c2033, 869da5, 10283f); every such copy
+                   must be refused. (The six colours alone passed all of these: Director 2's
+                   finding on pull request 420. The whole-tile comparison in P4 and P7 is the answer.)
  P8 every theme    1280x720, both options, with edition=personal (a light field) and with
                    edition=commercial (a teal field): both tiles are, pixel for pixel, the tiles of
                    P1's boot, which is the default, dark, Enterprise edition; and in each boot the
@@ -94,6 +102,25 @@ def stray(frame):
 
 TAYLOR_GROUND, SURFBIRD_GROUND = bytes.fromhex("10283f"), bytes.fromhex("102630")
 TILE = 36
+
+
+def nothing_drawn(frame, rows, width, reference):
+    """Whether no picture stands in this frame: no pixel of the six colours anywhere, and at the
+    place of each program's tile exactly the pixels the no-option frame has there."""
+    if stray(frame) != 0:
+        return False
+    return all(tile(frame, box_of(rows, width, name)) == tile(reference, box_of(rows, width, name))
+               for name in ("tailorbird", "surfbird"))
+
+
+def with_pixel(frame, x, y, colour):
+    """A copy of the frame with one pixel changed."""
+    header_end = len(frame) - len(pixels_of(frame)[2])
+    width = pixels_of(frame)[0]
+    changed = bytearray(frame)
+    at = header_end + (y * width + x) * 3
+    changed[at:at + 3] = colour
+    return bytes(changed)
 
 
 def box_of(rows, width, name):
@@ -204,7 +231,7 @@ def main():
     other_rows, other = boot(kernel, output, "same-names-other-bytes", "1280x720",
                              [("tailorbird", other_t), ("surfbird", other_s)], both)
     listed = all(any(n in r for r in other_rows) for n in ("tailorbird", "surfbird"))
-    predicate("P4 not by name", listed and stray(other) == 0, f"listed {listed}, stray {stray(other)}")
+    predicate("P4 not by name", listed and nothing_drawn(other, other_rows, width, plain), f"listed {listed}, stray {stray(other)}")
 
     swap_rows, swapped = boot(kernel, output, "exchanged", "1280x720", files, f" taylor_image={ds} surfbird_image={dt}")
     st, ss = box_of(swap_rows, width, "tailorbird"), box_of(swap_rows, width, "surfbird")
@@ -217,7 +244,16 @@ def main():
 
     cut_rows, cut = boot(kernel, output, "cut-line", "1280x720", files, both + " padding=" + "x" * 1200)
     listed = all(any(n in r for r in cut_rows) for n in ("tailorbird", "surfbird"))
-    predicate("P7 cut line", listed and stray(cut) == 0, f"listed {listed}, stray {stray(cut)}")
+    predicate("P7 cut line", listed and nothing_drawn(cut, cut_rows, width, plain), f"listed {listed}, stray {stray(cut)}")
+
+    refused = tried = 0
+    for frame, view in ((other, other_rows), (cut, cut_rows)):
+        for name in ("tailorbird", "surfbird"):
+            bx, by = box_of(view, width, name)
+            for colour in ("9fb4c8", "0c2033", "869da5", "10283f"):
+                tried += 1
+                refused += not nothing_drawn(with_pixel(frame, bx + 4, by + 3, bytes.fromhex(colour)), view, width, plain)
+    predicate("P9 the controls", tried == 16 and refused == 16, f"{refused} of {tried} changed frames refused")
 
     def beside(frame, at):
         width_, _, pixels = pixels_of(frame)
@@ -234,7 +270,7 @@ def main():
 
     if failed:
         sys.exit("failed: " + ", ".join(failed))
-    print("all eight hold")
+    print("all nine hold")
 
 
 if __name__ == "__main__":
