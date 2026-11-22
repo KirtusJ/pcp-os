@@ -21,6 +21,8 @@ Use this page to choose an image, find its source and reproduce its checks. The 
 | Editions and plugins | [Release builder](../build/release.sh), [method inputs](../build/method/) and [source-to-package reconciliation](../RECONCILIATION.md) | Identify the edition, build and method-manifest digest. The build requires the implementation packet. The public Enterprise build 19 and the Commercial build 22 adapters have different method pins. |
 | Applications and review modules | [Store and package index](../store/README.md), [hosted Surfbird import and native guest](../apps/surfbird/README.md), [method modules](../README.md#method-modules) | Use the application’s own manifest, runtime and tests. The hosted browser, Windows window and native guest have distinct acceptance records. |
 
+The [repository tree map](https://github.com/KirtusJ/pcp-os/blob/7324d627935075064591c927574c46d56ba86f41/CATALOG.md) describes individual directories and their release status. Z3 maintains the inventory and its [consistency check](https://github.com/KirtusJ/pcp-os/pull/387). Proposed moves and compatibility requirements are tracked in the [tidying plan](https://github.com/KirtusJ/pcp-os/issues/368#issuecomment-7078265625).
+
 ## Repository ownership
 
 The [dated ecosystem audit](https://github.com/KirtusJ/pcp-os/pull/276#issuecomment-7078182236) records exact commits, executed tests, package digests and exceptions for all nine repositories below.
