@@ -1836,6 +1836,17 @@ fn register_view(rec: &Record) {
                 lines.extend(lines_of(4, &what, TEXT));
             }
         }
+        // An event about a file that was made says which file and which bytes, whole: where it is,
+        // how long it is, what made it and for which task, and all of its digest. Two files must
+        // never look the same here (Director 2 found that they did). Lines of their own under the
+        // event, on a display of any width; the digest alone on its line, cut nowhere.
+        let made = |k: &str| body.and_then(|b| b.get(k));
+        if let Some(path) = made("path").and_then(Value::as_str) {
+            let text_of = |k: &str| made(k).and_then(Value::as_str).unwrap_or("?").to_string();
+            lines.extend(lines_of(6, &format!("file {}", path), TEXT));
+            lines.extend(lines_of(6, &format!("{} bytes, {}, for task {}", made("size").and_then(Value::as_int).unwrap_or(-1), text_of("origin"), text_of("task")), SOFT));
+            lines.extend(wrapped(&format!("sha256 {}", text_of("sha256")), across.saturating_sub(4).max(1)).into_iter().map(|part| alloc::vec![(6, part, SOFT)]));
+        }
     }
     text_screen(&title, ui::TEAL, Some(table), &lines, "Up/Down scroll    Esc back", false, true);
 }
