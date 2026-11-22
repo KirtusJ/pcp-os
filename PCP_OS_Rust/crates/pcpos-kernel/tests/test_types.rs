@@ -61,3 +61,9 @@ fn where_no_processor_has_range_registers_only_the_table_is_compared() {
     assert_eq!(decide(&held(&first), &held(&mine)), Decision::GiveTable);
     assert_eq!(decide(&held(&first), &held(&first)), Decision::Same);
 }
+
+#[test]
+fn one_with_a_table_where_the_first_has_none_is_held_and_nothing_is_called_given() {
+    // A3: there is no table of the first's to give, so nothing may be said to have been given.
+    assert_eq!(decide(&held(&FIRST[..3]), &held(FIRST)), Decision::Hold);
+}

@@ -15,8 +15,10 @@ pub enum Decision {
     Same,
     /// Its ranges are the first's and only its page-attribute table is not: it is given the table.
     GiveTable,
-    /// Its range registers are not the first's, in value or in which there are: nothing of its is
-    /// written, and no processor is given work.
+    /// Its range registers are not the first's, in value or in which there are, or one of the two
+    /// has a page-attribute table and the other has none: nothing of its is written, and no
+    /// processor is given work. (The kernel compares what two processors say they can do before it
+    /// asks, and that includes having the table, so the second case does not reach it there.)
     Hold,
 }
 
@@ -39,9 +41,9 @@ pub fn decide(first: &Types, mine: &Types) -> Decision {
     if ranges(first) != ranges(mine) {
         Decision::Hold
     } else if table(first) != table(mine) {
-        // Both have a table or neither has: a processor without one where the first has one cannot
-        // be given it, and is held.
-        if table(mine).is_some() { Decision::GiveTable } else { Decision::Hold }
+        // The first's table can be given only where both have one. A processor without one cannot
+        // take it, and where the first has none there is nothing to give: either is held.
+        if table(first).is_some() && table(mine).is_some() { Decision::GiveTable } else { Decision::Hold }
     } else {
         Decision::Same
     }
