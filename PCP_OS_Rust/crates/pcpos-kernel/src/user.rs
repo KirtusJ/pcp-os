@@ -689,6 +689,17 @@ impl Table {
                 _ => {}
             }
         }
+        // The foreground question must reach the kernel even while its companion computes.
+        #[cfg(feature = "proposals")]
+        if self.procs.iter().any(|p| p.end.is_none() && p.waiting == Waiting::Consent) {
+            self.current = None;
+            arch::kernel_space();
+            match self.kernel.take() {
+                Some(k) => *frame = k,
+                None => crate::fault(255, 3, 0, 0),
+            }
+            return;
+        }
         for k in 0..n {
             let i = (from + k) % n;
             if self.procs[i].end.is_none() && self.procs[i].waiting == Waiting::Nothing {
@@ -697,16 +708,6 @@ impl Table {
         }
         self.current = None;
         arch::kernel_space();
-        // A program that has made a proposal waits for the kernel itself: the kernel's own code goes on,
-        // asks the person, and comes back in. Nothing else is runnable, or it would have been resumed above.
-        #[cfg(feature = "proposals")]
-        if self.procs.iter().any(|p| p.end.is_none() && p.waiting == Waiting::Consent) {
-            match self.kernel.take() {
-                Some(k) => *frame = k,
-                None => crate::fault(255, 3, 0, 0),
-            }
-            return;
-        }
         if self.procs.iter().any(|p| p.end.is_none()) {
             *frame = Frame::idle();
             return;

@@ -55,6 +55,10 @@ Predicates, fixed before the first run.
  C1 (with --companion, on a kernel built with the companion feature as well): every case comes out
     the same with a second program beside the probe, waiting on the channel, and in the cases that
     ask the person the kernel says it started that program. Without --companion none is started.
+ C2 (the same option, given a companion that computes without pause and makes no call,
+    examples/companion/probe built with BACK=1 SPIN=1): every case still comes out the same. The
+    kernel's question is shown although another program could run in its place; B3 found that it
+    was not, and that the person was then never asked.
 
 Usage: check.py <kernel.elf32 built with proposals> <proposal-probe ELF> <new evidence folder>
 This is an emulator; the keys are sent by the emulator, not pressed by a person.
