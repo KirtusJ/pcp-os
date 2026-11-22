@@ -1,0 +1,2 @@
+allowed: file taylor/first-project/note.txt; 58 bytes, PRODUCED, for task T15; sha256 b7507ea2ffd5de388cc7545bc17c37022be3b8a7d738c1b963db34717c46b110
+refused: no file on the register screen

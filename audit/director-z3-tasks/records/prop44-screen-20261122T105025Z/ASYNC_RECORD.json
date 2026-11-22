@@ -1,0 +1,36 @@
+{
+ "tool": "async_run.py",
+ "plan": "plan.json",
+ "plan_sha256": "f4bff8393b4b627f4f4f4dd4e370d07538007510d398950dd2f14af916a33096",
+ "width": 1,
+ "tasks": [
+  {
+   "id": "T",
+   "argv": [
+    "python3",
+    "-IB",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/wpr/examples/proposals/check_register_screen.py",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/prop42.elf32",
+    "/home/user/pcp-os/examples/proposals/guest/target/x86_64-unknown-none/release/proposal-probe",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/rs5"
+   ],
+   "exit": 1,
+   "expect_exit": 0,
+   "timed_out": false,
+   "seconds": 52.73,
+   "ended_as_expected": false,
+   "copied_in": [],
+   "files": {
+    "STDERR.txt": {
+     "sha256": "41878980a33190c74ab117bc5ef63aaacc379daeae1aab0562c47ce918a06988",
+     "bytes": 382
+    },
+    "STDOUT.txt": {
+     "sha256": "f7d91d3f00d36f6ddb52b808383db9ea5abcd9e49bd7611dd01fd70ec0239b34",
+     "bytes": 40
+    }
+   }
+  }
+ ],
+ "all_ended_as_expected": false
+}

@@ -1,0 +1,1 @@
+refused: the register screen did not move up from where it opened

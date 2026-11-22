@@ -1,0 +1,2 @@
+allowed: the register screen was not read whole: events [0]..[45] in order False, title says [46]
+R1: the register screen does not show the one start of the probe's task with its id: [['42', '2026-11-22T10:49:06Z', 'kernel', 'TASK_STARTED', 'label', 'proposal-probe;', 'id', 'T15'], ['42', '2026-11-22T10:49:06Z', 'kernel', 'TASK_STARTED', 'label', 'proposal-probe;', 'id', 'T15']]

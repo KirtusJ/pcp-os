@@ -1,0 +1,84 @@
+allowed: the kernel's question is not exactly the lines for the file proposed: []
+allowed: after F12 the screen is not exactly the same file and the words for Enter: []
+allowed: the emulator ended with status None, not 33
+allowed: A1: not exactly one CREATED line naming the file, its size and digest: []
+allowed: A1: the log does not hold 'probe: a read too small answered -22'
+allowed: A1: the log does not hold 'probe: a read of nothing answered -22'
+allowed: A1: the log does not hold 'probe: a read into no memory answered -14'
+allowed: A1: the log does not hold 'probe: the read straight after answered 100'
+allowed: A1: the log does not hold 'probe: its outcome 1'
+allowed: A1: the log does not hold 'probe: its attempt 7'
+allowed: A1: the log does not hold 'probe: its proposal 1'
+allowed: A1: the log does not hold 'probe: its lasting 0'
+allowed: A1: the log does not hold 'probe: its run 1'
+allowed: A1: the log does not hold 'probe: its request digest fbc17b936b4736c46543d49312eba888c378c347657646a5b65747cc89024dc1'
+allowed: A1: the log does not hold 'probe: its content digest b7507ea2ffd5de388cc7545bc17c37022be3b8a7d738c1b963db34717c46b110'
+allowed: A1: the log does not hold 'probe: answering -28'
+allowed: A1: the log does not hold 'probe: after the flood'
+allowed: A1: the kernel did not stop taking proposals exactly at number 161: []
+allowed: A1: the program was answered [], not ['119', '100', '1', '119', '100', '1', '-16', '100', '1', '-16', '100', '1', '-17', '100', '3', '-22', '100', '3', '-22', '100', '3', '-22', '100', '3', '-22', '100', '3', '119', '100', '1']
+allowed: B1: the list does not hold exactly the one file made, with its size: []
+allowed: B1: the log does not hold 'probe: a file outside the build folder was answered -22'
+allowed: B1: the log does not hold 'probe: opening the list to write answered -13'
+allowed: B1: the log does not hold 'probe: the list ended with 0'
+allowed: B1: the log does not hold 'probe: the list is bytes 67'
+allowed: B1: the log does not hold 'probe: list version 1'
+allowed: B1: the log does not hold 'probe: list count 1'
+allowed: B1: the log does not hold 'probe: list complete 1'
+allowed: B1: the log does not hold 'probe: list run 1'
+allowed: B1: the log does not hold 'probe: list folder taylor\n'
+allowed: B1: the log does not hold 'probe: list bytes left over 0'
+allowed: B1: the log does not hold 'probe: writing to the list answered -9'
+allowed: B1: the log does not hold 'probe: opening the note to read answered 0'
+allowed: B1: the log does not hold 'probe: the note read back bytes 58'
+allowed: B1: the log does not hold 'probe: the note read back the same 1'
+allowed: B1: the log does not hold 'probe: writing to the note answered -9'
+allowed: B1: the log does not hold 'probe: opening the note to write answered -13'
+allowed: B1: the log does not hold 'probe: opening the note to empty it answered -13'
+allowed: B1: the log does not hold 'probe: opening the list to read and make answered -13'
+allowed: B1: the log does not hold 'probe: opening the list to read and empty answered -13'
+allowed: B1: the log does not hold 'probe: opening the note to read and make answered -13'
+allowed: B1: the log does not hold 'probe: opening the note to read and empty answered -13'
+allowed: B1: the log does not hold 'probe: opening the note to read after all that answered 0'
+allowed: B1: the log does not hold 'probe: opening the note to make it anew answered -13'
+allowed: B1: the log does not hold 'probe: opening the list to make it anew answered -13'
+allowed: B1: the log does not hold 'probe: the note read after all that ended with 0'
+allowed: B1: the log does not hold 'probe: the note after all that is the same 1'
+allowed: B1: the log does not hold 'probe: closing it answered 0'
+allowed: B1: the log does not hold 'probe: list hex 0100000001000000010000000600000001000000000000007461796c6f721d0000003a0000007461796c6f722f66697273742d70726f6a6563742f6e6f74652e747874\n'
+allowed: B1: the log does not hold 'probe: removing the note answered -13'
+allowed: B1: the log does not hold 'probe: renaming the note answered -13'
+allowed: B1: the log does not hold 'probe: a name outside the folder answered -2'
+allowed: B1: the log does not hold 'probe: a name beside the folder answered -2'
+refused-esc: the kernel's question is not exactly the lines for the file proposed: []
+refused-esc: the emulator ended with status None, not 33
+refused-esc: not two DENIED (the case's and the later question's) and no CREATED: []
+refused-esc: the first proposal was answered [], not outcome 2
+refused-enter-alone: the kernel's question is not exactly the lines for the file proposed: []
+refused-enter-alone: the emulator ended with status None, not 33
+refused-enter-alone: not two DENIED (the case's and the later question's) and no CREATED: []
+refused-enter-alone: the first proposal was answered [], not outcome 2
+refused-f12-then-other: the kernel's question is not exactly the lines for the file proposed: []
+refused-f12-then-other: the emulator ended with status None, not 33
+refused-f12-then-other: not two DENIED (the case's and the later question's) and no CREATED: []
+refused-f12-then-other: the first proposal was answered [], not outcome 2
+held-enter: the kernel's question is not exactly the lines for the file proposed: []
+held-enter: the emulator ended with status None, not 33
+held-enter: H1: after Enter was let go and pressed again the note was not created exactly once
+f12-with-nothing: F1: the kernel's screen did not say that nothing waits: ''
+f12-with-nothing: the kernel's question is not exactly the lines for the file proposed: []
+f12-with-nothing: the emulator ended with status None, not 33
+f12-with-nothing: F1: after the notice the program's proposal was not asked and created as usual
+too-small: S1: the small display does not say it is too small: ''
+too-small: S1: status None, answers [], or something was created
+long-at-800x600: the kernel's question is not exactly the lines for the file proposed: []
+long-at-800x600: the emulator ended with status None, not 33
+long-at-800x600: L1: the log does not hold 'probe: long write answered 3061'
+long-at-800x600: L1: the log does not hold 'probe: long receipt bytes 100'
+long-at-800x600: L1: the log does not hold 'probe: long outcome 6'
+long-at-800x600: L1: the log does not hold 'long.txt (3000 bytes'
+long-at-800x600: L1: the log does not hold 'it could not be shown whole on this display'
+at-640x480: the kernel's question is not exactly the lines for the file proposed: []
+at-640x480: after F12 the screen is not exactly the same file and the words for Enter: []
+at-640x480: the emulator ended with status None, not 33
+at-640x480: S1: at 640 by 480 the file was not asked about and created
