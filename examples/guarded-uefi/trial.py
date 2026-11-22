@@ -29,6 +29,24 @@ def until(predicate, description, vm, seconds=60):
     raise TimeoutError(description)
 
 
+def confirm_decision(answer, serial_in, serial, vm):
+    # A burst on the emulated UART can leave GRUB waiting on a partial word.
+    # Keep the writer open and wait for each serial echo before sending more.
+    with serial_in.open("wb", buffering=0) as stream:
+        for length in range(1, len(answer) + 1):
+            prefix = answer[:length]
+            stream.write(prefix[-1:])
+            until(lambda: serial.read_bytes().partition(b"AWAIT-PLACEMENT")[2]
+                  .lstrip(b"\r\n").startswith(prefix),
+                  f"GRUB serial echo for {prefix.decode('ascii')}", vm)
+        stream.write(b"\r")
+        decision = answer.decode("ascii")
+        marker = f"\nPLACEMENT-DECISION-{decision}\n"
+        until(lambda: marker in serial.read_text(errors="replace"),
+              f"GRUB confirmation of {decision}", vm)
+    return decision
+
+
 def prepare(iso, kernel, measurement, root, work):
     grub = root / "boot/grub"
     grub.mkdir(parents=True)
@@ -50,6 +68,8 @@ lsmmap
 echo {END}
 echo AWAIT-PLACEMENT
 read decision
+echo
+echo PLACEMENT-DECISION-${{decision}}
 if [ "x$decision" = "xALLOW" ]; then
     if multiboot /kernel.elf32 image={measurement}{options}; then
         module /surf.elf surf.elf
@@ -84,9 +104,6 @@ def trial(iso, kernel, measurement, out, ram):
         os.mkfifo(serial_in)
         serial.touch()
         console.with_suffix(".out").symlink_to(serial)
-        def decide(answer):
-            with serial_in.open("wb", buffering=0) as stream:
-                stream.write(answer + b"\r")
         cmd = ["qemu-system-x86_64", "-machine", "q35", "-accel", "tcg", "-cpu", "max", "-m", str(ram),
                "-smp", "1", "-vga", "std", "-nic", "none", "-display", "none", "-monitor", "none",
                "-chardev", f"pipe,id=console,path={console}", "-serial", "chardev:console", "-qmp", "stdio", "-audiodev", "none,id=snd",
@@ -115,7 +132,7 @@ def trial(iso, kernel, measurement, out, ram):
                 if not kernel:
                     if not any("ACPI non-volatile storage RAM" in b["types"] for b in blocked):
                         raise RuntimeError("Public kernel control no longer shows the expected NVS conflict")
-                    decide(b"DENY")
+                    report["placement_decision"] = confirm_decision(b"DENY", serial_in, serial, vm)
                     vm.wait(timeout=20)
                     if vm.returncode or "ATTEMPT-HANDOFF" in log() or "PCP OS kernel" in log():
                         raise RuntimeError("Public kernel did not halt at the placement gate")
@@ -135,8 +152,8 @@ def trial(iso, kernel, measurement, out, ram):
                         raise ValueError("Missing NVS comparison ranges")
                     return hashes
                 report["nvs_before"] = nvs_hashes()
+                report["placement_decision"] = confirm_decision(b"ALLOW", serial_in, serial, vm)
                 report["admitted"] = True
-                decide(b"ALLOW")
                 until(lambda: "leaves no memory behind" in log() or "it is in SAFE" in log(), "kernel startup", vm)
                 screen = out / "launcher.ppm"
                 def launcher():
