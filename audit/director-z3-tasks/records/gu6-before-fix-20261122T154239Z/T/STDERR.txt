@@ -1,0 +1,1 @@
+G7: the prompt did not appear, or stayed on the screen after Shift took the first press back

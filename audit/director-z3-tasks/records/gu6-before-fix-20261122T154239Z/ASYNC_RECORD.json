@@ -1,0 +1,36 @@
+{
+ "tool": "async_run.py",
+ "plan": "plan.json",
+ "plan_sha256": "455d19d750b1283cc8f3c65e46d5d197f7e419b8ec24e4e06294be67e96e1901",
+ "width": 1,
+ "tasks": [
+  {
+   "id": "T",
+   "argv": [
+    "python3",
+    "-B",
+    "/home/user/tailorbird/guest/tests/give_up_native.py",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/gu.elf32",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/tbgu2/tailorbird",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/gun5"
+   ],
+   "exit": 1,
+   "expect_exit": 0,
+   "timed_out": false,
+   "seconds": 18.37,
+   "ended_as_expected": false,
+   "copied_in": [],
+   "files": {
+    "STDERR.txt": {
+     "sha256": "cb02d23a1af3062a449e6feb88cf2faf4445207bcb279e38f649f68cc8715e91",
+     "bytes": 93
+    },
+    "STDOUT.txt": {
+     "sha256": "68cd2b46a5b290a8f74675bb1cc74b8c54c69bed6e27d9d8e12bcb13532bfa83",
+     "bytes": 632
+    }
+   }
+  }
+ ],
+ "all_ended_as_expected": false
+}
