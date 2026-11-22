@@ -1,0 +1,37 @@
+{
+ "tool": "async_run.py",
+ "plan": "plan.json",
+ "plan_sha256": "ec82de542e193256bed4ef4c27fa78d19b6a5ca12a2632614f88623c85394fa4",
+ "width": 1,
+ "tasks": [
+  {
+   "id": "T",
+   "argv": [
+    "python3",
+    "/home/user/pcp-os/examples/vector-state/check.py",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/mx-after.elf32",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/vp/vector-leave",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/vp/vector-look",
+    "--unfixed-kernel",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/mx-before.elf32"
+   ],
+   "exit": 0,
+   "expect_exit": 0,
+   "timed_out": false,
+   "seconds": 63.81,
+   "ended_as_expected": true,
+   "copied_in": [],
+   "files": {
+    "STDERR.txt": {
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "bytes": 0
+    },
+    "STDOUT.txt": {
+     "sha256": "dff9630eac836afdb1ebcab37efd37929553c071fb2a80d5db9b9ccbecc5d61b",
+     "bytes": 913
+    }
+   }
+  }
+ ],
+ "all_ended_as_expected": true
+}

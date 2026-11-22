@@ -1,0 +1,8 @@
+max: vector: exceptions masked at start 1; vector: found clean 1; vector: set 1; vector: kept 1; vector: left full; vector: exceptions masked at start 1; vector: found clean 1; vector: set 1; vector: kept 1; vector: done
+Haswell: vector: exceptions masked at start 1; vector: found clean 1; vector: set 1; vector: kept 1; vector: left full; vector: exceptions masked at start 1; vector: found clean 1; vector: set 1; vector: kept 1; vector: done
+qemu64: vector: exceptions masked at start 1; vector: none; vector: exceptions masked at start 1; vector: none
+control, unfixed kernel, max: vector: exceptions masked at start 0
+control, unfixed kernel, Haswell: vector: exceptions masked at start 0
+control, unfixed kernel, qemu64: vector: exceptions masked at start 1
+V4 not run: no --demo-kernel given
+vector state: kept for each program and empty at its start where the processor has it; not used where it has not
