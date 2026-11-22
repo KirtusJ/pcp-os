@@ -59,6 +59,7 @@ fn option<'a>(line: &'a str, key: &str) -> Option<&'a str> {
 
 #[cfg(feature = "guest-ethernet")]
 mod ethernet;
+mod pictures;
 #[cfg(feature = "guest-ethernet")]
 use ethernet::ethernet_grant;
 
@@ -704,8 +705,10 @@ fn emblem_plate(field: &ui::Field, h: u32) {
     let on_plate = ui::panel(px, py, wide, tall, &over_field, ui::CORE_PLATE, 255, outline(), true);
     let bird = wide * 70 / 100;
     ui::emblem_over(px + (wide - bird * 121 / 132) / 2, py + (tall - bird) / 2, bird, &on_plate);
-    // The edition is carried by the field and is also said in words, as on every cover.
-    let words = format!("Parrot Council Protocol | {} Edition", e.name);
+    // The edition is carried by the field and is also said in words, as on every cover. The desktop
+    // names the system a person is in, PCP OS, as its programs do (owner, 22 November 2026); the
+    // product's full name, Parrot Council Protocol, stays on its covers and documents.
+    let words = format!("PCP OS | {} Edition", e.name);
     ui::label(field.cx - ui::label_width(&words, false) / 2, py + tall + 30, &words, e.soft, false, &over_field);
     let motto = "Evidence before agreement.";
     ui::label(field.cx - ui::label_width(motto, false) / 2, py + tall + 60, motto, e.soft, false, &over_field);
@@ -1394,6 +1397,13 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
         let on_row = plate(left, y, list_width, tall, if i == chosen { PLATE_CHOSEN } else { PLATE }, if i == chosen { outline() } else { edge() }, i == chosen);
         if i == chosen {
             dev::display_fill(left, y + 8, 4, tall - 16, AMBER);
+        }
+        // A program the loader's line names by digest as one this system knows by sight has its
+        // picture beside its row, in the margin to the left of the plate: thirty-two pixels on a dark
+        // tile of thirty-six, outside every cell a row's words are drawn in, and the same on every
+        // edition's field. Never by its name (see `pictures`).
+        if let Some(picture) = pictures::of(start.boot.exact_command_line(), &p.digest) {
+            pictures::draw(picture, left - 44, y + 12, 2);
         }
         // The row says, on the character grid: which is chosen, its name, its size and digest, and what it may use.
         label(left + 20, y + 10, if i == chosen { ">" } else { " " }, AMBER, false, &on_row);
