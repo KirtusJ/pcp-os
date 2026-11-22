@@ -163,6 +163,12 @@ pub extern "C" fn probe_main() -> ! {
         line(b"times its register held something else ", lost);
         exit(0);
     }
+    // A descriptor opened for reading only must not write, and what it was refused must not arrive:
+    // the exchanges below would then come back wrong.
+    let reading = open(b"/dev/talk\0", 0);
+    line(b"a write through a descriptor opened to read answered ", call(1, reading as usize, b"no".as_ptr() as usize, 2, 0, 0, 0));
+    // A write from an address that is not the program's is refused, and queues nothing.
+    line(b"a write from no address answered ", call(1, fd as usize, 8, 16, 0, 0, 0));
     // The front: a hundred exchanges of a thousand bytes, each read back in full and compared.
     let mut out = [0u8; 1000];
     let mut back = [0u8; 1000];

@@ -17,6 +17,9 @@ Predicates, fixed before the first run.
     nothing is taken from the channel while it is filled, however the two programs are scheduled;
     while it holds it writes 65,537 bytes, the last of which waits for room, and the front reads
     exactly those.
+ P2b a write through a descriptor opened for reading only is refused (-9), and a write from an address
+    that is not the program's is refused (-14); neither puts a byte in the channel (the exchanges
+    of P1 follow them and would come back wrong).
  P3 each program, where the processor has 256-bit registers, kept its own pattern through every
     switch: both report 0 times that the register held something else, and both used the registers.
  P4 told to finish, the companion ends by itself and the front's next read answers 0.
@@ -39,9 +42,14 @@ from pathlib import Path
 
 
 def boot(qemu, kernel, files, append):
-    done = subprocess.run([qemu, "-machine", "pc", "-accel", "tcg", "-cpu", "max", "-m", "256M", "-kernel", kernel.name, "-initrd", ",".join(str(f) for f in files),
-                           "-append", append, "-display", "none", "-nic", "none", "-serial", "stdio", "-no-reboot", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"],
-                          stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, cwd=kernel.parent, timeout=600)
+    # A run that passes takes a few seconds. One that has not ended in two minutes has two programs
+    # waiting on each other, and is reported with what was said until then.
+    try:
+        done = subprocess.run([qemu, "-machine", "pc", "-accel", "tcg", "-cpu", "max", "-m", "256M", "-kernel", kernel.name, "-initrd", ",".join(str(f) for f in files),
+                               "-append", append, "-display", "none", "-nic", "none", "-serial", "stdio", "-no-reboot", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"],
+                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, cwd=kernel.parent, timeout=120)
+    except subprocess.TimeoutExpired as late:
+        return None, (late.stdout or b"").decode(errors="replace").splitlines()
     return done.returncode, done.stdout.decode(errors="replace").splitlines()
 
 
@@ -79,7 +87,8 @@ def main():
     words = "auto=talk-front then=off worker_for=%s worker_image=%s"
     status, lines = boot(args.qemu, kernel, [front, back], words % (digest(front), digest(back)))
     common("together", status, lines)
-    require("together, front", said(lines, "front: "), ["opening the channel answered 0", "exchanges completed 100", "bytes that came back wrong 0",
+    require("together, front", said(lines, "front: "), ["opening the channel answered 0", "a write through a descriptor opened to read answered -9",
+            "a write from no address answered -14", "exchanges completed 100", "bytes that came back wrong 0",
             "asking it to hold answered 254", "the full channel answered -11", "bytes it took before that 65536",
             "bytes the companion wrote while it held 65537", "of those, bytes that were not what it wrote 0", "bytes that came back after it 65536", "telling it to finish answered 1",
             "the read after that answered 0", "wide registers used 1", "times its register held something else 0"])
