@@ -199,7 +199,7 @@ class FinalGptGeometryTests(unittest.TestCase):
         for lba, kind in ((16, 1), (17, 0), (18, 2), (19, 255)):
             descriptor = bytearray(block)
             descriptor[0] = kind
-            descriptor[1:7] = b"CD001\\x01"
+            descriptor[1:7] = b"CD001\x01"
             if kind == 0:
                 descriptor[7:39] = b"EL TORITO SPECIFICATION".ljust(32, b" ")
                 struct.pack_into("<I", descriptor, 71, 20)
@@ -207,8 +207,8 @@ class FinalGptGeometryTests(unittest.TestCase):
                 descriptor[88:91] = b"%/E"
             raw[lba * block:(lba + 1) * block] = descriptor
         catalog = bytearray(64)
-        catalog[0:2] = b"\\x01\\xef"
-        catalog[30:34] = b"\\x55\\xaa\\x88\\x00"
+        catalog[0:2] = b"\x01\xef"
+        catalog[30:34] = b"\x55\xaa\x88\x00"
         struct.pack_into("<H", catalog, 28, (-sum(struct.unpack("<16H", catalog[:32]))) & 0xffff)
         struct.pack_into("<HI", catalog, 38, 256, 512)
         raw[20 * block:20 * block + len(catalog)] = catalog
