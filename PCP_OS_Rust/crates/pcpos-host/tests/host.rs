@@ -878,6 +878,25 @@ fn remove_selects_the_exact_local_installation_and_preserves_other_directories()
 }
 
 #[test]
+fn text_artifact_reuses_identical_bytes_and_preserves_an_occupied_digest_name() {
+    let root = in_use("kept-artifact");
+    let input = r#"{"text":"collected observation","origin":"PRODUCED"}"#;
+    let path = root.join(".pcp/artifacts").join(sha256_hex(b"collected observation"));
+    for _ in 0..2 {
+        let (reply, error) = tool(&root, "acr_artifact", input);
+        assert!(!error && reply.contains("ARTIFACT_ADDED"), "{reply}");
+        assert_eq!(fs::read(&path).unwrap(), b"collected observation");
+    }
+    let before = fs::read(root.join(REG)).unwrap();
+    fs::write(&path, b"other evidence").unwrap();
+    let (reply, error) = tool(&root, "acr_artifact", input);
+    assert!(error && reply.contains("different contents"), "{reply}");
+    assert_eq!(fs::read(&path).unwrap(), b"other evidence");
+    assert_eq!(fs::read(root.join(REG)).unwrap(), before);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn repair_preserves_an_existing_fragment_and_can_resume_with_matching_bytes() {
     let root = dir("resume-repair");
     assert!(pcpos(&root).args(["init", REG, "--principal", "p"]).output().unwrap().status.success());
@@ -896,6 +915,32 @@ fn repair_preserves_an_existing_fragment_and_can_resume_with_matching_bytes() {
     assert!(pcpos(&root).args(["repair", REG]).output().unwrap().status.success());
     assert_eq!(fs::read(&register).unwrap(), complete);
     assert_eq!(fs::read(&sidecar).unwrap(), fragment);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn installing_a_module_preserves_an_occupied_directory_and_copies_its_overview_on_success() {
+    let root = dir("install-directory");
+    let method = small_method(&root);
+    assert!(pcpos(&root).args(["init", REG, "--principal", "p"]).output().unwrap().status.success());
+    let incoming = root.join("incoming");
+    fs::create_dir(&incoming).unwrap();
+    fs::write(incoming.join("Specification.md"), "**Component:** `local.sample`, Version 1.0\n").unwrap();
+    fs::write(incoming.join("Overview.md"), "Overview\n").unwrap();
+    let destination = root.join(".pcp/modules/sample");
+    fs::create_dir_all(&destination).unwrap();
+    fs::write(destination.join("keep"), "already here").unwrap();
+    let add = || with_method(&root, &method).args(["module", "add", REG, "incoming", "--by", "p"]).output().unwrap();
+    let before = fs::read(root.join(REG)).unwrap();
+    assert!(!add().status.success());
+    assert_eq!(fs::read(root.join(REG)).unwrap(), before);
+    assert_eq!(fs::read_to_string(destination.join("keep")).unwrap(), "already here");
+    assert!(!destination.join("SOURCE").exists());
+    fs::rename(&destination, root.join("saved")).unwrap();
+    let installed = add();
+    assert!(installed.status.success(), "{}", String::from_utf8_lossy(&installed.stderr));
+    assert_eq!(fs::read_to_string(destination.join("SOURCE/Overview.md")).unwrap(), "Overview\n");
+    assert_eq!(fs::read(destination.join("SOURCE/Specification.md")).unwrap(), fs::read(incoming.join("Specification.md")).unwrap());
     fs::remove_dir_all(root).unwrap();
 }
 

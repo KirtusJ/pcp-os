@@ -13,6 +13,14 @@ use pcp_game_guest::{call, exit, log, open};
 
 const BACK: bool = option_env!("BACK").is_some();
 const LEAVE: bool = option_env!("LEAVE").is_some();
+/// The companion that never yields: it opens the channel and then computes for ever, making no call.
+const SPIN: bool = option_env!("SPIN").is_some();
+/// The front that goes on by itself for a while and ends, exchanging nothing.
+const ALONE: bool = option_env!("ALONE").is_some();
+/// The front that waits, asleep, until the person's Stop key ends it.
+const WAIT: bool = option_env!("WAIT").is_some();
+/// A control for the two fronts above: every sleep is one the kernel refuses.
+const REFUSED: bool = option_env!("REFUSED").is_some();
 
 /// One whole line in one write, so that two programs writing in turn never share a line.
 fn say(who: &[u8], words: &[u8], value: isize) {
@@ -109,6 +117,37 @@ pub extern "C" fn probe_main() -> ! {
     let fd = open(b"/dev/talk\0", 2);
     line(b"opening the channel answered ", if fd >= 0 { 0 } else { fd });
     if fd < 0 {
+        exit(0);
+    }
+    if SPIN {
+        log(b"back: computing for ever and making no call\n");
+        let mut turns = 0u64;
+        loop {
+            turns = core::hint::black_box(turns.wrapping_add(1));
+        }
+    }
+    if ALONE || WAIT {
+        // Sleep twenty milliseconds at a time. A companion that never yields must not keep this
+        // program from being run when each sleep is over.
+        // A sleep the kernel refuses is not a period slept: it is said, and this program fails
+        // without either of the lines the check looks for (A3 showed that counting unchecked
+        // sleeps printed both lines when every sleep was refused).
+        let mut periods = 0isize;
+        while WAIT || periods < 100 {
+            let twenty = [0i64, 20_000_000];
+            // REFUSED=1 builds a control: the sleep is asked for with an address that is not this
+            // program's, which the kernel refuses.
+            let slept = call(35, if REFUSED { 8 } else { twenty.as_ptr() as usize }, 0, 0, 0, 0, 0);
+            if slept != 0 {
+                line(b"a sleep was refused with ", slept);
+                exit(1);
+            }
+            periods += 1;
+            if WAIT && periods == 10 {
+                log(b"front: ten sleeps done, and sleeping on until stopped\n");
+            }
+        }
+        line(b"slept and was woken, times ", periods);
         exit(0);
     }
     if BACK {
