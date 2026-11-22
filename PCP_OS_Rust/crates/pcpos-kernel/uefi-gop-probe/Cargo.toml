@@ -1,0 +1,43 @@
+[package]
+name = "pcpos-gop-probe"
+version = "0.1.0"
+edition = "2021"
+authors = ["Kirtus Justus"]
+publish = false
+description = "Standalone native UEFI GOP observation probe (not a PCP OS loader)"
+
+[workspace]
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "pcpos-gop-probe"
+path = "src/main.rs"
+test = false
+bench = false
+required-features = ["uefi-app"]
+
+[features]
+default = []
+# Explicit opt-in prevents host integration tests from linking the EFI entry
+# as if it were a Linux executable with a normal main() function.
+uefi-app = []
+# DANGEROUS BY DESIGN ON REAL HARDWARE: this opts in to SetMode and restore,
+# only for a disposable emulated GOP fixture. It is never enabled in default CI.
+exercise-mode-switch = ["uefi-app"]
+
+# QEMU-only readback: mirrors textual observations to the explicit isa-debugcon
+# device at port 0xE9. Not enabled in the default firmware application and
+# must never be used on physical PCs or production installation media.
+ci-debugcon = ["uefi-app"]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+lto = false
+opt-level = "s"
+
+[dependencies]

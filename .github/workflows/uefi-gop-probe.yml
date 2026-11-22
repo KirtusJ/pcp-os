@@ -1,0 +1,238 @@
+name: PCP OS isolated native UEFI GOP probe compile checks
+
+on:
+  pull_request:
+    paths:
+      - 'PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/**'
+      - '.github/workflows/uefi-gop-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-and-pe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      # Explicit lld-link timestamp alone left eight changing CodeView bytes
+      # in fully clean PE builds. This release-only probe omits PDB generation.
+      # Apply only to the UEFI target; host ABI tests use normal toolchain.
+      CARGO_TARGET_X86_64_UNKNOWN_UEFI_RUSTFLAGS: "-C link-arg=/timestamp:0 -C link-arg=/DEBUG:NONE"
+    steps:
+      - name: Checkout exact PR head, not a synthetic merge commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Source and compiler identities
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          rustc --version --verbose
+          cargo --version
+      - name: Host ABI and pure-value tests
+        run: |
+          set -euo pipefail
+          cargo test --offline --lib --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+          cargo test --offline --test abi --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+          cargo test --offline --test edid --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+          cargo test --offline --release --test abi --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+          cargo test --offline --release --test edid --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+      - name: Falsify no-GOP receipt oracle with mutated status/return fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/tests -p test_headless_receipt.py -v
+      - name: Add official x86_64-unknown-uefi target to ephemeral compiler
+        run: |
+          set -euo pipefail
+          rustup target add x86_64-unknown-uefi
+      - name: Build read-only PE32+ EFI application with default features
+        run: |
+          set -euo pipefail
+          cargo build --offline --release --features uefi-app --target x86_64-unknown-uefi --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          root=Path('PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/target/x86_64-unknown-uefi/release')
+          matches=list(root.glob('pcpos-gop-probe.efi'))
+          assert len(matches)==1, f"Expected exactly one EFI probe binary: {matches}"
+          data=matches[0].read_bytes()
+          assert data[:2]==b'MZ' and len(data)>512
+          off=int.from_bytes(data[60:64], 'little')
+          assert data[off:off+4]==b'PE\0\0'
+          machine=int.from_bytes(data[off+4:off+6], 'little')
+          magic=int.from_bytes(data[off+24:off+26], 'little')
+          subsystem=int.from_bytes(data[off+24+68:off+24+70], 'little')
+          assert (machine,magic,subsystem)==(0x8664,0x20b,10),(hex(machine),hex(magic),subsystem)
+          print('PE32+ EFI_APPLICATION structural-only, not launched',len(data),hashlib.sha256(data).hexdigest())
+          PY
+          cp PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/target/x86_64-unknown-uefi/release/pcpos-gop-probe.efi "$RUNNER_TEMP/pcpos-readonly-first.efi"
+      - name: Compile separately opt-in mode-switch fixture; do not execute it
+        run: |
+          set -euo pipefail
+          cargo build --offline --release --features exercise-mode-switch --target x86_64-unknown-uefi --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+          sha256sum PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/target/x86_64-unknown-uefi/release/pcpos-gop-probe.efi
+
+      - name: Check two clean same-commit read-only PE builds are byte-identical
+        run: |
+          set -euo pipefail
+          cargo clean --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+          test ! -e PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/target/x86_64-unknown-uefi/release/pcpos-gop-probe.efi
+          sleep 2
+          cargo build --offline --release --features uefi-app --target x86_64-unknown-uefi --manifest-path PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml
+          python3 - <<'PY'
+          from pathlib import Path
+          from hashlib import sha256
+          a = Path(__import__('os').environ['RUNNER_TEMP']+'/pcpos-readonly-first.efi').read_bytes()
+          b = Path('PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/target/x86_64-unknown-uefi/release/pcpos-gop-probe.efi').read_bytes()
+          def coff_timestamp(image):
+              off=int.from_bytes(image[60:64],'little')
+              return int.from_bytes(image[off+8:off+12],'little')
+          print('first',len(a),sha256(a).hexdigest(),'COFF_TimeDateStamp',coff_timestamp(a))
+          print('second',len(b),sha256(b).hexdigest(),'COFF_TimeDateStamp',coff_timestamp(b))
+          differences=[i for i in range(min(len(a),len(b))) if a[i]!=b[i]]
+          print('difference_count',len(differences),'first_differing_offsets',differences[:16])
+          assert a==b, 'NONDETERMINISTIC EFI PROBE BUILD: preserve both hashes and inspect PE metadata'
+          PY
+      - name: Emulate the *standalone read-only* EFI probe under Q35/OVMF
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Only test media created in the ephemeral runner. No host disks,
+          # external networking, kernel image or mode-switch feature.
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf dosfstools mtools
+          QEMU="$(command -v qemu-system-x86_64)"
+          CODE="/usr/share/OVMF/OVMF_CODE_4M.fd"
+          VARS="/usr/share/OVMF/OVMF_VARS_4M.fd"
+          test -f "$CODE" && test -f "$VARS"
+          "$QEMU" --version | head -1
+          sha256sum "$CODE" "$VARS"
+          PROBE_MANIFEST="PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml"
+          cargo build --offline --release --features uefi-app,ci-debugcon --target x86_64-unknown-uefi --manifest-path "$PROBE_MANIFEST"
+          PROBE="PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/target/x86_64-unknown-uefi/release/pcpos-gop-probe.efi"
+          test -s "$PROBE"
+          sha256sum "$PROBE"
+          # QEMU's documented read-only virtual FAT device supplies a
+          # partitioned firmware-visible disk, rather than the earlier
+          # 32 MiB partitionless FAT32 superfloppy that OVMF did not launch.
+          ESP_DIR="$RUNNER_TEMP/gop-uefi-esp"
+          mkdir -p "$ESP_DIR/EFI/BOOT"
+          cp "$PROBE" "$ESP_DIR/EFI/BOOT/BOOTX64.EFI"
+          sha256sum "$ESP_DIR/EFI/BOOT/BOOTX64.EFI"
+          cp "$VARS" "$RUNNER_TEMP/OVMF_VARS_WORK.fd"
+          LOG="$RUNNER_TEMP/gop-observation.txt"
+          set +e
+          timeout -k 2s 25s "$QEMU" -machine q35,accel=tcg -cpu max -smp 1 -m 256M \
+            -drive if=pflash,format=raw,readonly=on,file="$CODE" \
+            -drive if=pflash,format=raw,file="$RUNNER_TEMP/OVMF_VARS_WORK.fd" \
+            -drive if=virtio,format=raw,readonly=on,file="fat:$ESP_DIR" \
+            -display none -vga std -serial none -monitor none -net none -no-reboot \
+            -chardev file,id=debug,path="$LOG" -device isa-debugcon,iobase=0xe9,chardev=debug
+          EXIT="$?"
+          set -e
+          echo "QEMU exit code: $EXIT (124 means bounded timeout after probe)"
+          if test -e "$LOG"; then
+            sed -n '1,100p' "$LOG"
+          fi
+          python3 - "$LOG" "$EXIT" <<'PY'
+          import pathlib,sys,re
+          path=pathlib.Path(sys.argv[1])
+          exit_code=int(sys.argv[2])
+          raw=path.read_bytes() if path.exists() else b""
+          report=raw.decode("ascii",errors="replace")
+          print("log_bytes",len(raw),"probe_line_count",report.count("PCPOS_GOP_PROBE_V1"))
+          assert exit_code in (0,124), f"QEMU failed before bounded observation: {exit_code}"
+          assert "PCPOS_GOP_PROBE_V1 STANDALONE" in report, "No standalone EFI entry marker"
+          assert re.search(r"PCPOS_GOP_PROBE_V1 BEFORE mode=[0-9]+",report), "No GOP before-mode readback"
+          assert re.search(r"PCPOS_GOP_PROBE_V1 QUERY index=0 status=0x0{16}",report), "No successful GOP mode zero query"
+          assert "PCPOS_GOP_PROBE_V1 END READ_ONLY" in report, "Probe never completed its read-only path"
+          assert "STANDALONE_FIXTURE_SET_MODE" not in report, "Unexpected opt-in SetMode fixture"
+          assert "SET_MODE_STATUS" not in report, "Unexpected SetMode call"
+          print("PASS: standalone UEFI probe executed in OVMF, read-only GOP mode capture only")
+          PY
+      - name: Exercise a distinct GOP SetMode and restore in disposable QEMU only
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The only deliberate SetMode in this workflow is isolated inside
+          # a second, disposable UEFI app, never the PCP OS product or a disk.
+          MANIFEST="PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml"
+          cargo build --offline --release --features exercise-mode-switch,ci-debugcon --target x86_64-unknown-uefi --manifest-path "$MANIFEST"
+          BIN="PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/target/x86_64-unknown-uefi/release/pcpos-gop-probe.efi"
+          test -s "$BIN"
+          sha256sum "$BIN"
+          ESP_DIR="$RUNNER_TEMP/gop-uefi-esp"
+          test -d "$ESP_DIR/EFI/BOOT"
+          cp "$BIN" "$ESP_DIR/EFI/BOOT/BOOTX64.EFI"
+          VARS="/usr/share/OVMF/OVMF_VARS_4M.fd"
+          CODE="/usr/share/OVMF/OVMF_CODE_4M.fd"
+          cp "$VARS" "$RUNNER_TEMP/OVMF_VARS_EXPERIMENT.fd"
+          LOG="$RUNNER_TEMP/gop-mode-change.txt"
+          set +e
+          timeout -k 2s 25s qemu-system-x86_64 -machine q35,accel=tcg -cpu max -smp 1 -m 256M \
+            -drive if=pflash,format=raw,readonly=on,file="$CODE" \
+            -drive if=pflash,format=raw,file="$RUNNER_TEMP/OVMF_VARS_EXPERIMENT.fd" \
+            -drive if=virtio,format=raw,readonly=on,file="fat:$ESP_DIR" \
+            -display none -vga std -serial none -monitor none -net none -no-reboot \
+            -chardev file,id=debug,path="$LOG" -device isa-debugcon,iobase=0xe9,chardev=debug
+          EXIT="$?"
+          set -e
+          echo "Mode-change VM exit $EXIT; timeout after return is expected (124)"
+          if test -e "$LOG"; then
+            grep -E 'PCPOS_EFI_ENTRY|PCPOS_EFI_RETURN|PCPOS_GOP_PROBE_V1 (BEFORE|AFTER|RESTORED|STANDALONE_FIXTURE|SET_MODE_STATUS|RESTORE_STATUS)' "$LOG" || true
+          fi
+          python3 - "$LOG" "$EXIT" <<'PY'
+          import pathlib,sys,re
+          p=pathlib.Path(sys.argv[1])
+          exit_code=int(sys.argv[2])
+          s=p.read_bytes().decode("ascii",errors="replace") if p.exists() else ""
+          assert exit_code in (0,124), f"QEMU exited with {exit_code}"
+          def mode(label):
+              m=re.search(r"PCPOS_GOP_PROBE_V1 "+label+r" mode=([0-9]+)",s)
+              assert m, f"Missing {label} mode readback"
+              return int(m.group(1))
+          initial=mode("BEFORE")
+          after=mode("AFTER")
+          restored=mode("RESTORED")
+          target=re.search(r"STANDALONE_FIXTURE_SET_MODE target=([0-9]+)",s)
+          assert target, "Missing deliberately enabled standalone SetMode fixture"
+          assert after==int(target.group(1)), "The post-SetMode readback disagrees"
+          assert initial!=after, "The test failed to choose a distinct GOP mode"
+          assert restored==initial, "The original video mode was not restored"
+          assert "SET_MODE_STATUS 0x0000000000000000" in s, "GOP SetMode was not successful"
+          assert "RESTORE_STATUS 0x0000000000000000" in s, "GOP restore was not successful"
+          assert "PCPOS_EFI_RETURN_V1 0x0000000000000000" in s, "EFI app returned failure"
+          assert "PCPOS_GOP_PROBE_V1 END READ_ONLY" not in s, "Wrong feature variant"
+          print("PASS: disposable standalone EFI fixture SetMode",initial,"to",after,"and restored",restored)
+          print("NOT a PCP OS SetMode/EDID/physical monitor test")
+          PY
+      - name: Verify read-only no-GOP fallback in disposable headless OVMF fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Remove the experimental SetMode binary from the previous arm.
+          # Headless negative case must use the read-only application.
+          MANIFEST="PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/Cargo.toml"
+          cargo build --offline --release --features uefi-app,ci-debugcon --target x86_64-unknown-uefi --manifest-path "$MANIFEST"
+          BIN="PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/target/x86_64-unknown-uefi/release/pcpos-gop-probe.efi"
+          ESP_DIR="$RUNNER_TEMP/gop-uefi-esp"
+          cp "$BIN" "$ESP_DIR/EFI/BOOT/BOOTX64.EFI"
+          cp /usr/share/OVMF/OVMF_VARS_4M.fd "$RUNNER_TEMP/OVMF_VARS_HEADLESS.fd"
+          LOG="$RUNNER_TEMP/gop-no-display.txt"
+          set +e
+          timeout -k 2s 25s qemu-system-x86_64 -machine q35,accel=tcg -cpu max -smp 1 -m 256M \
+            -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
+            -drive if=pflash,format=raw,file="$RUNNER_TEMP/OVMF_VARS_HEADLESS.fd" \
+            -drive if=virtio,format=raw,readonly=on,file="fat:$ESP_DIR" \
+            -display none -vga none -serial none -monitor none -net none -no-reboot \
+            -chardev file,id=debug,path="$LOG" -device isa-debugcon,iobase=0xe9,chardev=debug
+          EXIT="$?"
+          set -e
+          echo "Headless QEMU exit $EXIT, zero/timeout allowed after EFI return"
+          if test -f "$LOG"; then
+            grep -E 'PCPOS_EFI_ENTRY|PCPOS_EFI_RETURN|PCPOS_GOP_PROBE_V1' "$LOG" | head -30 || true
+          fi
+          python3 PCP_OS_Rust/crates/pcpos-kernel/uefi-gop-probe/tools/headless_receipt.py "$LOG" "$EXIT"
