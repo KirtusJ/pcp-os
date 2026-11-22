@@ -1511,16 +1511,17 @@ extern "C" {
 /// With more than one processor running, the kernel's code still runs on one at a time: an entry
 /// from outside the kernel (a program, or a processor that was idling) waits here for the kernel's
 /// one lock, and gives it up when it goes back outside (arch/others.rs).
-#[no_mangle]
-pub extern "C" fn exception_entry(frame: &mut Frame) {
+#[export_name = "exception_entry"]
+pub extern "C" fn kernel_entry(frame: &mut Frame) {
     #[cfg(feature = "processors")]
     let entered = others::enter(frame.outside());
-    entry(frame);
+    exception_entry(frame);
     #[cfg(feature = "processors")]
     others::leave(entered, frame.outside());
 }
 
-fn entry(frame: &mut Frame) {
+/// What an entry does, whichever processor it is on and with the lock held.
+fn exception_entry(frame: &mut Frame) {
     let user = frame.from_user();
     match frame.vector {
         32 => {

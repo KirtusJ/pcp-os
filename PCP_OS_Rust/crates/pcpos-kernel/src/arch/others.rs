@@ -465,7 +465,18 @@ fn listen() {
         // Safety: the page is mapped by `start`; 0xF0 is the register that turns the controller on
         // and names the vector for an interrupt with nothing behind it (255, which has a handler).
         Some(Reach::Memory(at)) => unsafe { ((at + 0xF0) as *mut u32).write_volatile(0x1FF) },
-        Some(Reach::Registers) => wrmsr(0x80F, 0x1FF),
+        Some(Reach::Registers) => {
+            // A processor comes out of its restart in the ordinary mode whatever mode the first is
+            // in, and in that mode the controller's registers cannot be reached as the processor's
+            // own. It is put in the extended mode first (bit 10, with the controller on, bit 11),
+            // if it offers it; one that does not is left unable to hear, and is never asked.
+            // Found by Director B3: without this the first register write faulted.
+            if core::arch::x86_64::__cpuid(1).ecx & (1 << 21) == 0 {
+                return;
+            }
+            wrmsr(0x1B, rdmsr(0x1B) | 3 << 10);
+            wrmsr(0x80F, 0x1FF)
+        }
         None => {}
     }
 }
