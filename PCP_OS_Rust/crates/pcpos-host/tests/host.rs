@@ -844,6 +844,32 @@ fn a_prompt_that_is_only_a_word_to_stop_is_a_halt_the_host_saw_and_other_prompts
 }
 
 #[test]
+fn installing_a_module_preserves_an_occupied_directory_and_copies_its_overview_on_success() {
+    let root = dir("install-directory");
+    let method = small_method(&root);
+    assert!(pcpos(&root).args(["init", REG, "--principal", "p"]).output().unwrap().status.success());
+    let incoming = root.join("incoming");
+    fs::create_dir(&incoming).unwrap();
+    fs::write(incoming.join("Specification.md"), "**Component:** `local.sample`, Version 1.0\n").unwrap();
+    fs::write(incoming.join("Overview.md"), "Overview\n").unwrap();
+    let destination = root.join(".pcp/modules/sample");
+    fs::create_dir_all(&destination).unwrap();
+    fs::write(destination.join("keep"), "already here").unwrap();
+    let add = || with_method(&root, &method).args(["module", "add", REG, "incoming", "--by", "p"]).output().unwrap();
+    let before = fs::read(root.join(REG)).unwrap();
+    assert!(!add().status.success());
+    assert_eq!(fs::read(root.join(REG)).unwrap(), before);
+    assert_eq!(fs::read_to_string(destination.join("keep")).unwrap(), "already here");
+    assert!(!destination.join("SOURCE").exists());
+    fs::rename(&destination, root.join("saved")).unwrap();
+    let installed = add();
+    assert!(installed.status.success(), "{}", String::from_utf8_lossy(&installed.stderr));
+    assert_eq!(fs::read_to_string(destination.join("SOURCE/Overview.md")).unwrap(), "Overview\n");
+    assert_eq!(fs::read(destination.join("SOURCE/Specification.md")).unwrap(), fs::read(incoming.join("Specification.md")).unwrap());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn concurrent_installers_share_one_module_registration() {
     let root = dir("same-module");
     let method = small_method(&root);
