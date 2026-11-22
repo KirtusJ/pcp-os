@@ -1,0 +1,202 @@
+name: Director 13 network firewall GUI and link-cycle audit
+
+on:
+  pull_request:
+    paths:
+      - 'audit/director-13/network/**'
+      - '.github/workflows/director-13-network-audit.yml'
+      - 'PCP_OS_Rust/crates/pcpos-kernel/src/dev/virtio_tx/**'
+      - 'PCP_OS_Rust/crates/pcpos-kernel/src/session/ethernet.rs'
+      - 'apps/surfbird/guest/src/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ethernet-replay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: [stable, "1.91.1"]
+    steps:
+      - name: Checkout exact branch under review
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Select source-pinned versus current Rust compiler
+        run: |
+          rustup toolchain install "${{ matrix.rust }}" --profile minimal --component rust-src --target x86_64-unknown-none
+          rustup default "${{ matrix.rust }}"
+          rustc -Vv
+          cargo -V
+      - name: Prepare bounded QEMU and Rust guest builder
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 seabios lld
+          qemu-system-x86_64 --version | head -n 1
+      - name: Check the current exact-image raw Ethernet admission contract
+        run: |
+          mkdir -p "$RUNNER_TEMP/network-test"
+          rustc --edition 2021 --test \
+            PCP_OS_Rust/crates/pcpos-kernel/src/session/ethernet.rs \
+            -o "$RUNNER_TEMP/network-test/test-ethernet-grant"
+          "$RUNNER_TEMP/network-test/test-ethernet-grant"
+      - name: Qualify fixed 800px and 1024px launcher source layout bounds
+        run: |
+          python3 audit/director-13/network/gui_geometry.py \
+            --session PCP_OS_Rust/crates/pcpos-kernel/src/session.rs \
+            --ui PCP_OS_Rust/crates/pcpos-kernel/src/ui.rs \
+            --font PCP_OS_Rust/crates/pcpos-kernel/src/font.rs \
+            --output "$RUNNER_TEMP/d13-gui-layout.json"
+      - name: Test-only separation of interface intent and observed connectivity
+        run: |
+          rustc --edition 2021 --test \
+            audit/director-13/network/lifecycle_contract.rs \
+            -o "$RUNNER_TEMP/network-test/test-network-lifecycle"
+          "$RUNNER_TEMP/network-test/test-network-lifecycle"
+      - name: Check the existing Surfbird guest and parsed-capture controls
+        run: |
+          cargo test --locked --manifest-path apps/surfbird/guest/Cargo.toml --lib
+      - name: Build unmodified source opt-in Ethernet kernel and native browser
+        run: |
+          PCPOS_KERNEL_STAGE="$RUNNER_TEMP/d13-network-kernel-stage" \
+            PCPOS_KERNEL_FEATURES=guest-ethernet \
+            sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          (cd apps/surfbird/guest && \
+            cargo build --locked --release --target x86_64-unknown-none --features tcp-ip)
+      - name: Independent repository Surfbird allowed-Ethernet reference harness
+        run: |
+          mkdir -p "$RUNNER_TEMP/d13-reference"
+          cd apps/surfbird/guest
+          python3 replay.py ../../../PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            target/x86_64-unknown-none/release/surfcable \
+            --tcp --arm allowed --output "$RUNNER_TEMP/d13-reference"
+      - name: Positive normal-carrier native QEMU Surfbird baseline
+        if: always()
+        run: |
+          python3 audit/director-13/network/ethernet_cycle.py \
+            --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            --guest apps/surfbird/guest/target/x86_64-unknown-none/release/surfcable \
+            --measure PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py \
+            --arm up-baseline \
+            --output "$RUNNER_TEMP/d13-link-baseline"
+      - name: Adverse link-down then virtual restore with fresh guest process
+        if: always()
+        run: |
+          python3 audit/director-13/network/ethernet_cycle.py \
+            --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            --guest apps/surfbird/guest/target/x86_64-unknown-none/release/surfcable \
+            --measure PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py \
+            --arm down-up \
+            --output "$RUNNER_TEMP/d13-link-down-up"
+      - name: Three alternating virtual carrier down/up cycles in one native guest boot
+        run: |
+          python3 audit/director-13/network/ethernet_cycle.py \
+            --kernel PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            --guest apps/surfbird/guest/target/x86_64-unknown-none/release/surfcable \
+            --measure PCP_OS_Rust/crates/pcpos-kernel/tools/measure.py \
+            --arm flap-three \
+            --output "$RUNNER_TEMP/d13-link-flap-three"
+      - name: Control disabled-application Ethernet grant (same feature-on kernel)
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/d13-denied-reference"
+          cd apps/surfbird/guest
+          python3 replay.py ../../../PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            target/x86_64-unknown-none/release/surfcable \
+            --tcp --arm denied --output "$RUNNER_TEMP/d13-denied-reference"
+      - name: Separate non-Ethernet serial-cable guest control
+        if: always()
+        run: |
+          PCPOS_KERNEL_STAGE="$RUNNER_TEMP/d13-serial-kernel-stage" \
+            PCPOS_KERNEL_FEATURES=game-link \
+            sh PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          (cd apps/surfbird/guest && \
+            cargo build --locked --release --target x86_64-unknown-none)
+          mkdir -p "$RUNNER_TEMP/d13-serial-reference"
+          cd apps/surfbird/guest
+          python3 replay.py ../../../PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            target/x86_64-unknown-none/release/surfcable \
+            --arm allowed --output "$RUNNER_TEMP/d13-serial-reference"
+      - name: Retain isolated synthetic guest evidence, including on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: director-13-network-link-cycle-${{ matrix.rust }}
+          path: |
+            ${{ runner.temp }}/d13-gui-layout.json
+            ${{ runner.temp }}/d13-reference/**/serial.log
+            ${{ runner.temp }}/d13-reference/**/stderr.log
+            ${{ runner.temp }}/d13-reference/**/guest.pcap
+            ${{ runner.temp }}/d13-reference/**/fixture.json
+            ${{ runner.temp }}/d13-denied-reference/**/serial.log
+            ${{ runner.temp }}/d13-denied-reference/**/stderr.log
+            ${{ runner.temp }}/d13-denied-reference/**/guest.pcap
+            ${{ runner.temp }}/d13-serial-reference/**/serial.log
+            ${{ runner.temp }}/d13-serial-reference/**/stderr.log
+            ${{ runner.temp }}/d13-link-baseline/result.json
+            ${{ runner.temp }}/d13-link-baseline/qmp-journal.json
+            ${{ runner.temp }}/d13-link-baseline/serial.log
+            ${{ runner.temp }}/d13-link-baseline/qemu.stderr
+            ${{ runner.temp }}/d13-link-baseline/frames.pcap
+            ${{ runner.temp }}/d13-link-flap-three/result.json
+            ${{ runner.temp }}/d13-link-flap-three/qmp-journal.json
+            ${{ runner.temp }}/d13-link-flap-three/serial.log
+            ${{ runner.temp }}/d13-link-flap-three/qemu.stderr
+            ${{ runner.temp }}/d13-link-flap-three/frames.pcap
+            ${{ runner.temp }}/d13-link-down-up/result.json
+            ${{ runner.temp }}/d13-link-down-up/qmp-journal.json
+            ${{ runner.temp }}/d13-link-down-up/serial.log
+            ${{ runner.temp }}/d13-link-down-up/qemu.stderr
+            ${{ runner.temp }}/d13-link-down-up/frames.pcap
+          if-no-files-found: warn
+          retention-days: 7
+
+  historical-surfbird-reference:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout pinned historically accepted native TCP source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 1cff81e4b935dc72a95a669a5214508ab8712efc
+          path: historic
+          persist-credentials: false
+      - name: Recreate stated historical compiler and inspect QEMU
+        run: |
+          rustup toolchain install 1.91.1 --profile minimal --component rust-src --target x86_64-unknown-none
+          rustup default 1.91.1
+          rustc -Vv
+          cargo -V
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 seabios lld
+          qemu-system-x86_64 --version | head -n 1
+      - name: Build kernel and guest from same older commit without altering current source
+        run: |
+          PCPOS_KERNEL_STAGE="$RUNNER_TEMP/d13-historic-stage" \
+            PCPOS_KERNEL_FEATURES=guest-ethernet \
+            sh historic/PCP_OS_Rust/crates/pcpos-kernel/run.sh build
+          (cd historic/apps/surfbird/guest && \
+            cargo build --locked --release --target x86_64-unknown-none --features tcp-ip)
+      - name: Replay unchanged archived Surfbird allowed-network test on current emulator
+        run: |
+          mkdir -p "$RUNNER_TEMP/d13-historic"
+          cd historic/apps/surfbird/guest
+          python3 replay.py ../../../PCP_OS_Rust/crates/pcpos-kernel/target/pcpos-kernel.elf32 \
+            target/x86_64-unknown-none/release/surfcable --tcp --arm allowed \
+            --output "$RUNNER_TEMP/d13-historic"
+      - name: Retain pinned-old-commit positive or adverse result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: director-13-historical-surfbird-reference
+          path: |
+            ${{ runner.temp }}/d13-historic/**/serial.log
+            ${{ runner.temp }}/d13-historic/**/stderr.log
+            ${{ runner.temp }}/d13-historic/**/guest.pcap
+            ${{ runner.temp }}/d13-historic/**/fixture.json
+          if-no-files-found: warn
+          retention-days: 7
