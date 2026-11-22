@@ -13,6 +13,10 @@ D5  Where the plain list cannot hold everything above its keys (B3: 1024 by 600 
     display under 96 columns), Details is the screen of text that scrolls, and each of the three sentences can
     be read whole by pressing Down. Run on four processors at 1024x600 with nine files from the loader, and at 640x480.
 
+D6  On every kernel the Details screen carries the two sentences on how the screen is written, `display memory:`
+    (how many of its pages are mapped write-combining) and `display: a program that asks ...`, and each is the
+    serial line's sentence.
+
 What this does not show: a reading of a real sensor, which no emulator here offers.
 
 Usage: check_details.py <plain kernel> <kernel with processors,heat> <new output directory>
@@ -81,7 +85,7 @@ def sentence(pages, start):
             if row.startswith(start):
                 words = [row]
                 for more in body[index + 1:]:
-                    if not more or more.split(":")[0] in ("heat", "other processors", "processors", "display", "keyboard", "store") or "Esc back" in more or "Up/Down" in more:
+                    if not more or more.split(":")[0] in ("heat", "other processors", "processors", "display", "display memory", "keyboard", "store") or "Esc back" in more or "Up/Down" in more:
                         break
                     words.append(more)
                 found = squeeze(" ".join(words))
@@ -111,6 +115,9 @@ def main():
         # The serial line also names where the root pointer is; the sentence compared is the one after it.
         said = serial_sentence("\n".join(l for l in serial.splitlines() if "root pointer" not in l), "processors: ")
         check("D1 %s: the processors sentence on Details is the serial line's" % label, shown is not None and shown == said, "%r / %r" % (shown, said))
+        for start in ("display memory: ", "display: a program that asks "):
+            shown, told = sentence(pages, start), serial_sentence(serial, start)
+            check("D6 %s: %r on Details is the serial line's" % (label, start.strip()), shown is not None and told is not None and shown == told, "%r / %r" % (shown, told))
         others, heat = sentence(pages, "other processors:"), sentence(pages, "heat:")
         if kernel is full:
             want = "other processors: %d of %d started; each waits, parked, and runs no program" % (cpus - 1, cpus - 1)
