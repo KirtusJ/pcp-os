@@ -41,8 +41,10 @@ pub extern "C" fn probe_main() -> ! {
         exit(0);
     }
     say(b"vector: found clean ", read() == [0u8; 32]);
-    // Safety: as above. Every bit of the register is set.
-    unsafe { asm!("vcmpps ymm15, ymm15, ymm15, 0x0f", options(nostack)) };
+    // Safety: as above. Every bit of the register is set, and the compiler is told the register is
+    // written. (This program is built for a target without vector instructions, so the compiler
+    // itself never uses the register between here and the readings below.)
+    unsafe { asm!("vcmpps ymm15, ymm15, ymm15, 0x0f", out("ymm15") _, options(nostack)) };
     say(b"vector: set ", read() == [0xFFu8; 32]);
     let mut slept = 0;
     while slept < 30 {
@@ -51,8 +53,8 @@ pub extern "C" fn probe_main() -> ! {
     }
     say(b"vector: kept ", read() == [0xFFu8; 32]);
     if !LEAVE {
-        // Safety: as above.
-        unsafe { asm!("vzeroall", options(nostack)) };
+        // Safety: as above; the one register this program wrote is emptied, and declared.
+        unsafe { asm!("vxorps ymm15, ymm15, ymm15", out("ymm15") _, options(nostack)) };
     }
     log(if LEAVE { b"vector: left full\n" } else { b"vector: done\n" });
     exit(0);

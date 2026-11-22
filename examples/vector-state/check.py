@@ -15,6 +15,12 @@ Predicates, fixed before the first run.
     while the kernel ran ("kept 1"). The second finds it empty although the first left it full.
  V2 on a processor without them (cpu "qemu64"): each program says "vector: none" and uses none.
  V3 every boot ends with status 33 after the kernel's own shutdown, with no line beginning "  FAIL".
+ V4 (with --demo-kernel, a kernel built with the vector-state-demo feature) the kernel fills a register
+    with one pattern and saves it, with another and saves that, and loads each back through the very
+    save and load a switch between programs uses: on "max" and "Haswell" its line reads
+    "first state returned 1, second state returned 1, first again 1, left clean 1"; on "qemu64" it
+    says there are no such registers. V1 alone does not show this: one program at a time never makes
+    the kernel load back a state it saved.
 
 Usage: check.py <kernel.elf32> <vector-leave> <vector-look> [--qemu qemu-system-x86_64]
 This is an emulator. It says nothing of a real processor.
@@ -88,6 +94,7 @@ def main():
     parser.add_argument("leave", type=Path)
     parser.add_argument("look", type=Path)
     parser.add_argument("--qemu", default="qemu-system-x86_64")
+    parser.add_argument("--demo-kernel", type=Path)
     args = parser.parse_args()
     kernel, leave, look = args.kernel.resolve(), args.leave.resolve(), args.look.resolve()
     if leave.name != "vector-leave" or look.name != "vector-look":
@@ -106,6 +113,21 @@ def main():
             if status != 33 or any(line.startswith("  FAIL") for line in lines):
                 problems.append("%s: the kernel ended with status %r, or a self-test failed" % (cpu, status))
             print("%s: %s" % (cpu, "; ".join(said)))
+    if args.demo_kernel:
+        demo = args.demo_kernel.resolve()
+        for cpu, want in (("max", "vector demo: first state returned 1, second state returned 1, first again 1, left clean 1"),
+                          ("Haswell", "vector demo: first state returned 1, second state returned 1, first again 1, left clean 1"),
+                          ("qemu64", "vector demo: this processor has no 256-bit registers to keep")):
+            done = subprocess.run([args.qemu, "-machine", "pc", "-accel", "tcg", "-cpu", cpu, "-m", "256M", "-kernel", demo.name, "-append", "then=off",
+                                   "-display", "none", "-nic", "none", "-serial", "stdio", "-no-reboot", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"],
+                                  stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, cwd=demo.parent, timeout=300)
+            lines = done.stdout.decode(errors="replace").splitlines()
+            said = [line for line in lines if line.startswith("vector demo: ")]
+            if said != [want] or done.returncode != 33 or any(line.startswith("  FAIL") for line in lines):
+                problems.append("%s: the demonstration kernel said %r (status %r), not %r" % (cpu, said, done.returncode, want))
+            print("%s: %s" % (cpu, "; ".join(said)))
+    else:
+        print("V4 not run: no --demo-kernel given")
     if problems:
         for problem in problems:
             print("FAIL " + problem, file=sys.stderr)

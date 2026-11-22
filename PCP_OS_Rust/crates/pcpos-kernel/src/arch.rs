@@ -1052,6 +1052,49 @@ pub fn fpu_restore(area: &FpuArea) {
     }
 }
 
+/// Only with the `vector-state-demo` feature, and only at start-up, before any program exists: fill a
+/// 256-bit register with one pattern and save it, fill it with another and save that, then load each
+/// saved state back and read the register. Two saved states that are not the first state, through the
+/// same `fpu_save` and `fpu_restore` a switch between programs uses. Says what it found on the log.
+#[cfg(feature = "vector-state-demo")]
+pub fn vector_state_demo() {
+    if !wide_vectors() {
+        crate::log(format_args!("vector demo: this processor has no 256-bit registers to keep\n"));
+        return;
+    }
+    let fill = |pattern: &[u8; 32]| {
+        // Safety: the wide registers are on (checked above); the register written is declared.
+        unsafe { asm!("vmovups ymm15, [{}]", in(reg) pattern.as_ptr(), out("ymm15") _, options(nostack)) }
+    };
+    let read = || {
+        let mut bytes = [0u8; 32];
+        // Safety: as above; only memory of this function is written.
+        unsafe { asm!("vmovups [{}], ymm15", in(reg) bytes.as_mut_ptr(), options(nostack)) };
+        bytes
+    };
+    let (mut first, mut second) = ([0u8; 32], [0u8; 32]);
+    for i in 0..32 {
+        first[i] = 0x11 + i as u8;
+        second[i] = 0xE0 - i as u8;
+    }
+    let (mut saved_first, mut saved_second) = (alloc::boxed::Box::new(FpuArea::clean()), alloc::boxed::Box::new(FpuArea::clean()));
+    fill(&first);
+    fpu_save(&mut saved_first);
+    fill(&second);
+    fpu_save(&mut saved_second);
+    fpu_restore(&saved_first);
+    let got_first = read();
+    fpu_restore(&saved_second);
+    let got_second = read();
+    fpu_restore(&saved_first);
+    let again = read();
+    // The registers are left as a program expects to find them.
+    fpu_restore(&FpuArea::clean());
+    let clean = read();
+    crate::log(format_args!("vector demo: first state returned {}, second state returned {}, first again {}, left clean {}\n",
+        (got_first == first) as u8, (got_second == second) as u8, (again == first) as u8, (clean == [0u8; 32]) as u8));
+}
+
 fn wrmsr(msr: u32, value: u64) {
     // Safety: the callers write only registers whose meaning is fixed and whose value they have checked.
     unsafe { asm!("wrmsr", in("ecx") msr, in("eax") value as u32, in("edx") (value >> 32) as u32, options(nomem, nostack, preserves_flags)) }
