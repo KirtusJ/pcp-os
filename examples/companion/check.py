@@ -35,7 +35,8 @@ Predicates, fixed before the first run.
     goes on sleeping and that companion computes, ends both: the front is reported STOPPED by that
     key, the companion as ended by it together with the front, and every frame comes back. Whether
     the key arrived while the front was asleep or between two sleeps is not observed.
- P8 every run ends with status 33, 71 self-tests pass, none fails, the kernel does not stop, and
+ P8 every run ends with status 33, 71 self-tests pass (or the number given with --self-tests, for a
+    kernel built with a feature that adds checks of its own), none fails, the kernel does not stop, and
     every frame is given back.
 
 Usage: check.py <kernel.elf32 built with --features companion> <talk-front> <talk-back> <leaving talk-back>
@@ -124,6 +125,7 @@ def main():
     parser.add_argument("--never-yields", type=Path)
     parser.add_argument("--alone", type=Path)
     parser.add_argument("--waits", type=Path)
+    parser.add_argument("--self-tests", type=int, default=71, help="how many self-tests this kernel passes when nothing fails: 71, or 73 built with the processors feature as well")
     args = parser.parse_args()
     kernel, front, back, leaving = (p.resolve() for p in (args.kernel, args.front, args.back, args.leaving))
     if front.name != "talk-front" or back.name != "talk-back" or leaving.name != "talk-back":
@@ -133,7 +135,7 @@ def main():
 
     def common(name, status, lines):
         passes = sum(1 for line in lines if line.startswith("  pass "))
-        if status != 33 or passes != 71 or any(line.startswith("  FAIL") or "KERNEL STOPPED" in line for line in lines):
+        if status != 33 or passes != args.self_tests or any(line.startswith("  FAIL") or "KERNEL STOPPED" in line for line in lines):
             problems.append("%s: status %r, %d passes, or a failure" % (name, status, passes))
         frames = [m for m in (re.search(r"frames: (\d+) of (\d+) free, (\d+) handed out and (\d+) given back", line) for line in lines) if m]
         if len(frames) != 1 or frames[0].group(1) != frames[0].group(2) or frames[0].group(3) != frames[0].group(4):

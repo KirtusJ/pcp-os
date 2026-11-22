@@ -295,15 +295,18 @@ pub fn boot_info(magic: u32, info: u32) -> BootInfo {
         }
         // The firmware's tables of processors. They are read here, while the loader-time map still
         // reaches the first four gibibytes; only memory is read, and everything is copied.
-        // Nothing is read from memory the loader's map gives as free: firmware's tables are never there.
+        // Where the root pointer is said to be decides which memory a table may be read from. One the
+        // loader named (a UEFI start) is believed only in what the map gives as the firmware's own
+        // tables. One looked for where a BIOS puts it lies in memory such firmware calls reserved, so
+        // there the rule is that nothing is read from memory the map gives as free.
+        let named = if out.command_line_exact { processors::named_root(&out.command_line) } else { Err(()) };
+        let by_loader = matches!(named, Ok(Some(_)));
         let map = out.memory_map.clone().unwrap_or_default();
         let mut read = |at: u64, len: usize| -> Option<alloc::vec::Vec<u8>> {
             let end = at.checked_add(len as u64)?;
-            (end <= 4 << 30 && len <= 1 << 20 && processors::outside_free_memory(&map, at, len)).then(|| core::slice::from_raw_parts(at as usize as *const u8, len).to_vec())
+            let allowed = if by_loader { processors::inside_table_memory(&map, at, len) } else { processors::outside_free_memory(&map, at, len) };
+            (end <= 4 << 30 && len <= 1 << 20 && allowed).then(|| core::slice::from_raw_parts(at as usize as *const u8, len).to_vec())
         };
-        // A loader that started from UEFI says where the root pointer is; otherwise it is looked for
-        // where a BIOS puts it: the first kibibyte of the extended BIOS data area, then 0xE0000 to 0xFFFFF.
-        let named = if out.command_line_exact { processors::named_root(&out.command_line) } else { Err(()) };
         let root = match named {
             Ok(Some(at)) => {
                 out.processors_note = "at the address the loader named";
@@ -328,7 +331,7 @@ pub fn boot_info(magic: u32, info: u32) -> BootInfo {
                 Ok(found) => out.processors = Some(found),
                 Err(why) => {
                     out.processors_note = match why {
-                        processors::Refused::Unreadable => "a table lies outside what can be read at start, or in memory given as free",
+                        processors::Refused::Unreadable => if by_loader { "a table lies outside what can be read at start, or outside the firmware's own table memory" } else { "a table lies outside what can be read at start, or in memory given as free" },
                         processors::Refused::NoRoot => "the root pointer does not hold",
                         processors::Refused::BadTable => "a table's signature, length or checksum is wrong",
                         processors::Refused::NoProcessorTable => "the firmware lists no table of processors",

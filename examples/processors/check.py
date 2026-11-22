@@ -10,10 +10,12 @@ Predicates, fixed before the first run.
     firmware lists exactly that many usable, found where a BIOS puts the root pointer.
  C2 the same with the tables above the first gibibyte: a "q35" machine with 6 GiB and 4 processors,
     and a "pc" machine with 2 GiB and 3.
- C3 a loader's `acpi_rsdp=` naming an address in memory given as free, one beyond what can be read,
-    one not in the one form taken (0x and sixteen lowercase digits), and the word given twice each
-    give "not known" with the reason, and nothing else changes. Naming the address the firmware's
-    own root pointer is at (found by a first boot that looks for it) gives the same count.
+ C3 a loader's `acpi_rsdp=` is believed only in memory the map gives as the firmware's own tables
+    (kinds 3 and 4). Naming an address in free memory, one beyond what can be read, and the address
+    this BIOS's own root pointer is at (reserved memory, found by a first boot that looks for it)
+    each give "not known" with that reason; a word not in the one form taken (0x and sixteen
+    lowercase digits) and the word given twice give "not known" with theirs; nothing else changes.
+    The case that is believed needs a UEFI machine's map and is not run here.
  C4 every boot passes all 71 self-tests and ends with status 33: the wider map at start (four
     gibibytes where it was one) costs nothing the self-tests can see.
 
@@ -63,7 +65,7 @@ def main():
                 problems.append("%s %s: the kernel said %r" % (label, name, said))
             else:
                 print("%s: %d listed" % (name, count))
-    free = "a table lies outside what can be read at start, or in memory given as free"
+    free = "a table lies outside what can be read at start, or outside the firmware's own table memory"
     form = "the loader's line is cut short, or its acpi_rsdp= is not the one form taken"
     for word, reason in (("acpi_rsdp=0x0000000000100000", free), ("acpi_rsdp=0x0000001ffffffff0", free), ("acpi_rsdp=0x100000", form), ("acpi_rsdp=0x00000000000F5000", form),
                          ("acpi_rsdp=0x00000000000f5000 acpi_rsdp=0x00000000000f5000", form)):
@@ -81,10 +83,10 @@ def main():
         word = "acpi_rsdp=" + said_at[0]
         status, passes, said = boot(args.qemu, args.kernel, "pc", "256M", 2, word)
         sound(word, status, passes)
-        if said != ["processors: the firmware lists 2 usable (at the address the loader named); 0 more than this kernel would start, 0 not to be used; this kernel runs on one"]:
+        if said != ["processors: not known (%s); this kernel runs on one" % free]:
             problems.append("C3 %s: the kernel said %r" % (word, said))
         else:
-            print("%s: 2 listed at the address named" % word)
+            print("%s: refused, the BIOS's own root pointer is not in table memory" % word)
     if problems:
         sys.exit("\n".join(problems))
     print("processors: the firmware's count is read rightly on every machine tried, and a wrong address is refused")

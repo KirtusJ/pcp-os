@@ -212,6 +212,45 @@ pub fn outside_free_memory(map: &[u8], at: u64, length: usize) -> bool {
     seen && entry == map.len()
 }
 
+/// Whether `length` bytes at `at` lie wholly inside what the loader's memory map gives as the
+/// firmware's own tables: ACPI memory that may be reclaimed (kind 3) or must be kept (kind 4). The
+/// bytes may run across ranges of those kinds that touch. This is the rule for a root pointer the
+/// loader named, which a UEFI machine's firmware keeps in such memory; a map that cannot be followed
+/// to its end answers no.
+pub fn inside_table_memory(map: &[u8], at: u64, length: usize) -> bool {
+    let Some(end) = at.checked_add(length as u64) else { return false };
+    if length == 0 {
+        return false;
+    }
+    let mut reached = at;
+    // Each pass must carry `reached` forward through one more range, so there are at most as many passes as ranges.
+    for _ in 0..=map.len() / 24 {
+        let mut entry = 0usize;
+        let mut next = reached;
+        while entry < map.len() {
+            let (Some(size), Some(base), Some(extent), Some(kind)) = (u32_at(map, entry), u64_at(map, entry + 4), u64_at(map, entry + 12), u32_at(map, entry + 20)) else {
+                return false;
+            };
+            let Some(top) = base.checked_add(extent) else { return false };
+            if size < 20 {
+                return false;
+            }
+            if (kind == 3 || kind == 4) && base <= reached && reached < top {
+                next = next.max(top);
+            }
+            entry += size as usize + 4;
+        }
+        if entry != map.len() || next == reached {
+            return false;
+        }
+        reached = next;
+        if reached >= end {
+            return true;
+        }
+    }
+    false
+}
+
 /// A page below one mebibyte that the loader's memory map (in the Multiboot form) gives as free, for
 /// another processor to be started from: such a processor begins in a mode that reaches no higher.
 /// Pages from 0x8000 up are looked at first, the usual place; the first page of memory and everything
@@ -457,6 +496,30 @@ mod tests {
         let mut short = map.clone();
         short[0] = 8;
         assert!(!outside_free_memory(&short, 0xf5000, 36));
+    }
+
+    #[test]
+    fn a_named_root_is_believed_only_in_the_firmwares_own_table_memory() {
+        let entry = |base: u64, extent: u64, kind: u32| {
+            let mut e = 20u32.to_le_bytes().to_vec();
+            e.extend_from_slice(&base.to_le_bytes());
+            e.extend_from_slice(&extent.to_le_bytes());
+            e.extend_from_slice(&kind.to_le_bytes());
+            e
+        };
+        // Listed out of order on purpose: reclaimable tables, kept tables touching them, reserved, free.
+        let map = [entry(0x7ff0_0000, 0x1000, 4), entry(0x10_0000, 0x7fd0_0000, 1), entry(0x7fe0_0000, 0x10_0000, 3), entry(0x7ff0_1000, 0x1000, 2), entry(0xf0000, 0x10000, 2)].concat();
+        assert!(inside_table_memory(&map, 0x7fe0_0000, 36));
+        assert!(inside_table_memory(&map, 0x7fef_fff0, 36)); // runs from the one kind into the other
+        assert!(inside_table_memory(&map, 0x7fe0_0000, 0x10_1000)); // all of both
+        assert!(!inside_table_memory(&map, 0x7ff0_0ff0, 36)); // runs on into reserved memory
+        assert!(!inside_table_memory(&map, 0x7fdf_fff0, 36)); // begins in free memory
+        assert!(!inside_table_memory(&map, 0xf5000, 36)); // reserved: where a BIOS keeps them, not a UEFI machine
+        assert!(!inside_table_memory(&map, 0xa0000, 16)); // a hole the map does not mention
+        assert!(!inside_table_memory(&map, 0x7fe0_0000, 0));
+        assert!(!inside_table_memory(&map, u64::MAX - 4, 36));
+        assert!(!inside_table_memory(&[], 0x7fe0_0000, 36));
+        assert!(!inside_table_memory(&map[..map.len() - 3], 0x7fe0_0000, 36));
     }
 
     #[test]

@@ -15,8 +15,9 @@ without the feature, and the two this feature adds), with no FAIL line.
  S2 with 4 processors that are 2 cores of 2 threads, it says 4 threads on 2 cores; sound.
  S3 with 2 processors present and room for 4, the firmware's 2 absent ones are counted as not to be
     used and are not started: 1 of 1; sound.
- S4 the emulator's own account, 4 processors, once the kernel has stopped: every processor is
-    halted in ring 0; each other one has interrupts off, is in 64-bit mode, and has the first one's
+ S4 the emulator's own account, 4 processors, once the kernel has stopped: every processor is in
+    ring 0 and each other one is halted (the first asks the emulator to shut down and may be read
+    before or after its own halt); each other one has interrupts off, is in 64-bit mode, and has the first one's
     CR0, CR4, CR3 and interrupt table; all four segment tables are at different addresses, and each
     task register points into its own processor's segment table page.
  S8 in every boot of S1 to S3 that starts another processor, the kernel says that every one it
@@ -45,7 +46,9 @@ kernel's to deal with: it had begun to compare each processor's memory types wit
 in this emulator they differ. The kernel now gives them the first's, and S8 was added. The third
 run (pr7-started-20261122T142600Z, kept) failed S4 because this file read the registers three
 seconds after the kernel's last line and the first processor had not yet halted; it now waits
-until the emulator says the machine has shut down.
+until the emulator says the machine has shut down. The fourth (pr10-started-20261122T142905Z, kept)
+failed S4 again on the first processor only: it asks for the shutdown and can be read before its
+own halt, so S4 no longer requires the first to be halted, only the others.
 
 Usage: check_started.py <kernel with processors> <kernel without> <extended demo> <silent demo> [--qemu ...]
 This is an emulator with SeaBIOS. Nothing here is a run on a real machine or under UEFI firmware.
@@ -178,8 +181,8 @@ def main():
         bad.append("the emulator did not give four processors' registers: %r" % cpus)
     else:
         for n, cpu in enumerate(cpus):
-            if cpu["halted"] != "1" or cpu["ring"] != "0":
-                bad.append("processor %d is not halted in ring 0" % n)
+            if cpu["ring"] != "0" or (n and cpu["halted"] != "1"):
+                bad.append("processor %d is not in ring 0, or is one of the others and not halted" % n)
             if int(cpu["tr"], 16) & ~0xfff != int(cpu["gdt"], 16) or int(cpu["gdt"], 16) & 0xfff:
                 bad.append("processor %d's task register is not in its own segment table page" % n)
             if n and (int(cpu["flags"], 16) & 0x200 or cpu["cs"] != "CS64" or any(cpu[r] != first[r] for r in ("cr0", "cr3", "cr4", "idt"))):
@@ -191,7 +194,7 @@ def main():
     if bad:
         problems.extend("S4: " + text for text in bad)
     else:
-        print("S4: by the emulator's account (%s) all four are halted in ring 0, the other three in 64-bit mode with CR0 %s, CR4 %s, CR3 %s, segment tables at %s"
+        print("S4: by the emulator's account (%s) all four are in ring 0, the other three halted in 64-bit mode with CR0 %s, CR4 %s, CR3 %s, segment tables at %s"
               % (status.strip().splitlines()[-2].strip() if len(status.strip().splitlines()) > 1 else "?", first["cr0"], first["cr4"], first["cr3"], ", ".join(cpu["gdt"] for cpu in cpus)))
 
     run = boot(args.qemu, args.plain, "pc", "256M", "4")
