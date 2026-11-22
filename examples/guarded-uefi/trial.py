@@ -53,11 +53,13 @@ def confirm_decision(answer, serial_in, serial, vm, resent=None):
         for length in range(1, len(answer) + 1):
             prefix = answer[:length]
             for attempt in range(3):
+                # Recorded when the character is in fact sent again, so a run that fails after its
+                # last wait does not report a resend that never happened (A3 and B3).
+                if attempt and resent is not None:
+                    resent.append(prefix.decode("ascii"))
                 stream.write(prefix[-1:])
                 if echoed(serial, prefix, vm, 5 if attempt < 2 else 50):
                     break
-                if resent is not None:
-                    resent.append(prefix.decode("ascii"))
             else:
                 raise TimeoutError(f"GRUB serial echo for {prefix.decode('ascii')}")
         stream.write(b"\r")
