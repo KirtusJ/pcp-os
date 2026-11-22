@@ -39,6 +39,11 @@ jobs:
           kernel=PCP_OS_Rust/crates/pcpos-kernel
           PCPOS_KERNEL_STAGE="$RUNNER_TEMP/build" PCPOS_KERNEL_FEATURES=vm-store sh "$kernel/run.sh" build
           python3 -B examples/vm-store/check.py "$kernel/target/pcpos-kernel.elf32" "$RUNNER_TEMP/boots"
+      - name: The default kernel verifies itself from 128 MiB to 8 GiB of memory
+        run: |
+          kernel=PCP_OS_Rust/crates/pcpos-kernel
+          PCPOS_KERNEL_STAGE="$RUNNER_TEMP/default-build" sh "$kernel/run.sh" build
+          python3 -IB "$kernel/tests/high_memory.py" "$kernel/target/pcpos-kernel.elf32"
       - name: Run the granted file API probe
         run: |
           kernel="$GITHUB_WORKSPACE/PCP_OS_Rust/crates/pcpos-kernel"
