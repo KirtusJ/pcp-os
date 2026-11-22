@@ -825,6 +825,10 @@ fn talk(t: &mut Table, i: usize, writing: bool, fd: u64, addr: u64, len: u64) ->
         return Outcome::Return(0);
     }
     if writing {
+        // A descriptor opened for reading only does not write, here as for any other file.
+        if !f.writable {
+            return Outcome::Return(err(EBADF));
+        }
         if !channel.peer(end) {
             return Outcome::Return(err(32)); // EPIPE
         }
@@ -832,9 +836,17 @@ fn talk(t: &mut Table, i: usize, writing: bool, fd: u64, addr: u64, len: u64) ->
         if room == 0 {
             return if f.nonblocking { Outcome::Return(err(EAGAIN)) } else { Outcome::Wait(Waiting::TalkRoom, true) };
         }
-        return match p.space.as_ref().and_then(|s| s.read(addr as usize, room)) {
-            Some(bytes) => Outcome::Return(channel.write(end, &bytes) as u64),
-            None => Outcome::Return(err(EFAULT)),
+        // The bytes are copied through a buffer the kernel may be refused: a program's write must not
+        // be able to stop the kernel for want of memory. Nothing is queued unless all of it was read.
+        let mut bytes = Vec::new();
+        if bytes.try_reserve_exact(room).is_err() {
+            return Outcome::Return(err(ENOMEM));
+        }
+        bytes.resize(room, 0);
+        return if p.space.as_ref().is_some_and(|s| s.copy_in(addr as usize, &mut bytes)) {
+            Outcome::Return(channel.write(end, &bytes) as u64)
+        } else {
+            Outcome::Return(err(EFAULT))
         };
     }
     if !channel.readable(end) {
