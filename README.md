@@ -2,6 +2,8 @@
 
 PCP OS runs Adversarial Claim Review (ACR) and keeps a verifiable register of what was examined, who examined it and what evidence they used. This repository contains the Rust host program `pcpos`, its integrity core, the experimental kernel and the source used to build PCP editions.
 
+For a first boot or release build, start with the [release catalog](os-docs/release-catalog.md). It identifies each image, its build and verification steps, and the outstanding decisions for physical use.
+
 | If your task is to… | Start here | How to use it |
 | --- | --- | --- |
 | Connect a language model to PCP | [Run a local Qwen register read](examples/qwen/) | Let a model request `acr_status`, inspect the Rust host's reply and compare it with the model's answer. Includes the connection settings for MCP clients. |
