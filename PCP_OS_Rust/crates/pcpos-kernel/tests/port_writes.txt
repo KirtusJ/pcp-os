@@ -34,12 +34,13 @@ arch.rs | interrupt_line_on | port | always; the interrupt controllers' mask por
 arch.rs | interrupts_init | 0x40 | always; the interrupt controllers and the interval timer
 arch.rs | interrupts_init | 0x43 | always; the interrupt controllers and the interval timer
 arch.rs | interrupts_init | port | always; the interrupt controllers and the interval timer
-arch.rs | serial_init | COM1 | always, UNGUARDED: the first serial port at its usual address, written before anything is known to be there
-arch.rs | serial_init | COM1 + 1 | always, UNGUARDED: the first serial port at its usual address, written before anything is known to be there
-arch.rs | serial_init | COM1 + 2 | always, UNGUARDED: the first serial port at its usual address, written before anything is known to be there
-arch.rs | serial_init | COM1 + 3 | always, UNGUARDED: the first serial port at its usual address, written before anything is known to be there
-arch.rs | serial_init | COM1 + 4 | always, UNGUARDED: the first serial port at its usual address, written before anything is known to be there
-arch.rs | serial_put | COM1 | always, UNGUARDED: as serial_init; every line of the report is written here
+arch.rs | serial_init | COM1 | only after the line-status register did not read as absent and the scratch register kept two values
+arch.rs | serial_init | COM1 + 1 | only after the line-status register did not read as absent and the scratch register kept two values
+arch.rs | serial_init | COM1 + 2 | only after the line-status register did not read as absent and the scratch register kept two values
+arch.rs | serial_init | COM1 + 3 | only after the line-status register did not read as absent and the scratch register kept two values
+arch.rs | serial_init | COM1 + 4 | only after the line-status register did not read as absent and the scratch register kept two values
+arch.rs | serial_init | COM1 + 7 | the probe: two values to the scratch register, only after the line-status register did not read as absent; UNGUARDED in that nothing else is known of what is at the address
+arch.rs | serial_put | COM1 | only after serial_init found a port, and only while it goes on taking bytes; every line of the report is written here
 arch.rs | stop | 0x4004 | emulator only (CPUID hypervisor bit): the emulators' exit and power ports
 arch.rs | stop | 0x604 | emulator only (CPUID hypervisor bit): the emulators' exit and power ports
 arch.rs | stop | 0xB004 | emulator only (CPUID hypervisor bit): the emulators' exit and power ports

@@ -95,6 +95,11 @@ pub struct Linux {
     reserved: Vec<(usize, usize)>,
     /// Pages of memory the program holds beyond its image and stack.
     pub extra_pages: usize,
+    /// The program asked (display request 0x5004) to draw to memory of its own that the kernel copies
+    /// to the display, and was told that this display needs it.
+    shadow_asked: bool,
+    /// Where that memory is in the program's address space, once it has mapped the display.
+    shadow: Option<usize>,
 }
 
 /// Limits for the `brk` heap and for a single mapping.
@@ -107,7 +112,7 @@ const TICK_NS: u64 = 999_847;
 impl Linux {
     pub fn new(image_end: usize) -> Linux {
         let console = || Some(Open { node: Node::Console, position: 0, nonblocking: false, writable: true, append: false });
-        Linux { files: alloc::vec![console(), console(), console()], heap_start: image_end, heap_end: image_end, next_map: arch::USER_BASE + (64 << 30), reserved: Vec::new(), extra_pages: 0 }
+        Linux { files: alloc::vec![console(), console(), console()], heap_start: image_end, heap_end: image_end, next_map: arch::USER_BASE + (64 << 30), reserved: Vec::new(), extra_pages: 0, shadow_asked: false, shadow: None }
     }
 }
 
@@ -603,6 +608,20 @@ fn mmap(p: &mut Process, caps: &CapSpace, len: u64, prot: u64, flags: u64, fd: u
             if pages * 4096 > (bytes + 4095) & !4095 {
                 return err(EINVAL);
             }
+            // A program that asked for it, on a display whose memory cannot be given whole, draws to
+            // memory of its own: the picture's size, once, and never the device.
+            if shadow_wanted(p, &d) {
+                if p.linux.as_ref().map(|l| l.shadow.is_some()).unwrap_or(true) || pages != pages_of(bytes) {
+                    return err(EINVAL);
+                }
+                if !grow(p, start, pages, true, false) {
+                    return err(ENOMEM);
+                }
+                if let Some(l) = p.linux.as_mut() {
+                    l.shadow = Some(start);
+                }
+                return start as u64;
+            }
             let space = match p.space.as_mut() {
                 Some(s) => s,
                 None => return err(EFAULT),
@@ -670,7 +689,41 @@ fn sleep(p: &Process, world: &World, request: u64, absolute_on: Option<u64>) -> 
     Outcome::Wait(Waiting::Until(arch::ticks() + (ns + TICK_NS - 1) / TICK_NS), false)
 }
 
-fn display_call(p: &Process, caps: &CapSpace, request: u64, arg: u64) -> u64 {
+/// Whether this display's memory cannot be mapped whole into a program: one page, ending partway
+/// through a page of memory (a loader's framebuffer of 800 by 600 is 1,920,000 bytes).
+fn display_needs_shadow(d: &dev::Display) -> bool {
+    let bytes = d.pitch as usize * d.height as usize;
+    d.pages == 1 && !arch::device_grantable(d.memory, pages_of(bytes))
+}
+
+fn shadow_wanted(p: &Process, d: &dev::Display) -> bool {
+    p.linux.as_ref().map(|l| l.shadow_asked).unwrap_or(false) && display_needs_shadow(d)
+}
+
+/// Copy a program's own picture to the display, row by row: only the pixels of the picture, through
+/// the kernel's bounded write. False if any row is not the program's memory or would leave the device.
+fn shadow_present(p: &Process, from: usize, d: &dev::Display) -> bool {
+    let space = match p.space.as_ref() {
+        Some(s) => s,
+        None => return false,
+    };
+    let mut bytes = alloc::vec![0u8; d.width as usize * 4];
+    let mut row = alloc::vec![0u32; d.width as usize];
+    for y in 0..d.height as usize {
+        if !space.copy_in(from + y * d.pitch as usize, &mut bytes) {
+            return false;
+        }
+        for (word, four) in row.iter_mut().zip(bytes.chunks_exact(4)) {
+            *word = u32::from_le_bytes([four[0], four[1], four[2], four[3]]);
+        }
+        if !arch::device_write32(d.memory + y * d.pitch as usize, &row) {
+            return false;
+        }
+    }
+    true
+}
+
+fn display_call(p: &mut Process, caps: &CapSpace, request: u64, arg: u64) -> u64 {
     if !p.holds(caps, Object::Display, Rights::APPEND) {
         return err(EACCES);
     }
@@ -700,11 +753,42 @@ fn display_call(p: &Process, caps: &CapSpace, request: u64, arg: u64) -> u64 {
             }
         }
         0x5003 => {
+            // A program that asked to draw through the kernel, on a display that needs it, shows only
+            // what it has drawn in the memory it mapped for that. Before the map there is nothing to
+            // show, and it is not let through to the device's own page (B3's fixture found it was).
+            if let Some(d) = dev::display().filter(|d| shadow_wanted(p, d)) {
+                let from = match p.linux.as_ref().and_then(|l| l.shadow) {
+                    Some(from) if arg == 0 => from,
+                    _ => return err(EINVAL),
+                };
+                if !shadow_present(p, from, &d) {
+                    return err(EINVAL);
+                }
+                dev::display_count_show();
+                return 0;
+            }
             if dev::display_show(arg as u32) {
                 dev::display_count_show();
                 0
             } else {
                 err(EINVAL)
+            }
+        }
+        // Opt in to drawing through the kernel where the display cannot be mapped whole. 0: draw
+        // directly, as before. 1: map the display as usual and show page 0 after every picture.
+        0x5004 => {
+            if arg != 0 {
+                return err(EINVAL);
+            }
+            match dev::display() {
+                Some(d) => {
+                    let needed = display_needs_shadow(&d);
+                    if let Some(l) = p.linux.as_mut() {
+                        l.shadow_asked = true;
+                    }
+                    needed as u64
+                }
+                None => err(EINVAL),
             }
         }
         _ => err(ENOTTY),
