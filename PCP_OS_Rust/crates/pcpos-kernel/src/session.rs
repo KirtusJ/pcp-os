@@ -1700,6 +1700,12 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
     let (pool, free, _, _) = crate::mem::census();
     at(4, row, &format!("memory for programs: {} MiB, {} MiB free", pool * 4096 >> 20, free * 4096 >> 20), SOFT, GROUND);
     row += 1;
+    for (words, colour) in machine_words(start) {
+        for part in wrapped(&words, (cols as usize).saturating_sub(6).max(1)) {
+            at(4, row, &part, colour, GROUND);
+            row += 1;
+        }
+    }
     if let Some(d) = start.display {
         at(4, row, &format!("display: {}, {} page(s); keyboard: PS/2; sound: {}", if d.kind == dev::DisplayKind::Bochs { "Bochs interface, any mode" } else { "mode set by the loader" }, d.pages, if start.sound { "present" } else { "none" }), SOFT, GROUND);
         row += 1;
@@ -1779,6 +1785,22 @@ pub fn stopped_screen(start: &Start, failed: u32, passed: u32) {
 
 /// Everything the loader gave and what the machine has, as a screen of text for a display too narrow for
 /// the plain list: nothing is cut, digests are whole, and nothing here starts or changes anything.
+/// What the kernel says of the machine's processors and of heat, in the sentences it writes to the
+/// serial line at start, for a machine that has no serial connector to read them from. The heat
+/// sentence is read again each time this is drawn.
+fn machine_words(start: &Start) -> Vec<(String, u32)> {
+    #[allow(unused_mut)]
+    let mut out = alloc::vec![(crate::processors_words(start.boot), ui::SOFT)];
+    #[cfg(feature = "processors")]
+    out.push((match arch::others::outcome() {
+        Some((parked, listed)) => format!("other processors: {} of {} started and parked; none runs any work yet", parked, listed),
+        None => String::from("other processors: none started"),
+    }, ui::SOFT));
+    #[cfg(feature = "heat")]
+    out.push((crate::heat_words(), if matches!(arch::heat_now(), Ok(h) if h.limiting || h.critical) { ui::BAD } else { ui::SOFT }));
+    out
+}
+
 fn details_view(start: &Start, programs: &[Entry], files: &[(String, &'static [u8], String)], rec: &Record, stored: usize, mounted: bool, folder: Option<&str>) {
     use ui::{SOFT, TEXT};
     let across = (ui::grid().0 as usize).saturating_sub(4).max(1);
@@ -1841,6 +1863,9 @@ fn details_view(start: &Start, programs: &[Entry], files: &[(String, &'static [u
     lines.extend(lines_of(2, "MACHINE", ui::TEAL));
     let (pool, free, _, _) = crate::mem::census();
     lines.extend(lines_of(4, &format!("memory for programs: {} MiB, {} MiB free", pool * 4096 >> 20, free * 4096 >> 20), SOFT));
+    for (words, colour) in machine_words(start) {
+        lines.extend(whole(4, &words, colour));
+    }
     if let Some(d) = start.display {
         lines.extend(lines_of(4, &format!("display: {}, {} page(s)", if d.kind == dev::DisplayKind::Bochs { "Bochs interface, any mode" } else { "mode set by the loader" }, d.pages), SOFT));
         lines.extend(lines_of(4, &format!("keyboard: PS/2; sound: {}", if start.sound { "present" } else { "none" }), SOFT));
