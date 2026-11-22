@@ -1,0 +1,4 @@
+register: read back in 15 cases; the made file's event checked field by field
+proposals: allowed once by F12 then Enter and made by the kernel; refused three ways; a held Enter does not allow; F12 with nothing waiting says so; refused unseen; not offered without the grant
+cases in which the probe had a companion beside it: none
+full-store cases run: store-one-byte-short, an ordinary write into the room left after the refusal, store-exactly-enough
