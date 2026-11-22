@@ -53,7 +53,7 @@ impl Fixture {
             for d in dims {b.extend(d.to_le_bytes());}
             b.extend(kind.to_le_bytes());b.extend(offset.to_le_bytes());
             let n:u64=dims.iter().product();
-            let size=match kind {0=>n*4,1|30=>n*2,2=>n/32*18,6=>n/32*22,8=>n/32*34,_=>panic!()};
+            let size=match kind {0=>n*4,1|30=>n*2,2=>n/32*18,6=>n/32*22,8=>n/32*34,12=>n/256*144,14=>n/256*210,_=>panic!()};
             offset=(offset+size).div_ceil(32)*32;
         }
         b.resize(b.len().div_ceil(32)*32,0);
@@ -116,8 +116,8 @@ fn missing_extra_transposed_wrong_rank_and_unsupported_tensors_refuse() {
     let mut f=Fixture::new("qwen3");f.tensors.push(("vision.weight".into(),vec![32,32],0));assert_eq!(f.error(),Error::TensorSet);
     let mut f=Fixture::new("qwen3");f.tensors.iter_mut().find(|t|t.0=="blk.0.ffn_down.weight").unwrap().1.reverse();assert_eq!(f.error(),Error::TensorShape);
     let mut f=Fixture::new("qwen3");f.tensors.iter_mut().find(|t|t.0=="output_norm.weight").unwrap().1.push(1);assert_eq!(f.error(),Error::TensorShape);
-    let mut f=Fixture::new("qwen3");f.tensors[0].2=2;assert_eq!(f.error(),Error::TensorEncoding);
-    let mut f=Fixture::new("qwen3");f.tensors[2].2=8;assert_eq!(f.error(),Error::TensorEncoding);
+    let mut f=Fixture::new("qwen3");f.tensors[0].2=2;f.set("general.quantization_version",V::U(2));assert_eq!(f.error(),Error::TensorEncoding);
+    let mut f=Fixture::new("qwen3");f.tensors[2].2=8;f.set("general.quantization_version",V::U(2));assert_eq!(f.error(),Error::TensorEncoding);
     let mut f=Fixture::new("qwen2");f.tensors.retain(|t|t.0!="blk.1.attn_q.bias");assert_eq!(f.error(),Error::TensorSet);
 }
 
@@ -132,4 +132,29 @@ fn qwen3_explicit_head_width_can_differ_from_embedding_per_head() {
     let(b,n)=f.bytes();let idx=Index::parse(&b,n).unwrap();let m=Model::admit(&idx).unwrap();
     assert_eq!(m.config().head_width,16);assert_eq!(m.kv_bytes(1024,524288),Ok(524288));
     let mut f=Fixture::new("qwen2");f.set("qwen2.attention.key_length",V::U(16));assert_eq!(f.error(),Error::Geometry);
+}
+
+#[test]
+fn quantized_layout_version_is_required_and_exact_for_every_supported_kind() {
+    for arch in ["qwen2","qwen3"] {
+        for kind in [6,8,12,14] {
+            for version in [None,Some(V::S("2".into())),Some(V::U(99)),Some(V::U(2))] {
+                let valid=matches!(version,Some(V::U(2)));
+                let mut f=Fixture::new(arch);
+                f.set(&format!("{arch}.embedding_length"),V::U(256));
+                f.set(&format!("{arch}.feed_forward_length"),V::U(512));
+                for (name,dims,_) in &mut f.tensors {
+                    dims[0]*=8;
+                    if dims.len()==2 && name!="token_embd.weight" && name!="output.weight" {dims[1]*=8;}
+                }
+                f.tensors[0].2=kind;
+                if let Some(v)=version {f.set("general.quantization_version",v);}
+                let(b,n)=f.bytes();let idx=Index::parse(&b,n).unwrap();let result=Model::admit(&idx);
+                if valid {assert!(result.is_ok(),"{arch} kind={kind}");}
+                else {assert_eq!(result.unwrap_err(),Error::QuantizationVersion,"{arch} kind={kind}");}
+            }
+        }
+        let f=Fixture::new(arch);let(b,n)=f.bytes();let idx=Index::parse(&b,n).unwrap();
+        assert!(Model::admit(&idx).is_ok()); // All-floating models need no quantization version.
+    }
 }

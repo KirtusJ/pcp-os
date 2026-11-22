@@ -25,6 +25,9 @@ training-context positions. They bound this implementation, not the GGUF format.
 Only even full-head RoPE and equal key/value head widths are supported. Norms
 and biases require F32/F16/BF16; matrices also allow Q5_0/Q8_0/Q4_K/Q6_K, the
 formats covered by `pcpos-model-tensor`.
+Any quantized tensor requires `general.quantization_version` as an unsigned
+32-bit integer equal to 2, the pinned GGML layout version. Missing, wrong-typed
+or unknown versions refuse; all-floating models may omit the field.
 
 `kv_bytes(context, budget)` computes exact f32 key and value storage and refuses
 a context beyond the model's training length or the caller's independent byte

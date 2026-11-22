@@ -15,7 +15,7 @@ pub enum Architecture { Qwen2, Qwen3 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     Architecture, Metadata, UnsupportedMetadata, Geometry,
-    TensorSet, TensorShape, TensorEncoding, Context, Budget,
+    TensorSet, TensorShape, TensorEncoding, QuantizationVersion, Context, Budget,
 }
 
 /// Validated dimensions; copies are informational and cannot alter an admitted model.
@@ -74,6 +74,14 @@ impl<'i, 'b> Model<'i, 'b> {
         };
         if let Some(value) = index.get("general.type") {
             if value != Value::String("model") { return Err(Error::Architecture); }
+        }
+        // A quantization scheme's name can survive a layout revision. Bind every
+        // quantized tensor to the exact GGML layout version our row decoders test.
+        let quantized = index.tensors().iter().any(|t| {
+            !matches!(t.kind, TensorType::F32 | TensorType::F16 | TensorType::Bf16)
+        });
+        if quantized && index.get("general.quantization_version") != Some(Value::U32(2)) {
+            return Err(Error::QuantizationVersion);
         }
         const KEYS: &[&str] = &[
             "block_count", "context_length", "embedding_length", "feed_forward_length",
