@@ -1902,6 +1902,17 @@ fn register_view(rec: &Record) {
                 lines.extend(lines_of(4, &what, TEXT));
             }
         }
+        // An event about a file that was made says which file and which bytes, whole: where it is,
+        // how long it is, what made it and for which task, and all of its digest. Two files must
+        // never look the same here (Director 2 found that they did). Lines of their own under the
+        // event, on a display of any width; the digest alone on its line, cut nowhere.
+        let made = |k: &str| body.and_then(|b| b.get(k));
+        if let Some(path) = made("path").and_then(Value::as_str) {
+            let text_of = |k: &str| made(k).and_then(Value::as_str).unwrap_or("?").to_string();
+            lines.extend(lines_of(6, &format!("file {}", path), TEXT));
+            lines.extend(lines_of(6, &format!("{} bytes, {}, for task {}", made("size").and_then(Value::as_int).unwrap_or(-1), text_of("origin"), text_of("task")), SOFT));
+            lines.extend(wrapped(&format!("sha256 {}", text_of("sha256")), across.saturating_sub(4).max(1)).into_iter().map(|part| alloc::vec![(6, part, SOFT)]));
+        }
     }
     text_screen(&title, ui::TEAL, Some(table), &lines, "Up/Down scroll    Esc back", false, true);
 }
@@ -2164,6 +2175,16 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
     let refusal = result.as_ref().err().copied();
     let message = match result {
         Ok(p) => {
+            // Every file the kernel made for this program after the person allowed it is in the
+            // register, however the program then ended: its name, its size, the digest of its bytes,
+            // and the task it was made for. A file the person refused was never made and is not here.
+            #[cfg(feature = "proposals")]
+            for (name, size, sha) in p.linux.as_ref().map(|l| l.files_made()).unwrap_or(&[]) {
+                recorded &= logged("ARTIFACT_ADDED", rec.submit(&now(), "kernel", "HOST", "ARTIFACT_ADDED",
+                    obj(&[("sha256", text(sha)), ("size", Value::Int(*size as i64)), ("origin", text("PRODUCED")), ("stored", Value::Bool(false)),
+                          // A register's "name" is a short label and may hold no '/'; where the file is goes in "path".
+                          ("path", text(name)), ("filename", text(name.rsplit('/').next().unwrap_or(name))), ("task", text(&id))]))).is_ok();
+            }
             let digest = sha256_hex(&p.output);
             let (outcome, result, how) = match p.end {
                 Some(End::Exited(0)) => {

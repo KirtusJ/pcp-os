@@ -157,6 +157,9 @@ struct Proposals {
     /// Every receipt of this run with the digest of the exact request: the same request made again is
     /// answered and not done again; another request under the same numbers is refused.
     kept: Vec<(u64, u64, [u8; 32], [u8; RECEIPT])>,
+    /// Every file the kernel made in this run after the person allowed it: name, size and the
+    /// SHA-256 of its bytes. For the kernel's register, which records what was made and by what task.
+    made: Vec<(String, usize, String)>,
 }
 
 #[cfg(feature = "proposals")]
@@ -286,6 +289,11 @@ impl Linux {
         self.proposals.pending.take()
     }
 
+    /// The files the kernel made for this program in this run: name, size, SHA-256.
+    pub fn files_made(&self) -> &[(String, usize, String)] {
+        &self.proposals.made
+    }
+
     /// The person has answered. On yes the kernel makes the file, with exactly the bytes it showed,
     /// unless the name has been taken meanwhile; then, as on no, nothing is made.
     pub fn proposal_settled(&mut self, proposal: Proposal, answer: Answer, world: &mut World) {
@@ -303,6 +311,7 @@ impl Linux {
         } else {
             // The whole file or nothing: the room was counted first, and the bytes go in in one piece.
             world.store.insert(proposal.name.clone(), proposal.content.clone());
+            self.proposals.made.push((proposal.name.clone(), proposal.content.len(), pcpos_core::sha256_hex(&proposal.content)));
             1
         };
         let r = receipt(outcome, self.proposals.launch, &proposal);
