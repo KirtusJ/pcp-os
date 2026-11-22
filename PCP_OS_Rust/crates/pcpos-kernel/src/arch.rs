@@ -530,8 +530,13 @@ struct Tables(core::cell::UnsafeCell<[[u64; 512]; TABLE_COUNT]>);
 unsafe impl Sync for Tables {}
 static TABLES: Tables = Tables(core::cell::UnsafeCell::new([[0; 512]; TABLE_COUNT]));
 
-/// Where the image begins: the loader places it at one mebibyte (linker.ld).
-const IMAGE_START: usize = 1 << 20;
+/// Where the image begins: the loader places it at one mebibyte (linker.ld). The firmware experiment
+/// links it elsewhere by changing this and the linker script, and nothing else: no other line may
+/// assume the figure.
+pub const IMAGE_START: usize = 1 << 20;
+/// Where a loader that gives only a size counts its upper memory from: one mebibyte, by the Multiboot
+/// specification (3.3, `mem_upper`), wherever the image itself is linked (A3).
+const UPPER_MEMORY_FROM: usize = 1 << 20;
 
 /// The memory the kernel hands out as frames: [start, end), both multiples of 2 MiB. Zero until `protect`.
 static POOL_START: AtomicUsize = AtomicUsize::new(0);
@@ -588,7 +593,7 @@ pub fn protect(boot: &mut BootInfo) -> (usize, usize) {
         frame_map::pool(map, top)
     } else {
         // A loader which supplied only the legacy contiguous size retains the previous 2 MiB margin.
-        let ram_end = boot.memory.map(|(_, upper)| (IMAGE_START + upper as usize * 1024).saturating_sub(MIB2)).unwrap_or(0);
+        let ram_end = boot.memory.map(|(_, upper)| (UPPER_MEMORY_FROM + upper as usize * 1024).saturating_sub(MIB2)).unwrap_or(0);
         let first = top.div_ceil(MIB2) * MIB2;
         let last = ram_end.min(LIMIT) / MIB2 * MIB2;
         if first < last { (first, last) } else { (0, 0) }
@@ -886,7 +891,7 @@ pub fn map_loader_display(boot: &BootInfo) -> Result<usize, &'static str> {
     let [_, _, _, _, image_end] = layout();
     let mut protected: alloc::vec::Vec<(usize, usize)> = alloc::vec![(IMAGE_START, image_end), pool()];
     protected.extend(boot.modules.iter().filter(|m| m.end > m.start).map(|m| (m.start, (m.end + 4095) & !4095)));
-    let memory_top = boot.memory.map(|(_, upper)| IMAGE_START as u64 + upper as u64 * 1024);
+    let memory_top = boot.memory.map(|(_, upper)| UPPER_MEMORY_FROM as u64 + upper as u64 * 1024);
     let window = framebuffer::decide(l.address as u64, l.pitch, l.width, l.height, l.bits, boot.memory_map.as_deref(), memory_top, &protected)?;
     let (first, last) = window.pages;
     let on = interrupts_save_off();

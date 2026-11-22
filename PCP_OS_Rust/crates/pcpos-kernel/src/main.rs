@@ -363,7 +363,7 @@ fn memory_tests(failed: &mut u32) {
     if let Some(f) = b {
         mem::give(f);
     }
-    let foreign = mem::give(0x1000) || mem::give(lo + 1) || arch::frame_zero(0x101000) || arch::frame_write(0x101000, 0, &[0]);
+    let foreign = mem::give(0x1000) || mem::give(lo + 1) || arch::frame_zero(arch::layout()[0]) || arch::frame_write(arch::layout()[0], 0, &[0]);
     check("a frame is handed out to one holder, comes back zeroed, cannot be given back twice, and memory outside the pool is not a frame",
           frames > 0 && distinct && inside && dirty && back && !twice && exhausted && once && clean && !foreign && mem::census().1 == free0, failed);
     // The heap reuses what is freed and never hands one block to two holders.
@@ -423,8 +423,8 @@ fn processes(rec: &mut Record, measured: &str, failed: &mut u32) {
     check("each of the two wrote its own number at the same address and found it unchanged: their memory is separate",
           p(3).output == b"my memory is my own" && p(4).output == b"my memory is my own" && p(3).frames.iter().all(|f| !p(4).frames.contains(f)), failed);
     check("a program's read of kernel memory is refused by the processor and ends that program only",
-          refused(5, 14, &|e, a| e & 5 == 5 && e & 2 == 0 && a == 0x101000), failed);
-    check("a program's write to kernel memory is refused by the processor", refused(6, 14, &|e, a| e & 7 == 7 && a == 0x101000), failed);
+          refused(5, 14, &|e, a| e & 5 == 5 && e & 2 == 0 && a as usize == arch::layout()[0]), failed);
+    check("a program's write to kernel memory is refused by the processor", refused(6, 14, &|e, a| e & 7 == 7 && a as usize == arch::layout()[0]), failed);
     check("an instruction reserved to the kernel is refused in user mode", refused(7, 13, &|_, _| true), failed);
     check("a program reaches no device port", refused(8, 13, &|_, _| true), failed);
     check("a program cannot execute its own writable data", refused(9, 14, &|e, a| e & 0x15 == 0x15 && a as usize == arch::USER_DATA), failed);
@@ -798,7 +798,7 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
         check("the running image measures as the value the loader named", equal, &mut failed);
     }
     failed += self_test();
-    let image_pages = ((end - ts) >> 12) as u32 + ((ts - (1 << 20)) >> 12) as u32 - arch::guard_pages().len() as u32;
+    let image_pages = ((end - arch::IMAGE_START) >> 12) as u32 - arch::guard_pages().len() as u32;
     #[cfg(feature = "processors")]
     let image_pages = image_pages - arch::others::GUARDS as u32; // the pages below the other processors' stacks
     let module_pages: u32 = boot.modules.iter().filter(|m| m.usable).map(|m| (((m.end + 4095) >> 12) - (m.start >> 12)) as u32).sum();
