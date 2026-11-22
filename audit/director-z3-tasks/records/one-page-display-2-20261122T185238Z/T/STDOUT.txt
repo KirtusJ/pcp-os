@@ -1,0 +1,6 @@
+PASS O1 the loader's display is one page of 1920 by 1080, mapped whole | ['display: Loader, 1920x1080, 1 page(s), 8100 KiB of its memory mapped at 0x80000000']
+PASS O2 the kernel says a program that asks draws to memory of its own | ['display: a program that asks draws to memory of its own, and the kernel shows each finished picture']
+PASS O3 the program presented, and both screens hold a picture
+PASS O2 control: the kernel as it was does not say so
+PASS O3 control: the kernel as it was shows the same two pictures, byte for byte
+ALL PASS: 0 failed
