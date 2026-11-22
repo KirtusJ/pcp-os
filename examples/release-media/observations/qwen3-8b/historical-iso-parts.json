@@ -1,0 +1,42 @@
+{
+  "bytes": 10283481088,
+  "sha256": "a0298480bf5e8773206369fda4b0e6a00d4ce31e8c83367db71c9541a9fa9f88",
+  "parts": [
+    {
+      "part": 1,
+      "offset": 0,
+      "bytes": 1900000000,
+      "sha256": "343d6367efb6203f1477581e53d903bcc7dbceceffef129a6370d70402dc5e1b"
+    },
+    {
+      "part": 2,
+      "offset": 1900000000,
+      "bytes": 1900000000,
+      "sha256": "4590479ff12d64c0d1e73ed231621aa6268d8bab95b6ddddb184c51924e3c19d"
+    },
+    {
+      "part": 3,
+      "offset": 3800000000,
+      "bytes": 1900000000,
+      "sha256": "fe46ea6c9c0e2cb6630421ca98f1382f3faf91c644372c950e02e32ff2dc2268"
+    },
+    {
+      "part": 4,
+      "offset": 5700000000,
+      "bytes": 1900000000,
+      "sha256": "b57c177734bae1249b152d7a3eeba7e2bd4c21766a99892e99e252e2e3543ac2"
+    },
+    {
+      "part": 5,
+      "offset": 7600000000,
+      "bytes": 1900000000,
+      "sha256": "050b04c5ff50f4c7f5798f075536138682266f19c32b9e2e5cedd1a41ae40585"
+    },
+    {
+      "part": 6,
+      "offset": 9500000000,
+      "bytes": 783481088,
+      "sha256": "beca87d7bc5aa6518b8edd71e3fbff003adcba91c5d5f4f7af479ddf817b3288"
+    }
+  ]
+}
