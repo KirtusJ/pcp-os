@@ -998,15 +998,28 @@ pub fn harden() -> (u64, u64) {
     }
 }
 
-/// The floating-point and vector registers of one program, as the processor saves them.
-#[repr(C, align(16))]
+/// The floating-point and vector registers of one program, as the processor saves them: the 512 bytes
+/// of FXSAVE, and where the processor keeps wider registers (AVX) the 64-byte header and 256 bytes that
+/// XSAVE adds for them. 832 bytes are used at most; the rest is never written or read.
+#[repr(C, align(64))]
 #[derive(Clone)]
-pub struct FpuArea([u8; 512]);
+pub struct FpuArea([u8; 1024]);
+
+/// Whether the wider registers are on: set once by `fpu_init`, before any program exists.
+static WIDE: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+/// What XSAVE keeps here: the x87 registers, the 128-bit registers and the upper halves of the 256-bit
+/// ones. Nothing wider is turned on, so nothing wider can hold a program's data.
+const XSAVE_KEPT: u32 = 0b111;
+
+/// Whether programs may use the 256-bit vector registers on this processor (the kernel then saves them).
+pub fn wide_vectors() -> bool {
+    WIDE.load(core::sync::atomic::Ordering::Relaxed)
+}
 
 struct FpuTemplate(core::cell::UnsafeCell<FpuArea>);
 // Safety: written once by `fpu_init`, before any program exists; read-only afterwards.
 unsafe impl Sync for FpuTemplate {}
-static FPU_CLEAN: FpuTemplate = FpuTemplate(core::cell::UnsafeCell::new(FpuArea([0; 512])));
+static FPU_CLEAN: FpuTemplate = FpuTemplate(core::cell::UnsafeCell::new(FpuArea([0; 1024])));
 
 /// Turn on the floating-point and vector instructions for programs, and keep a copy of their state as it
 /// is when nothing has used them. The kernel itself is compiled without those instructions and never
@@ -1024,9 +1037,29 @@ pub fn fpu_init() {
         asm!("mov {}, cr4", out(reg) cr4, options(nomem, nostack, preserves_flags));
         cr4 |= (1 << 9) | (1 << 10); // FXSAVE and vector exceptions are handled by this kernel
         asm!("mov cr4, {}", in(reg) cr4, options(nomem, nostack, preserves_flags));
+        // Where the processor offers XSAVE and AVX, the 256-bit registers are turned on as well and
+        // kept with XSAVE; a processor without them keeps the 128-bit state with FXSAVE as before.
+        let features = core::arch::x86_64::__cpuid(1).ecx;
+        let wide = features & (1 << 26) != 0 && features & (1 << 28) != 0
+            && core::arch::x86_64::__cpuid_count(0xD, 0).eax & XSAVE_KEPT == XSAVE_KEPT
+            && core::arch::x86_64::__cpuid_count(0xD, 2).ebx == 576 && core::arch::x86_64::__cpuid_count(0xD, 2).eax == 256;
+        if wide {
+            asm!("mov {}, cr4", out(reg) cr4, options(nomem, nostack, preserves_flags));
+            cr4 |= 1 << 18; // XSAVE and the register that says which states are on
+            asm!("mov cr4, {}", in(reg) cr4, options(nomem, nostack, preserves_flags));
+            asm!("xsetbv", in("ecx") 0u32, in("eax") XSAVE_KEPT, in("edx") 0u32, options(nomem, nostack, preserves_flags));
+            WIDE.store(true, core::sync::atomic::Ordering::Relaxed);
+        }
         let mxcsr: u32 = 0x1F80;
         asm!("fninit", "ldmxcsr [{}]", in(reg) &mxcsr, options(nostack));
-        asm!("fxsave64 [{}]", in(reg) FPU_CLEAN.0.get(), options(nostack));
+        if wide {
+            // The template is zero, which XRSTOR reads as "every register in its first state"; saving
+            // over it records that state with the processor's own header.
+            asm!("xrstor64 [{}]", in(reg) FPU_CLEAN.0.get(), in("eax") XSAVE_KEPT, in("edx") 0u32, options(nostack));
+            asm!("xsave64 [{}]", in(reg) FPU_CLEAN.0.get(), in("eax") XSAVE_KEPT, in("edx") 0u32, options(nostack));
+        } else {
+            asm!("fxsave64 [{}]", in(reg) FPU_CLEAN.0.get(), options(nostack));
+        }
     }
 }
 
@@ -1040,14 +1073,71 @@ impl FpuArea {
 
 /// Save the floating-point and vector registers as they are now.
 pub fn fpu_save(area: &mut FpuArea) {
-    // Safety: the area is 512 bytes aligned to 16, which is what the instruction writes.
-    unsafe { asm!("fxsave64 [{}]", in(reg) area as *mut FpuArea, options(nostack)) }
+    // Safety: the area is 1024 bytes aligned to 64; FXSAVE writes 512 and XSAVE, for the three states
+    // that are on, 832 (checked against the processor's own figures in `fpu_init`).
+    unsafe {
+        if wide_vectors() {
+            asm!("xsave64 [{}]", in(reg) area as *mut FpuArea, in("eax") XSAVE_KEPT, in("edx") 0u32, options(nostack))
+        } else {
+            asm!("fxsave64 [{}]", in(reg) area as *mut FpuArea, options(nostack))
+        }
+    }
 }
 
 /// Load the floating-point and vector registers. An area holds only what `fpu_save` or `fpu_init` wrote, so the processor accepts it.
 pub fn fpu_restore(area: &FpuArea) {
-    // Safety: see above.
-    unsafe { asm!("fxrstor64 [{}]", in(reg) area as *const FpuArea, options(nostack)) }
+    // Safety: see above. Every state that is on is loaded from the area, so nothing of the program
+    // that ran before stays in any register a program can read.
+    unsafe {
+        if wide_vectors() {
+            asm!("xrstor64 [{}]", in(reg) area as *const FpuArea, in("eax") XSAVE_KEPT, in("edx") 0u32, options(nostack))
+        } else {
+            asm!("fxrstor64 [{}]", in(reg) area as *const FpuArea, options(nostack))
+        }
+    }
+}
+
+/// Only with the `vector-state-demo` feature, and only at start-up, before any program exists: fill a
+/// 256-bit register with one pattern and save it, fill it with another and save that, then load each
+/// saved state back and read the register. Two saved states that are not the first state, through the
+/// same `fpu_save` and `fpu_restore` a switch between programs uses. Says what it found on the log.
+#[cfg(feature = "vector-state-demo")]
+pub fn vector_state_demo() {
+    if !wide_vectors() {
+        crate::log(format_args!("vector demo: this processor has no 256-bit registers to keep\n"));
+        return;
+    }
+    let fill = |pattern: &[u8; 32]| {
+        // Safety: the wide registers are on (checked above); the register written is declared.
+        unsafe { asm!("vmovups ymm15, [{}]", in(reg) pattern.as_ptr(), out("ymm15") _, options(nostack)) }
+    };
+    let read = || {
+        let mut bytes = [0u8; 32];
+        // Safety: as above; only memory of this function is written.
+        unsafe { asm!("vmovups [{}], ymm15", in(reg) bytes.as_mut_ptr(), options(nostack)) };
+        bytes
+    };
+    let (mut first, mut second) = ([0u8; 32], [0u8; 32]);
+    for i in 0..32 {
+        first[i] = 0x11 + i as u8;
+        second[i] = 0xE0 - i as u8;
+    }
+    let (mut saved_first, mut saved_second) = (alloc::boxed::Box::new(FpuArea::clean()), alloc::boxed::Box::new(FpuArea::clean()));
+    fill(&first);
+    fpu_save(&mut saved_first);
+    fill(&second);
+    fpu_save(&mut saved_second);
+    fpu_restore(&saved_first);
+    let got_first = read();
+    fpu_restore(&saved_second);
+    let got_second = read();
+    fpu_restore(&saved_first);
+    let again = read();
+    // The registers are left as a program expects to find them.
+    fpu_restore(&FpuArea::clean());
+    let clean = read();
+    crate::log(format_args!("vector demo: first state returned {}, second state returned {}, first again {}, left clean {}\n",
+        (got_first == first) as u8, (got_second == second) as u8, (again == first) as u8, (clean == [0u8; 32]) as u8));
 }
 
 fn wrmsr(msr: u32, value: u64) {

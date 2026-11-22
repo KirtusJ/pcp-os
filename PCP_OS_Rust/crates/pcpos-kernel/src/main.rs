@@ -704,6 +704,8 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     #[cfg(feature = "high-memory-demo")]
     mem::high_memory_demo();
     arch::fpu_init();
+    #[cfg(feature = "vector-state-demo")]
+    arch::vector_state_demo();
     arch::syscall_init();
     say!("memory for programs: {} frames of 4 KiB, {:#x}..{:#x}", frames, pool_start, pool_end);
     for m in &boot.modules {
