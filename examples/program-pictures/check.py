@@ -4,7 +4,7 @@
     python3 examples/program-pictures/check.py <kernel.elf32> <new output directory>
 
 The kernel lists every file the loader hands over that begins as an ELF file, so the "programs"
-here are two small made-up files that are never started. Eight boots under QEMU; the launcher is
+here are two small made-up files that are never started. Nine boots under QEMU; the launcher is
 opened with Enter and read from a screen dump. P1 to P7 were fixed before the first run; the tile
 and P8 were added, and fixed before their first run, when the owner asked that every theme be kept
 in mind: the first drawing put the squares straight on the desktop's field, which is light in one
@@ -52,6 +52,15 @@ edition.
                    P1's boot, which is the default, dark, Enterprise edition; and in each boot the
                    field's colour just outside the tile differs from the other two boots', so the
                    three themes were in fact three.
+
+ P10 the spelling  (added with session/shown.rs, fixed before its first run) the files are named
+                   tailorbird and surfbird by the loader. In P1's frame (1280x720) and P6's
+                   (800x600, the plain list) a row reads "Tailorbird" and a row reads "Surfbird",
+                   and no row of either reads "tailorbird" or "surfbird".
+ P11 only those    a ninth boot with three files named TAILORBIRD, tailorbird.elf and surfbirds:
+                   each name is read on the screen exactly as given, and no row reads
+                   "Tailorbird" or "Surfbird". This is the control of P10: a kernel that
+                   capitalised every name, or matched part of one, fails here.
 
 A failed predicate is printed and the run exits 1 after all boots; the frames are kept either way.
 The output directory must be new. Standard library, the repository's screen reader, and QEMU.
@@ -102,6 +111,8 @@ def stray(frame):
 
 TAYLOR_GROUND, SURFBIRD_GROUND = bytes.fromhex("10283f"), bytes.fromhex("102630")
 TILE = 36
+# What the list shows for the files the loader named tailorbird and surfbird (session/shown.rs).
+SHOWN = ("Tailorbird", "Surfbird")
 
 
 def nothing_drawn(frame, rows, width, reference):
@@ -110,7 +121,7 @@ def nothing_drawn(frame, rows, width, reference):
     if stray(frame) != 0:
         return False
     return all(tile(frame, box_of(rows, width, name)) == tile(reference, box_of(rows, width, name))
-               for name in ("tailorbird", "surfbird"))
+               for name in SHOWN)
 
 
 def with_pixel(frame, x, y, colour):
@@ -125,7 +136,9 @@ def with_pixel(frame, x, y, colour):
 
 def box_of(rows, width, name):
     """Where the picture of the row naming this program would be: (x, y) of its 36 by 36 tile."""
-    row = next(i for i, text in enumerate(rows) if (" " + name + " ") in (text + " ") and "KiB" in text or (" " + name + " ") in (text + " ") and " B " in (text + " "))
+    # In any spelling: where a picture stands does not depend on how the name is spelled (P10 does).
+    word = " " + name.lower() + " "
+    row = next(i for i, text in enumerate(rows) if word in (text + " ").lower() and ("KiB" in text or " B " in (text + " ")))
     return width // 200 * 10 - 44, row * 20 + 2
 
 
@@ -180,10 +193,12 @@ def boot(kernel, output, tag, size, files, line_extra):
             screens.wait("home", lambda rows: any("Programs" in r for r in rows))
             monitor.key("ret")
             time.sleep(0.15)
-            names = [name for name, _ in files]
-            rows = screens.wait("programs", lambda rows: all(any(n in r for r in rows) for n in names))
+            # The list is ready when it reads each file's name in any spelling; which spelling is for
+            # the predicates to judge, so that a wrong one is a failed predicate and not a wait that ends.
+            names = [name.lower() for name, _ in files]
+            rows = screens.wait("programs", lambda rows: all(any(n in r.lower() for r in rows) for n in names))
             time.sleep(0.5)
-            rows = screens.wait("programs-settled", lambda rows: all(any(n in r for r in rows) for n in names))
+            rows = screens.wait("programs-settled", lambda rows: all(any(n in r.lower() for r in rows) for n in names))
             (folder / "programs.txt").write_text("\n".join(rows) + "\n")
             return rows, (folder / "programs-settled.ppm").read_bytes()
         finally:
@@ -209,7 +224,7 @@ def main():
 
     rows, named = boot(kernel, output, "named", "1280x720", files, both)
     width = pixels_of(named)[0]
-    at_t, at_s = box_of(rows, width, "tailorbird"), box_of(rows, width, "surfbird")
+    at_t, at_s = box_of(rows, width, SHOWN[0]), box_of(rows, width, SHOWN[1])
     predicate("P1 named Taylor", shows(named, at_t, TAYLOR, TAYLOR_INK, TAYLOR_GROUND), f"at {at_t}")
     predicate("P2 named Surfbird", shows(named, at_s, SURFBIRD, SURFBIRD_INK, SURFBIRD_GROUND), f"at {at_s}")
 
@@ -230,25 +245,25 @@ def main():
 
     other_rows, other = boot(kernel, output, "same-names-other-bytes", "1280x720",
                              [("tailorbird", other_t), ("surfbird", other_s)], both)
-    listed = all(any(n in r for r in other_rows) for n in ("tailorbird", "surfbird"))
+    listed = all(any(n.lower() in r.lower() for r in other_rows) for n in SHOWN)
     predicate("P4 not by name", listed and nothing_drawn(other, other_rows, width, plain), f"listed {listed}, stray {stray(other)}")
 
     swap_rows, swapped = boot(kernel, output, "exchanged", "1280x720", files, f" taylor_image={ds} surfbird_image={dt}")
-    st, ss = box_of(swap_rows, width, "tailorbird"), box_of(swap_rows, width, "surfbird")
+    st, ss = box_of(swap_rows, width, SHOWN[0]), box_of(swap_rows, width, SHOWN[1])
     predicate("P5 by digest", shows(swapped, ss, TAYLOR, TAYLOR_INK, TAYLOR_GROUND) and shows(swapped, st, SURFBIRD, SURFBIRD_INK, SURFBIRD_GROUND)
               and not shows(swapped, st, TAYLOR, TAYLOR_INK, TAYLOR_GROUND))
 
     small_rows, small = boot(kernel, output, "small", "800x600", files, both)
-    listed = all(any(n in r for r in small_rows) for n in ("tailorbird", "surfbird"))
+    listed = all(any(n.lower() in r.lower() for r in small_rows) for n in SHOWN)
     predicate("P6 small display", listed and stray(small) == 0, f"listed {listed}, stray {stray(small)}")
 
     cut_rows, cut = boot(kernel, output, "cut-line", "1280x720", files, both + " padding=" + "x" * 1200)
-    listed = all(any(n in r for r in cut_rows) for n in ("tailorbird", "surfbird"))
+    listed = all(any(n.lower() in r.lower() for r in cut_rows) for n in SHOWN)
     predicate("P7 cut line", listed and nothing_drawn(cut, cut_rows, width, plain), f"listed {listed}, stray {stray(cut)}")
 
     refused = tried = 0
     for frame, view in ((other, other_rows), (cut, cut_rows)):
-        for name in ("tailorbird", "surfbird"):
+        for name in SHOWN:
             bx, by = box_of(view, width, name)
             for colour in ("9fb4c8", "0c2033", "869da5", "10283f"):
                 tried += 1
@@ -263,14 +278,27 @@ def main():
     fields, same = {beside(named, at_t)}, True
     for edition in ("personal", "commercial"):
         e_rows, e_frame = boot(kernel, output, "edition-" + edition, "1280x720", files, both + " edition=" + edition)
-        et, es = box_of(e_rows, width, "tailorbird"), box_of(e_rows, width, "surfbird")
+        et, es = box_of(e_rows, width, SHOWN[0]), box_of(e_rows, width, SHOWN[1])
         same = same and tile(e_frame, et) == tile(named, at_t) and tile(e_frame, es) == tile(named, at_s)
         fields.add(beside(e_frame, et))
     predicate("P8 every theme", same and len(fields) == 3, f"tiles equal {same}, fields beside the tile {sorted(f.hex() for f in fields)}")
 
+    def reads(view, word):
+        return any(word in r for r in view)
+
+    spelled = all(reads(v, n) for v in (rows, small_rows) for n in SHOWN)
+    raw = [n for v in (rows, small_rows) for n in ("tailorbird", "surfbird") if reads(v, n)]
+    predicate("P10 the spelling", spelled and not raw, f"product names read {spelled}, file spellings read {raw}")
+
+    as_given = ("TAILORBIRD", "tailorbird.elf", "surfbirds")
+    given_rows, _ = boot(kernel, output, "other-names", "1280x720", [(n, program(n.encode())) for n in as_given], "")
+    kept = all(reads(given_rows, n) for n in as_given)
+    respelled = [n for n in SHOWN if reads(given_rows, n)]
+    predicate("P11 only those names", kept and not respelled, f"read as given {kept}, respelled {respelled}")
+
     if failed:
         sys.exit("failed: " + ", ".join(failed))
-    print("all nine hold")
+    print("all eleven hold")
 
 
 if __name__ == "__main__":

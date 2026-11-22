@@ -31,3 +31,17 @@ failed: P3 nothing else
 The letters were "Esc" in the key legend at the foot of the screen, columns 0 to 5 of a row far below
 the pictures: the check read the margin of every row. It now reads the margin of the rows the
 pictures stand beside.
+
+The first run with P10 and P11 (shown names, session/shown.rs), kernel built from that change:
+
+TimeoutError: waiting for programs framebuffer   (in boot(), the first boot, before any predicate)
+
+The mistake was in the check, not the kernel: boot() waited for the list to read the FILES' names,
+"tailorbird" and "surfbird", and the list now reads "Tailorbird" and "Surfbird", so it waited for
+words that were never coming. The frame it left (named/) shows both product names. boot() then waited
+for each file as the kernel is expected to show it.
+
+That was still wrong, and a planted fault showed it: a kernel that respelled a name in any case
+(TAILORBIRD shown as Tailorbird) did not fail P11; boot() timed out waiting for "TAILORBIRD".
+A wrong spelling must be a failed predicate. boot() now waits for each name in any spelling and
+leaves the spelling to P10 and P11.

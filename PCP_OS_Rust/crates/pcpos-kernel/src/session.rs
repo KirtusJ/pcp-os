@@ -60,6 +60,7 @@ fn option<'a>(line: &'a str, key: &str) -> Option<&'a str> {
 #[cfg(feature = "guest-ethernet")]
 mod ethernet;
 mod pictures;
+mod shown;
 #[cfg(feature = "companion")]
 mod paired;
 #[cfg(feature = "guest-ethernet")]
@@ -131,7 +132,7 @@ fn verified_sentence(start: &Start, room: usize) -> String {
 fn chosen_pin(p: &Entry, x: u32, bottom: u32, w: u32, refused: Option<&str>) {
     use ui::{label, BAD, GOOD, SOFT, TEXT};
     let across = ((w.saturating_sub(80)) / 10).min(72) as usize;
-    let name = wrapped(&p.name, across);
+    let name = wrapped(shown::shown(&p.name), across);
     let facts = format!("{}   SHA-256 {}...", size_text(p.image.len()), &p.digest[..16]);
     // After Enter was refused for this program, the plate says so in place of 'Enter starts' (B3's patch
     // did this for the small display; the same holds here).
@@ -524,7 +525,7 @@ fn whole_bar(start: &Start, programs: &[Entry], pinned: &[usize], place: usize, 
         for (bx, by, bw, bh, colour) in bars {
             dev::display_fill(mx + bx, my + by, *bw, *bh, *colour);
         }
-        let name: String = if i == 0 { String::from("Programs") } else { cut(&programs[pinned[i - 1]].name, 12) };
+        let name: String = if i == 0 { String::from("Programs") } else { cut(shown::shown(&programs[pinned[i - 1]].name), 12) };
         label(x + 50, row, &name, TEXT, false, &on_item);
     }
     if place > 0 && place < (1 + pinned.len()).min(room) {
@@ -555,7 +556,7 @@ fn dock(programs: &[Entry], pinned: &[usize], place: usize, w: u32, h: u32, refu
         for (bx, by, bw, bh, colour) in bars {
             dev::display_fill(mx + bx, my + by, *bw, *bh, *colour);
         }
-        let name: String = if i == 0 { String::from("Programs") } else { cut(&programs[pinned[i - 1]].name, 12) };
+        let name: String = if i == 0 { String::from("Programs") } else { cut(shown::shown(&programs[pinned[i - 1]].name), 12) };
         label(x + (140 - label_width(&name, false)) / 20 * 10, y0 + 60, &name, TEXT, false, &on_item);
     }
     if place > 0 && place < shown {
@@ -788,7 +789,7 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
             let across = (cols as usize).saturating_sub(4).max(1);
             let selected = place.checked_sub(1).and_then(|at| shortcuts.get(at)).copied();
             let chosen_pin = selected.map(|i| &programs[i]);
-            let name: Vec<String> = chosen_pin.map(|p| wrapped(&p.name, across)).unwrap_or_default();
+            let name: Vec<String> = chosen_pin.map(|p| wrapped(shown::shown(&p.name), across)).unwrap_or_default();
             let mut widget_lines: Vec<String> = recent.iter().map(|(time, name, outcome, _)| format!("{} {} {}", time, outcome, name)).collect();
             if widgets[1] { widget_lines.push(format!("memory {} MiB, {} MiB free", pool * 4 / 1024, free * 4 / 1024)); }
             // On a display too narrow for the sentence the files' line has a shorter wording, whole.
@@ -861,7 +862,7 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
             for i in first..first + list_rows {
                 let ground = if i == place { ui::PANEL } else { GROUND };
                 ui::fill(2 * ui::CELL_W, row * ui::CELL_H, (across as u32).min(44) * ui::CELL_W, ui::CELL_H, ground);
-                at(3, row, &if i == 0 { String::from("Programs") } else { cut(&format!("PINNED {}", programs[shortcuts[i - 1]].name), across.min(42)) }, TEXT, ground);
+                at(3, row, &if i == 0 { String::from("Programs") } else { cut(&format!("PINNED {}", shown::shown(&programs[shortcuts[i - 1]].name)), across.min(42)) }, TEXT, ground);
                 row += 1;
             }
             if let Some(p) = chosen_pin {
@@ -1426,7 +1427,7 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
         let digest = format!("SHA-256 {}...", &p.digest[..16]);
         let size_at = (left + list_width - 60 - label_width(&digest, false) - label_width(&size, false)) / 10 * 10;
         let name_room = (size_at.saturating_sub(left + 60) / 10).max(4) as usize;
-        label(left + 40, y + 10, &cut(&p.name, name_room.min(28)), TEXT, false, &on_row);
+        label(left + 40, y + 10, &cut(shown::shown(&p.name), name_room.min(28)), TEXT, false, &on_row);
         label((left + list_width - 20 - label_width(&digest, false)) / 10 * 10, y + 10, &digest, SOFT, false, &on_row);
         label(size_at, y + 10, &size, SOFT, false, &on_row);
         let lines = access_of(i, p);
@@ -1560,7 +1561,7 @@ fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message:
         let bg = if i == chosen { PANEL } else { GROUND };
         ui::fill(2 * ui::CELL_W, row * ui::CELL_H, width * ui::CELL_W, ui::CELL_H, bg);
         if i == chosen { ui::fill(2 * ui::CELL_W, row * ui::CELL_H, 3, ui::CELL_H, ui::TEAL); }
-        at(3, row, &cut(&p.name, width.saturating_sub(2) as usize), TEXT, bg);
+        at(3, row, &cut(shown::shown(&p.name), width.saturating_sub(2) as usize), TEXT, bg);
     }
 }
 
@@ -1684,7 +1685,7 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
         let ground = if i == chosen { PANEL } else { GROUND };
         ui::fill(ui::CELL_W, row * ui::CELL_H, (cols - 2) * ui::CELL_W, 2 * ui::CELL_H, ground);
         at(2, row, if i == chosen { ">" } else { " " }, ui::AMBER, ground);
-        at(4, row, &p.name, TEXT, ground);
+        at(4, row, shown::shown(&p.name), TEXT, ground);
         at(26, row, &size_text(p.image.len()), SOFT, ground);
         at(38, row, &format!("SHA-256 {}...", &p.digest[..16]), SOFT, ground);
         if !p.arguments.is_empty() {
