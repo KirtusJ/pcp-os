@@ -1,0 +1,4 @@
+PASS L1 paired | listed ['front-program'], said True, details names worker True, shows its digest True
+PASS L2 not paired | listed ['front-program', 'its-worker']
+PASS L3 nothing to be beside | listed ['front-program', 'its-worker']
+PASS L4 cut line | listed ['front-program', 'its-worker']

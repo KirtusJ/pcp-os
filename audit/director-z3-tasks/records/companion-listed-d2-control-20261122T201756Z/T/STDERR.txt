@@ -1,0 +1,19 @@
+Traceback (most recent call last):
+  File "/home/user/pcp-os/examples/companion/check_listed.py", line 148, in <module>
+    main()
+    ~~~~^^
+  File "/home/user/pcp-os/examples/companion/check_listed.py", line 135, in main
+    listed, pages, serial, status = boot(kernel, output, "for-a-document", [("front-program", document), ("its-worker", worker)],
+                                    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                         f" worker_for={dd} worker_image={dw}", shown="its-worker")
+                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/pcp-os/examples/companion/check_listed.py", line 70, in boot
+    listed = screens.wait("programs", lambda rows: any(shown in r for r in rows) and any("F1 keys" in r for r in rows))
+  File "/home/user/pcp-os/examples/optical-disk-check/check.py", line 251, in wait
+    return self.wait_frame(name, lambda rows, frame: predicate(rows))
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/pcp-os/examples/optical-disk-check/check.py", line 262, in wait_frame
+    return wait_for(inspect, 'waiting for ' + name + ' framebuffer', self.timeout)
+  File "/home/user/pcp-os/examples/optical-disk-check/check.py", line 173, in wait_for
+    raise TimeoutError(description)
+TimeoutError: waiting for programs framebuffer
