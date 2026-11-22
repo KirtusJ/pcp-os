@@ -1,0 +1,28 @@
+{
+  "format": "B3 native integration media observation",
+  "image_sha256": "da6123cfc187acde079c4e93c636d15b0a33b3f3dc88479d21fa329108753090",
+  "image_bytes": 570425344,
+  "reopened_files": {
+    "PCPOS/KERNEL.ELF": "6a3cb8bf80a110ee7d765e31012ae6feed0b5e0429035ee8e86dd9b555e69e66",
+    "PCPOS/TAILOR.ELF": "81e727ff73d517476d71e8490227c14251f218fc6b77a84cbbdd96470364deec",
+    "PCPOS/WORKER.ELF": "2750a34540d0f4f4852b8b184ddb318cf8cc8dcd9d565233511c3cfc905dcd5b",
+    "PCPOS/model.manifest": "bbdaa8cd263d9454159f12b55ec32613d18a4b7b4d75d284ad0cadc932bc1f4b",
+    "EFI/BOOT/BOOTX64.EFI": "08c69933f5b264335e5f5eeb62e33d7c83750e99cf64cd59bde5674f16e25620",
+    "PCPOS/shard-00000.bin": "e7fd135f9a4d78d25240baf1360df065de058106caa002a863b3d41d85e8b06e",
+    "PCPOS/shard-00001.bin": "7338348414bf83a1be9c0124b0056e97963ff36ec485196d807e1854c898d851",
+    "PCPOS/shard-00002.bin": "676357b2562fb24ec78a727cd8f0a41a03e3249988d557cb95796c5651ba50e9",
+    "PCPOS/shard-00003.bin": "9680ad63cb6c5282f074d2a16157c28d61af7b6632d3bf16eae3ae6e8d4a565b",
+    "PCPOS/shard-00004.bin": "b37d210762bb960cdf41644d790e1481d87b6603fb2564aea80b3200b5e9b5c9",
+    "PCPOS/shard-00005.bin": "f2b809a97ed2399dbc221141d4b0e4e02511bb2391414334d989e8882a8b6034",
+    "PCPOS/shard-00006.bin": "b271a09e0f5ad4fc94ca5d7433e3625c5b3843c511e5190e4ab87e546237515a",
+    "PCPOS/shard-00007.bin": "8638639c2def9ef289e4d5b982544c0f013ce0064df4927526d39a116e8c9048"
+  },
+  "model_sha256": "1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32",
+  "model_bytes": 491400064,
+  "tailorbird_ui": "2994b8a500a5649a78fab7abebcb00d866ef5b71",
+  "kernel": "41e35d1f167dd9c2bd043380cd454fdfa41db6e3",
+  "firmware_source": "2837f72074988a1bb1fc8c54feadeb5cc6cf11c2",
+  "worker_ci_artifact": 14752508424,
+  "efi_inputs_sha256": "ebdfb86e773ab67c03f1201467dc262104c77c821ef96fc054513871ad34505b",
+  "efi_toolchain_sha256": "6851171288a34b8c93bb56a377c7c8a5c5b7d775b395ce280cf82dc3562cc6a4"
+}
