@@ -154,6 +154,9 @@ struct Proposals {
     /// The receipt of the last proposal the kernel took. It stays, and can be read again, until the
     /// next one is taken.
     receipt: Option<[u8; RECEIPT]>,
+    /// The program has given up proposing for the rest of this run. Nothing in the kernel sets this
+    /// back: only the person starting the program again gives it a new run without it.
+    given_up: bool,
     /// Every receipt of this run with the digest of the exact request: the same request made again is
     /// answered and not done again; another request under the same numbers is refused.
     kept: Vec<(u64, u64, [u8; 32], [u8; RECEIPT])>,
@@ -179,7 +182,9 @@ const PROPOSALS_KEPT: usize = 64;
 /// A receipt, 100 bytes: version (u32, 1); outcome (u32: 1 created, 2 refused by the person, 3 the name
 /// was taken, 5 no room in the store, 6 the display could not show it whole (too small, or over 64 pages) so nobody was asked); the kernel's number for this run (u64); attempt and proposal
 /// (u64 each); SHA-256 of the exact request (lengths, name, content); SHA-256 of the content; and
-/// whether it outlasts power (u32, 0: it does not).
+/// whether it outlasts power (u32, 0: it does not). Outcome 7: the program itself gave up proposing
+/// in this run; on the record that gives it up, and on every new proposal after it, which the kernel
+/// refuses without asking anyone.
 #[cfg(feature = "proposals")]
 pub const RECEIPT: usize = 4 + 4 + 8 + 8 + 8 + 32 + 32 + 4;
 #[cfg(feature = "proposals")]
@@ -284,6 +289,11 @@ impl Linux {
         self.proposals.allowed
     }
 
+    /// Whether the program has given up proposing in this run.
+    pub fn proposals_given_up(&self) -> bool {
+        self.proposals.given_up
+    }
+
     /// The proposal the program is waiting on, taken once.
     pub fn proposal_taken(&mut self) -> Option<Proposal> {
         self.proposals.pending.take()
@@ -335,6 +345,23 @@ fn propose(p: &mut Process, world: &World, addr: u64, len: u64) -> Outcome {
     let word = |at: usize| u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]);
     let long = |at: usize| u64::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3], bytes[at + 4], bytes[at + 5], bytes[at + 6], bytes[at + 7]]);
     let (name_len, content_len) = (word(24) as usize, word(28) as usize);
+    // The second kind of record: the program gives up proposing for the rest of this run. It names no
+    // file and carries no text. From here on the kernel refuses every new proposal from this run
+    // without asking the person, whatever the program later says or does; a program can narrow what
+    // it may do and cannot widen it again.
+    if word(0) == 1 && word(4) == 2 {
+        if len != 32 || name_len != 0 || content_len != 0 {
+            return Outcome::Return(err(EINVAL));
+        }
+        let Some(l) = p.linux.as_mut() else { return Outcome::Return(err(ENOSYS)) };
+        let nothing = Proposal { attempt: long(8), number: long(16), name: String::new(), content: Vec::new(), length: len };
+        if !l.proposals.given_up {
+            crate::log(format_args!("this program GAVE UP proposing files for the rest of this run (its record {} of attempt {}); every proposal from it is refused from here on without asking\n", nothing.number, nothing.attempt));
+        }
+        l.proposals.given_up = true;
+        l.proposals.receipt = Some(receipt(7, l.proposals.launch, &nothing));
+        return Outcome::Return(len as u64);
+    }
     if word(0) != 1 || word(4) != 1 || name_len == 0 || name_len > PROPOSAL_NAME || content_len > PROPOSAL_CONTENT || 32 + name_len + content_len != len {
         return Outcome::Return(err(EINVAL));
     }
@@ -365,6 +392,13 @@ fn propose(p: &mut Process, world: &World, addr: u64, len: u64) -> Outcome {
         }
         l.proposals.receipt = Some(*kept);
         return Outcome::Return(len as u64);
+    }
+    // A request already answered in this run was answered above from its receipt, and nothing new is
+    // made by that. Anything new, once the program has given proposing up, is refused here.
+    if l.proposals.given_up {
+        l.proposals.receipt = Some(receipt(7, l.proposals.launch, &proposal));
+        crate::log(format_args!("proposal {} of attempt {}: {} REFUSED without asking: this program gave up proposing files in this run\n", proposal.number, proposal.attempt, proposal.name));
+        return Outcome::Return(err(EACCES));
     }
     if l.proposals.kept.len() >= PROPOSALS_KEPT {
         crate::log(format_args!("proposal {} of attempt {} REFUSED unseen: this run has made as many proposals as the kernel keeps receipts for\n", proposal.number, proposal.attempt));
