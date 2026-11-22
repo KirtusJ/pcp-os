@@ -27,17 +27,30 @@ Predicates, fixed before the first run.
     and its write then answers -32; the front carries on and ends by itself.
  P6 without the words that name a companion the same front program is refused the channel (-13).
  P7 with the words but on a line whose worker digest matches no loaded file, likewise refused.
+ P9 a companion that computes for ever and makes no call does not keep the other program from
+    running: a front that sleeps twenty milliseconds a hundred times finishes, and the kernel then
+    ends the companion.
+ P10 the person's Ctrl+Alt+Delete, pressed while the front sleeps and that companion computes, ends
+    both: the front is reported STOPPED by that key, the companion as ended by it together with the
+    front, and every frame comes back.
  P8 every run ends with status 33, 71 self-tests pass, none fails, the kernel does not stop, and
     every frame is given back.
 
 Usage: check.py <kernel.elf32 built with --features companion> <talk-front> <talk-back> <leaving talk-back>
+       [--never-yields <talk-back built with SPIN=1> --alone <talk-front built with ALONE=1> --waits <talk-front built with WAIT=1>]
+Without the three optional programs P9 and P10 are reported as not run.
 This is an emulator, and two small test programs: nothing here is a model or a person's program.
 """
 import argparse
 import hashlib
+import json
 import re
+import shutil
+import socket
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 
@@ -53,6 +66,52 @@ def boot(qemu, kernel, files, append):
     return done.returncode, done.stdout.decode(errors="replace").splitlines()
 
 
+def stopped(qemu, kernel, files, append):
+    """Boot, wait until the front sleeps and the companion computes, press Ctrl+Alt+Delete, and wait for the end."""
+    folder = Path(tempfile.mkdtemp(prefix="q"))
+    serial, sock = folder / "serial.txt", folder / "s"
+    vm = subprocess.Popen([qemu, "-machine", "pc", "-accel", "tcg", "-cpu", "max", "-m", "256M", "-kernel", kernel.name, "-initrd", ",".join(str(f) for f in files),
+                           "-append", append, "-display", "none", "-nic", "none", "-serial", "file:%s" % serial, "-no-reboot", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
+                           "-qmp", "unix:%s,server=on,wait=off" % sock], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=kernel.parent)
+    try:
+        link = None
+        for _ in range(100):
+            try:
+                link = socket.socket(socket.AF_UNIX)
+                link.connect(str(sock))
+                break
+            except OSError:
+                time.sleep(0.1)
+        stream = link.makefile("rw")
+        stream.readline()
+
+        def rpc(command, **arguments):
+            stream.write(json.dumps({"execute": command, "arguments": arguments}) + "\n")
+            stream.flush()
+            while True:
+                answer = json.loads(stream.readline())
+                if "return" in answer or "error" in answer:
+                    return answer
+
+        rpc("qmp_capabilities")
+        log = lambda: serial.read_text(errors="replace") if serial.exists() else ""
+        deadline = time.monotonic() + 90
+        while time.monotonic() < deadline and not ("front: waiting to be stopped" in log() and "back: computing for ever" in log()):
+            time.sleep(0.2)
+        if time.monotonic() < deadline:
+            rpc("send-key", keys=[{"type": "qcode", "data": key} for key in ("ctrl", "alt", "delete")])
+        try:
+            status = vm.wait(timeout=60)
+        except subprocess.TimeoutExpired:
+            status = None
+        return status, log().splitlines()
+    finally:
+        if vm.poll() is None:
+            vm.kill()
+            vm.wait()
+        shutil.rmtree(folder, ignore_errors=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("kernel", type=Path)
@@ -60,6 +119,9 @@ def main():
     parser.add_argument("back", type=Path)
     parser.add_argument("leaving", type=Path)
     parser.add_argument("--qemu", default="qemu-system-x86_64")
+    parser.add_argument("--never-yields", type=Path)
+    parser.add_argument("--alone", type=Path)
+    parser.add_argument("--waits", type=Path)
     args = parser.parse_args()
     kernel, front, back, leaving = (p.resolve() for p in (args.kernel, args.front, args.back, args.leaving))
     if front.name != "talk-front" or back.name != "talk-back" or leaving.name != "talk-back":
@@ -111,6 +173,25 @@ def main():
         if said(lines, "front: ") != ["opening the channel answered -13"] or any("companion" in line for line in lines if not line.startswith("  ")):
             problems.append("%s: the channel was not refused, or a companion was started: %r" % (name, said(lines, "front: ")))
         print("%s: %s" % (name, "; ".join(said(lines, "front: "))))
+
+    if args.never_yields and args.alone and args.waits:
+        spins, alone, waits = (p.resolve() for p in (args.never_yields, args.alone, args.waits))
+        status, lines = boot(args.qemu, kernel, [alone, spins], words % (digest(alone), digest(spins)))
+        common("a companion that never yields", status, lines)
+        require("a companion that never yields, front", said(lines, "front: "), ["opening the channel answered 0", "went on by itself for periods of sleep 100"])
+        require("a companion that never yields, back", said(lines, "back: "), ["computing for ever and making no call"])
+        if not any(line.startswith("companion talk-back: the kernel ended it when the program it was beside ended") for line in lines):
+            problems.append("P9: the kernel did not end the companion that never yields when the front ended")
+        print("a companion that never yields: " + "; ".join(said(lines, "front: ")))
+
+        status, lines = stopped(args.qemu, kernel, [waits, spins], words % (digest(waits), digest(spins)))
+        common("stopped by the person", status, lines)
+        if not any(line.startswith("talk-front ended STOPPED: stopped by the person with Ctrl+Alt+Delete") for line in lines) \
+                or not any(line.startswith("companion talk-back: the person's Ctrl+Alt+Delete ended it together with the program it was beside") for line in lines):
+            problems.append("P10: the Stop key did not end both, or the kernel did not say so: %r" % [line[:90] for line in lines if "talk-" in line][-4:])
+        print("stopped by the person: " + "; ".join(line[:100] for line in lines if line.startswith(("talk-front ended", "companion talk-back:"))))
+    else:
+        print("P9 and P10 not run: --never-yields, --alone and --waits were not all given")
 
     if problems:
         for problem in problems:

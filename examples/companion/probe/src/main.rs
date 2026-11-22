@@ -13,6 +13,12 @@ use pcp_game_guest::{call, exit, log, open};
 
 const BACK: bool = option_env!("BACK").is_some();
 const LEAVE: bool = option_env!("LEAVE").is_some();
+/// The companion that never yields: it opens the channel and then computes for ever, making no call.
+const SPIN: bool = option_env!("SPIN").is_some();
+/// The front that goes on by itself for a while and ends, exchanging nothing.
+const ALONE: bool = option_env!("ALONE").is_some();
+/// The front that waits, asleep, until the person's Stop key ends it.
+const WAIT: bool = option_env!("WAIT").is_some();
 
 /// One whole line in one write, so that two programs writing in turn never share a line.
 fn say(who: &[u8], words: &[u8], value: isize) {
@@ -109,6 +115,28 @@ pub extern "C" fn probe_main() -> ! {
     let fd = open(b"/dev/talk\0", 2);
     line(b"opening the channel answered ", if fd >= 0 { 0 } else { fd });
     if fd < 0 {
+        exit(0);
+    }
+    if SPIN {
+        log(b"back: computing for ever and making no call\n");
+        let mut turns = 0u64;
+        loop {
+            turns = core::hint::black_box(turns.wrapping_add(1));
+        }
+    }
+    if ALONE || WAIT {
+        // Sleep twenty milliseconds at a time. A companion that never yields must not keep this
+        // program from being run when each sleep is over.
+        let mut periods = 0isize;
+        while WAIT || periods < 100 {
+            let twenty = [0i64, 20_000_000];
+            call(35, twenty.as_ptr() as usize, 0, 0, 0, 0, 0);
+            periods += 1;
+            if WAIT && periods == 10 {
+                log(b"front: waiting to be stopped\n");
+            }
+        }
+        line(b"went on by itself for periods of sleep ", periods);
         exit(0);
     }
     if BACK {

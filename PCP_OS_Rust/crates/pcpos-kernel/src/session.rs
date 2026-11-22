@@ -1596,6 +1596,10 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
             if let Some(p) = beside {
                 let how = match p.end {
                     Some(user::End::Exited(code)) => format!("it exited with {}", code),
+                    // Both are ended by the person's key when that is what ended the program beside it;
+                    // otherwise the kernel ended this one because the other had ended.
+                    Some(user::End::Stopped) if matches!(result.as_ref().map(|front| front.end), Ok(Some(user::End::Stopped))) =>
+                        String::from("the person's Ctrl+Alt+Delete ended it together with the program it was beside"),
                     Some(user::End::Stopped) => String::from("the kernel ended it when the program it was beside ended"),
                     Some(user::End::Refused { vector, .. }) => format!("the processor refused something it did (vector {})", vector),
                     Some(user::End::OverBudget) => String::from("it ran over its budget"),
