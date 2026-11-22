@@ -1,0 +1,17 @@
+[package]
+name = "talk-probe"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Two programs exchanging bytes over dev/talk, each keeping its own vector register: test programs for examples/companion/check.py"
+
+[dependencies]
+pcp-game-guest = { path = "../../../store/native/guest" }
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+codegen-units = 1
+overflow-checks = true
+
+[workspace]
