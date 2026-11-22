@@ -164,6 +164,10 @@ pub struct World {
     pub build_folder: Option<String>,
     #[cfg(feature = "vm-store")]
     pub volume: Option<crate::store::Volume>,
+    /// The model held in memory for a companion to read, if the loader left one and its manifest is
+    /// the one the loader's line pins. The kernel's own decision, made once at start.
+    #[cfg(feature = "model-memory")]
+    pub model: Option<sys::ModelGiven>,
     /// Seconds since 1970 when the tick count was zero, by the machine's clock.
     pub epoch_at_start: u64,
     /// Calls a program made that this kernel does not answer: (number, times).
@@ -229,7 +233,7 @@ fn new_table(world: World) -> Table {
 
 pub(crate) fn empty_world() -> World {
     World { files: Vec::new(), store: Default::default(), #[cfg(feature = "proposals")] build_folder: Some(String::from(sys::BUILD_FOLDER)),
-        #[cfg(feature = "vm-store")] volume: None, epoch_at_start: 0, unanswered: Vec::new() }
+        #[cfg(feature = "vm-store")] volume: None, #[cfg(feature = "model-memory")] model: None, epoch_at_start: 0, unanswered: Vec::new() }
 }
 
 impl Table {
