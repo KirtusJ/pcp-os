@@ -1,0 +1,16 @@
+{
+  "cargo": "cargo 1.97.0 (c980f4866 2026-06-30)",
+  "files": {
+    "model-worker.elf": "5761a734b2a3a9ef15bbe68e8e7e0e5972c2dc751fa05125fbdd27556a08255d"
+  },
+  "format": "pcpos-model-worker-parts/1",
+  "guest_os_head": "0de2dd69fc441ae47336601f894e062669453b90",
+  "model_manifest_sha256": "bbdaa8cd263d9454159f12b55ec32613d18a4b7b4d75d284ad0cadc932bc1f4b",
+  "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)\nbinary: rustc\ncommit-hash: 2d8144b7880597b6e6d3dfd63a9a9efae3f533d3\ncommit-date: 2026-07-07\nhost: x86_64-unknown-linux-gnu\nrelease: 1.97.0\nLLVM version: 22.1.6",
+  "tailorbird_head": "ffffc081dfd545fa2c65a94dc9a01cd144b14c34",
+  "tailorbird_tree": "b9add1128abfb907048bb7c7f8f993f99ab6fcc0",
+  "target": "x86_64-unknown-none",
+  "worker_features": [
+    "model-worker"
+  ]
+}

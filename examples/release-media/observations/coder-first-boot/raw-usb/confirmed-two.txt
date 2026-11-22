@@ -1,0 +1,7 @@
+  PCP OS ASKS YOU
+  Taylor wants to make a new file. Nothing has been made yet.
+  Folder: taylor/my-first-project File: note-2.txt
+  Size: 6 characters. It will last until the computer is switched off.
+  Hello
+  (end of the file)
+  Now press Enter to allow it. Any other key refuses.
