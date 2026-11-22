@@ -156,7 +156,8 @@ def verify_tree(root, expected, model_sha256):
 
 
 def execute(*command):
-    subprocess.run(command, check=True)
+    env = dict(os.environ, LC_ALL="C", TZ="UTC", SOURCE_DATE_EPOCH=EPOCH)
+    subprocess.run(command, env=env, check=True)
 
 
 def verify_fat(volume, expected, model_sha256, scratch):
