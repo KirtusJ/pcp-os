@@ -1,0 +1,36 @@
+{
+  "topology": "1,sockets=1,cores=1,threads=1",
+  "machine": "q35",
+  "clock": "ordinary TCG",
+  "model": "qemu64",
+  "qemu": {
+    "qemu": {
+      "micro": 13,
+      "minor": 0,
+      "major": 10
+    },
+    "package": "Debian 1:10.0.13+ds-0+deb13u1"
+  },
+  "cpus": [
+    {
+      "index": 0,
+      "topology": {
+        "core-id": 0,
+        "thread-id": 0,
+        "socket-id": 0
+      },
+      "apic_id": 0
+    }
+  ],
+  "startup_passes": 71,
+  "final_passes": 72,
+  "shutdown": {
+    "guest": true,
+    "reason": "guest-shutdown"
+  },
+  "exit": 0,
+  "source": "2f7d9d4315fdc485c6e0693e325643456993e1df",
+  "iso": "53af1322c98f0f20e23645909135d41f1b878ada301c9f6f3b6a946a02643d39",
+  "kernel": "b151a16572913d8d26196187931933bd592fd9d67bfa9f151a498d9689c55f7d",
+  "serial_sha256": "f1f0c1c05d9a59c6bebe98433e053207930d2953ffdd0a4469ab044fae2684d1"
+}
