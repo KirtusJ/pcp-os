@@ -188,6 +188,7 @@ pub struct LoaderDisplay {
 mod boot_text;
 mod frame_map;
 mod framebuffer;
+pub mod processors;
 
 /// Everything the loader said, copied out of its own structures while they can still be read.
 #[derive(Clone, Debug, Default)]
@@ -201,6 +202,10 @@ pub struct BootInfo {
     command_line_exact: bool,
     pub modules: alloc::vec::Vec<Module>,
     pub display: Option<LoaderDisplay>,
+    /// The processors the firmware's tables list, if they could be read and add up.
+    pub processors: Option<processors::Found>,
+    /// Where the tables were looked for, and if nothing came of it, why.
+    pub processors_note: &'static str,
 }
 
 impl BootInfo {
@@ -276,6 +281,50 @@ pub fn boot_info(magic: u32, info: u32) -> BootInfo {
             // Where it lies is judged when it is mapped (`map_loader_display`), with the reason said if refused.
             if kind == 1 && addr != 0 {
                 out.display = Some(LoaderDisplay { address: addr as usize, pitch, width, height, bits });
+            }
+        }
+        // The firmware's tables of processors. They are read here, while the loader-time map still
+        // reaches the first four gibibytes; only memory is read, and everything is copied.
+        let mut read = |at: u64, len: usize| -> Option<alloc::vec::Vec<u8>> {
+            let end = at.checked_add(len as u64)?;
+            (end <= 4 << 30 && len <= 1 << 20).then(|| core::slice::from_raw_parts(at as usize as *const u8, len).to_vec())
+        };
+        // A loader that started from UEFI says where the root pointer is; otherwise it is looked for
+        // where a BIOS puts it: the first kibibyte of the extended BIOS data area, then 0xE0000 to 0xFFFFF.
+        let named = out.command_line_exact.then(|| out.command_line.split_whitespace().find_map(|w| w.strip_prefix("acpi_rsdp=0x"))).flatten();
+        let root = match named {
+            Some(hex) => match u64::from_str_radix(hex, 16) {
+                Ok(at) => {
+                    out.processors_note = "at the address the loader named";
+                    Some(at)
+                }
+                Err(_) => {
+                    out.processors_note = "the loader's acpi_rsdp= is not a number";
+                    None
+                }
+            },
+            None => {
+                let area = (((0x40E as *const u16).read_unaligned() as u64) << 4, 1024u64);
+                let found = [area, (0xE_0000, 0x2_0000)].into_iter().filter(|(start, _)| *start >= 0x400).find_map(|(start, length)| {
+                    (start..start + length).step_by(16).find(|at| read(*at, 36).is_some_and(|b| processors::root_holds(&b)))
+                });
+                out.processors_note = if found.is_some() { "found where a BIOS puts it" } else { "no root pointer where a BIOS puts it, and the loader named none" };
+                found
+            }
+        };
+        if let Some(root) = root {
+            match processors::find(root, &mut read) {
+                Ok(found) => out.processors = Some(found),
+                Err(why) => {
+                    out.processors_note = match why {
+                        processors::Refused::Unreadable => "a table lies outside what can be read at start",
+                        processors::Refused::NoRoot => "the root pointer does not hold",
+                        processors::Refused::BadTable => "a table's signature, length or checksum is wrong",
+                        processors::Refused::NoProcessorTable => "the firmware lists no table of processors",
+                        processors::Refused::BadEntry => "the table of processors has a malformed entry",
+                        processors::Refused::BadProcessors => "the table of processors names one twice, none, or no controller",
+                    }
+                }
             }
         }
     }

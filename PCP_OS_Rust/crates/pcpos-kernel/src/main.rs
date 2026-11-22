@@ -696,6 +696,13 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
         Some((lower, upper)) => say!("memory reported by the loader: {} KiB below 1 MiB, {} KiB above", lower, upper),
         None => say!("the loader reported no memory size"),
     }
+    // What the firmware says of processors. This kernel still runs on the one it was started on:
+    // the others are counted here and not yet started.
+    match &boot.processors {
+        Some(found) => say!("processors: the firmware lists {} usable ({}); {} more than this kernel would start, {} not to be used; this kernel runs on one",
+                            found.processors.len(), boot.processors_note, found.beyond, found.disabled),
+        None => say!("processors: not known ({}); this kernel runs on one", boot.processors_note),
+    }
     let [ts, te, rs, re, end] = arch::layout();
     say!("kernel image: code {:#x}..{:#x}, read-only data {:#x}..{:#x}, end {:#x}", ts, te, rs, re, end);
     let (cr0, _cr4, efer) = arch::protection_registers();
