@@ -224,7 +224,7 @@ pub fn boot_info(magic: u32, info: u32) -> BootInfo {
     // address taken from it is checked against the mapped gibibyte before it is followed.
     unsafe {
         let word = |at: usize| ((info as usize + at) as *const u32).read_unaligned();
-        let text = |addr: usize| boot_text::read(|i| {
+        let text = |addr: usize, most: usize| boot_text::read(most, |i| {
             let at = addr.checked_add(i)?;
             (addr != 0 && at < LIMIT).then(|| (at as *const u8).read())
         });
@@ -233,7 +233,7 @@ pub fn boot_info(magic: u32, info: u32) -> BootInfo {
             out.memory = Some((word(4), word(8)));
         }
         if flags & 4 != 0 {
-            (out.command_line, out.command_line_exact) = text(word(16) as usize);
+            (out.command_line, out.command_line_exact) = text(word(16) as usize, boot_text::LINE);
         } else {
             out.command_line_exact = true; // The loader supplied no arguments.
         }
@@ -248,7 +248,7 @@ pub fn boot_info(magic: u32, info: u32) -> BootInfo {
                 }
                 let r = |o: usize| ((e + o) as *const u32).read_unaligned() as usize;
                 let (start, end) = (r(0), r(4));
-                let (full, _) = text(r(8));
+                let (full, _) = text(r(8), boot_text::NAME);
                 // The loader gives the path it was told; a program is known here by its last component.
                 let (first, rest) = match full.split_once(' ') {
                     Some((f, r)) => (f, r.trim()),
