@@ -1,12 +1,16 @@
 #![no_std]
-#[cfg(target_os = "none")]
+// The calls into PCP OS, the entry and the panic handler are built for the bare target, and, with
+// the feature `hard-float-target`, for `x86_64-unknown-linux-gnu` used as a freestanding target
+// whose `core` and `alloc` use the processor's floating point (see examples/hard-float). On any
+// other target only the parts that need no operating system are built, for tests on the host.
+#[cfg(any(target_os = "none", feature = "hard-float-target"))]
 mod abi;
 pub mod ink;
-#[cfg(target_os = "none")]
+#[cfg(any(target_os = "none", feature = "hard-float-target"))]
 pub use abi::*;
-#[cfg(target_os = "none")]
+#[cfg(any(target_os = "none", feature = "hard-float-target"))]
 mod device;
-#[cfg(target_os = "none")]
+#[cfg(any(target_os = "none", feature = "hard-float-target"))]
 pub use device::*;
 #[macro_export]
 macro_rules! entry {
