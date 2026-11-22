@@ -1,0 +1,37 @@
+name: Synthetic GPT recognition cross-oracle (no disk access)
+
+on:
+  push:
+    branches:
+      - master
+      - session-b/gpt-recognition-cross-oracle-20261116
+    paths:
+      - os-docs/gpt-recognition-oracle/**
+      - .github/workflows/gpt-recognition-oracle.yml
+  pull_request:
+    paths:
+      - os-docs/gpt-recognition-oracle/**
+      - .github/workflows/gpt-recognition-oracle.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-regular-files:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Show exact source and tool versions
+        run: |
+          set -eu
+          python3 --version
+          blkid -V
+          sha256sum os-docs/gpt-recognition-oracle/probe.py
+      - name: Exercise disposable regular-file GPT recognition only
+        run: |
+          set -eu
+          python3 os-docs/gpt-recognition-oracle/probe.py
