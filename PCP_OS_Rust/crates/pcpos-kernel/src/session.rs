@@ -1563,7 +1563,8 @@ fn register_view(rec: &Record) {
 /// With no proposal (F12 was pressed and nothing waits): it says so and goes back on any key.
 /// Interrupts are off on entry and on return.
 #[cfg(feature = "proposals")]
-fn consent(proposal: Option<&crate::sys::Proposal>) -> bool {
+fn consent(proposal: Option<&crate::sys::Proposal>) -> crate::sys::Answer {
+    use crate::sys::Answer;
     use ui::{at, AMBER, GOOD, GROUND, SOFT, TEXT};
     let shown_before = dev::display().map(|d| d.shown).unwrap_or(0);
     dev::display_show(0);
@@ -1595,7 +1596,7 @@ fn consent(proposal: Option<&crate::sys::Proposal>) -> bool {
             dev::keys_forget();
             let _ = dev::ask_taken(); // the press that brought this screen is used up by it
             let _ = event(false, &mut false);
-            false
+            Answer::Refused
         }
         Some(proposal) => {
             let text = String::from_utf8_lossy(&proposal.content).into_owned();
@@ -1620,11 +1621,37 @@ fn consent(proposal: Option<&crate::sys::Proposal>) -> bool {
             let head = [
                 (String::from("PCP OS ASKS YOU"), AMBER),
                 (String::from("Taylor wants to make a new file. Nothing has been made yet."), TEXT),
-                (format!("Name: {}", proposal.name), TEXT),
+                (match proposal.name.rsplit_once('/') {
+                    Some((folder, file)) => format!("Folder: {}    File: {}", folder, file),
+                    None => format!("File: {} (in no folder)", proposal.name),
+                }, TEXT),
                 (format!("Size: {} characters. It will last until the computer is switched off.", proposal.content.len()), SOFT),
             ];
             let head_rows: usize = head.iter().map(|(t, _)| wrapped_words(t, across).len()).sum();
-            let per = (rows as usize).saturating_sub(head_rows + 4).max(1);
+            // The rows are counted before anything is asked: the heading, an empty row, at least one row
+            // of the file, and the whole of the longest thing the foot can say. If they do not all fit, or
+            // a row is too short to read a file in, the question cannot be put honestly and is not put
+            // (Director 2 showed that on ten rows of thirty-two the file was hidden and could be allowed).
+            let foots = [String::from("Now press Enter to allow it. Any other key refuses."),
+                         String::from("Page 64 of 64. To allow: press F12, then Enter. Esc refuses. Arrows turn pages."),
+                         String::from("Page 64 of 64. Down arrow shows more. Esc refuses.")];
+            let foot_rows = foots.iter().map(|f| wrapped_words(f, across).len()).max().unwrap_or(1);
+            let per = (rows as usize).saturating_sub(head_rows + 1 + foot_rows);
+            if per < 4 || across < 40 {
+                ui::clear(GROUND);
+                for (n, part) in wrapped_words("PCP OS: this display is too small to show a file Taylor wants to make, so it was not made. Press any key.", across).iter().enumerate() {
+                    at(2, n as u32, part, TEXT, GROUND);
+                }
+                dev::keys_forget();
+                let _ = dev::ask_taken();
+                let _ = event(false, &mut false);
+                ui::clear(GROUND);
+                dev::keys_forget();
+                let _ = dev::ask_taken();
+                arch::interrupts_off();
+                dev::display_show(shown_before);
+                return Answer::CannotBeShown;
+            }
             let pages = body.len().div_ceil(per).max(1);
             let (mut page, mut armed, mut seen_last, mut enter_up) = (0usize, false, pages == 1, false);
             dev::keys_forget();
@@ -1647,7 +1674,7 @@ fn consent(proposal: Option<&crate::sys::Proposal>) -> bool {
                     else if seen_last { format!("Page {} of {}. To allow: press F12, then Enter. Esc refuses. Arrows turn pages.", page + 1, pages) }
                     else { format!("Page {} of {}. Down arrow shows more. Esc refuses.", page + 1, pages) };
                 for (n, part) in wrapped_words(&foot, across).iter().enumerate() {
-                    at(2, rows.saturating_sub(2) + n as u32, part, if armed { GOOD } else { SOFT }, GROUND);
+                    at(2, rows - foot_rows as u32 + n as u32, part, if armed { GOOD } else { SOFT }, GROUND);
                 }
                 match event(armed, &mut enter_up) {
                     Event::Ask if seen_last && !armed => {
@@ -1655,16 +1682,16 @@ fn consent(proposal: Option<&crate::sys::Proposal>) -> bool {
                         enter_up = !dev::enter_down();
                     }
                     Event::Ask => {}
-                    Event::Key(0x1C, false) if armed && enter_up => break true,
+                    Event::Key(0x1C, false) if armed && enter_up => break Answer::Allowed,
                     Event::Key(0x1C, false) if armed => {} // Enter held since before: not a fresh press
-                    Event::Key(..) if armed => break false,
+                    Event::Key(..) if armed => break Answer::Refused,
                     Event::Key(0x50, true) if page + 1 < pages => {
                         page += 1;
                         seen_last |= page + 1 == pages;
                     }
                     Event::Key(0x48, true) if page > 0 => page -= 1,
                     Event::Key(0x50, true) | Event::Key(0x48, true) => {}
-                    Event::Key(..) => break false,
+                    Event::Key(..) => break Answer::Refused,
                 }
             }
         }

@@ -107,6 +107,16 @@ pub struct Linux {
     proposals: Proposals,
 }
 
+/// What came of the kernel's question.
+#[cfg(feature = "proposals")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Answer {
+    Allowed,
+    Refused,
+    /// The display has no room to show the proposal whole and legibly, so the person was not asked.
+    CannotBeShown,
+}
+
 /// One effect a program asks the kernel to make: one new file of text, whole and exact.
 #[cfg(feature = "proposals")]
 #[derive(Clone, Debug)]
@@ -144,13 +154,13 @@ const PROPOSAL_LINES: usize = 64 * 22;
 const PROPOSAL_ACROSS: usize = 76;
 
 /// A receipt, 100 bytes: version (u32, 1); outcome (u32: 1 created, 2 refused by the person, 3 the name
-/// was taken, 5 no room in the store); the kernel's number for this run (u64); attempt and proposal
+/// was taken, 5 no room in the store, 6 the display could not show it so nobody was asked); the kernel's number for this run (u64); attempt and proposal
 /// (u64 each); SHA-256 of the exact request (lengths, name, content); SHA-256 of the content; and
 /// whether it outlasts power (u32, 0: it does not).
 #[cfg(feature = "proposals")]
 pub const RECEIPT: usize = 4 + 4 + 8 + 8 + 8 + 32 + 32 + 4;
 #[cfg(feature = "proposals")]
-pub const PROPOSAL_NAME: usize = 64;
+pub const PROPOSAL_NAME: usize = 120;
 #[cfg(feature = "proposals")]
 pub const PROPOSAL_CONTENT: usize = 16 * 1024;
 #[cfg(feature = "proposals")]
@@ -199,10 +209,13 @@ impl Linux {
 
     /// The person has answered. On yes the kernel makes the file, with exactly the bytes it showed,
     /// unless the name has been taken meanwhile; then, as on no, nothing is made.
-    pub fn proposal_settled(&mut self, proposal: Proposal, allowed: bool, world: &mut World) {
+    pub fn proposal_settled(&mut self, proposal: Proposal, answer: Answer, world: &mut World) {
+        let allowed = answer == Answer::Allowed;
         let free = world.store.named(&proposal.name).is_none() && !world.files.iter().any(|f| f.0 == proposal.name);
         let room = world.store.len() < 256 && world.store.fits(proposal.content.len());
-        let outcome = if !allowed {
+        let outcome = if answer == Answer::CannotBeShown {
+            6
+        } else if !allowed {
             2
         } else if !free {
             3
@@ -217,7 +230,7 @@ impl Linux {
         self.proposals.receipt = Some(r);
         self.proposals.kept.push((proposal.attempt, proposal.number, request_digest(&proposal), r));
         crate::log(format_args!("proposal {} of attempt {}: {} ({} bytes, SHA-256 {}) {}", proposal.number, proposal.attempt, proposal.name, proposal.content.len(),
-                    pcpos_core::sha256_hex(&proposal.content), match outcome { 1 => "CREATED after the person allowed it", 2 => "DENIED by the person; nothing made", 3 => "REFUSED: the name was taken; nothing made", _ => "REFUSED: no room in the store; nothing made" }));
+                    pcpos_core::sha256_hex(&proposal.content), match outcome { 1 => "CREATED after the person allowed it", 2 => "DENIED by the person; nothing made", 3 => "REFUSED: the name was taken; nothing made", 6 => "REFUSED: this display is too small to show it, so nobody was asked; nothing made", _ => "REFUSED: no room in the store; nothing made" }));
         crate::log(format_args!("\n"));
     }
 }
@@ -238,9 +251,12 @@ fn propose(p: &mut Process, world: &World, addr: u64, len: u64) -> Outcome {
         return Outcome::Return(err(EINVAL));
     }
     let (name, content) = (&bytes[32..32 + name_len], &bytes[32 + name_len..]);
-    // A name of small letters, digits, dot, underscore and hyphen, not beginning with a dot; content of
-    // printable characters, spaces and new lines: what the kernel's screen can show exactly, and no more.
-    let named = name[0] != b'.' && name.iter().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-'));
+    // A name is a file in at most three folders, one inside another ("taylor/my-project/notes.txt"):
+    // each part of small letters, digits, dot, underscore and hyphen, not empty and not beginning with a
+    // dot, and the first not "dev", where the kernel's devices are. Content of printable characters,
+    // spaces and new lines: what the kernel's screen can show exactly, and no more.
+    let part = |p: &[u8]| !p.is_empty() && p[0] != b'.' && p.iter().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-'));
+    let named = name.split(|b| *b == b'/').count() <= 4 && name.split(|b| *b == b'/').all(part) && !name.starts_with(b"dev/") && name != b"dev";
     let shown = content.iter().all(|b| (0x20..0x7f).contains(b) || *b == b'\n');
     // What the kernel cannot show whole, in a number of pages a person can turn, it does not ask about.
     let lines: usize = content.split(|b| *b == b'\n').map(|line| line.len().div_ceil(PROPOSAL_ACROSS).max(1)).sum();

@@ -5,7 +5,8 @@
 //! What it prints is read by `examples/proposals/check.py`; the person's answer is given there by keys.
 use pcp_game_guest::{call, exit, log, open, sleep_us};
 
-const NAME: &[u8] = b"note-from-taylor.txt";
+// The folder Taylor builds into, a project inside it, and a file of that project.
+const NAME: &[u8] = b"taylor/first-project/note.txt";
 const CONTENT: &[u8] = b"Hello.\nThis file was made by PCP OS after you allowed it.\n";
 
 fn record(buffer: &mut [u8; 256], attempt: u64, number: u64, name: &[u8], content: &[u8]) -> usize {
@@ -89,6 +90,8 @@ pub extern "C" fn probe_main() -> ! {
     ask(fd, 7, 2, NAME, CONTENT); // a new proposal for a name now taken (if the first was allowed)
     ask(fd, 7, 3, b"Bad Name.txt", CONTENT); // refused unseen: a capital and a space
     ask(fd, 7, 4, b"tab.txt", b"a\tb"); // refused unseen: a character the kernel's screen cannot show exactly
+    ask(fd, 7, 5, b"dev/proposal", CONTENT); // refused unseen: where the kernel's devices are
+    ask(fd, 7, 6, b"taylor/../escape.txt", CONTENT); // refused unseen: a part beginning with a dot
     log(b"probe: done\n");
     exit(0);
 }

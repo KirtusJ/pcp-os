@@ -14,7 +14,9 @@ Predicates, fixed before the first run.
     and loses nothing; the same proposal again is answered outcome 1 with no second CREATED; the same
     numbers with other content are answered -16 and the receipt still says outcome 1 of the first; a
     new proposal for the taken name is answered -17 and outcome 3; the two proposals the screen could
-    not show exactly are answered -22 and the last receipt stays as it was.
+    not show exactly, and two whose names reach for the kernel's devices or out of their folder, are
+    answered -22 and the last receipt stays as it was. The file is in a project's folder inside the
+    folder Taylor builds into, and the screen names folder and file apart.
  A2 in every case the program could not make a file by itself: its direct attempt is answered -13.
  D1 refused with Esc: the first proposal is answered outcome 2 and the log says "DENIED by the person;
     nothing made" for it; no CREATED anywhere. (The program's later proposal for the same name, still
@@ -26,6 +28,10 @@ Predicates, fixed before the first run.
     is created. The answer needs a fresh press.
  F1 F12 pressed while the program runs and nothing waits: the kernel's screen says "No file is waiting
     for your approval."; a key returns; the program goes on and its later proposal is asked as usual.
+ S1 on a display too small to show the file whole and legibly (320 by 200: ten rows of thirty-two) the
+    person is not asked: the kernel says the display is too small, the log says "REFUSED: this display
+    is too small to show it", the receipt's outcome is 6, and nothing is created whatever is pressed
+    (F12 and Enter are sent). At 640 by 480 the question is asked and the file's first line is on it.
  N1 without `propose_image` on the command line the program is refused the proposal device (-13) and
     nobody is asked: no screen, no CREATED, no DENIED.
  Every case: the emulator ends with status 33 (the kernel's own checks passed and it powered off).
@@ -46,7 +52,7 @@ import time
 HERE = Path(__file__).resolve().parent
 CHECK = runpy.run_path(str(HERE.parent / "tester-cd/check.py"))
 PINS = runpy.run_path(str(HERE.parent / "tester-cd/check_compact_pins.py"))
-NAME = "note-from-taylor.txt"
+NAME = "taylor/first-project/note.txt"
 CONTENT = b"Hello.\nThis file was made by PCP OS after you allowed it.\n"
 RECORD = 32 + len(NAME) + len(CONTENT)
 
@@ -72,12 +78,19 @@ class Guest:
         self.rpc("qmp_capabilities")
 
     def rpc(self, command, **arguments):
-        self.file.write(json.dumps({"execute": command, "arguments": arguments}) + "\n")
-        self.file.flush()
-        while True:
-            answer = json.loads(self.file.readline())
-            if "return" in answer or "error" in answer:
-                return answer
+        # A key sent after the guest has powered off has nowhere to go; that is not an error of the check.
+        try:
+            self.file.write(json.dumps({"execute": command, "arguments": arguments}) + "\n")
+            self.file.flush()
+            while True:
+                line = self.file.readline()
+                if not line:
+                    return {}
+                answer = json.loads(line)
+                if "return" in answer or "error" in answer:
+                    return answer
+        except (OSError, ValueError):
+            return {}
 
     def log(self):
         return self.serial.read_text(errors="replace") if self.serial.exists() else ""
@@ -103,6 +116,11 @@ class Guest:
         return PINS["read"](picture.read_bytes(), glyphs) or []
 
     def end(self, seconds=120):
+        for stream in (self.file, self.link):
+            try:
+                stream.close()
+            except OSError:
+                pass
         try:
             return self.process.wait(timeout=seconds)
         except subprocess.TimeoutExpired:
@@ -140,7 +158,7 @@ def main():
                 time.sleep(2.0)
                 rows = guest.screen("question", glyphs)
                 text = " ".join(" ".join(rows).split())
-                for words in ("PCP OS ASKS YOU", "Name: " + NAME, "Hello.", "Nothing has been made yet."):
+                for words in ("PCP OS ASKS YOU", "Folder: taylor/first-project", "File: note.txt", "Hello.", "Nothing has been made yet."):
                     if words not in text:
                         found.append("the kernel's screen does not hold %r" % words)
             for key in keys:
@@ -172,7 +190,8 @@ def main():
     created = [line for line in log.splitlines() if "CREATED after the person allowed it" in line]
     if len(created) != 1 or NAME not in created[0] or "(%d bytes, SHA-256 %s)" % (len(CONTENT), content) not in created[0]:
         found.append("A1: not exactly one CREATED line naming the file, its size and digest: %r" % created)
-    want = [str(RECORD), "100", "1", str(RECORD), "100", "1", "-16", "100", "1", "-17", "100", "3", "-22", "100", "3", "-22", "100", "3"]
+    want = [str(RECORD), "100", "1", str(RECORD), "100", "1", "-16", "100", "1", "-17", "100", "3", "-22", "100", "3", "-22", "100", "3",
+            "-22", "100", "3", "-22", "100", "3"]
     if "probe: a read too small answered -22" not in log:
         found.append("A1: a read too small for the receipt was not answered -22")
     if answers(log) != want:
@@ -216,6 +235,31 @@ def main():
     if len([line for line in log.splitlines() if "CREATED after the person allowed it" in line]) != 1:
         found.append("F1: after the notice the program's proposal was not asked and created as usual")
     problems += ["f12-with-nothing: " + p for p in found]
+
+    guest = Guest(args.qemu, args.kernel, args.probe, evidence / "too-small", granted + " desktop=320x200")
+    found = []
+    try:
+        guest.until("probe: asking")
+        time.sleep(2.0)
+        text = " ".join(" ".join(guest.screen("too-small", glyphs)).split())
+        if "too small to show a file" not in text:
+            found.append("S1: the small display does not say it is too small: %r" % text[:160])
+        for key in ("f12", "ret", "wait", "esc", "wait", "esc"):
+            time.sleep(2.5) if key == "wait" else guest.key(key)
+        guest.until("probe: done")
+        status, log = guest.end(), guest.log()
+        if status != 33 or "CREATED" in log or "this display is too small to show it" not in log or answers(log)[:3] != [str(RECORD), "100", "6"]:
+            found.append("S1: status %r, answers %r, or something was created" % (status, answers(log)[:3]))
+        results["too-small"] = {"status": status, "probe": [line for line in log.splitlines() if line.startswith(("probe:", "proposal "))]}
+    finally:
+        if guest.process.poll() is None:
+            guest.process.kill()
+    problems += ["too-small: " + p for p in found]
+
+    found, log = case("at-640x480", granted + " desktop=640x480", ["f12", "ret"], True)
+    if len([line for line in log.splitlines() if "CREATED after the person allowed it" in line]) != 1:
+        found.append("S1: at 640 by 480 the file was not asked about and created")
+    problems += ["at-640x480: " + p for p in found]
 
     found, log = case("not-granted", "auto=proposal-probe then=off", [], False)
     if "probe: opening the proposal device answered -13" not in log or "CREATED" in log or "DENIED" in log:

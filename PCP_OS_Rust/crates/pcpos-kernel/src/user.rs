@@ -197,13 +197,13 @@ pub struct Program<'a> {
     pub budget: u64,
     /// Asked, with the program stopped, when it proposes an effect: whether the person allows it.
     #[cfg(feature = "proposals")]
-    pub consent: fn(Option<&sys::Proposal>) -> bool,
+    pub consent: fn(Option<&sys::Proposal>) -> sys::Answer,
 }
 
 /// The answer where nobody can be asked.
 #[cfg(feature = "proposals")]
-pub fn nobody_to_ask(_: Option<&sys::Proposal>) -> bool {
-    false
+pub fn nobody_to_ask(_: Option<&sys::Proposal>) -> sys::Answer {
+    sys::Answer::Refused
 }
 
 fn new_table(world: World) -> Table {
