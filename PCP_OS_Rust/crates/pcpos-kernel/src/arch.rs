@@ -189,6 +189,8 @@ mod boot_text;
 mod frame_map;
 mod framebuffer;
 pub mod processors;
+#[cfg(feature = "processors")]
+pub mod others;
 
 /// Everything the loader said, copied out of its own structures while they can still be read.
 #[derive(Clone, Debug, Default)]
@@ -211,6 +213,12 @@ pub struct BootInfo {
 }
 
 impl BootInfo {
+    /// A page below one mebibyte that the loader's map gives as free, to start another processor from.
+    #[cfg(feature = "processors")]
+    pub fn start_page(&self) -> Option<u64> {
+        self.memory_map.as_deref().and_then(processors::low_free_page)
+    }
+
     #[cfg(any(feature = "guest-ethernet", feature = "vm-store", feature = "proposals", feature = "companion", feature = "model-memory"))]
     pub(crate) fn exact_command_line(&self) -> Option<&str> {
         self.command_line_exact.then_some(self.command_line.as_str())
@@ -592,10 +600,18 @@ pub fn protect(boot: &mut BootInfo) -> (usize, usize) {
         let guards = guard_pages();
         for page in IMAGE_START >> 12..end >> 12 {
             let addr = page << 12;
+            #[cfg(feature = "processors")]
+            if others::guard(addr) {
+                continue; // not mapped: the page below a stack of another processor
+            }
             if guards.contains(&addr) {
                 continue; // not mapped: the page below a stack
             }
-            let flags = if addr == interrupt_table() || addr == segment_tables() {
+            #[cfg(feature = "processors")]
+            let theirs = others::segments(addr);
+            #[cfg(not(feature = "processors"))]
+            let theirs = false;
+            let flags = if addr == interrupt_table() || addr == segment_tables() || theirs {
                 P | NX // the processor's own tables: it reads them and nothing writes them again
             } else if addr >= text_start && addr < text_end {
                 P
@@ -800,6 +816,10 @@ pub fn map_device(phys: usize, len: usize) -> bool {
     if phys < 1 << 30 || end > 4 << 30 || phys % MIB2 != 0 || len % MIB2 != 0 || len == 0 {
         return false;
     }
+    #[cfg(feature = "processors")]
+    if others::controller_stretch(phys, end) {
+        return false; // the interrupt controller's own page is there
+    }
     let on = interrupts_save_off();
     let ok = DEVICES.with(|d| {
         if d.1 == 4 {
@@ -967,6 +987,8 @@ pub struct MapAudit {
     pub pool_bytes: usize,
     pub device_bytes: usize,
     pub pool_or_device_executable: u32,
+    /// Pages of the interrupt controller's registers (feature `processors`), and how many are executable.
+    pub controller_pages: u32,
     /// Leaves that are both writable and executable, anywhere.
     pub writable_and_executable: u32,
     /// Leaves that map something that is none of the four things above.
@@ -1025,6 +1047,14 @@ pub fn kernel_map_audit() -> MapAudit {
                 a.pool_or_device_executable += 1;
             }
         } else {
+            #[cfg(feature = "processors")]
+            if size == 4096 && others::controller_page(addr) {
+                a.controller_pages += 1;
+                if e & NX == 0 {
+                    a.pool_or_device_executable += 1;
+                }
+                return;
+            }
             a.outside += 1;
         }
     };

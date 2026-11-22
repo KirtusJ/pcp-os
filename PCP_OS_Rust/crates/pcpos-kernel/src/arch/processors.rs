@@ -259,6 +259,36 @@ pub fn inside_table_memory(map: &[u8], at: u64, length: usize) -> bool {
     false
 }
 
+/// A page below one mebibyte that the loader's memory map (in the Multiboot form) gives as free, for
+/// another processor to be started from: such a processor begins in a mode that reaches no higher.
+/// Pages from 0x8000 up are looked at first, the usual place; the first page of memory and everything
+/// from 0xA0000, where firmware and devices live, are never taken.
+pub fn low_free_page(map: &[u8]) -> Option<u64> {
+    let free = |page: u64| {
+        let mut entry = 0usize;
+        let mut inside = false;
+        while entry < map.len() {
+            let (Some(size), Some(base), Some(extent), Some(kind)) = (u32_at(map, entry), u64_at(map, entry + 4), u64_at(map, entry + 12), u32_at(map, entry + 20)) else {
+                return false;
+            };
+            let Some(top) = base.checked_add(extent) else { return false };
+            if size < 20 {
+                return false;
+            }
+            if page < top && base < page + 4096 {
+                // Touched by this range: it must be free memory and hold the whole page, and no other range may touch it.
+                if kind != 1 || base > page || top < page + 4096 || inside {
+                    return false;
+                }
+                inside = true;
+            }
+            entry += size as usize + 4;
+        }
+        inside && entry == map.len()
+    };
+    (8..0xA0).chain(1..8).map(|n| n * 4096).find(|page| free(*page))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -514,5 +544,28 @@ mod tests {
         let unused = machine(2, madt(&[local(0, 1), wide(u32::MAX, 0)]));
         let found = find(ROOT, &mut unused.read()).unwrap();
         assert_eq!((ids(&found), found.disabled), (vec![0], 1));
+    }
+
+    #[test]
+    fn a_page_to_start_from_is_free_memory_below_one_mebibyte_or_none() {
+        let entry = |base: u64, extent: u64, kind: u32| {
+            let mut e = 20u32.to_le_bytes().to_vec();
+            e.extend_from_slice(&base.to_le_bytes());
+            e.extend_from_slice(&extent.to_le_bytes());
+            e.extend_from_slice(&kind.to_le_bytes());
+            e
+        };
+        assert_eq!(low_free_page(&[entry(0, 0x9fc00, 1), entry(0x9fc00, 0x400, 2), entry(0x10_0000, 0x700_0000, 1)].concat()), Some(0x8000));
+        // The usual place is taken: the next whole free page is used.
+        assert_eq!(low_free_page(&[entry(0, 0x8800, 1), entry(0x8800, 0x1800, 2), entry(0xa000, 0x9_0000, 1)].concat()), Some(0xa000));
+        // Only below 0x8000 is anything free; the first page is never taken.
+        assert_eq!(low_free_page(&[entry(0, 0x3000, 1), entry(0x3000, 0x9d000, 2)].concat()), Some(0x1000));
+        assert_eq!(low_free_page(&[entry(0, 0x1000, 1), entry(0x1000, 0x9f000, 2)].concat()), None);
+        // Free memory only above one mebibyte, a page two ranges both claim, and a map cut short.
+        assert_eq!(low_free_page(&entry(0x10_0000, 0x700_0000, 1)), None);
+        assert_eq!(low_free_page(&[entry(0x8000, 0x1000, 1), entry(0x8000, 0x1000, 2)].concat()), None);
+        let whole = [entry(0, 0x9fc00, 1), entry(0x10_0000, 0x700_0000, 1)].concat();
+        assert_eq!(low_free_page(&whole[..whole.len() - 2]), None);
+        assert_eq!(low_free_page(&[]), None);
     }
 }

@@ -711,6 +711,8 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     let (cr0, _cr4, efer) = arch::protection_registers();
     say!("protections: paging {}, supervisor write protection {}, no-execute {}, long mode {}",
          cr0 >> 31 & 1 == 1, cr0 >> 16 & 1 == 1, efer >> 11 & 1 == 1, efer >> 10 & 1 == 1);
+    #[cfg(feature = "processors")]
+    arch::others::prepare();
     let (pool_start, pool_end) = arch::protect(&mut boot);
     let frames = mem::init();
     #[cfg(feature = "high-memory-demo")]
@@ -769,6 +771,8 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     }
     failed += self_test();
     let image_pages = ((end - ts) >> 12) as u32 + ((ts - (1 << 20)) >> 12) as u32 - arch::guard_pages().len() as u32;
+    #[cfg(feature = "processors")]
+    let image_pages = image_pages - arch::others::GUARDS as u32; // the pages below the other processors' stacks
     let module_pages: u32 = boot.modules.iter().filter(|m| m.usable).map(|m| (((m.end + 4095) >> 12) - (m.start >> 12)) as u32).sum();
     // The frame memory is the pool below one gibibyte and, where the machine has it, the ranges above
     // four: exactly those bytes must be what the page tables map as frame memory, and no more.
@@ -839,6 +843,41 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
         check("with the display mapped, the kernel's memory map is as it was plus the display's memory, which is never executable",
               after.device_bytes == display.map(|d| d.mapped).unwrap_or(0) && after.pool_or_device_executable == 0 && after.writable_and_executable == 0 && after.outside == 0
                   && after.user_reachable == 0 && after.not_identity == 0 && after.image_pages == map.image_pages && after.module_pages == map.module_pages && after.pool_bytes == map.pool_bytes, &mut failed);
+    }
+    // The machine's other processors are started and parked here, by a kernel that verified itself on
+    // the one it runs on. None runs any work yet (stage 2 of using them all).
+    #[cfg(feature = "processors")]
+    if failed == 0 {
+        match &boot.processors {
+            None => say!("other processors: none started, because what the machine has is not known"),
+            Some(found) => {
+                let before = arch::kernel_map_audit();
+                arch::interrupts_on();
+                let went = arch::others::start(found, boot.start_page());
+                arch::interrupts_off();
+                match went {
+                    Err(why) => say!("other processors: none started: {}", why),
+                    Ok(o) => {
+                        let reached = if o.through_memory { "through memory" } else { "in its extended mode" };
+                        match o.cores {
+                            Some(cores) => say!("other processors: {} of {} started and parked, the interrupt controller reached {}; {} thread(s) on {} core(s) in all; none runs any work yet", o.parked, o.listed, reached, o.threads, cores),
+                            None => say!("other processors: {} of {} started and parked, the interrupt controller reached {}; {} in all, and which share a core is not known; none runs any work yet", o.parked, o.listed, reached, o.threads),
+                        }
+                        if o.given_types > 0 {
+                            say!("other processors: {} came up holding other memory types than the first and were given the first's", o.given_types);
+                        }
+                        if o.out_of_reach > 0 {
+                            say!("other processors: {} not tried: their identities need a mode the machine is not in", o.out_of_reach);
+                        }
+                        check("every other processor that was tried answered, as itself, able to do what the first can and holding the same memory types, and is parked",
+                              !o.silent && o.parked + o.out_of_reach == o.listed && o.not_itself == 0 && o.different == 0, &mut failed);
+                        let after = arch::kernel_map_audit();
+                        check("after starting them the kernel's map is as it was, with at most the one page of the interrupt controller's registers added, never executable",
+                              arch::MapAudit { controller_pages: 0, ..after } == before && after.controller_pages == (o.through_memory && o.listed > 0) as u32, &mut failed);
+                    }
+                }
+            }
+        }
     }
     // The asynchronous side needs the keyboard's interrupt, so it is tested here, and only by a kernel that verified itself.
     // Some of those tests press keys by having the controller replay them. Whether this controller does
