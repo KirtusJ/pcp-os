@@ -1,0 +1,5 @@
+pc, 1024 MiB: memory: refused with 12; memory: pages that did not read zero 0; memory: pages read again after all were written 245760; memory: of those, pages that did not hold what was written 0; memory: mebibytes mapped and touched 960
+pc, 2048 MiB: memory: refused with 12; memory: pages that did not read zero 0; memory: pages read again after all were written 245760; memory: of those, pages that did not hold what was written 0; memory: mebibytes mapped and touched 960
+pc, 8192 MiB: memory: refused with 12; memory: pages that did not read zero 0; memory: pages read again after all were written 1556480; memory: of those, pages that did not hold what was written 0; memory: mebibytes mapped and touched 6080; high frames [(1310720, 1310720, 1310720, 1310720)]
+demo: high memory demo: run below one gibibyte 1, single frame below one gibibyte 1, program frame above four gibibytes 1, written 1, all given back 1, zeroed when taken again 1
+large memory: a program gets the memory above four gibibytes and the 960 MiB below; all of it comes back

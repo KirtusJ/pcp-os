@@ -1,0 +1,7 @@
+T        OK  exit=0 timeout=False 3.69s files=2
+pcpos mcp: serving registers under /home/user/pcp-os/audit/director-z3-tasks as participant DirectorZ3 (person directing the work: KirtusJustus)
+RELEASED T105
+WRITTEN as event 215: TASK_RELEASED by DirectorZ3 (HOST)
+head 068549cab038e773dfe53458bc525865ef53684251fdb689e06193a97bbf8a8c
+previous head 2b713d35c165b05ac790057e4b6ae5eaae37e7c54a4ae5c32fe9fbdaabf272bb
+

@@ -1,0 +1,4 @@
+together: opening the channel answered 0; a write through a descriptor opened to read answered 2; a write from no address answered -14; exchanges completed 100; bytes that came back wrong 100000; asking it to hold answered 186; the full channel answered -11; bytes it took before that 65535; bytes the companion wrote while it held 65537; of those, bytes that were not what it wrote 65275
+companion leaves: opening the channel answered 0; a write through a descriptor opened to read answered 2; a write from no address answered -14; the other end was gone in round 1; a read of it then answered 1; a write to it then answered -32; exchanges completed 1; bytes that came back wrong 1000; wide registers used 1; times its register held something else 0
+no companion named: opening the channel answered -13
+a worker that is not loaded: opening the channel answered -13
