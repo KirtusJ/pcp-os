@@ -4,17 +4,22 @@
     python3 examples/program-pictures/check.py <kernel.elf32> <new output directory>
 
 The kernel lists every file the loader hands over that begins as an ELF file, so the "programs"
-here are two small made-up files that are never started. Six boots under QEMU; the launcher is
-opened with Enter and read from a screen dump. Fixed before the first run:
+here are two small made-up files that are never started. Eight boots under QEMU; the launcher is
+opened with Enter and read from a screen dump. P1 to P7 were fixed before the first run; the tile
+and P8 were added, and fixed before their first run, when the owner asked that every theme be kept
+in mind: the first drawing put the squares straight on the desktop's field, which is light in one
+edition.
 
  P1 named Taylor   1280x720, the line carries taylor_image=<SHA-256 of the file named tailorbird>:
-                   the 32 by 32 pixels at (left-42, row+4) beside that row are Taylor's sixteen by
-                   sixteen map at two pixels a square, every inked square exactly its colour.
+                   the 36 by 36 pixels at (left-44, row+2) beside that row are a dark tile holding
+                   Taylor's sixteen by sixteen map at two pixels a square, two pixels in from the
+                   tile's edge: every inked square exactly its colour, every other pixel of the
+                   tile exactly the tile's colour.
  P2 named Surfbird the same boot carries surfbird_image=<SHA-256 of the file named surfbird>: the
                    same for Surfbird's map beside its row.
  P3 nothing else   the same two files with neither option: the frame holds no pixel of any of the
                    six colours that only the pictures use. Between this frame and P1's, every pixel
-                   that differs lies inside the two 32 by 32 boxes. By the kernel's font every row
+                   that differs lies inside the two 36 by 36 tiles. By the kernel's font every row
                    reads the same from the plate's first column on, and in the margin to its left,
                    in the rows the pictures stand beside, no cell reads as a letter or a digit
                    in either frame.
@@ -34,6 +39,11 @@ opened with Enter and read from a screen dump. Fixed before the first run:
                    holds no pixel of the six colours.
  P7 cut line       1280x720, both options, and the line made longer than the kernel takes whole:
                    both programs are listed and the frame holds no pixel of the six colours.
+ P8 every theme    1280x720, both options, with edition=personal (a light field) and with
+                   edition=commercial (a teal field): both tiles are, pixel for pixel, the tiles of
+                   P1's boot, which is the default, dark, Enterprise edition; and in each boot the
+                   field's colour just outside the tile differs from the other two boots', so the
+                   three themes were in fact three.
 
 A failed predicate is printed and the run exits 1 after all boots; the frames are kept either way.
 The output directory must be new. Standard library, the repository's screen reader, and QEMU.
@@ -82,27 +92,38 @@ def stray(frame):
     return sum(pixels[i:i + 3] in ONLY_PICTURES for i in range(0, len(pixels), 3))
 
 
+TAYLOR_GROUND, SURFBIRD_GROUND = bytes.fromhex("10283f"), bytes.fromhex("102630")
+TILE = 36
+
+
 def box_of(rows, width, name):
-    """Where the picture of the row naming this program would be: (x, y) of its 32 by 32 box."""
+    """Where the picture of the row naming this program would be: (x, y) of its 36 by 36 tile."""
     row = next(i for i, text in enumerate(rows) if (" " + name + " ") in (text + " ") and "KiB" in text or (" " + name + " ") in (text + " ") and " B " in (text + " "))
-    return width // 200 * 10 - 42, row * 20 + 4
+    return width // 200 * 10 - 44, row * 20 + 2
 
 
-def shows(frame, at, tiles, inks):
-    """Whether every inked square of the map is exactly its colour at this box."""
+def tile(frame, at):
+    """The 36 by 36 pixels at this place, row by row."""
     width, _, pixels = pixels_of(frame)
     x0, y0 = at
+    return b"".join(pixels[((y0 + y) * width + x0) * 3:((y0 + y) * width + x0 + TILE) * 3] for y in range(TILE))
+
+
+def expected(tiles, inks, ground):
+    """The whole tile as the brand gives it: ground, and the map two pixels in."""
+    out = bytearray(ground * (TILE * TILE))
     for gy, line in enumerate(tiles):
         for gx, symbol in enumerate(line):
-            if symbol == ".":
-                continue
-            want = bytes.fromhex(inks[symbol])
-            for py in range(2):
-                for px in range(2):
-                    i = ((y0 + gy * 2 + py) * width + x0 + gx * 2 + px) * 3
-                    if pixels[i:i + 3] != want:
-                        return False
-    return True
+            if symbol != ".":
+                for py in range(2):
+                    i = ((2 + gy * 2 + py) * TILE + 2 + gx * 2) * 3
+                    out[i:i + 6] = bytes.fromhex(inks[symbol]) * 2
+    return bytes(out)
+
+
+def shows(frame, at, tiles, inks, ground):
+    """Whether the tile at this place is exactly the picture on its ground."""
+    return tile(frame, at) == expected(tiles, inks, ground)
 
 
 def boot(kernel, output, tag, size, files, line_extra):
@@ -162,18 +183,18 @@ def main():
     rows, named = boot(kernel, output, "named", "1280x720", files, both)
     width = pixels_of(named)[0]
     at_t, at_s = box_of(rows, width, "tailorbird"), box_of(rows, width, "surfbird")
-    predicate("P1 named Taylor", shows(named, at_t, TAYLOR, TAYLOR_INK), f"at {at_t}")
-    predicate("P2 named Surfbird", shows(named, at_s, SURFBIRD, SURFBIRD_INK), f"at {at_s}")
+    predicate("P1 named Taylor", shows(named, at_t, TAYLOR, TAYLOR_INK, TAYLOR_GROUND), f"at {at_t}")
+    predicate("P2 named Surfbird", shows(named, at_s, SURFBIRD, SURFBIRD_INK, SURFBIRD_GROUND), f"at {at_s}")
 
     plain_rows, plain = boot(kernel, output, "no-option", "1280x720", files, "")
     _, _, a = pixels_of(named)
     _, _, b = pixels_of(plain)
-    inside = lambda x, y: any(bx <= x < bx + 32 and by <= y < by + 32 for bx, by in (at_t, at_s))
+    inside = lambda x, y: any(bx <= x < bx + TILE and by <= y < by + TILE for bx, by in (at_t, at_s))
     differing = [(i % width, i // width) for i in range(len(a) // 3) if a[i * 3:i * 3 + 3] != b[i * 3:i * 3 + 3]]
     outside = [p for p in differing if not inside(*p)]
     plate = width // 200 * 10 // 10
     same_words = [r[plate:] for r in rows] == [r[plate:] for r in plain_rows]
-    beside = sorted({y // 20 for _, by in (at_t, at_s) for y in (by, by + 31)})
+    beside = sorted({y // 20 for _, by in (at_t, at_s) for y in (by, by + TILE - 1)})
     margin = "".join(view[r][:plate] for view in (rows, plain_rows) for r in beside)
     no_letters = set(margin) <= set(" ?")
     predicate("P3 nothing else", stray(plain) == 0 and not outside and bool(differing) and same_words and no_letters,
@@ -187,8 +208,8 @@ def main():
 
     swap_rows, swapped = boot(kernel, output, "exchanged", "1280x720", files, f" taylor_image={ds} surfbird_image={dt}")
     st, ss = box_of(swap_rows, width, "tailorbird"), box_of(swap_rows, width, "surfbird")
-    predicate("P5 by digest", shows(swapped, ss, TAYLOR, TAYLOR_INK) and shows(swapped, st, SURFBIRD, SURFBIRD_INK)
-              and not shows(swapped, st, TAYLOR, TAYLOR_INK))
+    predicate("P5 by digest", shows(swapped, ss, TAYLOR, TAYLOR_INK, TAYLOR_GROUND) and shows(swapped, st, SURFBIRD, SURFBIRD_INK, SURFBIRD_GROUND)
+              and not shows(swapped, st, TAYLOR, TAYLOR_INK, TAYLOR_GROUND))
 
     small_rows, small = boot(kernel, output, "small", "800x600", files, both)
     listed = all(any(n in r for r in small_rows) for n in ("tailorbird", "surfbird"))
@@ -198,9 +219,22 @@ def main():
     listed = all(any(n in r for r in cut_rows) for n in ("tailorbird", "surfbird"))
     predicate("P7 cut line", listed and stray(cut) == 0, f"listed {listed}, stray {stray(cut)}")
 
+    def beside(frame, at):
+        width_, _, pixels = pixels_of(frame)
+        i = ((at[1] + TILE // 2) * width_ + at[0] - 4) * 3
+        return pixels[i:i + 3]
+
+    fields, same = {beside(named, at_t)}, True
+    for edition in ("personal", "commercial"):
+        e_rows, e_frame = boot(kernel, output, "edition-" + edition, "1280x720", files, both + " edition=" + edition)
+        et, es = box_of(e_rows, width, "tailorbird"), box_of(e_rows, width, "surfbird")
+        same = same and tile(e_frame, et) == tile(named, at_t) and tile(e_frame, es) == tile(named, at_s)
+        fields.add(beside(e_frame, et))
+    predicate("P8 every theme", same and len(fields) == 3, f"tiles equal {same}, fields beside the tile {sorted(f.hex() for f in fields)}")
+
     if failed:
         sys.exit("failed: " + ", ".join(failed))
-    print("all seven hold")
+    print("all eight hold")
 
 
 if __name__ == "__main__":

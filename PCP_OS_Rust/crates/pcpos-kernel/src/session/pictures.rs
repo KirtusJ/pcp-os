@@ -95,13 +95,28 @@ pub fn of(line: Option<&str>, digest: &str) -> Option<Picture> {
     }
 }
 
-/// Draw the picture with its top left corner at (x, y), each square `cell` pixels across. Squares
-/// that are not part of the figure are left as they were.
+/// The dark tile each picture stands on, as its mark does (`tailorbird.svg`, `surfbird.svg`). The
+/// desktop's field is light in one edition and teal in another; on its own tile a picture reads
+/// the same in all of them, and Taylor's cream face is not lost on the Personal edition's cream.
+fn ground(picture: Picture) -> u32 {
+    match picture {
+        Picture::Taylor => 0x10283F,
+        Picture::Surfbird => 0x102630,
+    }
+}
+
+/// How far the tile reaches beyond the squares on each side, in pixels.
+pub const BORDER: u32 = 2;
+
+/// Draw the picture on its tile with the tile's top left corner at (x, y), each square `cell`
+/// pixels across: a tile of `SIZE * cell + 2 * BORDER` pixels each way.
 pub fn draw(picture: Picture, x: u32, y: u32, cell: u32) {
     let map = match picture {
         Picture::Taylor => &TAYLOR,
         Picture::Surfbird => &SURFBIRD,
     };
+    dev::display_fill(x, y, SIZE * cell + 2 * BORDER, SIZE * cell + 2 * BORDER, ground(picture));
+    let (x, y) = (x + BORDER, y + BORDER);
     for (row, line) in map.iter().enumerate() {
         for (column, square) in line.iter().enumerate() {
             if let Some(ink) = colour(picture, *square) {
