@@ -1,0 +1,16 @@
+name: Catalogue and session context
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  catalogue:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: The catalogue is the tree, and no file carries session context
+        run: python3 build/check_catalog.py
