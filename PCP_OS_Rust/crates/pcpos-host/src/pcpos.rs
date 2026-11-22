@@ -2523,12 +2523,14 @@ fn module_command(args: &[String]) -> Result<i32, String> {
             if core.as_deref().map(|c| c != acr::CORE_DESCRIPTOR).unwrap_or(false) {
                 return Err(format!("{id} says it was written for another Core than this program implements ({})", acr::CORE_DESCRIPTOR));
             }
-            if modules_in(&se).iter().any(|m| m.key == key) || modules_and_oddities(&se).1.iter().any(|o| o.contains(&format!(".{key} ")) || o.contains(&format!(".{key};"))) {
-                return Err(format!("{key} is already the name of a module here. Remove it first (pcpos module remove), or give the new one its own identifier"));
-            }
             let mut tx = Tx::begin(&se.root, &name, true)?.ok_or("the register could not be created")?;
             if !tx.problems.is_empty() {
                 return Err("the register does not verify; nothing was added".to_string());
+            }
+            // Serialize identity discovery with publication by other installers using this register.
+            let (installed, oddities) = modules_and_oddities(&se);
+            if installed.iter().any(|m| m.key == key) || oddities.iter().any(|o| o.contains(&format!(".{key} ")) || o.contains(&format!(".{key};"))) {
+                return Err(format!("{key} is already the name of a module here. Remove it first (pcpos module remove), or give the new one its own identifier"));
             }
             begin(&mut tx, &se, None, false)?;
             let dest = home.join(&key).join("SOURCE");
