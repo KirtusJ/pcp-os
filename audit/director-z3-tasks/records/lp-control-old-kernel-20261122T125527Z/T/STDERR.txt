@@ -1,0 +1,2 @@
+allowed: B1: the log does not hold 'probe: opening the sound device answered -13'
+allowed: B1: the log does not hold "probe: opening its own program among the loader's files answered -13"

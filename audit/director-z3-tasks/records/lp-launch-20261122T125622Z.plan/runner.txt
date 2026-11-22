@@ -1,0 +1,2 @@
+not admitted in the PCP register; recorded by the runner only
+T        OK  exit=0 timeout=False 3.11s files=2
