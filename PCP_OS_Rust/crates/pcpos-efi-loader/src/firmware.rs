@@ -242,7 +242,10 @@ fn prepare(b: &mut Boot, inputs: &[Span; 4], pieces: &[Span]) -> Result<()> {
     }
     let mut l = Line::new(&mut b.line);
     let err = "The kernel command line is too long.";
-    write!(l,"image={} auto=tailorbird then=menu propose_image={} worker_for={} worker_image={} model_manifest={} model_memory=",config::MEASUREMENT,config::UI,config::UI,config::WORKER,config::MANIFEST).map_err(|_|err)?;
+    // No program is started for the person: the machine comes up at the desktop, and Tailorbird is
+    // opened from Programs like any other program (owner, 22 November 2026). The line once carried
+    // `auto=tailorbird then=menu`, which put the person straight into Tailorbird.
+    write!(l,"image={} propose_image={} worker_for={} worker_image={} model_manifest={} model_memory=",config::MEASUREMENT,config::UI,config::UI,config::WORKER,config::MANIFEST).map_err(|_|err)?;
     let mut left = config::MODEL;
     for (i, p) in pieces.iter().enumerate() {
         let n = left.min(p.size);
