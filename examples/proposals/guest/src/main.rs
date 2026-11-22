@@ -175,6 +175,8 @@ pub extern "C" fn probe_main() -> ! {
     let list = open(b"/dev/build-folder\0", 0);
     say(b"probe: opening the list answered ", list);
     say(b"probe: opening the list to write answered ", open(b"/dev/build-folder\0", 1));
+    say(b"probe: opening the list to read and make answered ", open(b"/dev/build-folder\0", 0x40));
+    say(b"probe: opening the list to read and empty answered ", open(b"/dev/build-folder\0", 0x200));
     let mut picture = [0u8; 512];
     let mut have = 0usize;
     loop {
@@ -186,6 +188,12 @@ pub extern "C" fn probe_main() -> ! {
         have += got as usize;
     }
     say(b"probe: the list is bytes ", have as isize);
+    // The exact bytes, for a reader that was not written with this kernel.
+    log(b"probe: list hex ");
+    for byte in &picture[..have] {
+        log(&[b"0123456789abcdef"[(byte >> 4) as usize], b"0123456789abcdef"[(byte & 15) as usize]]);
+    }
+    log(b"\n");
     if have >= 24 {
         let word = |at: usize| u32::from_le_bytes([picture[at], picture[at + 1], picture[at + 2], picture[at + 3]]) as usize;
         say(b"probe: list version ", word(0) as isize);
@@ -218,6 +226,9 @@ pub extern "C" fn probe_main() -> ! {
     }
     say(b"probe: opening the note to write answered ", open(b"taylor/first-project/note.txt\0", 1));
     say(b"probe: opening the note to empty it answered ", open(b"taylor/first-project/note.txt\0", 0x201));
+    say(b"probe: opening the note to read and make answered ", open(b"taylor/first-project/note.txt\0", 0x40));
+    say(b"probe: opening the note to read and empty answered ", open(b"taylor/first-project/note.txt\0", 0x200));
+    say(b"probe: opening the note to read after all that answered ", if open(b"taylor/first-project/note.txt\0", 0) >= 0 { 0 } else { -1 });
     say(b"probe: removing the note answered ", call(87, b"taylor/first-project/note.txt\0".as_ptr() as usize, 0, 0, 0, 0, 0));
     say(b"probe: renaming the note answered ", call(82, b"taylor/first-project/note.txt\0".as_ptr() as usize, b"taylor/x.txt\0".as_ptr() as usize, 0, 0, 0, 0));
     say(b"probe: a name outside the folder answered ", open(b"elsewhere/note.txt\0", 0));

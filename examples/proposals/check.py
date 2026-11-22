@@ -58,6 +58,7 @@ import json
 from pathlib import Path
 import runpy
 import socket
+import struct
 import subprocess
 import sys
 import time
@@ -235,13 +236,17 @@ def main():
     if listed != ["probe: listed %s of bytes %d" % (NAME, len(CONTENT))]:
         found.append("B1: the list does not hold exactly the one file made, with its size: %r" % listed)
     size = 24 + len("taylor") + 8 + len(NAME)
+    snapshot = (struct.pack("<IIIIQ", 1, 1, 1, 6, 1) + b"taylor" + struct.pack("<HHI", len(NAME), 0, len(CONTENT)) + NAME.encode())
     for words in ("probe: a file outside the build folder was answered -22", "probe: opening the list to write answered -13",
                   "probe: the list ended with 0", "probe: the list is bytes %d" % size, "probe: list version 1", "probe: list count 1",
                   "probe: list complete 1", "probe: list run 1", "probe: list folder taylor\n", "probe: list bytes left over 0",
                   "probe: writing to the list answered -9", "probe: opening the note to read answered 0",
                   "probe: the note read back bytes %d" % len(CONTENT), "probe: the note read back the same 1",
                   "probe: writing to the note answered -9", "probe: opening the note to write answered -13",
-                  "probe: opening the note to empty it answered -13", "probe: removing the note answered -13",
+                  "probe: opening the note to empty it answered -13", "probe: opening the list to read and make answered -13",
+                  "probe: opening the list to read and empty answered -13", "probe: opening the note to read and make answered -13",
+                  "probe: opening the note to read and empty answered -13", "probe: opening the note to read after all that answered 0",
+                  "probe: list hex " + snapshot.hex() + "\n", "probe: removing the note answered -13",
                   "probe: renaming the note answered -13", "probe: a name outside the folder answered -2",
                   "probe: a name beside the folder answered -2"):
         if words not in log:

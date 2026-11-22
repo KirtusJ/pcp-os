@@ -491,6 +491,10 @@ fn open(p: &mut Process, caps: &CapSpace, world: &mut World, path: u64, flags: u
         #[cfg(feature = "guest-ethernet")]
         Ok(Node::Ethernet) if flags & 3 != 2 => return err(EINVAL), // raw packet sessions require O_RDWR
         Ok(Node::File(_)) if writing => return err(EACCES), // the loader's files are read and never written
+        // A program that may propose files opens stored files, and the picture of its build folder, to read
+        // and for nothing else, whatever else it holds: any flag that means to write, make or empty is refused.
+        #[cfg(feature = "proposals")]
+        Ok(Node::Stored(_)) if (writing || create || truncate) && p.linux.as_ref().is_some_and(|l| l.proposals.allowed) => return err(EACCES),
         Ok(n) => {
             if writing && matches!(n, Node::Stored(_)) && !p.holds(caps, Object::Store, Rights::APPEND) {
                 return err(EACCES);
