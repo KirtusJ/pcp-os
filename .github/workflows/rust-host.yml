@@ -6,11 +6,17 @@ on:
   pull_request:
     paths:
       - 'PCP_OS_Rust/**'
+      - 'examples/firmware-model-loader/**'
+      - 'examples/release-media/toolchain.py'
+      - 'examples/release-media/test_toolchain.py'
       - '.github/workflows/rust-host.yml'
   push:
     branches: [master]
     paths:
       - 'PCP_OS_Rust/**'
+      - 'examples/firmware-model-loader/**'
+      - 'examples/release-media/toolchain.py'
+      - 'examples/release-media/test_toolchain.py'
       - '.github/workflows/rust-host.yml'
   workflow_dispatch:
 
@@ -62,5 +68,10 @@ jobs:
           "$RUNNER_TEMP/test-framebuffer"
       - name: Run the workspace tests
         run: cargo test --locked --release --workspace --features pcpos-preloaded-loader/assembly
+      - name: Check qualified EFI tool selection and receipts
+        if: runner.os == 'Linux'
+        run: |
+          python3 ../examples/release-media/test_toolchain.py
+          python3 ../examples/firmware-model-loader/test_record.py
       - name: List the instruments in the built program
         run: cargo run --locked --release --bin pcpos -- instrument list
