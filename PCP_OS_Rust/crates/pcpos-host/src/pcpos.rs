@@ -2513,6 +2513,33 @@ fn repair(path: &str) -> Result<String, String> {
     Ok(format!("an unfinished last line of {} byte(s) was moved to {}. The register now ends at its last whole event. Run verify, and record what happened.\n", raw.len() - keep, aside.display()))
 }
 
+/// Keep the module bytes until storage of the accepted removal event is confirmed.
+fn commit_module_removal(tx: &mut Tx, home: &Path, key: &str, head: &str) -> Result<(), String> {
+    let directory = home.join(key);
+    // The expected event head identifies this attempt. The payload is below discovery's SOURCE path.
+    let holding = home.join(format!(".pcpos-remove-{key}-{head}"));
+    let saved = holding.join("payload");
+    fs::create_dir(&holding).map_err(|e| format!("cannot prepare removal in {}: {e}", holding.display()))?;
+    if let Err(e) = fs::rename(&directory, &saved) {
+        let _ = fs::remove_dir(&holding);
+        return Err(format!("could not set aside {}: {e}", directory.display()));
+    }
+    if let Err(error) = tx.commit() {
+        let unchanged = read_all(&mut tx.h).is_ok_and(|raw| raw == tx.rec.ledger().bytes()[..tx.start]);
+        let vacant = fs::symlink_metadata(&directory).is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound);
+        if unchanged && vacant && fs::rename(&saved, &directory).is_ok() {
+            let _ = fs::remove_dir(&holding);
+            return Err(format!("{error}. The register still has its previous bytes and {key} was restored."));
+        }
+        return Err(format!("{error}. The module files are retained at {}. Verify the register for event {head} before restoring or discarding them.", saved.display()));
+    }
+    // The ledger has acknowledged the removal. An error cleaning up its saved copy cannot undo it.
+    if let Err(e) = fs::remove_dir_all(&saved).and_then(|_| fs::remove_dir(&holding)) {
+        eprintln!("The removal is recorded. Cleanup of {} is incomplete: {e}", holding.display());
+    }
+    Ok(())
+}
+
 /// A person adds, removes or lists the modules that stand beside a register. An added module is text the
 /// person supplies; it is identified in every review that uses it by the digest of its Specification, and
 /// it never displaces a module of the method text.
@@ -2534,6 +2561,7 @@ fn module_command(args: &[String]) -> Result<i32, String> {
     se.principal = by.clone();
     let what = args.get(3).filter(|a| !a.starts_with("--")).ok_or("usage")?;
     let event = |tx: &mut Tx, event: &str, m: Value| tx.put("host", "HOST", "HOST_EVENT", obj(vec![("event", s(event)), ("by", s(&by)), ("observed", s("ENTERED_AT_A_TERMINAL")), ("module", m)]));
+    let mut removal_key = None;
     let put = match verb {
         "add" => {
             se.method.as_ref().ok_or("no method text is at hand to compare with: give its folder with --method <directory>")?;
@@ -2587,18 +2615,18 @@ fn module_command(args: &[String]) -> Result<i32, String> {
                 return Err(format!("{what} is not installed directly under the modules directory"));
             }
             let accepted = event(&mut tx, "MODULE_REMOVED", module.record())?;
-            if matches!(accepted, Put::Written { .. }) {
-                fs::remove_dir_all(&directory).map_err(|e| format!("the module could not be removed: {e}"))?;
-            }
+            removal_key = Some(key);
             (tx, accepted)
         }
         _ => return Err("usage".to_string()),
     };
     match put {
         (mut tx, Put::Written { seq, head, .. }) => {
-            tx.commit()?;
-            if verb == "remove" {
-                println!("removed the added module {}. Reviews already commissioned with it keep its digest in the record.", what.strip_prefix("local.").unwrap_or(what));
+            if let Some(key) = removal_key {
+                commit_module_removal(&mut tx, &home, key, &head)?;
+                println!("removed the added module {key}. Reviews already commissioned with it keep its digest in the record.");
+            } else {
+                tx.commit()?;
             }
             println!("WRITTEN as event {seq}\nhead {head}");
             Ok(0)
@@ -2919,5 +2947,50 @@ fn main() {
             }
         }
         _ => usage(),
+    }
+}
+
+#[cfg(test)]
+mod module_removal_tests {
+    use super::*;
+
+    #[test]
+    fn an_unwritable_register_restores_the_module_or_retains_its_complete_bytes_for_recovery() {
+        for changed in [false, true] {
+            let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+            let root = env::temp_dir().join(format!("pcpos-removal-{}-{timestamp}", std::process::id()));
+            fs::create_dir(&root).unwrap();
+            let root = root.canonicalize().unwrap();
+            let home = root.join("modules");
+            let directory = home.join("sample");
+            fs::create_dir_all(directory.join("SOURCE")).unwrap();
+            fs::write(directory.join("SOURCE/Specification.md"), b"module bytes").unwrap();
+            let mut tx = Tx::begin(&root, "register.jsonl", true).unwrap().unwrap();
+            let se = session(root.to_str()).unwrap();
+            begin(&mut tx, &se, None, false).unwrap();
+            tx.commit().unwrap();
+            let before = read_all(&mut tx.h).unwrap();
+            let accepted = tx.put("host", "HOST", "HOST_EVENT", obj(vec![("event", s("MODULE_REMOVED"))])).unwrap();
+            let Put::Written { head, .. } = accepted else { panic!("removal event was refused") };
+            // A read-only handle models a failed commit without an OS-specific fault mechanism.
+            if changed {
+                tx.h.file.write_all(b"partial line").unwrap();
+            }
+            tx.h.file = File::open(&tx.h.path).unwrap();
+            let error = commit_module_removal(&mut tx, &home, "sample", &head).unwrap_err();
+            let holding = home.join(format!(".pcpos-remove-sample-{head}"));
+            if changed {
+                assert!(!directory.exists());
+                assert!(error.contains(&head));
+                assert_eq!(fs::read(holding.join("payload/SOURCE/Specification.md")).unwrap(), b"module bytes");
+            } else {
+                assert!(error.contains("was restored"));
+                assert_eq!(read_all(&mut tx.h).unwrap(), before);
+                assert_eq!(fs::read(directory.join("SOURCE/Specification.md")).unwrap(), b"module bytes");
+                assert!(!holding.exists());
+            }
+            drop(tx);
+            fs::remove_dir_all(root).unwrap();
+        }
     }
 }
