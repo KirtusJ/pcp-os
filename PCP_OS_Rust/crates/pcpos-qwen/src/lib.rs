@@ -4,6 +4,10 @@
 #![no_std]
 #![forbid(unsafe_code)]
 
+extern crate alloc;
+pub mod forward;
+pub mod tokenizer;
+
 use core::fmt::{self, Write};
 use pcpos_gguf::{Index, Tensor, TensorType, Value};
 
@@ -55,6 +59,7 @@ pub struct Layer<'i, 'b> {
 #[derive(Debug)]
 pub struct Model<'i, 'b> {
     config: Config,
+    file_bytes: u64,
     embedding: &'i Tensor<'b>,
     output: &'i Tensor<'b>,
     output_norm: &'i Tensor<'b>,
@@ -194,7 +199,7 @@ impl<'i, 'b> Model<'i, 'b> {
             });
         }
         if found != index.tensors().len() { return Err(Error::TensorSet); }
-        Ok(Self { config, embedding: embedding_tensor, output, output_norm, layers: admitted })
+        Ok(Self { config, file_bytes: index.file_bytes, embedding: embedding_tensor, output, output_norm, layers: admitted })
     }
 
     pub fn config(&self) -> Config { self.config }
