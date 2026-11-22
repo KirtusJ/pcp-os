@@ -72,6 +72,9 @@ pub enum Node {
     /// This program's end of the channel to its companion.
     #[cfg(feature = "companion")]
     Talk,
+    /// The model held in memory: its manifest to read, its bytes to map. For a companion only.
+    #[cfg(feature = "model-memory")]
+    Model,
     /// The one directory there is.
     Directory,
     /// One of the loader's files: its index in `World::files`.
@@ -109,6 +112,9 @@ pub struct Linux {
     /// Which end of the channel to its companion this program holds, if it has one.
     #[cfg(feature = "companion")]
     pub talk: Option<usize>,
+    /// Where the model is mapped in this program, once it has mapped it.
+    #[cfg(feature = "model-memory")]
+    model_at: Option<usize>,
     #[cfg(feature = "proposals")]
     proposals: Proposals,
 }
@@ -386,7 +392,7 @@ const TICK_NS: u64 = 999_847;
 impl Linux {
     pub fn new(image_end: usize) -> Linux {
         let console = || Some(Open { node: Node::Console, position: 0, nonblocking: false, writable: true, append: false });
-        Linux { files: alloc::vec![console(), console(), console()], heap_start: image_end, heap_end: image_end, next_map: arch::USER_BASE + (64 << 30), reserved: Vec::new(), extra_pages: 0, shadow_asked: false, shadow: None, #[cfg(feature = "proposals")] proposals: Proposals::default(), #[cfg(feature = "companion")] talk: None }
+        Linux { files: alloc::vec![console(), console(), console()], heap_start: image_end, heap_end: image_end, next_map: arch::USER_BASE + (64 << 30), reserved: Vec::new(), extra_pages: 0, shadow_asked: false, shadow: None, #[cfg(feature = "proposals")] proposals: Proposals::default(), #[cfg(feature = "companion")] talk: None, #[cfg(feature = "model-memory")] model_at: None }
     }
 }
 
@@ -452,6 +458,9 @@ fn node_stat(world: &World, node: &Node) -> Option<[u8; 144]> {
         Node::Console | Node::Display | Node::Keys | Node::Sound | Node::Music | Node::Null => stat_bytes(0o020666, 0, 1),
         #[cfg(feature = "companion")]
         Node::Talk => stat_bytes(0o020660, 0, 1),
+        // The size said is the manifest's: that is what a read of it gives.
+        #[cfg(feature = "model-memory")]
+        Node::Model => stat_bytes(0o100440, world.model.map(|m| m.manifest.len()).unwrap_or(0), 1),
         #[cfg(feature = "game-link")]
         Node::GameLink => stat_bytes(0o020666, 0, 1),
         Node::Directory => stat_bytes(0o040755, 0, 1),
@@ -481,6 +490,13 @@ fn lookup(p: &Process, caps: &CapSpace, world: &World, path: &str) -> Result<Nod
                 if world.store.fits(bytes.len()) { Ok(Node::Stored(world.store.detached(bytes))) } else { Err(err(ENOSPC)) }
             }
             None => Err(err(EACCES)),
+        },
+        // The model held in memory: only for the companion (end 0 of the channel), and only if one is given.
+        #[cfg(feature = "model-memory")]
+        "dev/model" => match (p.linux.as_ref().and_then(|l| l.talk), world.model.is_some()) {
+            (Some(0), true) => Ok(Node::Model),
+            (Some(0), false) => Err(err(ENOENT)),
+            _ => Err(err(EACCES)),
         },
         // The channel to the program's companion: only for a program the kernel gave an end of it.
         #[cfg(feature = "companion")]
@@ -636,6 +652,8 @@ fn read(p: &mut Process, world: &World, fd: u64, addr: u64, len: u64) -> Outcome
         Node::Console | Node::Null => return Outcome::Return(0),
         #[cfg(feature = "companion")]
         Node::Talk => return Outcome::Return(err(EINVAL)), // answered in `call`, where the channel is
+        #[cfg(feature = "model-memory")]
+        Node::Model => return Outcome::Return(err(EINVAL)), // answered in `call`
         Node::Display | Node::Directory | Node::Sound | Node::Music => return Outcome::Return(err(EINVAL)),
         Node::Keys => {
             // Each key event is two bytes: the key's number, then bit 0 set if it was released and bit 1 if it is of the second group.
@@ -684,6 +702,9 @@ fn write(p: &mut Process, caps: &CapSpace, fd: u64, addr: u64, len: u64) -> u64 
         Node::Null => len as u64,
         #[cfg(feature = "companion")]
         Node::Talk => err(EINVAL), // answered in `call`, where the channel is
+        // Nothing is written to a model, whatever the descriptor was opened as.
+        #[cfg(feature = "model-memory")]
+        Node::Model => err(EBADF),
         #[cfg(feature = "guest-ethernet")]
         Node::Ethernet => {
             if !f.writable || !p.holds(caps, Object::Ethernet, Rights::APPEND) { return err(EBADF); }
@@ -1180,6 +1201,82 @@ fn talk(t: &mut Table, i: usize, writing: bool, fd: u64, addr: u64, len: u64) ->
     Outcome::Return(channel.read(end, bytes.len(), |_| ()) as u64)
 }
 
+/// What the loader left and the kernel decided to give: see `session::model_given`.
+#[cfg(feature = "model-memory")]
+#[derive(Clone, Copy)]
+pub struct ModelGiven {
+    pub manifest: &'static [u8],
+    /// The SHA-256 of the manifest, from the loader's line. The manifest was checked against it.
+    pub digest: [u8; 32],
+    pub bytes: u64,
+}
+
+/// The request on `dev/model` that says what is held: 48 bytes, the manifest's length and the
+/// model's length (each 8 bytes, little-endian) and the manifest's pinned SHA-256.
+#[cfg(feature = "model-memory")]
+pub const MODEL_DESCRIBE: u64 = 0x6D01;
+
+/// Calls on `dev/model`. None if the call is not one of them, and the ordinary handling follows.
+/// read: the manifest, from the descriptor's position. ioctl MODEL_DESCRIBE: what is held.
+/// mmap: the whole model, once, readable only; any other length, protection or a second mapping is refused.
+#[cfg(feature = "model-memory")]
+fn model_call(p: &mut Process, world: &World, number: u64, a: &[u64; 6]) -> Option<u64> {
+    let fd = match number {
+        0 | 16 => a[0],
+        9 if a[3] & 0x20 == 0 => a[4],
+        _ => return None,
+    };
+    let open = file(p, fd).filter(|f| matches!(f.node, Node::Model))?;
+    let Some(given) = world.model else { return Some(err(ENOENT)) };
+    Some(match number {
+        0 => {
+            let from = open.position.min(given.manifest.len());
+            let count = (a[2] as usize).min(given.manifest.len() - from);
+            if !put(p, a[1], &given.manifest[from..from + count]) {
+                return Some(err(EFAULT));
+            }
+            set_position(p, fd, from + count);
+            count as u64
+        }
+        16 => {
+            if a[1] != MODEL_DESCRIBE {
+                return Some(err(ENOTTY));
+            }
+            let mut said = [0u8; 48];
+            said[0..8].copy_from_slice(&(given.manifest.len() as u64).to_le_bytes());
+            said[8..16].copy_from_slice(&given.bytes.to_le_bytes());
+            said[16..48].copy_from_slice(&given.digest);
+            if put(p, a[2], &said) { 0 } else { err(EFAULT) }
+        }
+        _ => {
+            // Readable and nothing else; the whole model and nothing else; at an address the kernel
+            // chooses; once.
+            let mapped = p.linux.as_ref().map(|l| l.model_at.is_some()).unwrap_or(true);
+            if a[2] != 1 || a[3] & 0x10 != 0 || a[1] != given.bytes || a[5] != 0 || mapped {
+                return Some(err(EINVAL));
+            }
+            let pages = (given.bytes as usize).div_ceil(4096);
+            let start = match p.linux.as_mut() {
+                Some(l) => {
+                    let s = l.next_map;
+                    l.next_map += (pages + 1) * 4096;
+                    s
+                }
+                None => return Some(err(ENOSYS)),
+            };
+            match p.space.as_mut().and_then(|s| s.map_model(start)) {
+                Some(_) => {
+                    if let Some(l) = p.linux.as_mut() {
+                        l.model_at = Some(start);
+                    }
+                    start as u64
+                }
+                None => err(ENOMEM),
+            }
+        }
+    })
+}
+
 pub fn call(t: &mut Table, i: usize, frame: &Frame) -> Outcome {
     let (number, a) = frame.linux_call();
     #[cfg(feature = "companion")]
@@ -1189,6 +1286,10 @@ pub fn call(t: &mut Table, i: usize, frame: &Frame) -> Outcome {
     let Table { procs, caps, world, fs_loaded, .. } = t;
     let p = &mut procs[i];
     let ret = Outcome::Return;
+    #[cfg(feature = "model-memory")]
+    if let Some(answer) = model_call(p, world, number, &a) {
+        return ret(answer);
+    }
     match number {
         0 => read(p, world, a[0], a[1], a[2]),
         #[cfg(feature = "proposals")]
