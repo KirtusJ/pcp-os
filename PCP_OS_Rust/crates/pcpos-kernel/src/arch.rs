@@ -1242,14 +1242,32 @@ pub fn fpu_init() {
         let mxcsr: u32 = 0x1F80;
         asm!("fninit", "ldmxcsr [{}]", in(reg) &mxcsr, options(nostack));
         if wide {
-            // The template is zero, which XRSTOR reads as "every register in its first state"; saving
-            // over it records that state with the processor's own header.
+            // The template's header is zero, which XRSTOR reads as "every register in its first state";
+            // saving over it records that state with the processor's own header. MXCSR is the
+            // exception: this form of XRSTOR loads it from the area whenever the 128-bit or 256-bit
+            // state is asked for, whatever the header says (Intel SDM volume 1, 13.8.1), so a zero
+            // there would leave every floating-point exception unmasked in every program. The area
+            // is given the value just loaded before it is read (C3 found a worker ended by vector 19
+            // on a processor that follows this to the letter).
+            (FPU_CLEAN.0.get() as *mut u8).add(24).cast::<u32>().write_unaligned(mxcsr);
             asm!("xrstor64 [{}]", in(reg) FPU_CLEAN.0.get(), in("eax") XSAVE_KEPT, in("edx") 0u32, options(nostack));
             asm!("xsave64 [{}]", in(reg) FPU_CLEAN.0.get(), in("eax") XSAVE_KEPT, in("edx") 0u32, options(nostack));
         } else {
             asm!("fxsave64 [{}]", in(reg) FPU_CLEAN.0.get(), options(nostack));
         }
     }
+}
+
+/// The control and status register of the vector instructions (MXCSR) as a program that has used
+/// nothing first finds it: the clean state is loaded as it is for a new program, and the register
+/// read. `0x1F80` is every floating-point exception masked, rounding to nearest. Only at start-up,
+/// before any program exists.
+pub fn fpu_first_mxcsr() -> u32 {
+    let mut found: u32 = 0xFFFF_FFFF;
+    fpu_restore(&FpuArea::clean());
+    // Safety: stores the register into a local; the vector instructions were turned on by `fpu_init`.
+    unsafe { asm!("stmxcsr [{}]", in(reg) &mut found, options(nostack)) };
+    found
 }
 
 impl FpuArea {
