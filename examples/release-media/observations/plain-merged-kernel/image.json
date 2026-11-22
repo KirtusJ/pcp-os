@@ -1,0 +1,24 @@
+{
+  "source": "041a86907fbee9bd7c5973ed1d17f0e15c19dc38",
+  "os_head": "3fdfe23268b97d58e1c9167422b0f8902c97f287",
+  "tailorbird_head": "0fbf3826c159201bc583b9f09f8b6f8d1a1d4ac0",
+  "repeat_builds": 2,
+  "same_builder_fixed_work_path": true,
+  "inputs_sha256": "1dbe06857cae22be78603b086679b726f1d42d7f7b660ea048c25252d26722d0",
+  "image_bytes": 70389760,
+  "image_sha256": "75dce9c7581a5802ff941962aead7665c882fccb6876cad7e6b6c8844fa1f1e8",
+  "qemu": "Q35/TCG, 512 MiB, fresh OVMF variables, no network or internal drive",
+  "boots": {
+    "cd": {
+      "passed": 72,
+      "emulator_exit": 33,
+      "serial_sha256": "b7f035da87e6473e863974a8d182cad561295271a71e125acaba1bbbd5215f8c"
+    },
+    "raw": {
+      "passed": 72,
+      "emulator_exit": 33,
+      "serial_sha256": "fd27331bce29eeb9d38dcf41dd6c7d1c52d0574d5a5765993c3aab7affec066a"
+    }
+  },
+  "limits": "VM boots only. No physical device or release signing."
+}

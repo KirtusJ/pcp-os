@@ -1,0 +1,28 @@
+{
+  "asset_iso_sha256": "93ed3b599ad7be0e1e88a64813b1f2b5299d51507df2edca691aaf6189d10d15",
+  "files": {
+    "EFI/BOOT/BOOTX64.EFI": "e7046c52123efd16e3faa217863da79b76b481348c4e890477781d03c643bc3e",
+    "EFI/BOOT/grub.cfg": "71f656da2210365f87db043ba1f1dd58687b8ee22f6c1eda8618267ffecef9c7",
+    "PCPOS/ASSET-LICENSE.MD": "80b7b0741b3290e739c344f9e641ce6a13cca5869fc5f8c38243e0285f5c8640",
+    "PCPOS/ASSET-NOTICES.TXT": "04bb865733036f2f978fce369ba95fe335b5967de5de0abe767b0a47a3f386ca",
+    "PCPOS/CLIP.PPM": "f6a1d9a0702f472f5b02cf0a528586e6d4447acbad2bd92eb0fc6d70eea4df4d",
+    "PCPOS/CLIP.WAV": "70ca6a81bc6f94db7d14a61630ff02c517d20a65c31273b16ff02e233018e244",
+    "PCPOS/GRUB-LICENSE.TXT": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+    "PCPOS/KERNEL.ELF": "52ce394989eccf1b41733a57da056e37926b83a585af642274a98b6dcd67c2cc",
+    "PCPOS/PCPOS-NOTICE.MD": "329d287bf2bac528afc035145886284908ecd139958223c6cff6477e7372e609",
+    "PCPOS/SURF.ELF": "b87f1185f86961ff8afdb21315c811f0c071c474d09737613146be46cbb98b34",
+    "PCPOS/TAILOR.ELF": "e36f754f0d9395263c94768316fa86a970ac6a186dded284aae7d87d534e343a"
+  },
+  "format": "pcpos-release-parts/1",
+  "grub": "grub-mkimage (GRUB) 2.12-9+deb13u2",
+  "guest_os_head": "070c9d5925a2c208c33c60db92e51156555407c8",
+  "kernel_features": [
+    "proposals"
+  ],
+  "measurement": "36159ff5225519a1041356533a5f73be23b1544c0962e06721c135616b7d5644",
+  "os_head": "3fdfe23268b97d58e1c9167422b0f8902c97f287",
+  "profile": "model-free",
+  "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)",
+  "tailorbird_features": [],
+  "tailorbird_head": "0fbf3826c159201bc583b9f09f8b6f8d1a1d4ac0"
+}
