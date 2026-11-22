@@ -344,9 +344,9 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
             (_, (0x13, false)) if letters => register_view(rec),
             (_, (0x3F, false)) if desk => verification_view(start, rec),
             (_, (0x2F, false)) if desk && letters => verification_view(start, rec),
-            (Surface::Home, (0x3B, false)) => keys_view("KEYS ON THE DESKTOP", if graphic { &HOME_KEYS } else { &SMALL_HOME_KEYS }),
+            (Surface::Home, (0x3B, false)) => keys_view("KEYS ON THE DESKTOP", &home_keys(graphic)),
             (Surface::Launcher, (0x3B, false)) => keys_view("KEYS IN THE PROGRAMS", &LAUNCHER_KEYS),
-            (Surface::Home, (0x25, false)) if letters => keys_view("KEYS ON THE DESKTOP", if graphic { &HOME_KEYS } else { &SMALL_HOME_KEYS }),
+            (Surface::Home, (0x25, false)) if letters => keys_view("KEYS ON THE DESKTOP", &home_keys(graphic)),
             (Surface::Launcher, (0x25, false)) if letters => keys_view("KEYS IN THE PROGRAMS", &LAUNCHER_KEYS),
             // On the small-display desktop Left and Right turn the parts of a long name; Up and Down choose.
             (Surface::Home, (0x4B, _)) if !graphic => name_page = name_page.saturating_sub(1),
@@ -631,6 +631,18 @@ const HOME_KEYS: [(&str, &str); 11] = [("Left/Right", "choose among the programs
     ("F1", "this list"), ("F2", "settings: how the desktop looks, and its widgets"), ("F3", "the files programs have written"),
     ("F4", "the register"), ("F5", "verification, in full"), ("F10", "power off, after asking"),
     ("Ctrl+Alt+Delete", "stops a running program; no program can take that key")];
+/// The keys of the desktop as this kernel was built: with file proposals, F7 is one of them, and a
+/// key that does something is in the list (B3 found F7 named nowhere a person would look).
+fn home_keys(graphic: bool) -> Vec<(&'static str, &'static str)> {
+    #[allow(unused_mut)]
+    let mut keys: Vec<(&str, &str)> = if graphic { HOME_KEYS.to_vec() } else { SMALL_HOME_KEYS.to_vec() };
+    #[cfg(feature = "proposals")]
+    if let Some(after) = keys.iter().position(|k| k.0 == "F5") {
+        keys.insert(after + 1, ("F7", "the projects folder: where Taylor may make files"));
+    }
+    keys
+}
+
 /// The keys of the desktop of a small display, which are not those of the full one: Up and Down choose,
 /// Left and Right turn the parts of a long name. Letters do nothing on it, as on the full desktop.
 const SMALL_HOME_KEYS: [(&str, &str); 12] = [("Up/Down", "choose among all the programs and the pinned programs"), ("Left/Right", "turn the parts of a long name"),
@@ -699,6 +711,10 @@ fn recent_tasks(rec: &Record, programs: &[Entry], most: usize) -> Vec<(String, S
 fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize], place: usize, whole: bool, widgets: &[bool; 3], store: &crate::regular::Files, mounted: bool, run: u32, message: &str, last_refusal: Option<(usize, &str)>, name_page: usize) -> usize {
     use ui::{label, AMBER, BAD, GOOD, SOFT, TEAL, TEXT};
     let safe = start.failed != 0;
+    let cut_pin = if !safe && cut_blocks_launch(start) {
+        place.checked_sub(1).and_then(|at| shortcuts.get(at)).copied()
+    } else { None };
+    let last_refusal = cut_pin.map(|index| (index, "loader line cut")).or(last_refusal);
     let recent = if widgets[0] { recent_tasks(rec, programs, 3) } else { Vec::new() };
     let (pool, free, _, _) = crate::mem::census();
     let files_line = if mounted { "VM files | saved when an app syncs" } else { "Session files | cleared at power-off" };
@@ -807,7 +823,10 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
                     let why = if reason == "the program could not be admitted as a task" && "Not started: ".len() + reason.len() > room {
                         "not admitted"
                     } else { reason };
-                    at(x, y, &cut(&format!("Not started: {}", why), room), BAD, GROUND);
+                    let caption = if cut_pin.is_some() && "Not started: loader line cut".len() > room {
+                        String::from("Loader line cut")
+                    } else { format!("Not started: {}", why) };
+                    at(x, y, &cut(&caption, room), BAD, GROUND);
                 } else if caption {
                     at(2, row, "Enter starts", GOOD, GROUND);
                 }
@@ -843,7 +862,11 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
             let _ = gap_keys;
             // On a display too narrow for the whole line, the keys that open the list of keys and that
             // stop the machine are the ones kept.
-            at(2, rows - 2, if across >= 47 { "Up/Down choose   Enter open   F1 keys   F10 off" } else { "Enter open  F1 keys  F10 off" }, TEXT, GROUND);
+            let keys = if cut_pin.is_some() { "Up/Down choose  F1 keys  F10 off" }
+                       else if across >= 47 { "Up/Down choose   Enter open   F1 keys   F10 off" }
+                       else { "Enter open  F1 keys  F10 off" };
+            let keys = if cut_pin.is_some() && keys.len() > across { "F1 keys  F10 off" } else { keys };
+            at(2, rows - 2, keys, TEXT, GROUND);
             return name_pages;
         }
     };
@@ -1187,6 +1210,16 @@ fn files_view(store: &crate::regular::Files, mounted: bool) {
     }
 }
 
+const CUT_LINE_NOTICE: &str = "Loader line cut. Cannot run.";
+
+#[cfg(feature = "proposals")]
+fn cut_blocks_launch(start: &Start) -> bool {
+    start.boot.exact_command_line().is_none()
+}
+
+#[cfg(not(feature = "proposals"))]
+fn cut_blocks_launch(_: &Start) -> bool { false }
+
 const FILE_APPROVAL: &str = "Creating a file needs your approval.";
 #[cfg(feature = "proposals")]
 const NO_BUILD_FOLDER: &str = "its projects folder setting is not a valid name";
@@ -1235,6 +1268,7 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
     label(left, 60, "Programs", ui::edition().text, true, &over_field);
     let on_note = plate(left, 110, list_width, 40, PLATE, edge(), false);
     label(left + 20, 120, if safe { "SAFE: verification failed. Programs are disabled." } else if programs.is_empty() { "The loader handed over no program." }
+                               else if cut_blocks_launch(start) { "Programs cannot start." }
                                // At 1280 across the plate holds fifty-six characters, four fewer than the longer wording.
                                else if list_width >= 640 { "Choose one to start. Each runs with only what it is granted." }
                                else { "Choose one. Each runs with only what it is granted." }, if safe { BAD } else { SOFT }, false, &on_note);
@@ -1245,6 +1279,7 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
     // and that a program is pinned is said on a line of its own.
     let across = (list_width / 10).saturating_sub(6) as usize;
     let access_of = |p: &Entry| -> Vec<String> {
+        if cut_blocks_launch(start) { return alloc::vec![String::from(CUT_LINE_NOTICE)]; }
         let proposes = file_proposals(start, p, none);
         let mut access = String::from(if none { "console only" } else if start.sound { "display, keyboard, sound, loader files" } else { "display, keyboard, loader files" });
         if !none && !proposes { access.push_str(", store"); }
@@ -1318,7 +1353,10 @@ fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message:
     let across = (cols as usize).saturating_sub(4).max(1);
     // What the chosen program may use, said only when programs can be started.
     let mut access: Vec<(String, u32)> = Vec::new();
-    if let Some(entry) = programs.get(chosen).filter(|_| start.failed == 0) {
+    let blocked = cut_blocks_launch(start);
+    if blocked && start.failed == 0 && !programs.is_empty() {
+        access.push((String::from(CUT_LINE_NOTICE), ui::BAD));
+    } else if let Some(entry) = programs.get(chosen).filter(|_| start.failed == 0) {
         let none = option(&start.boot.command_line, "grant") == Some("none");
         let proposes = file_proposals(start, entry, none);
         access.push((String::from(if none { "Access: console only" } else if proposes {
@@ -1342,7 +1380,7 @@ fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message:
         }
     }
     // The keys named are function keys and Esc, as on every other surface; letters do nothing here.
-    let keys = if programs.is_empty() || start.failed != 0 {
+    let keys = if programs.is_empty() || start.failed != 0 || blocked {
         "Esc back   F1 keys   F10 off"
     } else { "Up/Down choose   Enter open   Esc back   F1 keys   F10 off" };
     // The message has two rows. What does not fit on them ends in "..".
@@ -1385,7 +1423,7 @@ fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message:
         (5u32, rows.saturating_sub(9 + access_rows).max(1) as usize)
     } else {
         at(2, 0, &verified_sentence(start, across), if start.failed != 0 { ui::BAD } else { ui::GOOD }, GROUND);
-        let key_lines: Vec<String> = if keys.len() <= across { alloc::vec![String::from(keys)] } else if programs.is_empty() || start.failed != 0 {
+        let key_lines: Vec<String> = if keys.len() <= across { alloc::vec![String::from(keys)] } else if programs.is_empty() || start.failed != 0 || blocked {
             alloc::vec![String::from(keys)]
         } else {
             alloc::vec![String::from("Up/Down choose   Enter open"), String::from("Esc back   F1 keys   F10 off")]
@@ -1541,6 +1579,11 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
         if !p.arguments.is_empty() {
             at(66, row, &format!("with: {}", p.arguments.chars().take(30).collect::<String>()), SOFT, ground);
         }
+        if cut_blocks_launch(start) {
+            at(4, row + 1, CUT_LINE_NOTICE, ui::BAD, ground);
+            row += 2;
+            continue;
+        }
         let proposes = file_proposals(start, p, none);
         at(4, row + 1, detail_access(none, proposes, start.sound), SOFT, ground);
         row += 2;
@@ -1595,7 +1638,9 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
         }
     }
     ui::fill(0, (rows - 2) * ui::CELL_H, cols * ui::CELL_W, 2 * ui::CELL_H, PANEL);
-    at(2, rows - 2, "Up/Down choose    Enter start    D desktop    R register    P off", TEXT, PANEL);
+    let keys = if cut_blocks_launch(start) { "Up/Down choose    D desktop    R register    P off" }
+               else { "Up/Down choose    Enter start    D desktop    R register    P off" };
+    at(2, rows - 2, keys, TEXT, PANEL);
     at(2, rows - 1, "Ctrl+Alt+Delete stops a running program and returns here. No program can take that key.", SOFT, PANEL);
 }
 
@@ -1681,6 +1726,10 @@ fn details_view(start: &Start, programs: &[Entry], files: &[(String, &'static [u
         lines.extend(whole(4, &p.digest, SOFT));
         if !p.arguments.is_empty() {
             lines.extend(lines_of(4, &format!("with: {}", p.arguments), SOFT));
+        }
+        if cut_blocks_launch(start) {
+            lines.extend(lines_of(4, CUT_LINE_NOTICE, ui::BAD));
+            continue;
         }
         let proposes = file_proposals(start, p, none);
         lines.extend(lines_of(4, detail_access(none, proposes, start.sound), SOFT));
@@ -1940,7 +1989,7 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
     // and that program must not then be started as an ordinary one with the right to write files. Which
     // program it was cannot be known, so none is started.
     #[cfg(feature = "proposals")]
-    if start.boot.exact_command_line().is_none() {
+    if cut_blocks_launch(start) {
         say!("{} was not started: {}", entry.name, CUT_LINE);
         return (format!("{} was not started: {}", entry.name, CUT_LINE), world, Some(CUT_LINE));
     }
