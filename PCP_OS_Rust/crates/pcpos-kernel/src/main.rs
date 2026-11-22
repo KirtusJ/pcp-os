@@ -871,6 +871,14 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
                         }
                         check("every other processor that was tried answered, as itself, able to do what the first can and holding the same memory types, and is parked",
                               !o.silent && o.parked + o.out_of_reach == o.listed && o.not_itself == 0 && o.different == 0, &mut failed);
+                        if o.parked > 0 && !o.silent && o.not_itself == 0 && o.different == 0 {
+                            arch::interrupts_on();
+                            let (count, wanted, finished) = arch::others::count_together(20_000);
+                            arch::interrupts_off();
+                            say!("other processors: all {} processors added to one count together, each giving the kernel's lock up and taking it again 20000 times: {} of {}", o.parked + 1, count, wanted);
+                            check("every processor answers a message, and with all of them in and out of the kernel at once its one lock lets in one at a time: the count is exact",
+                                  finished && count == wanted, &mut failed);
+                        }
                         let after = arch::kernel_map_audit();
                         check("after starting them the kernel's map is as it was, with at most the one page of the interrupt controller's registers added, never executable",
                               arch::MapAudit { controller_pages: 0, ..after } == before && after.controller_pages == (o.through_memory && o.listed > 0) as u32, &mut failed);

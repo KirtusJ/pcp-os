@@ -87,6 +87,23 @@ ap_entry:
     hlt
     jmp  1b
 
+# Where another processor waits when it has nothing to do: interrupts on, halted. A message from
+# another processor (vector 240) is what wakes it; the handler returns here.
+.global ap_idle
+.global ap_idle_end
+ap_idle:
+    sti
+1:  hlt
+    jmp  1b
+ap_idle_end:
+
+# The entry for a message from another processor, built like every other entry in boot.s.
+.global isr_message
+isr_message:
+    pushq $0
+    pushq $240
+    jmp  isr_common
+
 .section .data
 .align 8
 .global ap_stack_top

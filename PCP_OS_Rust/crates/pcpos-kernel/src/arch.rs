@@ -1434,6 +1434,17 @@ impl Frame {
         self.cs & 3 == 3
     }
 
+    /// Whether this is a place outside the kernel's own work: a program, or a processor idling.
+    #[cfg(feature = "processors")]
+    pub fn outside(&self) -> bool {
+        extern "C" {
+            fn idle_loop();
+            fn idle_loop_end();
+        }
+        let at = self.rip as usize;
+        self.from_user() || (at >= idle_loop as usize && at < idle_loop_end as usize) || others::idling(at)
+    }
+
     /// What the processor runs when no program is ready: the idle loop, in the kernel, on a stack of its own, with interrupts allowed.
     pub fn idle() -> Frame {
         extern "C" {
@@ -1496,9 +1507,20 @@ extern "C" {
     fn probe_exec(addr: *const u8);
 }
 
-/// Entered from `isr_common` for every exception and interrupt.
+/// Entered from `isr_common` for every exception and interrupt, on whichever processor it arrived.
+/// With more than one processor running, the kernel's code still runs on one at a time: an entry
+/// from outside the kernel (a program, or a processor that was idling) waits here for the kernel's
+/// one lock, and gives it up when it goes back outside (arch/others.rs).
 #[no_mangle]
 pub extern "C" fn exception_entry(frame: &mut Frame) {
+    #[cfg(feature = "processors")]
+    let entered = others::enter(frame.outside());
+    entry(frame);
+    #[cfg(feature = "processors")]
+    others::leave(entered, frame.outside());
+}
+
+fn entry(frame: &mut Frame) {
     let user = frame.from_user();
     match frame.vector {
         32 => {
@@ -1527,6 +1549,8 @@ pub extern "C" fn exception_entry(frame: &mut Frame) {
             outb(0x20, 0x20);
             crate::user::trap(frame, Trap::Device, user);
         }
+        #[cfg(feature = "processors")]
+        240 if !user => others::message(),
         128 if user => crate::user::trap(frame, Trap::Call, true),
         129 if !user => crate::user::trap(frame, Trap::Enter, false),
         130 if user => crate::user::trap(frame, Trap::Syscall, true),
@@ -1641,6 +1665,8 @@ pub fn interrupts_init() {
                 0..=47 => isr_table[v],
                 128 => isr_table[48],
                 129 => isr_table[49],
+                #[cfg(feature = "processors")]
+                240 => others::message_stub(), // a message from another processor
                 _ => isr_table[50],
             };
             let ist = match v {

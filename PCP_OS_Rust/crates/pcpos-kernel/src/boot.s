@@ -203,10 +203,13 @@ syscall_entry:
 
 # What the processor runs when no program is ready and one is waiting: nothing, until an interrupt.
 .global idle_loop
+.global idle_loop_end
 idle_loop:
     hlt
     jmp idle_loop
+idle_loop_end:
 
+.global isr_common
 isr_common:
     pushq %rax
     pushq %rcx

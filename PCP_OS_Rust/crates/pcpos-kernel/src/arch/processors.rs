@@ -123,6 +123,8 @@ pub fn find(root: u64, read: &mut dyn FnMut(u64, usize) -> Option<Vec<u8>>) -> R
     }
     let mut found = Found { controller: u32_at(&madt, 36).ok_or(Refused::BadTable)? as u64, processors: Vec::new(), beyond: 0, disabled: 0 };
     let mut at = 44;
+    // The identities of usable processors beyond the ones kept.
+    let mut further: Vec<u32> = Vec::new();
     while at < madt.len() {
         let (kind, length) = match (madt.get(at), madt.get(at + 1)) {
             (Some(kind), Some(length)) => (*kind, *length as usize),
@@ -150,12 +152,15 @@ pub fn find(root: u64, read: &mut dyn FnMut(u64, usize) -> Option<Vec<u8>>) -> R
             // is not enabled now is not started.) The identity 255, in the short form, means no one.
             if flags & 1 == 0 || (!extended && apic == 0xFF) {
                 found.disabled += 1;
-            } else if apic == u32::MAX || found.processors.iter().any(|p| p.apic == apic) {
+            } else if apic == u32::MAX || found.processors.iter().any(|p| p.apic == apic) || further.contains(&apic) {
                 // An entry in use must name exactly one processor. The identity of all ones is, in the
                 // extended way of addressing, every processor at once: a table that lists it as one
                 // is wrong, like a table that lists one twice.
                 return Err(Refused::BadProcessors);
             } else if found.processors.len() == MOST {
+                // Not kept for starting, but kept for this: one listed twice is a wrong table
+                // wherever in it the two entries lie (found by the automated review of stage 1).
+                further.push(apic);
                 found.beyond += 1;
             } else {
                 found.processors.push(Processor { apic, extended: extended && apic > 254 });
@@ -567,5 +572,20 @@ mod tests {
         let whole = [entry(0, 0x9fc00, 1), entry(0x10_0000, 0x700_0000, 1)].concat();
         assert_eq!(low_free_page(&whole[..whole.len() - 2]), None);
         assert_eq!(low_free_page(&[]), None);
+    }
+
+    #[test]
+    fn one_listed_twice_is_refused_also_among_those_beyond_the_ones_kept() {
+        let many = |extra: &[u32]| {
+            let mut entries: Vec<Vec<u8>> = (0..MOST as u32 + 1).map(|i| wide(i, 1)).collect();
+            entries.extend(extra.iter().map(|i| wide(*i, 1)));
+            machine(2, madt(&entries))
+        };
+        let found = find(ROOT, &mut many(&[1000]).read()).unwrap();
+        assert_eq!((found.processors.len(), found.beyond), (MOST, 2));
+        // The one just beyond the ones kept again, one further on again, and one of the kept ones again.
+        for again in [MOST as u32, 1000, 3] {
+            assert_eq!(find(ROOT, &mut many(&[1000, again]).read()), Err(Refused::BadProcessors), "{again}");
+        }
     }
 }
