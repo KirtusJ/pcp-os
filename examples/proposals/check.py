@@ -154,6 +154,9 @@ def main():
     # (less 58). With them the full-store cases run; without them they are reported as not run.
     parser.add_argument("--filler-over", type=Path)
     parser.add_argument("--filler-exact", type=Path)
+    # A third build, in a file named store-after (FILL=57 FILE=after.bin): after the refusal for want of
+    # one byte it writes the 57 bytes that are left, as an ordinary program, and reads them back.
+    parser.add_argument("--filler-after", type=Path)
     args = parser.parse_args()
     evidence = args.evidence.resolve()
     evidence.mkdir(parents=True, exist_ok=False)
@@ -279,7 +282,9 @@ def main():
         if filler is None:
             continue
         full_run.append(name)
-        guest = Guest(args.qemu, args.kernel, args.probe, evidence / name, "auto=store-filler then=menu propose_image=%s" % digest, also=filler)
+        after = args.filler_after if not made else None
+        guest = Guest(args.qemu, args.kernel, args.probe, evidence / name, "auto=store-filler then=menu propose_image=%s" % digest,
+                      also="%s,%s" % (filler, after) if after else filler)
         try:
             filled = guest.until("filler: of ", seconds=120)
             time.sleep(3)
@@ -292,11 +297,30 @@ def main():
             guest.key("ret")
             answered = guest.until("probe: outcome ", seconds=20)
             time.sleep(1.0)
+            if after:
+                # The refusal must leave the store as it was: the proposing program is let finish (a
+                # space refuses its later questions), and then an ordinary program writes exactly the
+                # bytes that are left and reads them back.
+                for _ in range(12):
+                    if guest.until("probe: done", seconds=4):
+                        break
+                    guest.key("spc")
+                time.sleep(3)
+                guest.key("down")
+                time.sleep(0.5)
+                guest.key("down")
+                time.sleep(0.5)
+                guest.key("ret")
+                guest.until("starting store-after", seconds=20)
+                time.sleep(4)
+                full_run.append("an ordinary write into the room left after the refusal")
             full_log = guest.log()
             results[name] = {"probe": [line for line in full_log.splitlines() if line.startswith(("probe:", "proposal ", "filler:"))][:12]}
             wrote = [line for line in full_log.splitlines() if line.startswith("filler: ")]
-            if not filled or len(wrote) != 2 or wrote[0].split()[-1] != wrote[1].split()[-1]:
-                found.append("%s: the filler did not write all it was built to: %r" % (name, wrote))
+            if not filled or len(wrote) < 4 or wrote[0].split()[-1] != wrote[1].split()[-1] or wrote[3] != "filler: read back the same 1":
+                found.append("%s: the filler did not write all it was built to, or read it back: %r" % (name, wrote[:4]))
+            if after and wrote[4:] != ["filler: wrote 57", "filler: of 57", "filler: read back 57", "filler: read back the same 1"]:
+                found.append("%s: after the refusal an ordinary program did not write and read back the 57 bytes left: %r" % (name, wrote[4:]))
             if not asked or not answered or answers(full_log)[:3] != [str(RECORD), "100", outcome]:
                 found.append("%s: the first proposal was answered %r, not outcome %s" % (name, answers(full_log)[:3], outcome))
             if len([line for line in full_log.splitlines() if "CREATED after the person allowed it" in line]) != made:

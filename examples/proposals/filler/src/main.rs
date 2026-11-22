@@ -1,8 +1,9 @@
 #![no_std]
 #![no_main]
 //! A test program for `examples/proposals/check.py`: an ordinary program with the store, which writes one
-//! file of a set size so that the next proposal finds the store with exactly so much room. The size is
-//! fixed when it is built (FILL=<bytes>), so each size is a different program with its own digest.
+//! file of a set size so that the next proposal finds the store with exactly so much room, then reads
+//! it back. The size and the file's name are fixed when it is built (FILL=<bytes>, FILE=<name>), so
+//! each is a different program with its own digest.
 use pcp_game_guest::{call, exit, log, open};
 
 const fn number(text: &str) -> usize {
@@ -17,6 +18,7 @@ const fn number(text: &str) -> usize {
 }
 
 const BYTES: usize = number(match option_env!("FILL") { Some(text) => text, None => "0" });
+const FILE: &str = match option_env!("FILE") { Some(name) => name, None => "filler.bin" };
 
 fn say(words: &[u8], mut value: usize) {
     let mut digits = [0u8; 20];
@@ -40,7 +42,12 @@ pcp_game_guest::entry!(filler_main);
 #[no_mangle]
 pub extern "C" fn filler_main() -> ! {
     static CHUNK: [u8; 65536] = [b'.'; 65536];
-    let fd = open(b"elsewhere/filler.bin\0", 0x41);
+    let mut path = [0u8; 64];
+    let folder = b"elsewhere/";
+    path[..folder.len()].copy_from_slice(folder);
+    path[folder.len()..folder.len() + FILE.len()].copy_from_slice(FILE.as_bytes());
+    let path = &path[..folder.len() + FILE.len() + 1];
+    let fd = open(path, 0x41);
     if fd < 0 {
         log(b"filler: the file could not be made\n");
         exit(3);
@@ -56,5 +63,22 @@ pub extern "C" fn filler_main() -> ! {
     }
     say(b"filler: wrote ", written);
     say(b"filler: of ", BYTES);
+    // What was written is read back whole from a second descriptor: every byte, and no more.
+    call(3, fd as usize, 0, 0, 0, 0, 0);
+    let back = open(path, 0);
+    let (mut read, mut same) = (0usize, back >= 0);
+    static mut BACK: [u8; 65536] = [0; 65536];
+    // Safety: one thread; used only here.
+    let buffer = unsafe { &mut *core::ptr::addr_of_mut!(BACK) };
+    while back >= 0 {
+        let got = call(0, back as usize, buffer.as_mut_ptr() as usize, buffer.len(), 0, 0, 0);
+        if got <= 0 {
+            break;
+        }
+        same &= buffer[..got as usize].iter().all(|b| *b == b'.');
+        read += got as usize;
+    }
+    say(b"filler: read back ", read);
+    say(b"filler: read back the same ", (same && read == written) as usize);
     exit(if written == BYTES { 0 } else { 4 });
 }
