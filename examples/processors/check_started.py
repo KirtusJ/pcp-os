@@ -19,14 +19,33 @@ without the feature, and the two this feature adds), with no FAIL line.
     halted in ring 0; each other one has interrupts off, is in 64-bit mode, and has the first one's
     CR0, CR4, CR3 and interrupt table; all four segment tables are at different addresses, and each
     task register points into its own processor's segment table page.
+ S8 in every boot of S1 to S3 that starts another processor, the kernel says that every one it
+    started came up holding other memory types than the first and was given the first's (this
+    emulator returns a restarted processor with those registers cleared; a real processor keeps
+    them, and the kernel then writes nothing). The check that all hold the same afterwards passes.
  S5 the kernel built without the feature, 4 processors: it says nothing of other processors, passes
-    71, status 33; and by the emulator's account the other three never left their reset state (CR0
-    has paging and protection off).
- S6 the extended-mode demonstration, 4 processors: all three start, the controller reached in its
-    extended mode; sound.
+    71, status 33; and by the emulator's account the other three are not on the kernel's map (paging
+    is off in their CR0): the kernel never started them.
+ S6 the extended-mode demonstration, 4 processors: where the emulator offers the extended mode, all
+    three start with the controller reached in it, and the boot is sound. Where the emulator does
+    not offer it (it says so when asked for it), this predicate is NOT RUN and that is printed; it
+    is then neither passed nor failed.
  S7 the silent demonstration, 4 processors: 3 of 4 started; the check that every one answered FAILs
-    and nothing else does (72 passes, status 35); the check of the map still passes; and the boot
-    takes less than 60 seconds more than S1's 4-processor boot.
+    and no other does, status 35; the check of the map still passes; and the boot takes less than
+    60 seconds more than S1's 4-processor boot. (How many checks pass is not fixed here: a kernel
+    that failed a check does not go on to the tests that need the keyboard.)
+
+The first run of this file (record pr4-started-20261122T141701Z, kept) failed three predicates as
+then written, and each was the predicate's error or the emulator's limit, not the kernel's: S5
+required CR0 as at reset, but this BIOS itself leaves the others in protected mode; S6 could not be
+run because this emulator does not offer the extended mode, and the kernel correctly stayed in the
+ordinary one; S7 required 72 passes, but a kernel with a failed check stops before the keyboard tests.
+The second run (pr6-started-20261122T142009Z, kept) failed S2 to S4 for a reason that was the
+kernel's to deal with: it had begun to compare each processor's memory types with the first's, and
+in this emulator they differ. The kernel now gives them the first's, and S8 was added. The third
+run (pr7-started-20261122T142600Z, kept) failed S4 because this file read the registers three
+seconds after the kernel's last line and the first processor had not yet halted; it now waits
+until the emulator says the machine has shut down.
 
 Usage: check_started.py <kernel with processors> <kernel without> <extended demo> <silent demo> [--qemu ...]
 This is an emulator with SeaBIOS. Nothing here is a run on a real machine or under UEFI firmware.
@@ -51,7 +70,8 @@ def boot(qemu, kernel, kind, memory, smp):
     done = subprocess.run(machine(qemu, kernel, kind, memory, smp) + ["-serial", "stdio", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"], capture_output=True, timeout=900)
     lines = done.stdout.decode(errors="replace").splitlines()
     return {"status": done.returncode, "passes": sum(1 for line in lines if line.startswith("  pass ")), "fails": [line for line in lines if line.startswith("  FAIL ")],
-            "said": [line for line in lines if line.startswith("other processors: ")], "lines": lines, "took": time.monotonic() - began}
+            "said": [line for line in lines if line.startswith("other processors: ") and "started and parked" in line],
+            "given": [line for line in lines if line.startswith("other processors: ") and "memory types" in line], "lines": lines, "took": time.monotonic() - began}
 
 
 def registers(qemu, kernel, smp):
@@ -65,7 +85,6 @@ def registers(qemu, kernel, smp):
             until = time.monotonic() + 600
             while time.monotonic() < until and not (log.exists() and b"SELF-TEST" in log.read_bytes()):
                 time.sleep(1)
-            time.sleep(3)
             link = socket.socket(socket.AF_UNIX)
             link.connect(path)
             link.settimeout(5)
@@ -80,7 +99,13 @@ def registers(qemu, kernel, smp):
                     pass
                 return text.decode(errors="replace")
             ask("info version")
-            status = ask("info status")
+            # The kernel has stopped when the emulator says the machine shut down; until then the
+            # first processor may still be at work, and its registers are not yet the ones to read.
+            status = ""
+            until = time.monotonic() + 120
+            while "shutdown" not in status and time.monotonic() < until:
+                time.sleep(1)
+                status = ask("info status")
             text = ask("info registers -a")
         finally:
             running.kill()
@@ -112,12 +137,18 @@ def main():
     def line(parked, listed, reached, threads, cores):
         return ["other processors: %d of %d started and parked, the interrupt controller reached %s; %d thread(s) on %d core(s) in all; none runs any work yet" % (parked, listed, reached, threads, cores)]
 
+    def given(label, run, parked):
+        want = ["other processors: %d came up holding other memory types than the first and were given the first's" % parked] if parked else []
+        if run["given"] != want:
+            problems.append("S8 (%s): the kernel said %r" % (label, run["given"]))
+
     four = None
     for kind, memory, counts in (("pc", "256M", (1, 2, 4, 8)), ("q35", "6G", (4,))):
         for count in counts:
             run = boot(args.qemu, args.kernel, kind, memory, str(count))
             label = "S1 %s, %s, %d" % (kind, memory, count)
             sound(label, run)
+            given(label, run, count - 1)
             if run["said"] != line(count - 1, count - 1, "through memory", count, count):
                 problems.append("%s: the kernel said %r" % (label, run["said"]))
             else:
@@ -126,12 +157,14 @@ def main():
                 four = run["took"]
     run = boot(args.qemu, args.kernel, "pc", "256M", "4,cores=2,threads=2")
     sound("S2", run)
+    given("S2", run, 3)
     if run["said"] != line(3, 3, "through memory", 4, 2):
         problems.append("S2: the kernel said %r" % run["said"])
     else:
         print("S2: %s" % run["said"][0])
     run = boot(args.qemu, args.kernel, "pc", "256M", "2,maxcpus=4")
     sound("S3", run)
+    given("S3", run, 1)
     listed = [text for text in run["lines"] if text.startswith("processors: the firmware lists")]
     if run["said"] != line(1, 1, "through memory", 2, 2) or len(listed) != 1 or not listed[0].startswith("processors: the firmware lists 2 usable") or "2 not to be used" not in listed[0]:
         problems.append("S3: the kernel said %r and %r" % (listed, run["said"]))
@@ -164,27 +197,32 @@ def main():
     run = boot(args.qemu, args.plain, "pc", "256M", "4")
     sound("S5", run, passes=71)
     status, cpus = registers(args.qemu, args.plain, "4")
-    if run["said"] or len(cpus) != 4 or any(cpu["cr0"] is None or int(cpu["cr0"], 16) & 0x80000001 for cpu in cpus[1:]):
+    if run["said"] or len(cpus) != 4 or any(cpu["cr0"] is None or int(cpu["cr0"], 16) & 0x80000000 for cpu in cpus[1:]):
         problems.append("S5: said %r; the others' CR0: %r" % (run["said"], [cpu["cr0"] for cpu in cpus[1:]]))
     else:
-        print("S5: without the feature nothing is said of other processors, and their CR0 is %s: never started" % ", ".join(cpu["cr0"] for cpu in cpus[1:]))
+        print("S5: without the feature nothing is said of other processors, and their CR0 is %s: paging off, never on the kernel's map" % ", ".join(cpu["cr0"] for cpu in cpus[1:]))
 
-    run = boot(args.qemu, args.extended, "pc", "256M", "4")
-    sound("S6", run)
-    if run["said"] != line(3, 3, "in its extended mode", 4, 4):
-        problems.append("S6: the kernel said %r" % run["said"])
+    offered = subprocess.run([args.qemu, "-machine", "pc", "-accel", "tcg", "-cpu", "max,+x2apic", "-display", "none", "-nic", "none", "-S", "-monitor", "stdio"], input=b"quit\n", capture_output=True, timeout=60)
+    if b"x2apic" in offered.stderr:
+        print("S6: NOT RUN: this emulator does not offer the extended mode (%s)" % offered.stderr.decode(errors="replace").strip().splitlines()[0])
     else:
-        print("S6: %s" % run["said"][0])
+        run = boot(args.qemu, args.extended, "pc", "256M", "4")
+        sound("S6", run)
+        if run["said"] != line(3, 3, "in its extended mode", 4, 4):
+            problems.append("S6: the kernel said %r" % run["said"])
+        else:
+            print("S6: %s" % run["said"][0])
 
     run = boot(args.qemu, args.silent, "pc", "256M", "4")
-    sound("S7", run, passes=72, status=35)
-    answered = "  FAIL every other processor that was tried answered, as itself and able to do what the first can, and is parked"
+    answered = "  FAIL every other processor that was tried answered, as itself, able to do what the first can and holding the same memory types, and is parked"
     mapped = "  pass after starting them the kernel's map is as it was, with at most the one page of the interrupt controller's registers added, never executable"
-    if run["said"] != line(3, 4, "through memory", 4, 4) or run["fails"] != [answered] or mapped not in run["lines"] or four is None or run["took"] > four + 60:
-        problems.append("S7: said %r, FAIL lines %r, took %.1f s against %r" % (run["said"], run["fails"], run["took"], four))
+    if run["status"] != 35 or run["said"] != line(3, 4, "through memory", 4, 4) or run["fails"] != [answered] or mapped not in run["lines"] or four is None or run["took"] > four + 60:
+        problems.append("S7: status %r, said %r, FAIL lines %r, took %.1f s against %r" % (run["status"], run["said"], run["fails"], run["took"], four))
     else:
         print("S7: %s; the one check fails and the map check passes; %.1f s against %.1f s" % (run["said"][0], run["took"], four))
 
+    if not any(text.startswith("S8") for text in problems):
+        print("S8: every processor started in S1 to S3 was given the first's memory types, and said so")
     if problems:
         sys.exit("\n".join(problems))
     print("other processors: started and parked as the predicates require, on every machine tried")

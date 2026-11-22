@@ -863,10 +863,13 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
                             Some(cores) => say!("other processors: {} of {} started and parked, the interrupt controller reached {}; {} thread(s) on {} core(s) in all; none runs any work yet", o.parked, o.listed, reached, o.threads, cores),
                             None => say!("other processors: {} of {} started and parked, the interrupt controller reached {}; {} in all, and which share a core is not known; none runs any work yet", o.parked, o.listed, reached, o.threads),
                         }
+                        if o.given_types > 0 {
+                            say!("other processors: {} came up holding other memory types than the first and were given the first's", o.given_types);
+                        }
                         if o.out_of_reach > 0 {
                             say!("other processors: {} not tried: their identities need a mode the machine is not in", o.out_of_reach);
                         }
-                        check("every other processor that was tried answered, as itself and able to do what the first can, and is parked",
+                        check("every other processor that was tried answered, as itself, able to do what the first can and holding the same memory types, and is parked",
                               !o.silent && o.parked + o.out_of_reach == o.listed && o.not_itself == 0 && o.different == 0, &mut failed);
                         let after = arch::kernel_map_audit();
                         check("after starting them the kernel's map is as it was, with at most the one page of the interrupt controller's registers added, never executable",

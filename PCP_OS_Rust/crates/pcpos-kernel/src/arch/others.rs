@@ -176,7 +176,71 @@ fn abilities() -> [u32; 7] {
     }
 }
 
+/// How a processor is told to treat each range of memory (cached, uncached, write-combining): the
+/// registers that say so, with their values, and how many there are. Every processor of a machine
+/// must hold the same. Firmware sets them on all, and on a real processor a start-up message leaves
+/// them alone; an emulator's processor can come back with them cleared, and firmware is not always
+/// right, which is why the usual practice, followed here, is that each processor started is given
+/// the first one's when its own differ.
+const TYPE_REGISTERS: usize = 2 * 32 + 11 + 2;
+type Types = ([(u32, u64); TYPE_REGISTERS], usize);
+
+fn memory_types() -> Types {
+    let features = core::arch::x86_64::__cpuid(1).edx;
+    let mut out: Types = ([(0, 0); TYPE_REGISTERS], 0);
+    let mut keep = |register: u32| {
+        out.0[out.1] = (register, rdmsr(register));
+        out.1 += 1;
+    };
+    if features & (1 << 12) != 0 {
+        let has = rdmsr(0xFE);
+        for n in 0..(has & 0xFF).min(32) as u32 {
+            keep(0x200 + 2 * n);
+            keep(0x201 + 2 * n);
+        }
+        if has & (1 << 8) != 0 {
+            for register in [0x250, 0x258, 0x259, 0x268, 0x269, 0x26A, 0x26B, 0x26C, 0x26D, 0x26E, 0x26F] {
+                keep(register);
+            }
+        }
+        keep(0x2FF); // which kind is the default, and whether the registers above are in force: written last
+    }
+    if features & (1 << 16) != 0 {
+        keep(0x277);
+    }
+    out
+}
+
+/// Give this processor the first one's memory types, by the procedure the processor makers give for
+/// changing them: caches put in no-fill mode and emptied, translations forgotten, the registers
+/// turned off, written, and turned on again by the last write, caches and translations emptied again.
+/// The caller has interrupts off and restores CR0 afterwards.
+///
+/// # Safety
+/// The processor must be one whose registers are the same kind and number as the first's (its
+/// abilities equal), running nothing else, and `types` what the first processor holds.
+unsafe fn take_memory_types(types: &Types) {
+    let mut cr0: u64;
+    asm!("mov {}, cr0", out(reg) cr0, options(nomem, nostack, preserves_flags));
+    cr0 = (cr0 | 1 << 30) & !(1 << 29);
+    asm!("mov cr0, {}", in(reg) cr0, options(nomem, nostack, preserves_flags));
+    asm!("wbinvd", "mov {t}, cr3", "mov cr3, {t}", t = out(reg) _, options(nostack, preserves_flags));
+    if types.0[..types.1].iter().any(|(register, _)| *register == 0x2FF) {
+        wrmsr(0x2FF, rdmsr(0x2FF) & !(1 << 11));
+    }
+    for &(register, value) in &types.0[..types.1] {
+        if register != 0x2FF {
+            wrmsr(register, value);
+        }
+    }
+    if let Some(&(_, value)) = types.0[..types.1].iter().find(|(register, _)| *register == 0x2FF) {
+        wrmsr(0x2FF, value);
+    }
+    asm!("wbinvd", "mov {t}, cr3", "mov cr3, {t}", t = out(reg) _, options(nostack, preserves_flags));
+}
+
 /// What the first processor is set to, for the others to be set the same.
+static FIRST_TYPES: Single<Types> = Single::new(([(0, 0); TYPE_REGISTERS], 0));
 static FIRST_CR0: AtomicU64 = AtomicU64::new(0);
 static FIRST_CR4: AtomicU64 = AtomicU64::new(0);
 static FIRST_ABILITIES: Single<[u32; 7]> = Single::new([0; 7]);
@@ -188,6 +252,7 @@ static ANSWERED: AtomicUsize = AtomicUsize::new(0);
 const UNKNOWN_THREADS: u64 = 1 << 40;
 const NOT_ITSELF: u64 = 1 << 41;
 const DIFFERENT: u64 = 1 << 42;
+const GIVEN_TYPES: u64 = 1 << 43;
 static SAID: [AtomicU64; OTHERS] = [const { AtomicU64::new(0) }; OTHERS];
 
 /// Where another processor arrives from `ap_entry` in others.s: in 64-bit mode on the kernel's map, on
@@ -201,7 +266,14 @@ extern "C" fn ap_main() -> ! {
     if who != EXPECTED.load(Ordering::SeqCst) {
         said |= NOT_ITSELF;
     }
-    let same = FIRST_ABILITIES.with(|first| *first == abilities());
+    // The first processor wrote these before any other was started and does not write them again.
+    let mut same = FIRST_ABILITIES.with(|first| *first == abilities());
+    if same && FIRST_TYPES.with(|first| *first != memory_types()) {
+        // Safety: its abilities equal the first's, it runs nothing else, and interrupts are off.
+        unsafe { FIRST_TYPES.with(|first| take_memory_types(first)) };
+        said |= GIVEN_TYPES;
+        same = FIRST_TYPES.with(|first| *first == memory_types());
+    }
     // Safety: the segment table and task state segment are this processor's own, filled by `prepare`;
     // loading the task register writes one bit into that read-only page, which is why write
     // protection is not yet on; the interrupt table is the one every processor shares, whose three
@@ -254,9 +326,12 @@ pub struct Started {
     pub listed: usize,
     /// How many answered, in 64-bit mode on their own stacks, and are parked.
     pub parked: usize,
-    /// Of those, how many said they were someone else than the one addressed, or cannot do what the first can.
+    /// Of those, how many said they were someone else than the one addressed, and how many cannot do
+    /// what the first can, or still hold other memory types than it after being given its (those are left with write protection and nothing more).
     pub not_itself: usize,
     pub different: usize,
+    /// How many came up holding other memory types than the first and were given the first's.
+    pub given_types: usize,
     /// How many were not tried because their identity needs the extended mode and the machine is not in it.
     pub out_of_reach: usize,
     /// Whether one did not answer (it was returned to waiting, and no further one was tried).
@@ -298,6 +373,12 @@ pub fn start(found: &processors::Found, page: Option<u64>) -> Result<Started, &'
         return Err("the processor's interrupt controller is turned off");
     }
     let extended = base & (1 << 10) != 0;
+    // The way of reaching the controller in its extended mode has been run on no machine and no
+    // emulator yet (the one used here does not offer the mode). Until it has, it is not used.
+    #[cfg(not(feature = "processors-extended"))]
+    if extended {
+        return Err("firmware left the interrupt controller in its extended mode, which this kernel has not yet been proven on");
+    }
     if !extended && base & ADDRESS != found.controller {
         return Err("the interrupt controller is not where the firmware's table says");
     }
@@ -371,6 +452,7 @@ pub fn start(found: &processors::Found, page: Option<u64>) -> Result<Started, &'
         asm!("mov {}, cr4", out(reg) cr, options(nomem, nostack, preserves_flags));
         FIRST_CR4.store(cr, Ordering::SeqCst);
         FIRST_ABILITIES.with(|a| *a = abilities());
+        FIRST_TYPES.with(|t| *t = memory_types());
         *small_entry(page) = page as u64 | P | W | NX;
         forget(page);
         core::ptr::write_bytes(page as *mut u8, 0, 4096);
@@ -439,6 +521,7 @@ pub fn start(found: &processors::Found, page: Option<u64>) -> Result<Started, &'
     for said in SAID[..slot].iter().map(|s| s.load(Ordering::SeqCst)) {
         out.not_itself += (said & NOT_ITSELF != 0) as usize;
         out.different += (said & DIFFERENT != 0) as usize;
+        out.given_types += (said & GIVEN_TYPES != 0) as usize;
         known &= said & UNKNOWN_THREADS == 0;
         let core = (said as u32) >> (said >> 32 & 31);
         if !cores.contains(&core) {
