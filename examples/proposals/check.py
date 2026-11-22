@@ -48,6 +48,9 @@ Predicates, fixed before the first run.
  N1 without `propose_image` on the command line the program is refused the proposal device (-13) and
     nobody is asked: no screen, no CREATED, no DENIED.
  Every case: the emulator ends with status 33 (the kernel's own checks passed and it powered off).
+ C1 (with --companion, on a kernel built with the companion feature as well): every case comes out
+    the same with a second program beside the probe, waiting on the channel, and in the cases that
+    ask the person the kernel says it started that program. Without --companion none is started.
 
 Usage: check.py <kernel.elf32 built with proposals> <proposal-probe ELF> <new evidence folder>
 This is an emulator; the keys are sent by the emulator, not pressed by a person.
@@ -57,10 +60,12 @@ import hashlib
 import json
 from pathlib import Path
 import runpy
+import shutil
 import socket
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 
 HERE = Path(__file__).resolve().parent
@@ -71,10 +76,26 @@ CONTENT = b"Hello.\nThis file was made by PCP OS after you allowed it.\n"
 RECORD = 32 + len(NAME) + len(CONTENT)
 
 
+# Words of padding that make a loader line longer than the kernel takes whole (1,023 bytes; 255
+# before the line was lengthened): 80 words of 15 bytes and the spaces between them.
+PADS = 80
+
+
 class Guest:
+    # (file, digest of the probe, digest of the file) when every run of the probe is to have a
+    # companion beside it; None otherwise.
+    companion = None
+
     def __init__(self, qemu, kernel, probe, out, append, also=None):
         out.mkdir(parents=True)
-        self.out, self.serial, sock = out, out / "serial.txt", out / "q.sock"
+        if Guest.companion and "auto=proposal-probe" in append:
+            beside, front, back = Guest.companion
+            also = "%s,%s" % (also, beside) if also else str(beside)
+            append += " worker_for=%s worker_image=%s" % (front, back)
+        # The socket is kept in a short directory of its own: a socket's path may hold 107 bytes, and
+        # the evidence directory's can be longer than that.
+        self.out, self.serial, sock = out, out / "serial.txt", Path(tempfile.mkdtemp(prefix="q")) / "s"
+        self.socket_at = sock
         self.process = subprocess.Popen(
             [qemu, "-machine", "pc", "-accel", "tcg", "-cpu", "max", "-m", "128M", "-kernel", str(kernel),
              "-initrd", "%s proposal-probe" % probe + (",%s" % also if also else ""), "-append", append, "-vga", "std", "-display", "none", "-nic", "none",
@@ -141,6 +162,8 @@ class Guest:
             self.process.kill()
             self.process.wait()
             return None
+        finally:
+            shutil.rmtree(self.socket_at.parent, ignore_errors=True)
 
 
 def main():
@@ -157,6 +180,10 @@ def main():
     # A third build, in a file named store-after (FILL=57 FILE=after.bin): after the refusal for want of
     # one byte it writes the 57 bytes that are left, as an ordinary program, and reads them back.
     parser.add_argument("--filler-after", type=Path)
+    # A kernel built with the companion feature as well, and a program that waits on the channel
+    # (examples/companion/probe built with BACK=1): every run of the probe then has it beside it, and
+    # each case must come out the same, the companion having been started.
+    parser.add_argument("--companion", type=Path)
     args = parser.parse_args()
     evidence = args.evidence.resolve()
     evidence.mkdir(parents=True, exist_ok=False)
@@ -165,6 +192,8 @@ def main():
     content = hashlib.sha256(CONTENT).hexdigest()
     request = hashlib.sha256(len(NAME).to_bytes(4, "little") + len(CONTENT).to_bytes(4, "little") + NAME.encode() + CONTENT).hexdigest()
     granted = "auto=proposal-probe then=off propose_image=%s" % digest
+    if args.companion:
+        Guest.companion = (args.companion.resolve(), digest, hashlib.sha256(args.companion.read_bytes()).hexdigest())
     problems, results = [], {}
 
     def case(name, append, keys, asked, idle=None):
@@ -255,10 +284,10 @@ def main():
     for name, extra, why, said_words in (
             ("bad-folder", " build_folder=Dev/x", "build_folder=Dev/x is not a name a build folder may have; no build folder is set", "its projects folder setting is not a valid name"),
             ("two-folders", " build_folder=one build_folder=two", "build_folder=one is given more than once; no build folder is set", "its projects folder setting is not a valid name"),
-            ("cut-line", " " + " ".join("pad%02d=xxxxxxxx" % n for n in range(20)), "the loader's line was not taken whole, so no build folder is set", "the loader's line was cut, so what it may use is not known"),
+            ("cut-line", " " + " ".join("pad%02d=xxxxxxxx" % n for n in range(PADS)), "the loader's line was not taken whole, so no build folder is set", "the loader's line was cut, so what it may use is not known"),
             # R5: the same with the word naming the program beyond the cut, where the kernel never sees it.
             ("cut-nomination", None, "the loader's line was not taken whole, so no build folder is set", "the loader's line was cut, so what it may use is not known")):
-        line = granted + extra if extra is not None else "auto=proposal-probe then=off " + " ".join("pad%02d=xxxxxxxx" % n for n in range(20)) + " propose_image=%s" % digest
+        line = granted + extra if extra is not None else "auto=proposal-probe then=off " + " ".join("pad%02d=xxxxxxxx" % n for n in range(PADS)) + " propose_image=%s" % digest
         guest = Guest(args.qemu, args.kernel, args.probe, evidence / name, line)
         try:
             said = guest.until("proposal-probe was not started: " + said_words, seconds=60)
@@ -440,10 +469,17 @@ def main():
         found.append("N1: without the grant the device was not refused with -13, or somebody was asked")
     problems += ["not-granted: " + p for p in found]
 
+    beside = sorted(d.name for d in evidence.iterdir() if (d / "serial.txt").is_file() and "is started with its companion" in (d / "serial.txt").read_text(errors="replace"))
+    if args.companion and not {"allowed", "refused-esc", "held-enter", "f12-with-nothing"} <= set(beside):
+        problems.append("companion: the probe was not started with its companion in the cases that ask the person: %r" % beside)
+    if not args.companion and beside:
+        problems.append("companion: a companion was started although none was named: %r" % beside)
+    results["with_companion"] = beside
     (evidence / "result.json").write_text(json.dumps({"probe_sha256": digest, "problems": problems, "results": results}, indent=2) + "\n")
     if problems:
         sys.exit("\n".join(problems))
     print("proposals: allowed once by F12 then Enter and made by the kernel; refused three ways; a held Enter does not allow; F12 with nothing waiting says so; refused unseen; not offered without the grant")
+    print("cases in which the probe had a companion beside it: %s" % (", ".join(beside) if beside else "none"))
     print("full-store cases run: %s" % (", ".join(full_run) if full_run else "none (no --filler-over / --filler-exact given)"))
 
 
