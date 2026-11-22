@@ -1,0 +1,16 @@
+{
+  "approved_inventory_sha256": "27c6f892e1a50aa0c48ace4bafc83d6ed30d06d473c23c2e717fc7213c319580",
+  "candidate_source": "09533036136c5a8748eb2246507585d77f3387aa",
+  "el_torito_and_gpt_esp_agree": true,
+  "embedded_esp_files": 13,
+  "esp_bytes": 570425344,
+  "esp_start_bytes": 67584,
+  "iso_bytes": 1064140800,
+  "iso_sha256": "4351fcf8a051d044a831745eb0c8139f76f91bf1f322d0992f5b1263f8aa5030",
+  "joliet_files": 13,
+  "model_bytes": 491400064,
+  "model_sha256": "1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32",
+  "primary_and_backup_gpt_verified": true,
+  "readback": "Independently reopened the finished ISO using xorriso -read_fs norock and mtools at the verified ESP offset. Verified the exact files, directories, lengths, SHA-256 and ordered model in each namespace.",
+  "shards": 8
+}

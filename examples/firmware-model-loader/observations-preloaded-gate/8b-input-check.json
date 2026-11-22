@@ -1,0 +1,9 @@
+{
+  "checked_paths": 80,
+  "head": "09533036136c5a8748eb2246507585d77f3387aa",
+  "inventory_sha256": "63365b3f64769fa9737f71f1b4964bf8ad600cd1dec4dcee7736acbd5c714622",
+  "model_bytes": 5027783488,
+  "model_sha256": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
+  "scope": "Exact-head input and ordered-model verification on the earlier 8B candidate. No new ISO built by this step.",
+  "shards": 75
+}
