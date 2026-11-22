@@ -28,7 +28,7 @@ Inspect `basic-parts/inputs.json` for the source commits, compiler, GRUB version
 
 ## Master and verify the ISO
 
-Supply the SHA-256 of `basic-parts/inputs.json` only after reviewing it as an independent build input. If it differs, compare the complete receipts before accepting new bytes. **No reviewed component-receipt or ISO digest is yet established for the new `3fdfe232` kernel pin.** The older values below belong to the superseded `d91fd184` example and must not be substituted for the new build.
+Supply the SHA-256 of `basic-parts/inputs.json` after reviewing the complete receipt for the chosen build. For the `3fdfe232` example above, compare it with the [retained 11-file component receipt](https://github.com/KirtusJ/pcp-os/blob/c566f8df2ee1d0a996939b7375aecd6cae0ceaec/examples/release-media/observations/plain-merged-kernel/inputs.json). When the inputs or toolchain change, inspect the differences and record the digest of the receipt you actually accepted.
 
 ```sh
 python3 examples/release-media/build.py basic-parts \
@@ -42,6 +42,8 @@ Mastering accepts the model-free inventory and the single kernel feature `propos
 Historical evidence only: two clean builds at the earlier `d91fd184` source pin on A3's builder produced identical receipts and a 70,389,760-byte ISO with SHA-256 `ea67434f1996cb81a3cb6e150c9b42b55127085a6e8501aac1e840cc256ce2c5`. OVMF booted that *older* image as optical media, as raw USB media and from a copied FAT32 file tree; all reached the 1920×1080 desktop. B3 independently reproduced its own older-pin image, but with a different digest.
 
 For the merged `3fdfe232` source pin above, A3 subsequently built twice at the same work path. The 11-file component receipt was `1dbe06857cae22be78603b086679b726f1d42d7f7b660ea048c25252d26722d0`. Both 70,389,760-byte ISOs had SHA-256 `75dce9c7581a5802ff941962aead7665c882fccb6876cad7e6b6c8844fa1f1e8`. Optical and raw USB boots with fresh OVMF variables reached the desktop, passed 72 kernel checks and powered off with exit 33. Physical UEFI and Rufus trials remain open. [Inputs, image receipt and serial logs](https://github.com/KirtusJ/pcp-os/tree/c566f8df2ee1d0a996939b7375aecd6cae0ceaec/examples/release-media/observations/plain-merged-kernel)
+
+A later VM trial used kernel `355e5c13` and Tailorbird `f1613bed`. Two builds produced a 70,410,240-byte ISO with SHA-256 `c95a4f99c966a863ae044e6abeaccbd271d36aadff29c527d460f31e289ab3ac`. Both optical and emulated USB boots reached the desktop and ran Tailorbird without a model service. See the [exact inputs and trial results](https://github.com/KirtusJ/pcp-os/issues/406#issuecomment-7081732160) and the [release proposal](https://github.com/KirtusJ/pcp-os/issues/406) for the owner-review status and Secure Boot limitation.
 
 The preloaded image requires a production loader with a published path and memory-handoff contract, a native model worker and an approved model digest. Its acceptance must include booting those components together. The model-free builder accepts only its own inventory.
 
