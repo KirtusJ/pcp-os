@@ -247,8 +247,11 @@ def main():
     for name, extra, why, said_words in (
             ("bad-folder", " build_folder=Dev/x", "build_folder=Dev/x is not a name a build folder may have; no build folder is set", "its projects folder setting is not a valid name"),
             ("two-folders", " build_folder=one build_folder=two", "build_folder=one is given more than once; no build folder is set", "its projects folder setting is not a valid name"),
-            ("cut-line", " " + " ".join("pad%02d=xxxxxxxx" % n for n in range(20)), "the loader's line was not taken whole, so no build folder is set", "the loader's line was cut, so what it may use is not known")):
-        guest = Guest(args.qemu, args.kernel, args.probe, evidence / name, granted + extra)
+            ("cut-line", " " + " ".join("pad%02d=xxxxxxxx" % n for n in range(20)), "the loader's line was not taken whole, so no build folder is set", "the loader's line was cut, so what it may use is not known"),
+            # R5: the same with the word naming the program beyond the cut, where the kernel never sees it.
+            ("cut-nomination", None, "the loader's line was not taken whole, so no build folder is set", "the loader's line was cut, so what it may use is not known")):
+        line = granted + extra if extra is not None else "auto=proposal-probe then=off " + " ".join("pad%02d=xxxxxxxx" % n for n in range(20)) + " propose_image=%s" % digest
+        guest = Guest(args.qemu, args.kernel, args.probe, evidence / name, line)
         try:
             said = guest.until("proposal-probe was not started: " + said_words, seconds=60)
             status = guest.end()
