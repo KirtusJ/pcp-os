@@ -12,8 +12,11 @@ Predicates.
     path should be is taken from git's index: a tracked file replaced by a folder fails; a
     symbolic link is scanned as the path it names and is not followed.
  K6 every relative link in every tracked Markdown file names a tracked path, so that a move which
-    breaks a link fails here. Links inside code fences are not looked at; links to another site and
-    links within a page are counted and reported, not checked.
+    breaks a link fails here. Two spellings are read: the inline "[words](target)" and the
+    reference definition "[label]: target" on its own line. A definition is checked whether or
+    not anything uses it. Other ways a renderer can make a link (raw HTML, a bare address) are
+    not read. Links inside code fences are not looked at; links to another site and links within
+    a page are counted and reported, not checked.
  K7 every row says what its path is, and its last column is yes, no or not determined.
  K5 the comparison refuses, before the tree is read, a catalogue with a row missing, a row for a
     path that is not there, a file holding a session's address, a file that cannot be read, and a
@@ -50,6 +53,8 @@ def listed(text):
 
 FENCE = re.compile(rb"```.*?```", re.S)
 LINK = re.compile(rb"\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
+# A reference definition, "[label]: target" on a line of its own, indented at most three spaces (B3).
+DEFINITION = re.compile(rb"^ {0,3}\[[^\]\n]+\]:[ \t]*<?([^\s>]+)>?", re.M)
 ELSEWHERE = re.compile(r"[a-z][a-z0-9+.-]*:|//")
 
 
@@ -58,8 +63,9 @@ def links(name, data, tracked):
     site, within the same page). Only the second kind is checked, against the tracked paths; a
     link to a place within another file is checked for the file only."""
     broken, paths, elsewhere, within = [], 0, 0, 0
-    for match in LINK.finditer(FENCE.sub(b"", data)):
-        link = match.group(1).decode("utf-8", "replace")
+    text = FENCE.sub(b"", data)
+    for found in [m.group(1) for m in LINK.finditer(text)] + [m.group(1) for m in DEFINITION.finditer(text)]:
+        link = found.decode("utf-8", "replace")
         if link.startswith("#"):
             within += 1
             continue
@@ -134,6 +140,10 @@ def selftest():
     require(problems(files, good.replace("| r | no |", "|  | no |"), [])[:1] != [] and problems(files, good.replace("| r | no |", "|  | no |"), [])[0].startswith("K7"), "a row with no description (A3)")
     require(problems(files, good.replace("| r | no |", "| r | maybe |"), [])[0].startswith("K7"), "a row with an unknown release value (A3)")
     require(links("a.md", b"[a](README.md) [b](https://x.org) [c](#top) [d](README.md#part)", {"README.md"}) == ([], 2, 1, 1), "links are counted by kind")
+    reference = b"[Trial instructions][trial-guide]\n\n[trial-guide]: docs/obsolete-guide.md\n"
+    require(problems(files, good, [("README.md", reference)]) == ["K6: README.md links to docs/obsolete-guide.md, which is not tracked"], "a reference definition to a path that is gone (B3)")
+    require(problems(files, good, [("README.md", reference.replace(b"docs/obsolete-guide.md", b"<examples/a/x.py> \"title\""))]) == [], "a reference definition that holds, in angle brackets with a title")
+    require(links("a.md", b"   [x]: README.md\n    [y]: gone.md\n[z]: https://x.org\n", {"README.md"}) == ([], 1, 1, 0), "a definition indented four spaces is code, not a definition")
     with tempfile.TemporaryDirectory() as folder:
         require(read(folder, "100644") is None, "a tracked file whose path is a folder is not read (C3)")
         require(read(os.path.join(folder, "absent"), "100644") is None, "a tracked file that is missing is not read")
