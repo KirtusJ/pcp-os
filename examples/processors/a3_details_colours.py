@@ -111,8 +111,12 @@ def main():
             assert "display: Loader, 1920x1080, 1 page(s)" in log
             scale = int(match[1])
             table = font_table(scale)
-            targets = [next(row for row in log.splitlines() if row.startswith(prefix)) for prefix in
-                       ("display memory: ", "display: a program that asks ")]
+            patterns = (r"^display memory: [0-9]+ of the [0-9]+ pages ", r"^display: a program that asks ")
+            targets = []
+            for pattern in patterns:
+                matches = [row for row in log.splitlines() if re.match(pattern, row)]
+                assert len(matches) == 1, matches
+                targets.append(matches[0])
             assert ("2025 of the 2025" if case == "pat" else "0 of the 2025") in targets[0]
             assert "draws to memory of its own" in targets[1]
             time.sleep(1)
