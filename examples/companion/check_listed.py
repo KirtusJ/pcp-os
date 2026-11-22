@@ -19,6 +19,10 @@ Predicates, fixed before the first run.
  L3 nothing to    worker_for= names a digest no loaded file has: both are in the list, and the serial line
     be beside     does not say a worker was left out.
  L4 cut line      the pairing options and a line longer than the kernel takes whole: both are in the list.
+ L6 not a program worker_for= names the digest of a loaded file that is not a program (a short text file):
+                  the worker, the only program there is, is in the list, and the serial line does not say a
+                  worker was left out. (Director 2: the first version looked among all the loader's files and
+                  would have hidden it. Added after that finding, and fixed before its first run.)
  L5 every boot    ends with status 33 after F10 and Enter, with no line beginning "  FAIL".
 
 These are emulated screens. Nothing here starts a worker; examples/companion/check.py does that.
@@ -40,7 +44,7 @@ def program(seed):
     return b"\x7fELF" + hashlib.sha256(seed).digest() * 4
 
 
-def boot(kernel, output, tag, files, extra):
+def boot(kernel, output, tag, files, extra, shown="front-program"):
     folder = output / tag
     (folder / "files").mkdir(parents=True)
     paths = []
@@ -63,7 +67,7 @@ def boot(kernel, output, tag, files, extra):
             screens.wait("home", lambda rows: any("Programs" in r for r in rows))
             monitor.key("ret")
             time.sleep(0.5)
-            listed = screens.wait("programs", lambda rows: any("front-program" in r for r in rows) and any("F1 keys" in r for r in rows))
+            listed = screens.wait("programs", lambda rows: any(shown in r for r in rows) and any("F1 keys" in r for r in rows))
             (folder / "programs.txt").write_text("\n".join(listed) + "\n")
             monitor.key("ctrl", "d")
             time.sleep(0.5)
@@ -126,11 +130,18 @@ def main():
         statuses.append((status, serial))
         predicate(name, names(listed) == ["front-program", "its-worker"] and not any(line.startswith("programs: ") and "not listed" in line for line in serial),
                   "listed %r" % names(listed))
+    document = b"a document the loader handed over, which is not a program\n"
+    dd = hashlib.sha256(document).hexdigest()
+    listed, pages, serial, status = boot(kernel, output, "for-a-document", [("front-program", document), ("its-worker", worker)],
+                                         f" worker_for={dd} worker_image={dw}", shown="its-worker")
+    statuses.append((status, serial))
+    predicate("L6 not a program", names(listed) == ["its-worker"] and not any(line.startswith("programs: ") and "not listed" in line for line in serial),
+              "listed %r" % names(listed))
     predicate("L5 every boot", all(status == 33 and not any(line.startswith("  FAIL") for line in serial) for status, serial in statuses),
               "statuses %r" % [s for s, _ in statuses])
     if failed:
         sys.exit("failed: " + ", ".join(failed))
-    print("all five hold")
+    print("all six hold")
 
 
 if __name__ == "__main__":
