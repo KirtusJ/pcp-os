@@ -19,7 +19,7 @@ Every entry at the top of the repository, and every folder one level down in the
 | `COORDINATION.md` | Agreements of the baseline work, each with where it was made. Proposed to move under os-docs (issue 368). | no |
 | `examples` | Checks and experiments, each in its own folder; several are run by CI. | no |
 | `os-docs` | The OS documents and the acceptance checks for installed systems. | not determined |
-| `PCP_OS_Python` | The earlier Python implementation and its tests. Whether it is still an instrument is not determined (issue 368). | not determined |
+| `PCP_OS_Python` | The second implementation, in Python, with its tests. Used to compare with the Rust one: its tests run the published guard cases against both (A3's audit, 22 November 2026). It is not what boots. | no |
 | `PCP_OS_Rust` | The Rust workspace: the reference implementation. | not determined |
 | `README.md` | What PCP OS is and how to start. | not determined |
 | `RECONCILIATION.md` | Which host build a live register depends on. Proposed to move under os-docs (issue 368). | no |
