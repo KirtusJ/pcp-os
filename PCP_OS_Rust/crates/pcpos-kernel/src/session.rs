@@ -1168,7 +1168,8 @@ fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message:
     // rows if one does not hold them; above the keys what the chosen program may use, on as many rows as
     // it needs; above that the message; and every row between is the list, which always has one row and
     // always holds the chosen program.
-    let (list_row, visible) = if rows >= 13 && cols >= 64 {
+    let access_rows = (access.len() as u32).max(3);
+    let (list_row, visible) = if rows >= 10 + access_rows && cols >= 64 {
         ui::emblem(20, 16, 36, GROUND);
         at(7, 1, "PCP OS", TEXT, GROUND);
         // The same sentence about verification as on every other surface, whichever way it went.
@@ -1186,7 +1187,6 @@ fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message:
         } else {
             at(2, 3, &format!("Verified at start: all {} self-tests passed.", start.passed), ui::GOOD, GROUND);
         }
-        let access_rows = (access.len() as u32).max(3);
         for (n, (line, colour)) in access.iter().enumerate() {
             at(2, rows - 4 - access_rows + n as u32, line, *colour, GROUND);
         }
