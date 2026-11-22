@@ -1,0 +1,27 @@
+{
+  "iso_sha256": "a0298480bf5e8773206369fda4b0e6a00d4ce31e8c83367db71c9541a9fa9f88",
+  "files": {
+    "EFI/BOOT/BOOTX64.EFI": {
+      "bytes": 354304,
+      "sha256": "cb52da03c3b153edbee98e7be23e09e36a08069aa4eb70077c956892856f5145"
+    },
+    "PCPOS/KERNEL.ELF": {
+      "bytes": 1130124,
+      "sha256": "6a3cb8bf80a110ee7d765e31012ae6feed0b5e0429035ee8e86dd9b555e69e66"
+    }
+  },
+  "efi_optional_header": "PE32+",
+  "number_of_data_directories": 16,
+  "security_directory_file_offset": 0,
+  "security_directory_size": 0,
+  "embedded_authenticode_certificate": false,
+  "executable_archive_sha256": "8b25a1d3a1dedf0764c08b35fd312ecd7f736393c67d6823f773f70053122986",
+  "executable_archive_git_blob": "b54d9b0c8cac489f38bccf9644b9286d4165dedb",
+  "executable_archive_commit": "6d80d2393ac8147f732295557f9890576640bec3",
+  "source_verification_as_reported_by_github": {
+    "kernel_41e35d1f": "valid commit signature",
+    "loader_44b77452": "unsigned source commit",
+    "image_readback_2e08b097": "unsigned evidence commit"
+  },
+  "release_identity": "No separately trusted, signed release statement binding the whole ISO or these executable digests was identified in the named source, receipts, image inventory, or the three repositories’ published release lists. The GitHub attestation lookup was unavailable in this session."
+}
