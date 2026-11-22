@@ -82,6 +82,23 @@ def main():
                 return " ".join(" ".join(rows).split())
 
             capture("home", lambda text: "Programs" in text)
+            # A key that does something is in the list of keys: F7 opens the projects folder screen.
+            key("f1")
+            listed = capture("keys", lambda text: "KEYS ON THE DESKTOP" in text)
+            # On a small display the list is longer than the screen and Down scrolls it a row at a time.
+            scrolls = "Up/Down scroll" in listed
+            for row in range(60 if scrolls else 0):
+                if "F7" in listed and "the projects folder" in " ".join(listed.split()):
+                    break
+                key("down")
+                time.sleep(0.2)
+                rows = screens.wait("keys-%02d" % row, lambda r: any("KEYS ON THE DESKTOP" in line for line in r))
+                listed += " " + " ".join(" ".join(rows).split())
+            joined = " ".join(listed.split())
+            if "F7" not in joined or not ("the projects folder" in joined or ("the projects" in joined and "folder:" in joined)):
+                raise AssertionError("The list of keys does not name F7 and the projects folder: " + listed)
+            key("esc" if scrolls else "spc")
+            capture("home-after-keys", lambda text: "Programs" in text and "KEYS ON THE DESKTOP" not in text)
             if args.typed_folder:
                 key("f7")
                 capture("folder-before", lambda text: "PROJECTS FOLDER" in text)

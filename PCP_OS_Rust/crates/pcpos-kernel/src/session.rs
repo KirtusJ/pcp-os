@@ -344,9 +344,9 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
             (_, (0x13, false)) if letters => register_view(rec),
             (_, (0x3F, false)) if desk => verification_view(start, rec),
             (_, (0x2F, false)) if desk && letters => verification_view(start, rec),
-            (Surface::Home, (0x3B, false)) => keys_view("KEYS ON THE DESKTOP", if graphic { &HOME_KEYS } else { &SMALL_HOME_KEYS }),
+            (Surface::Home, (0x3B, false)) => keys_view("KEYS ON THE DESKTOP", &home_keys(graphic)),
             (Surface::Launcher, (0x3B, false)) => keys_view("KEYS IN THE PROGRAMS", &LAUNCHER_KEYS),
-            (Surface::Home, (0x25, false)) if letters => keys_view("KEYS ON THE DESKTOP", if graphic { &HOME_KEYS } else { &SMALL_HOME_KEYS }),
+            (Surface::Home, (0x25, false)) if letters => keys_view("KEYS ON THE DESKTOP", &home_keys(graphic)),
             (Surface::Launcher, (0x25, false)) if letters => keys_view("KEYS IN THE PROGRAMS", &LAUNCHER_KEYS),
             // On the small-display desktop Left and Right turn the parts of a long name; Up and Down choose.
             (Surface::Home, (0x4B, _)) if !graphic => name_page = name_page.saturating_sub(1),
@@ -631,6 +631,18 @@ const HOME_KEYS: [(&str, &str); 11] = [("Left/Right", "choose among the programs
     ("F1", "this list"), ("F2", "settings: how the desktop looks, and its widgets"), ("F3", "the files programs have written"),
     ("F4", "the register"), ("F5", "verification, in full"), ("F10", "power off, after asking"),
     ("Ctrl+Alt+Delete", "stops a running program; no program can take that key")];
+/// The keys of the desktop as this kernel was built: with file proposals, F7 is one of them, and a
+/// key that does something is in the list (B3 found F7 named nowhere a person would look).
+fn home_keys(graphic: bool) -> Vec<(&'static str, &'static str)> {
+    #[allow(unused_mut)]
+    let mut keys: Vec<(&str, &str)> = if graphic { HOME_KEYS.to_vec() } else { SMALL_HOME_KEYS.to_vec() };
+    #[cfg(feature = "proposals")]
+    if let Some(after) = keys.iter().position(|k| k.0 == "F5") {
+        keys.insert(after + 1, ("F7", "the projects folder: where Taylor may make files"));
+    }
+    keys
+}
+
 /// The keys of the desktop of a small display, which are not those of the full one: Up and Down choose,
 /// Left and Right turn the parts of a long name. Letters do nothing on it, as on the full desktop.
 const SMALL_HOME_KEYS: [(&str, &str); 12] = [("Up/Down", "choose among all the programs and the pinned programs"), ("Left/Right", "turn the parts of a long name"),
