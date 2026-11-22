@@ -1207,3 +1207,46 @@ fn an_instrument_is_run_by_the_program_and_recorded_as_a_check_it_ran() {
     let (out, _) = tool(&quiet, "acr_instrument", r#"{"instrument":"engineering.units","input":{"from":"1 in","to":"25.4 mm"}}"#);
     assert!(out.contains("EQUAL to the last digit given") && out.contains("No review is open") && kinds(&quiet).len() == k, "{out}");
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn queued_coverage_checks_count_their_actual_predecessors() {
+    use std::time::{Duration, Instant};
+    let root = in_use("coverage-contention");
+    let path = root.join(REG);
+    let held = fs::File::open(&path).unwrap();
+    held.lock_shared().unwrap();
+    let mut children = Vec::new();
+    for _ in 0..2 {
+        let mut child = pcpos(&root).arg("mcp").stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+        writeln!(child.stdin.take().unwrap(), r#"{{"id":1,"jsonrpc":"2.0","method":"tools/call","params":{{"name":"acr_instrument","arguments":{{"instrument":"quality.coverage","input":{{"review":"R"}}}}}}}}"#).unwrap();
+        children.push(child);
+    }
+    // Each child has finished its shared read once it opens the register for append.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    for child in &children {
+        let proc = PathBuf::from(format!("/proc/{}", child.id()));
+        loop {
+            let waiting = fs::read_dir(proc.join("fd")).unwrap().flatten().any(|fd| {
+                if fs::read_link(fd.path()).ok().as_deref() != Some(path.as_path()) { return false; }
+                let flags = fs::read_to_string(proc.join("fdinfo").join(fd.file_name())).unwrap_or_default();
+                flags.lines().find_map(|l| l.strip_prefix("flags:"))
+                    .and_then(|v| u32::from_str_radix(v.trim(), 8).ok()).is_some_and(|v| v & 0o2000 != 0)
+            });
+            if waiting { break; }
+            assert!(Instant::now() < deadline, "child did not open the register for append");
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+    held.unlock().unwrap();
+    for child in children {
+        assert!(child.wait_with_output().unwrap().status.success());
+    }
+    let rows = events(&root);
+    let checks: Vec<_> = rows.iter().filter(|e| e.get("kind").and_then(Value::as_str) == Some("CHECK_RAN")).collect();
+    assert_eq!(checks.len(), 2);
+    for (count, check) in checks.iter().enumerate() {
+        let result = check.get("body").unwrap().get("result").and_then(Value::as_str).unwrap();
+        assert!(result.contains(&format!("checks in the record: {count};")), "{result}");
+    }
+}

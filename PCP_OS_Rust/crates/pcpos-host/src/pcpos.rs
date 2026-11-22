@@ -1738,13 +1738,27 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
                 return Err("argument input is an object".to_string());
             }
             let opened = open(&se.root, &reg)?;
-            let found = instruments::run(which, &input, opened.as_ref().map(|o| o.events.as_slice()).unwrap_or(&[]))?;
-            let text = format!("{which}\n{}\n", found.text);
+            let snapshot = opened.as_ref().map(|o| o.events.as_slice()).unwrap_or(&[]);
             if !record_wanted(args)? || opened.is_none() {
+                let found = instruments::run(which, &input, snapshot)?;
+                let text = format!("{which}\n{}\n", found.text);
                 return Ok(format!("{text}Nothing was written{}.\n", if opened.is_none() { ": there is no register here" } else { "" }));
             }
+            // Input-only instruments can finish before taking the write lock. A register-dependent
+            // result must describe the predecessor of the event that records it.
+            let register_dependent = matches!(which, "science.order" | "quality.coverage");
+            let computed = if register_dependent { None } else { Some(instruments::run(which, &input, snapshot)?) };
             let mut tx = Tx::begin(&se.root, &reg, false)?.ok_or_else(none)?;
             session_may_write(&tx, se)?;
+            let found = match computed {
+                Some(result) => result,
+                None if opened.as_ref().map(|o| o.head.as_str()) == Some(tx.rec.ledger().head()) => instruments::run(which, &input, snapshot)?,
+                None => {
+                    let (events, _) = ledger::verify(tx.rec.ledger().bytes()).map_err(|e| format!("cannot read the locked register: {e:?}"))?;
+                    instruments::run(which, &input, &events)?
+                }
+            };
+            let text = format!("{which}\n{}\n", found.text);
             if open_review_floor(&tx).is_none() {
                 return Ok(format!("{text}No review is open, so this was not recorded as a check: a check is run for a review.\nNothing was written.\n"));
             }
