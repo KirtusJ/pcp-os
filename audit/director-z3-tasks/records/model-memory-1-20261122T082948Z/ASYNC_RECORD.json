@@ -1,0 +1,38 @@
+{
+ "tool": "async_run.py",
+ "plan": "plan.json",
+ "plan_sha256": "aa0bbac41bd3a504cd7b02d280e9397ec0b83fb86897e621b68afef499a04774",
+ "width": 1,
+ "tasks": [
+  {
+   "id": "T",
+   "argv": [
+    "python3",
+    "-IB",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/wmm/examples/model-memory/check.py",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/mm1.elf32",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/mp-front/model-front",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/mp-grab/model-front",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/mp-back/model-back",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/mp-write/model-back"
+   ],
+   "exit": 1,
+   "expect_exit": 0,
+   "timed_out": false,
+   "seconds": 34.84,
+   "ended_as_expected": false,
+   "copied_in": [],
+   "files": {
+    "STDERR.txt": {
+     "sha256": "a893f1c94bf0604a82a68b86a9fb5eda076901a2c6b6ac0e8b951c706a01f082",
+     "bytes": 113
+    },
+    "STDOUT.txt": {
+     "sha256": "d44dd2e4af3c7976de7f80e001cb15d6219abccd761788a8ff38a3b5f6c60c6e",
+     "bytes": 2135
+    }
+   }
+  }
+ ],
+ "all_ended_as_expected": false
+}

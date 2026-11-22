@@ -1,0 +1,16 @@
+no model named: 1048576 frames above four gibibytes; the model's pieces are 10752 frames in whole 2 MiB pages
+held: mapping it readable answered 0; mapping it a second time answered -22; model bytes read 41948040; of those, bytes that were not the model's 0; making its first page writable answered -12; making its first page executable answered -12; its first byte is still the model's 1; writing the console from the model's memory answered -14
+the front takes all memory first: [4992] MiB taken; all 1037824 high frames handed out; model bytes that differ: ["of those, bytes that were not the model's 0"]
+a piece not on a page: the memory named for it is not kept (a piece does not begin on a page, or one before the last is not whole pages)
+a piece beyond the machine's memory: the memory named for it is not kept (a piece is not wholly memory the loader's map calls usable)
+a piece below four gibibytes: the memory named for it is not kept (a piece lies outside the memory between four gibibytes and the ceiling)
+two pieces sharing memory: the memory named for it is not kept (two pieces share memory)
+the memory named twice: the memory named for it is not kept (model_memory is given more than once)
+not hexadecimal: the memory named for it is not kept (model_memory is not address:bytes pieces in hexadecimal)
+no manifest file: the loader gave no file named model.manifest; the memory named for it stays out of the pool and is given to nothing
+no pin: model_manifest is not given; the memory named for it stays out of the pool and is given to nothing
+a pin that is not the manifest's digest: model.manifest is not the manifest the loader's line pins, or is not a manifest (Digest); the memory named for it stays out of the pool and is given to nothing
+a pin given twice: model_manifest is given more than once; the memory named for it stays out of the pool and is given to nothing
+a manifest of another length: the manifest is of a model of 41948039 bytes and the memory named holds 41948040; the memory named for it stays out of the pool and is given to nothing
+a pin and no memory: model_manifest is given and no model_memory
+model memory: held out of the pool, read whole and unchanged by the companion alone, never writable; nothing given unless memory, manifest and pin agree

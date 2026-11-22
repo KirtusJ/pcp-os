@@ -1,0 +1,1 @@
+FAIL M6: with no companion named the model was opened, or a companion ran: ['opening the model answered -13'] []

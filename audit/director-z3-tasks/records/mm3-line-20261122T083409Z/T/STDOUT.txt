@@ -1,0 +1,8 @@
+200 bytes: took 200, ended by itself with 33
+255 bytes: took 255, ended by itself with 33
+256 bytes: took 256, ended by itself with 33
+600 bytes: took 600, ended by itself with 33
+1023 bytes: took 1023, ended by itself with 33
+1024 bytes: took 1023, did not act on the last word
+1200 bytes: took 1023, did not act on the last word
+loader line: taken whole to 1,023 bytes; a longer one is not acted on past that
