@@ -1,0 +1,5 @@
+{"event": "boot-observed", "boot_s": 45.43502915499994, "last_serial": ["Verified 939524096 of 5027783488 model bytes."], "elapsed_s": 45.4}
+{"event": "boot-observed", "boot_s": 105.58620527400126, "last_serial": ["Verified 2483027968 of 5027783488 model bytes."], "elapsed_s": 105.6}
+{"event": "boot-observed", "boot_s": 165.67679821000092, "last_serial": ["Verified 4093640704 of 5027783488 model bytes."], "elapsed_s": 165.7}
+{"event": "first-frame", "boot_s": 200.91954822000116}
+{"event": "process-exit", "boot_s": 588.8839419230007, "code": -9}

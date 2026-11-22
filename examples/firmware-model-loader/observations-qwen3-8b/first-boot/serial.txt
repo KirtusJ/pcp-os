@@ -1,0 +1,189 @@
+[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01HBdsDxe: loading Boot0001 "UEFI QEMU QEMU USB HARDDRIVE 1-0000:00:02.0-1" from PciRoot(0x0)/Pci(0x2,0x0)/USB(0x0,0x0)
+BdsDxe: starting Boot0001 "UEFI QEMU QEMU USB HARDDRIVE 1-0000:00:02.0-1" from PciRoot(0x0)/Pci(0x2,0x0)/USB(0x0,0x0)
+Verified 67108864 of 5027783488 model bytes.
+Verified 134217728 of 5027783488 model bytes.
+Verified 201326592 of 5027783488 model bytes.
+Verified 268435456 of 5027783488 model bytes.
+Verified 335544320 of 5027783488 model bytes.
+Verified 402653184 of 5027783488 model bytes.
+Verified 469762048 of 5027783488 model bytes.
+Verified 536870912 of 5027783488 model bytes.
+Verified 603979776 of 5027783488 model bytes.
+Verified 671088640 of 5027783488 model bytes.
+Verified 738197504 of 5027783488 model bytes.
+Verified 805306368 of 5027783488 model bytes.
+Verified 872415232 of 5027783488 model bytes.
+Verified 939524096 of 5027783488 model bytes.
+Verified 1006632960 of 5027783488 model bytes.
+Verified 1073741824 of 5027783488 model bytes.
+Verified 1140850688 of 5027783488 model bytes.
+Verified 1207959552 of 5027783488 model bytes.
+Verified 1275068416 of 5027783488 model bytes.
+Verified 1342177280 of 5027783488 model bytes.
+Verified 1409286144 of 5027783488 model bytes.
+Verified 1476395008 of 5027783488 model bytes.
+Verified 1543503872 of 5027783488 model bytes.
+Verified 1610612736 of 5027783488 model bytes.
+Verified 1677721600 of 5027783488 model bytes.
+Verified 1744830464 of 5027783488 model bytes.
+Verified 1811939328 of 5027783488 model bytes.
+Verified 1879048192 of 5027783488 model bytes.
+Verified 1946157056 of 5027783488 model bytes.
+Verified 2013265920 of 5027783488 model bytes.
+Verified 2080374784 of 5027783488 model bytes.
+Verified 2147483648 of 5027783488 model bytes.
+Verified 2214592512 of 5027783488 model bytes.
+Verified 2281701376 of 5027783488 model bytes.
+Verified 2348810240 of 5027783488 model bytes.
+Verified 2415919104 of 5027783488 model bytes.
+Verified 2483027968 of 5027783488 model bytes.
+Verified 2550136832 of 5027783488 model bytes.
+Verified 2617245696 of 5027783488 model bytes.
+Verified 2684354560 of 5027783488 model bytes.
+Verified 2751463424 of 5027783488 model bytes.
+Verified 2818572288 of 5027783488 model bytes.
+Verified 2885681152 of 5027783488 model bytes.
+Verified 2952790016 of 5027783488 model bytes.
+Verified 3019898880 of 5027783488 model bytes.
+Verified 3087007744 of 5027783488 model bytes.
+Verified 3154116608 of 5027783488 model bytes.
+Verified 3221225472 of 5027783488 model bytes.
+Verified 3288334336 of 5027783488 model bytes.
+Verified 3355443200 of 5027783488 model bytes.
+Verified 3422552064 of 5027783488 model bytes.
+Verified 3489660928 of 5027783488 model bytes.
+Verified 3556769792 of 5027783488 model bytes.
+Verified 3623878656 of 5027783488 model bytes.
+Verified 3690987520 of 5027783488 model bytes.
+Verified 3758096384 of 5027783488 model bytes.
+Verified 3825205248 of 5027783488 model bytes.
+Verified 3892314112 of 5027783488 model bytes.
+Verified 3959422976 of 5027783488 model bytes.
+Verified 4026531840 of 5027783488 model bytes.
+Verified 4093640704 of 5027783488 model bytes.
+Verified 4160749568 of 5027783488 model bytes.
+Verified 4227858432 of 5027783488 model bytes.
+Verified 4294967296 of 5027783488 model bytes.
+Verified 4362076160 of 5027783488 model bytes.
+Verified 4429185024 of 5027783488 model bytes.
+Verified 4496293888 of 5027783488 model bytes.
+Verified 4563402752 of 5027783488 model bytes.
+Verified 4630511616 of 5027783488 model bytes.
+Verified 4697620480 of 5027783488 model bytes.
+Verified 4764729344 of 5027783488 model bytes.
+Verified 4831838208 of 5027783488 model bytes.
+Verified 4898947072 of 5027783488 model bytes.
+Verified 4966055936 of 5027783488 model bytes.
+Verified 5027783488 of 5027783488 model bytes.
+Model verified. Starting PCP OS.
+PCP OS kernel 0.3.1 | x86_64 | new kernel, written in Rust | early
+the loader reported no memory size
+kernel image: code 0x2001000..0x207e000, read-only data 0x207e000..0x20b9000, end 0x31a0000
+protections: paging true, supervisor write protection true, no-execute true, long mode true
+memory for programs: 248832 frames of 4 KiB, 0x3400000..0x40000000
+file from the loader: tailorbird (212352 bytes at 0x32c9000)
+file from the loader: model-worker (200960 bytes at 0x32fd000)
+file from the loader: model.manifest (2456 bytes at 0x332f000)
+command line: image=7b6d47dc01f77254c86e2bccb3d2d839f5bd957fde8faf51d85170a6d863ba61 auto=tailorbird then=menu propose_image=97da808610494446a0be3f2ab5d65b41b8e2a2ce98a12d2ec43517c5ea9b48ff worker_for=97da808610494446a0be3f2ab5d65b41b8e2a2ce98a12d2ec43517c5ea9b48ff worker_image=955df6cced1106dc913379c07c513166ccbe42225d70c407ad56432c90125541 model_manifest=2c02ff6f00a2ee802ce09648dfbc56dda38a64b009635f0aeb383f09e1af67dc model_memory=0x100000000:0x12bade340
+further protections: supervisor execution prevention on, supervisor access prevention on, user-mode instruction prevention on
+running image (code and read-only data), SHA-256: 7b6d47dc01f77254c86e2bccb3d2d839f5bd957fde8faf51d85170a6d863ba61 (measured; equal to the value the loader named)
+memory map replaced, read back from the page tables: 4506 pages of the kernel image, 103 pages of the loader's files, 2375680 KiB of frame memory, 0 KiB of device memory; writable and executable at once: 0
+self-test:
+  pass the kernel opens its own register and records the native method by measurement
+  pass the running image measures as the value the loader named
+  pass a register written by the Python implementation verifies to the same head
+  pass the register of the research-baseline exercise verifies to the same head
+  pass one changed byte in an earlier event is refused
+  pass an incomplete final line is refused
+  pass the kernel appends events and its own register verifies
+  pass an event with a malformed time or an undefined authority is refused and nothing is written
+  pass a derived capability has the same rights or fewer, and revocation reaches everything derived
+  pass the draft compact record form round-trips every event
+  note the same 13 events: 6027 bytes as JSON, 2962 bytes in the draft compact form
+  pass every state machine is a complete, well-formed table, equal to the published tables
+  pass from every running state an integrity fault leads to SAFE, and SAFE is left only by stopping
+  pass a task becomes DONE only from EXITED by a verified result
+  pass the native ACR guards replay the scenario register (82 events, every kind) without a problem
+  pass no combination of roles hands a model or a program the means to start ACR use, administer or change the system
+  pass revoking a grant takes back what was handed on from it, in every holder
+  pass no memory is both writable and executable
+  pass code is executable and not writable
+  pass read-only data is neither writable nor executable
+  pass data is writable and not executable
+  pass address zero is not mapped, nor anything below the image
+  pass what is mapped is the kernel image, the loader's files read-only, and frame memory that is never executable; nothing else, each at its own address, none of it for user mode
+  pass every further protection the processor offers is on
+  pass a frame is handed out to one holder, comes back zeroed, cannot be given back twice, and memory outside the pool is not a frame
+  pass the kernel's heap gives each holder its own block and uses freed blocks again instead of new memory
+  pass a write to kernel code is refused by the processor
+  pass a write to read-only data is refused by the processor
+  pass executing an instruction that lies in writable data is refused by the processor
+  pass a read near address zero is refused by the processor
+  pass control: a write to ordinary data is allowed, so the probe can tell the difference
+  pass a write to the interrupt table is refused by the processor
+  pass a write to the segment table and task state segment is refused by the processor
+  pass a read of the page below each of the six stacks is refused by the processor
+  pass memory the kernel does not use is not mapped: the text display, the low mebibyte, what lies above the frame memory, and where devices are
+  pass frame memory is writable by the kernel and an instruction in it is refused by the processor
+  pass the timer interrupts and the tick count advances
+  pass a task not heard from within its quiet limit is LOST at the next sweep; one that reports is not; a claimed result that differs is FAILED
+  pass the system is OPERATIONAL after a verification that passed, and only then
+  pass an event the guards refuse leaves the register unchanged
+  note 13 processes ran for 37 timer periods; the timer took the processor back 37 times
+  pass a program runs in user mode in its own address space, writes through a system call and exits; the kernel kept what it wrote
+  pass a program that yields is resumed where it left off, three times
+  pass two programs that never yield are each preempted by the timer, at least three times, and each finishes
+  pass each of the two wrote its own number at the same address and found it unchanged: their memory is separate
+  pass a program's read of kernel memory is refused by the processor and ends that program only
+  pass a program's write to kernel memory is refused by the processor
+  pass an instruction reserved to the kernel is refused in user mode
+  pass a program reaches no device port
+  pass a program cannot execute its own writable data
+  pass a program that exhausts its stack meets the absent page below it and is ended
+  pass a system call that names kernel memory, unmapped memory or an impossible length is refused, and so is an undefined call
+  pass a program without a capability for the console cannot write to it
+  pass a program that never yields and never ends is stopped by the kernel when its budget is spent
+  pass in every address space a program reaches three pages, none both writable and executable, no kernel page, and the page below its stack is absent
+  pass no page of memory belongs to two processes
+  pass after all of it the kernel is in its own address space and its code and read-only data measure as before
+  pass every process is a task in the kernel's register: six DONE by the kernel's own reading of the output, six FAILED, one STOPPED
+  pass a task is not DONE on a claim: completion that names no result in the record is refused
+device on the bus: 00:00.0 maker 8086 device 29c0 class 06.00 line 255
+device on the bus: 00:01.0 maker 1234 device 1111 class 03.00 line 255
+device on the bus: 00:02.0 maker 1b36 device 000d class 0c.03 line 11
+device on the bus: 00:1f.0 maker 8086 device 2918 class 06.01 line 255
+device on the bus: 00:1f.2 maker 8086 device 2922 class 01.06 line 10
+device on the bus: 00:1f.3 maker 8086 device 2930 class 0c.05 line 10
+display: Bochs, 1920x1080, 2 page(s), 16384 KiB of its memory mapped at 0x80000000
+keyboard: a PS/2 controller answered
+sound: no device this kernel drives
+music: no FM synthesiser
+  pass with the display mapped, the kernel's memory map is as it was plus the display's memory, which is never executable
+  note refused group single-unknown: refused true, free frames 248832 before and 248832 after
+  pass rejected batch returns the frames of every member
+  note refused group valid-then-unknown: refused true, free frames 248832 before and 248832 after
+  pass rejected batch returns the frames of every member
+  note refused group capacity-plus-one: refused true, free frames 248832 before and 248832 after
+  pass rejected batch returns the frames of every member
+  note stop key while running: end Some(Stopped), task Some(Stopped), after 7 timer periods
+  pass the stop key ends a program that never yields, long before its budget
+  pass a program the person stopped is STOPPED in the kernel's task table, as it is in what the kernel observed of it
+  note sleep of 50 ms: None, end Some(Exited(0)), idle 51 of 52 timer periods
+  pass a program that sleeps 50 ms is woken at its millisecond: the processor idled 51 timer periods, no fewer and no more, and the sleep answered 0
+  note key while waiting: None, end Some(Exited(0)), idle 20 of 22 timer periods, 8 calls
+  pass a program waiting in a read of the keyboard is woken by each key's interrupt and reads the keys in order: it idled until the first and exited 0 on the third
+  note stop key while asleep: None, end Some(Stopped), idle 13 of 13 timer periods, syscall count 1, free frames 248832 before and 248832 after, task Some(Stopped)
+  pass the stop key ends a program that is asleep (for the longest sleep accepted: its deadline does not overflow) at once, and all its memory comes back
+  note stop key while waiting for a key: None, end Some(Stopped), idle 11 of 12 timer periods, 6 calls
+  pass the stop key ends a program that waits in a read of the keyboard; it had read Ctrl and Alt and was never handed Delete; all its memory comes back
+  pass a stop key pressed before a program is started does not stop it
+  note a 32-byte name: Ok(Some(Exited(0))); frames free 248832 before, 248832 after
+  pass a program under a name of 32 bytes is admitted and runs to its end
+  note a 33-byte name: Err("the program could not be admitted as a task"); frames free 248832 before, 248832 after
+  pass a program under a name of 33 bytes is refused admission as a task
+  pass a program that cannot be admitted as a task leaves no memory behind: as many frames are free after as before
+a model of 5027783488 bytes is held in memory, out of the pool, for a companion to read; its manifest (2456 bytes) is the one the loader's line pins
+starting tailorbird (212352 bytes, SHA-256 97da808610494446a0be3f2ab5d65b41b8e2a2ce98a12d2ec43517c5ea9b48ff)
+tailorbird is started with its companion model-worker (200960 bytes), which is given the console and the channel only
+tailorbird: a model service channel is open
+Tailorbird first frame presented

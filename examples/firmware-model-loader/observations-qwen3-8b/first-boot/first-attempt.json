@@ -1,0 +1,15 @@
+{
+  "sha256_iso": "a0298480bf5e8773206369fda4b0e6a00d4ce31e8c83367db71c9541a9fa9f88",
+  "guest_mebibytes": 8192,
+  "boot": "q35 x86-64 TCG, one CPU, OVMF, read-only raw xHCI USB, no network or internal disk",
+  "verified_bytes": 5027783488,
+  "shards": 75,
+  "first_frame_s": 200.91954822000116,
+  "qemu_status": -9,
+  "exit_observed_s": 588.8839419230007,
+  "ready": false,
+  "prompt_submitted": false,
+  "completed": false,
+  "reason": "Host process ended with SIGKILL. System-wide OOM count was 2 after the loss; no per-process kill record was available.",
+  "concurrent": "0.5B software-float control was still executing on this host."
+}
