@@ -29,8 +29,8 @@ Predicates, fixed before the first run.
  F1 F12 pressed while the program runs and nothing waits: the kernel's screen says "No file is waiting
     for your approval."; a key returns; the program goes on and its later proposal is asked as usual.
  S1 on a display too small to show the file whole and legibly (320 by 200: ten rows of thirty-two) the
-    person is not asked: the kernel says the display is too small, the log says "REFUSED: this display
-    is too small to show it", the receipt's outcome is 6, and nothing is created whatever is pressed
+    person is not asked: the kernel says the display is too small, the log says "REFUSED: it could
+    not be shown whole on this display", the receipt's outcome is 6, and nothing is created whatever is pressed
     (F12 and Enter are sent). At 640 by 480 the question is asked and the file's first line is on it.
  K1 (in the allowed case) reads that fail take nothing: a read too small and a read of nothing are -22,
     a read into memory that is not the program's is -14, and the read straight after, with no proposal
@@ -40,6 +40,11 @@ Predicates, fixed before the first run.
     like another content. The sixty-fifth proposal of the run, and it exactly, is not taken (-28);
     none of the flood was asked about or made; and after it the first proposal of all is still answered
     from its receipt, outcome 1, with no second CREATED.
+ L1 (at 800 by 600) a file of a thousand lines each ending in a space is 3,000 bytes and 1,001
+    lines, within what a proposal may be, but on the screen each line needs a second row saying it ends
+    in a space: more than sixty-four pages. The kernel takes the proposal (the write is answered with
+    its length), does not ask, says on its screen that the file is too long to show, and the receipt's
+    outcome is 6; no file long.txt is made. (Director 2: the first count was of the file's own lines.)
  N1 without `propose_image` on the command line the program is refused the proposal device (-13) and
     nobody is asked: no screen, no CREATED, no DENIED.
  Every case: the emulator ends with status 33 (the kernel's own checks passed and it powered off).
@@ -181,7 +186,12 @@ def main():
                         found.append("H1: an answer was taken while Enter was still held from before F12")
                 else:
                     guest.key(key)
-            guest.until("probe: done")
+            # A screen that only tells the person something waits for any key: press one now and then
+            # until the program has finished. (A space refuses a question, so it allows nothing.)
+            for _ in range(12):
+                if guest.until("probe: done", seconds=4):
+                    break
+                guest.key("spc")
             status = guest.end()
             if status != 33:
                 found.append("the emulator ended with status %r, not 33" % status)
@@ -207,13 +217,15 @@ def main():
                   "probe: its content digest " + content, "probe: answering -28", "probe: after the flood"):
         if words not in log:
             found.append("A1: the log does not hold %r" % words)
-    # Two receipts are kept before the flood, for (7,1) created and (7,2) name taken: a proposal refused
-    # unseen or as a conflict keeps none. The flood's numbers 100 to 161 fill the other sixty-two places,
-    # so 162 is the first the kernel does not take (C3 worked this out; a range would have passed a
+    # Three receipts are kept before the flood, for (7,1) created, (7,2) name taken and (7,7) too long to
+    # show: a proposal refused unseen or as a conflict keeps none. The flood's numbers 100 to 160 fill
+    # the other sixty-one places, so 161 is the first the kernel does not take (C3 worked this out; a range would have passed a
     # smaller limit).
     took = [line for line in log.splitlines() if line.startswith("probe: the kernel took no more proposals at number ")]
-    if took != ["probe: the kernel took no more proposals at number 162"]:
-        found.append("A1: the kernel did not stop taking proposals exactly at number 162: %r" % took)
+    if took != ["probe: the kernel took no more proposals at number 161"]:
+        found.append("A1: the kernel did not stop taking proposals exactly at number 161: %r" % took)
+    # (On this case's large display the long file fits in sixty-four pages, is asked about like any
+    # other, and is refused by the space the check presses. L1 is checked at 800 by 600 below.)
     if answers(log) != want:
         found.append("A1: the program was answered %r, not %r" % (answers(log), want))
     if "probe: making a file directly answered -13" not in log:
@@ -238,8 +250,9 @@ def main():
         return []
 
     found, log = case("held-enter", granted, ["f12", "wait", "nothing-yet", "ret-up", "ret"], True, idle=enter_held)
-    if len([line for line in log.splitlines() if "CREATED after the person allowed it" in line]) != 1 or "DENIED" in log:
-        found.append("H1: after Enter was let go and pressed again the file was not created exactly once")
+    if len([line for line in log.splitlines() if "CREATED after the person allowed it" in line]) != 1 or "note.txt" not in "".join(
+            line for line in log.splitlines() if "CREATED" in line):
+        found.append("H1: after Enter was let go and pressed again the note was not created exactly once")
     problems += ["held-enter: " + p for p in found]
 
     def nothing_waiting(guest):
@@ -268,13 +281,22 @@ def main():
             time.sleep(2.5) if key == "wait" else guest.key(key)
         guest.until("probe: done")
         status, log = guest.end(), guest.log()
-        if status != 33 or "CREATED" in log or "this display is too small to show it" not in log or answers(log)[:3] != [str(RECORD), "100", "6"]:
+        if status != 33 or "CREATED" in log or "it could not be shown whole on this display" not in log or answers(log)[:3] != [str(RECORD), "100", "6"]:
             found.append("S1: status %r, answers %r, or something was created" % (status, answers(log)[:3]))
         results["too-small"] = {"status": status, "probe": [line for line in log.splitlines() if line.startswith(("probe:", "proposal "))]}
     finally:
         if guest.process.poll() is None:
             guest.process.kill()
     problems += ["too-small: " + p for p in found]
+
+    found, log = case("long-at-800x600", granted + " desktop=800x600", ["f12", "ret"], True)
+    for words in ("probe: long write answered 3061", "probe: long receipt bytes 100", "probe: long outcome 6",
+                  "long.txt (3000 bytes", "it could not be shown whole on this display"):
+        if words not in log:
+            found.append("L1: the log does not hold %r" % words)
+    if any("long.txt" in line and "CREATED" in line for line in log.splitlines()) or any("long.txt" in line and "DENIED" in line for line in log.splitlines()):
+        found.append("L1: the long file was made, or the person was asked about it")
+    problems += ["long-at-800x600: " + p for p in found]
 
     found, log = case("at-640x480", granted + " desktop=640x480", ["f12", "ret"], True)
     if len([line for line in log.splitlines() if "CREATED after the person allowed it" in line]) != 1:

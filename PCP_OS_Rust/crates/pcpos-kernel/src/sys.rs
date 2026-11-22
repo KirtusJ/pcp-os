@@ -159,7 +159,7 @@ const PROPOSAL_ACROSS: usize = 76;
 const PROPOSALS_KEPT: usize = 64;
 
 /// A receipt, 100 bytes: version (u32, 1); outcome (u32: 1 created, 2 refused by the person, 3 the name
-/// was taken, 5 no room in the store, 6 the display could not show it so nobody was asked); the kernel's number for this run (u64); attempt and proposal
+/// was taken, 5 no room in the store, 6 the display could not show it whole (too small, or over 64 pages) so nobody was asked); the kernel's number for this run (u64); attempt and proposal
 /// (u64 each); SHA-256 of the exact request (lengths, name, content); SHA-256 of the content; and
 /// whether it outlasts power (u32, 0: it does not).
 #[cfg(feature = "proposals")]
@@ -235,7 +235,7 @@ impl Linux {
         self.proposals.receipt = Some(r);
         self.proposals.kept.push((proposal.attempt, proposal.number, request_digest(&proposal), r));
         crate::log(format_args!("proposal {} of attempt {}: {} ({} bytes, SHA-256 {}) {}", proposal.number, proposal.attempt, proposal.name, proposal.content.len(),
-                    pcpos_core::sha256_hex(&proposal.content), match outcome { 1 => "CREATED after the person allowed it", 2 => "DENIED by the person; nothing made", 3 => "REFUSED: the name was taken; nothing made", 6 => "REFUSED: this display is too small to show it, so nobody was asked; nothing made", _ => "REFUSED: no room in the store; nothing made" }));
+                    pcpos_core::sha256_hex(&proposal.content), match outcome { 1 => "CREATED after the person allowed it", 2 => "DENIED by the person; nothing made", 3 => "REFUSED: the name was taken; nothing made", 6 => "REFUSED: it could not be shown whole on this display (too small, or too many pages), so nobody was asked; nothing made", _ => "REFUSED: no room in the store; nothing made" }));
         crate::log(format_args!("\n"));
     }
 }

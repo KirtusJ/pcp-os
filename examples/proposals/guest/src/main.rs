@@ -116,6 +116,32 @@ pub extern "C" fn probe_main() -> ! {
     ask(fd, 7, 4, b"tab.txt", b"a\tb"); // refused unseen: a character the kernel's screen cannot show exactly
     ask(fd, 7, 5, b"dev/proposal", CONTENT); // refused unseen: where the kernel's devices are
     ask(fd, 7, 6, b"taylor/../escape.txt", CONTENT); // refused unseen: a part beginning with a dot
+    if first == 1 {
+        // A thousand lines that each end in a space. Each takes two rows of the kernel's screen (the
+        // line, and a note that it ends in a space), so the file is short enough to be taken and too
+        // long to be shown in sixty-four pages: the kernel must say so and ask nothing.
+        static mut LONG: [u8; 3100] = [0; 3100];
+        // Safety: this program has one thread and uses the buffer only here.
+        let long = unsafe { &mut *core::ptr::addr_of_mut!(LONG) };
+        let name = b"taylor/first-project/long.txt";
+        long[0..4].copy_from_slice(&1u32.to_le_bytes());
+        long[4..8].copy_from_slice(&1u32.to_le_bytes());
+        long[8..16].copy_from_slice(&7u64.to_le_bytes());
+        long[16..24].copy_from_slice(&7u64.to_le_bytes());
+        long[24..28].copy_from_slice(&(name.len() as u32).to_le_bytes());
+        long[28..32].copy_from_slice(&3000u32.to_le_bytes());
+        long[32..32 + name.len()].copy_from_slice(name);
+        for line in 0..1000 {
+            let at = 32 + name.len() + line * 3;
+            long[at..at + 3].copy_from_slice(b"a \n");
+        }
+        let length = 32 + name.len() + 3000;
+        log(b"probe: the long file\n");
+        say(b"probe: long write answered ", call(1, fd as usize, long.as_ptr() as usize, length, 0, 0, 0));
+        let mut receipt = [0u8; 100];
+        say(b"probe: long receipt bytes ", call(0, fd as usize, receipt.as_mut_ptr() as usize, 100, 0, 0, 0));
+        say(b"probe: long outcome ", u32::from_le_bytes([receipt[4], receipt[5], receipt[6], receipt[7]]) as isize);
+    }
     // More proposals than the kernel keeps receipts for: each is for the taken name, so nobody is asked,
     // and after the sixty-fourth of the run the kernel takes no more.
     // Only where the file was made: otherwise the name is free and each would be a question.

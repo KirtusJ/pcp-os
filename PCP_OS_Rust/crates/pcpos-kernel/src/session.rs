@@ -1665,9 +1665,16 @@ fn consent(proposal: Option<&crate::sys::Proposal>) -> crate::sys::Answer {
                          String::from("Page 64 of 64. Down arrow shows more. Esc refuses.")];
             let foot_rows = foots.iter().map(|f| wrapped_words(f, across).len()).max().unwrap_or(1);
             let per = (rows as usize).saturating_sub(head_rows + 1 + foot_rows);
-            if per < 4 || across < 40 {
+            // The pages are counted from what will really be drawn, notes about spaces and the end mark
+            // included, on this display: a file that would take more than sixty-four of them is not put
+            // to the person (Director 2: the count made when the proposal arrived was of the file's own
+            // lines, and a file of a thousand lines each ending in a space came to 87 pages here).
+            let too_small = per < 4 || across < 40;
+            if too_small || body.len().div_ceil(per.max(1)) > 64 {
                 ui::clear(GROUND);
-                for (n, part) in wrapped_words("PCP OS: this display is too small to show a file Taylor wants to make, so it was not made. Press any key.", across).iter().enumerate() {
+                let words = if too_small { "PCP OS: this display is too small to show a file Taylor wants to make, so it was not made. Press any key." }
+                    else { "PCP OS: a file Taylor wants to make is too long to show you here in sixty-four pages, so it was not made. Press any key." };
+                for (n, part) in wrapped_words(words, across).iter().enumerate() {
                     at(2, n as u32, part, TEXT, GROUND);
                 }
                 dev::keys_forget();
