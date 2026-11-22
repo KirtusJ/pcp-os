@@ -1,0 +1,444 @@
+//! Exact, case-sensitive native request-editor glyph rendering.
+//!
+//! The inherited five-by-seven Frame::text cannot show exact user input:
+//! it uppercases lowercase characters and omits unsupported punctuation.
+//! Use the kernel's existing, source-pinned DejaVu Sans Mono printable-ASCII
+//! coverage instead. The font source is generated and keeps its own notice.
+//! This renderer does not interpret text, dispatch actions, or authorize edits.
+//!
+//! The 960x540 Tailorbird guest reserves a 780-pixel-wide two-line editor.
+//! At ten by twenty pixels per ASCII cell, it exposes the complete 120-byte
+//! request (78 cells on the first row and 42 on the second).
+#[path = "../../../../PCP_OS_Rust/crates/pcpos-kernel/src/font.rs"]
+mod kernel_font;
+
+pub const CELL_WIDTH: usize = kernel_font::CELL_WIDTH;
+pub const CELL_HEIGHT: usize = kernel_font::CELL_HEIGHT;
+pub const EDITOR_COLS: usize = 78;
+pub const EDITOR_ROWS: usize = 2;
+pub const EDITOR_CAPACITY: usize = EDITOR_COLS * EDITOR_ROWS;
+pub const EDITOR_X: usize = 140;
+pub const EDITOR_Y: usize = 460;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DrawError {
+    UnrenderableInput,
+    InsufficientSurface,
+    InsufficientEditor,
+}
+
+/// Decode US-PC Set-1 printable keys without case folding.
+///
+/// These are the keycodes delivered by PCP OS' existing PS/2 guest ABI.
+/// A later configurable keyboard layout/IME must replace this static map.
+pub fn key_from_set1(code: usize, shift: bool) -> Option<u8> {
+    let letter = match code {
+        16 => Some(b'q'), 17 => Some(b'w'), 18 => Some(b'e'), 19 => Some(b'r'), 20 => Some(b't'),
+        21 => Some(b'y'), 22 => Some(b'u'), 23 => Some(b'i'), 24 => Some(b'o'), 25 => Some(b'p'),
+        30 => Some(b'a'), 31 => Some(b's'), 32 => Some(b'd'), 33 => Some(b'f'), 34 => Some(b'g'),
+        35 => Some(b'h'), 36 => Some(b'j'), 37 => Some(b'k'), 38 => Some(b'l'),
+        44 => Some(b'z'), 45 => Some(b'x'), 46 => Some(b'c'), 47 => Some(b'v'), 48 => Some(b'b'),
+        49 => Some(b'n'), 50 => Some(b'm'),
+        _ => None,
+    };
+    if let Some(lower) = letter {
+        return Some(if shift { lower.to_ascii_uppercase() } else { lower });
+    }
+    if (2..=11).contains(&code) {
+        let index = code - 2;
+        return Some(if shift { b"!@#$%^&*()"[index] } else { b"1234567890"[index] });
+    }
+    let (plain, modified) = match code {
+        12 => (b'-', b'_'),
+        13 => (b'=', b'+'),
+        26 => (b'[', b'{'),
+        27 => (b']', b'}'),
+        39 => (b';', b':'),
+        40 => (b'\'', b'"'),
+        41 => (96u8, b'~'),
+        43 => (b'\\', b'|'),
+        51 => (b',', b'<'),
+        52 => (b'.', b'>'),
+        53 => (b'/', b'?'),
+        57 => (b' ', b' '),
+        _ => return None,
+    };
+    Some(if shift { modified } else { plain })
+}
+
+pub fn exact_printable_ascii(s: &str) -> bool {
+    s.bytes().all(|b| (0x20..=0x7e).contains(&b))
+}
+
+pub fn can_show_editor_input(s: &str) -> bool {
+    s.len() <= crate::INPUT_LIMIT && s.len() <= EDITOR_CAPACITY && exact_printable_ascii(s)
+}
+
+fn blend(under: u32, over: u32, alpha: u32) -> u32 {
+    let alpha = alpha.min(255);
+    let rest = 255 - alpha;
+    let channel = |shift: u32| {
+        let u = (under >> shift) & 0xff;
+        let o = (over >> shift) & 0xff;
+        (u * rest + o * alpha + 127) / 255
+    };
+    channel(16) << 16 | channel(8) << 8 | channel(0)
+}
+
+/// Rasterize an entire ASCII request into an existing framebuffer.
+///
+/// Preflight rejects a too-small buffer, insufficient editor footprint, or
+/// unrenderable text BEFORE the first pixel is written. Pitch counts
+/// u32 pixels, not bytes. No bytes are silently truncated, folded, or
+/// substituted, and every ASCII character gets its own glyph cell.
+/// This only checks the in-process pixel buffer, not a hardware mapping.
+pub fn draw_request(
+    pixels: &mut [u32],
+    width: usize,
+    height: usize,
+    pitch: usize,
+    input: &str,
+    colour: u32,
+) -> Result<(), DrawError> {
+    if !can_show_editor_input(input) {
+        return Err(DrawError::UnrenderableInput);
+    }
+    let required = height.checked_mul(pitch).ok_or(DrawError::InsufficientSurface)?;
+    if pitch < width || pixels.len() < required {
+        return Err(DrawError::InsufficientSurface);
+    }
+    let right = EDITOR_X
+        .checked_add(EDITOR_COLS * CELL_WIDTH)
+        .ok_or(DrawError::InsufficientEditor)?;
+    let bottom = EDITOR_Y
+        .checked_add(EDITOR_ROWS * CELL_HEIGHT)
+        .ok_or(DrawError::InsufficientEditor)?;
+    if width < right || height < bottom {
+        return Err(DrawError::InsufficientEditor);
+    }
+
+    request_glyphs(input, |x, y, byte| paint_glyph(pixels, pitch, byte, x, y, colour))
+}
+
+/// Emit logical glyph positions for either the native viewport or a fixed-size surface.
+pub fn request_glyphs(input: &str, mut emit: impl FnMut(usize, usize, u8)) -> Result<(), DrawError> {
+    if !can_show_editor_input(input) { return Err(DrawError::UnrenderableInput); }
+    for (i, byte) in input.bytes().enumerate() {
+        emit(EDITOR_X + (i % EDITOR_COLS) * CELL_WIDTH,
+             EDITOR_Y + (i / EDITOR_COLS) * CELL_HEIGHT, byte);
+    }
+    Ok(())
+}
+
+
+// Exact permission inspection shares the known case-sensitive 10x20 font,
+// but never alters the immutable reducer-owned action/target payloads.
+// 54 columns fit between x=340 and x=880, so a 72-byte destination occupies
+// at most two rows. Three decimal length digits at x=888..918 make even
+// invisible leading/trailing ASCII spaces distinguishable.
+pub const PERMISSION_X: usize = 340;
+pub const PERMISSION_ACTION_Y: usize = 230;
+pub const PERMISSION_TARGET_Y: usize = 280;
+pub const PERMISSION_COLS: usize = 54;
+pub const PERMISSION_LENGTH_X: usize = 888;
+pub const PERMISSION_ACTION_LIMIT: usize = 48;
+pub const PERMISSION_TARGET_LIMIT: usize = 72;
+
+pub fn can_show_permission(action: &str, target: &str) -> bool {
+    !action.is_empty() && action.len() <= PERMISSION_ACTION_LIMIT
+        && !target.is_empty() && target.len() <= PERMISSION_TARGET_LIMIT
+        && exact_printable_ascii(action) && exact_printable_ascii(target)
+}
+
+fn paint_glyph(pixels: &mut [u32], pitch: usize, byte: u8, x: usize, y: usize, colour: u32) {
+    let glyph = &kernel_font::GLYPHS[(byte - kernel_font::FIRST) as usize];
+    for row in 0..CELL_HEIGHT {
+        for col in 0..CELL_WIDTH {
+            let coverage = glyph[row * CELL_WIDTH + col] as u32;
+            if coverage != 0 {
+                let idx = (y + row) * pitch + x + col;
+                pixels[idx] = blend(pixels[idx], colour, coverage);
+            }
+        }
+    }
+}
+
+/// Pixel-exact, case-preserving inspection of service-supplied effect text.
+///
+/// This is presentation, NOT a security credential or trusted effect grant.
+/// PT's service must separately bind actor, task, immutable source digest,
+/// full destination, explicit human decision and actual effect receipt.
+/// Preflight rejects invalid bytes/surfaces BEFORE mutating any pixels.
+pub fn draw_permission(
+    pixels: &mut [u32], width: usize, height: usize, pitch: usize,
+    action: &str, target: &str, colour: u32,
+) -> Result<(), DrawError> {
+    if !can_show_permission(action, target) {
+        return Err(DrawError::UnrenderableInput);
+    }
+    let required = height.checked_mul(pitch).ok_or(DrawError::InsufficientSurface)?;
+    if pitch < width || pixels.len() < required {
+        return Err(DrawError::InsufficientSurface);
+    }
+    let text_right = PERMISSION_X
+        .checked_add(PERMISSION_COLS * CELL_WIDTH)
+        .ok_or(DrawError::InsufficientEditor)?;
+    let length_right = PERMISSION_LENGTH_X
+        .checked_add(3 * CELL_WIDTH)
+        .ok_or(DrawError::InsufficientEditor)?;
+    let bottom = PERMISSION_TARGET_Y
+        .checked_add(2 * CELL_HEIGHT)
+        .ok_or(DrawError::InsufficientEditor)?;
+    if width < text_right.max(length_right) || height < bottom {
+        return Err(DrawError::InsufficientEditor);
+    }
+    permission_glyphs(action, target, |x, y, byte| paint_glyph(pixels, pitch, byte, x, y, colour))
+}
+
+pub fn permission_glyphs(action: &str, target: &str, mut emit: impl FnMut(usize, usize, u8)) -> Result<(), DrawError> {
+    if !can_show_permission(action, target) { return Err(DrawError::UnrenderableInput); }
+    for (field, top) in [(action, PERMISSION_ACTION_Y), (target, PERMISSION_TARGET_Y)] {
+        for (i, byte) in field.bytes().enumerate() {
+            emit(PERMISSION_X + (i % PERMISSION_COLS) * CELL_WIDTH,
+                 top + (i / PERMISSION_COLS) * CELL_HEIGHT, byte);
+        }
+        let len = field.len();
+        for (i, digit) in [len / 100, len / 10 % 10, len % 10].into_iter().enumerate() {
+            emit(PERMISSION_LENGTH_X + i * CELL_WIDTH, top, b'0' + digit as u8);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Action, BackendEvent, Intent, Mode, Model, Ui};
+    use std::string::String;
+    use std::vec;
+
+    const W: usize = 960;
+    const H: usize = 540;
+    const BACK: u32 = 0x10283f;
+    const FORE: u32 = 0xf2f7fc;
+
+    fn raster(input: &str) -> vec::Vec<u32> {
+        let mut pixels = vec![BACK; W * H];
+        draw_request(&mut pixels, W, H, W, input, FORE).unwrap();
+        pixels
+    }
+
+    fn cell_has_ink(pixels: &[u32], i: usize) -> bool {
+        let x = EDITOR_X + (i % EDITOR_COLS) * CELL_WIDTH;
+        let y = EDITOR_Y + (i / EDITOR_COLS) * CELL_HEIGHT;
+        (0..CELL_HEIGHT).any(|dy| {
+            (0..CELL_WIDTH).any(|dx| pixels[(y + dy) * W + x + dx] != BACK)
+        })
+    }
+
+
+    fn permission_raster(action: &str, target: &str) -> vec::Vec<u32> {
+        let mut pixels = vec![BACK; W * H];
+        draw_permission(&mut pixels, W, H, W, action, target, FORE).unwrap();
+        pixels
+    }
+
+    fn permission_cell_has_ink(pixels: &[u32], i: usize, target: bool) -> bool {
+        let x = PERMISSION_X + (i % PERMISSION_COLS) * CELL_WIDTH;
+        let y = if target {
+            PERMISSION_TARGET_Y + (i / PERMISSION_COLS) * CELL_HEIGHT
+        } else { PERMISSION_ACTION_Y };
+        (0..CELL_HEIGHT).any(|dy| {
+            (0..CELL_WIDTH).any(|dx| pixels[(y + dy) * W + x + dx] != BACK)
+        })
+    }
+
+    #[test]
+    fn permission_pixels_preserve_case_and_filesystem_punctuation() {
+        let lower = permission_raster("WRITE src", "/home/a_b:{c}.rs");
+        let upper = permission_raster("WRITE src", "/home/A_b:{c}.rs");
+        let other = permission_raster("WRITE src", "/home/a-b:{c}.rs");
+        assert_ne!(lower, upper);
+        assert_ne!(lower, other);
+        assert!(permission_cell_has_ink(&lower, 8, true));
+        assert!(can_show_permission("WRITE file", r"C:\Users\Sam\my_file.txt"));
+    }
+
+    #[test]
+    fn permission_48_and_72_byte_extremes_display_last_cell_and_count() {
+        let action = "a".repeat(47) + "Z";
+        let target = String::from("/") + &"z".repeat(70) + "Q";
+        assert_eq!(action.len(), 48);
+        assert_eq!(target.len(), 72);
+        let pixels = permission_raster(&action, &target);
+        assert!(permission_cell_has_ink(&pixels, 47, false));
+        assert!(permission_cell_has_ink(&pixels, 71, true));
+        assert!(can_show_permission(&action, &target));
+        assert_eq!(PERMISSION_LENGTH_X + 3 * CELL_WIDTH, 918);
+        assert!(PERMISSION_TARGET_Y + 2 * CELL_HEIGHT <= 385);
+    }
+
+    #[test]
+    fn permission_length_digits_distinguish_invisible_trailing_space() {
+        let a = permission_raster("WRITE", "/home/a");
+        let b = permission_raster("WRITE", "/home/a ");
+        assert_ne!(a, b, "native length digits must visibly identify spaces");
+        assert!(can_show_permission("WRITE", "/home/a "));
+        assert_ne!(permission_raster("WRITE", " a"), permission_raster("WRITE", "a "));
+    }
+
+    #[test]
+    fn invalid_permission_never_writes_pixels_or_emits_substitution() {
+        let long_action = "W".repeat(49);
+        let cases = [
+            ("WRITE", "/a\nb"),
+            ("WRITE", "/home/é"),
+            ("", "/home/a"),
+            ("WRITE", ""),
+            (long_action.as_str(), "/home/a"),
+        ];
+        for (action, target) in cases {
+            let mut px = vec![BACK; W * H];
+            assert_eq!(draw_permission(&mut px, W, H, W, action, target, FORE),
+                       Err(DrawError::UnrenderableInput));
+            assert!(px.iter().all(|c| *c == BACK));
+        }
+        let mut px = vec![BACK; 20];
+        assert_eq!(draw_permission(&mut px, W, H, W, "WRITE", "/home/a", FORE),
+                   Err(DrawError::InsufficientSurface));
+        assert!(px.iter().all(|c| *c == BACK));
+        let mut px = vec![BACK; 917 * H];
+        assert_eq!(draw_permission(&mut px, 917, H, 917, "WRITE", "/home/a", FORE),
+                   Err(DrawError::InsufficientEditor));
+        assert!(px.iter().all(|c| *c == BACK));
+    }
+
+    #[test]
+    fn lower_and_upper_case_paths_render_differently() {
+        let a = raster("read /home/a.txt");
+        let b = raster("read /home/A.txt");
+        assert_ne!(a, b);
+        assert!(cell_has_ink(&a, 11));
+        assert!(cell_has_ink(&b, 11));
+    }
+
+    #[test]
+    fn all_printable_ascii_glyphs_except_space_have_ink() {
+        for ch in 33u8..=126 {
+            let glyph = &kernel_font::GLYPHS[(ch - kernel_font::FIRST) as usize];
+            assert!(glyph.iter().any(|v| *v != 0), "invisible supported ASCII {}", ch);
+        }
+    }
+
+    #[test]
+    fn every_printable_ascii_glyph_has_distinct_pixels() {
+        // Every admitted ASCII character should have a unique raster so that
+        // visually different input bytes cannot become literally identical
+        // pixels. Human legibility still requires separate guest testing.
+        for a in 0..95usize {
+            for b in (a + 1)..95usize {
+                assert_ne!(
+                    kernel_font::GLYPHS[a], kernel_font::GLYPHS[b],
+                    "two ASCII bytes share identical glyph pixels: {} and {}",
+                    a + 32, b + 32,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn all_submittable_bytes_at_92_93_and_120_are_drawn() {
+        for len in [92, 93, 120] {
+            let prompt = "x".repeat(len - 1) + "Z";
+            let pixels = raster(&prompt);
+            assert!(cell_has_ink(&pixels, len - 1), "last byte invisible at len {}", len);
+            assert_eq!(EDITOR_COLS, 78);
+            assert!(len <= EDITOR_CAPACITY);
+            let mut u = Ui::new();
+            assert!(u.observe(BackendEvent::Service {
+                connected: true, model: Model::Ready, saved_mode: Mode::Single,
+            }));
+            for ch in prompt.bytes() {
+                assert!(u.input.push_ascii(ch));
+            }
+            assert_eq!(u.input.as_str(), prompt);
+            match u.intent(Action::Submit) {
+                Some(Intent::Submit {
+                    idempotency_key: 1, prompt: delivered, mode: Mode::Single,
+                }) => {
+                    assert_eq!(delivered.as_str(), prompt);
+                }
+                _ => panic!("expected exact UI request intent"),
+            }
+        }
+    }
+
+    #[test]
+    fn punctuation_is_distinct_and_not_silently_deleted() {
+        let a = raster("mkdir /home/a_b:{c}[d]?!");
+        let b = raster("mkdir /home/a-b:{c}[d]?!");
+        assert_ne!(a, b);
+        let cases = ["_", "\\", ":", "{", "}", "[", "]", "?", "!", "~", "@", "#", "'",
+                     "\""];
+        for s in cases {
+            assert!(cell_has_ink(&raster(s), 0), "missing punctuation {}", s);
+        }
+    }
+
+    #[test]
+    fn us_set1_keyboard_can_type_all_printable_ascii() {
+        let mut available = [false; 95];
+        for code in 0..128 {
+            for shift in [false, true] {
+                if let Some(byte) = key_from_set1(code, shift) {
+                    assert!((32..=126).contains(&byte));
+                    available[(byte - 32) as usize] = true;
+                }
+            }
+        }
+        for (index, found) in available.iter().enumerate() {
+            assert!(*found, "printable key not typeable: {}", index + 32);
+        }
+    }
+
+    #[test]
+    fn us_set1_preserves_case_and_shifted_path_punctuation() {
+        assert_eq!(key_from_set1(30, false), Some(b'a'));
+        assert_eq!(key_from_set1(30, true), Some(b'A'));
+        assert_eq!(key_from_set1(12, false), Some(b'-'));
+        assert_eq!(key_from_set1(12, true), Some(b'_'));
+        assert_eq!(key_from_set1(13, true), Some(b'+'));
+        assert_eq!(key_from_set1(26, true), Some(b'{'));
+        assert_eq!(key_from_set1(43, false), Some(b'\\'));
+        assert_eq!(key_from_set1(53, true), Some(b'?'));
+        assert_eq!(key_from_set1(41, false), Some(96));
+        assert_eq!(key_from_set1(41, true), Some(b'~'));
+        assert_eq!(key_from_set1(1, false), None);
+        assert_eq!(key_from_set1(28, false), None);
+        assert_eq!(key_from_set1(56, false), None);
+    }
+
+    #[test]
+    fn invalid_or_unfittable_requests_leave_framebuffer_unchanged() {
+        for value in [
+            "a".repeat(EDITOR_CAPACITY + 1),
+            String::from("abc\nhidden"),
+            String::from("á"),
+        ] {
+            let mut px = vec![BACK; W * H];
+            assert_eq!(draw_request(&mut px, W, H, W, &value, FORE),
+                       Err(DrawError::UnrenderableInput));
+            assert!(px.iter().all(|c| *c == BACK));
+        }
+
+        let mut narrow = vec![BACK; 919 * H];
+        assert_eq!(draw_request(&mut narrow, 919, H, 919, "A", FORE),
+                   Err(DrawError::InsufficientEditor));
+        assert!(narrow.iter().all(|c| *c == BACK));
+
+        let mut small = vec![BACK; 20];
+        assert_eq!(draw_request(&mut small, W, H, W, "A", FORE),
+                   Err(DrawError::InsufficientSurface));
+        assert!(small.iter().all(|c| *c == BACK));
+    }
+}
