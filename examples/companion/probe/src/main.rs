@@ -77,6 +77,18 @@ fn write_all(fd: isize, mut bytes: &[u8]) -> isize {
     1
 }
 
+/// One byte more than the channel holds in one direction.
+const HOLD: usize = 65_537;
+
+/// The other end has gone: say what a read and a write of the channel answer now.
+fn gone(line: &dyn Fn(&[u8], isize), fd: isize, round: usize, back: &mut [u8], out: &[u8]) {
+    line(b"the other end was gone in round ", round as isize);
+    let read = call(0, fd as usize, back.as_mut_ptr() as usize, back.len(), 0, 0, 0);
+    line(b"a read of it then answered ", read);
+    let wrote = call(1, fd as usize, out.as_ptr() as usize, 10, 0, 0, 0);
+    line(b"a write to it then answered ", wrote);
+}
+
 pcp_game_guest::entry!(probe_main);
 #[no_mangle]
 pub extern "C" fn probe_main() -> ! {
@@ -88,7 +100,7 @@ pub extern "C" fn probe_main() -> ! {
         fill(&pattern);
     }
     let mut lost = 0isize;
-    let mut check = |lost: &mut isize| {
+    let check = |lost: &mut isize| {
         if wide && !kept(&pattern) {
             *lost += 1;
             fill(&pattern);
@@ -114,6 +126,23 @@ pub extern "C" fn probe_main() -> ! {
             if n == 1 && buffer[0] == 255 {
                 line(b"told to finish after ", total);
                 break;
+            }
+            // One byte of 254 by itself asks it to hold: it says so, then reads nothing until it has
+            // written one byte more than the channel holds. The front can then fill its own direction
+            // knowing that nothing is being taken from it, however the two are scheduled, and the last
+            // byte written here waits for room until the front reads.
+            if n == 1 && buffer[0] == 254 {
+                let held = [0xA5u8; 4096];
+                let mut wrote = write_all(fd, &[254]);
+                let mut left = HOLD;
+                while wrote > 0 && left > 0 {
+                    let now = left.min(held.len());
+                    wrote = write_all(fd, &held[..now]);
+                    left -= now;
+                    check(&mut lost);
+                }
+                line(b"held until it had written ", (HOLD - left) as isize);
+                continue;
             }
             for b in buffer[..n as usize].iter_mut() {
                 *b = b.wrapping_add(1);
@@ -143,7 +172,9 @@ pub extern "C" fn probe_main() -> ! {
             *b = ((round * 7 + i) % 251) as u8;
         }
         if write_all(fd, &out) <= 0 {
-            line(b"a write was refused in round ", round as isize);
+            // The other end went before this was written. Which of the write and the read finds out
+            // first depends on how the two were scheduled; both are then asked afresh.
+            gone(&line, fd, round, &mut back, &out);
             break;
         }
         let mut have = 0;
@@ -151,10 +182,7 @@ pub extern "C" fn probe_main() -> ! {
             let n = call(0, fd as usize, back[have..].as_mut_ptr() as usize, back.len() - have, 0, 0, 0);
             check(&mut lost);
             if n <= 0 {
-                line(b"the other end was gone in round ", round as isize);
-                line(b"that read answered ", n);
-                let again = call(1, fd as usize, out.as_ptr() as usize, 10, 0, 0, 0);
-                line(b"a write to it then answered ", again);
+                gone(&line, fd, round, &mut back, &out);
                 break 'exchanges;
             }
             have += n as usize;
@@ -165,6 +193,11 @@ pub extern "C" fn probe_main() -> ! {
     line(b"exchanges completed ", rounds);
     line(b"bytes that came back wrong ", wrong);
     if rounds == 100 {
+        // Ask the companion to hold, and wait for it to say it has: from then on it takes nothing.
+        let asked = write_all(fd, &[254]);
+        let mut said = [0u8; 1];
+        let n = call(0, fd as usize, said.as_mut_ptr() as usize, 1, 0, 0, 0);
+        line(b"asking it to hold answered ", if asked == 1 && n == 1 { said[0] as isize } else { -1 });
         // Fill the channel without reading: opened again not to wait, it must say when it is full,
         // and everything it took must come back.
         let fast = open(b"/dev/talk\0", 2 | 0x800);
@@ -181,6 +214,19 @@ pub extern "C" fn probe_main() -> ! {
         };
         line(b"the full channel answered ", full);
         line(b"bytes it took before that ", sent);
+        // What the companion wrote while it held: all the channel holds and one byte that waited for room.
+        let (mut waiting, mut other) = (0usize, 0isize);
+        while waiting < HOLD {
+            let n = call(0, fd as usize, back.as_mut_ptr() as usize, back.len().min(HOLD - waiting), 0, 0, 0);
+            if n <= 0 {
+                break;
+            }
+            other += back[..n as usize].iter().filter(|b| **b != 0xA5).count() as isize;
+            waiting += n as usize;
+            check(&mut lost);
+        }
+        line(b"bytes the companion wrote while it held ", waiting as isize);
+        line(b"of those, bytes that were not what it wrote ", other);
         let mut returned = 0isize;
         while returned < sent {
             let n = call(0, fd as usize, back.as_mut_ptr() as usize, back.len().min((sent - returned) as usize), 0, 0, 0);

@@ -13,7 +13,10 @@ Predicates, fixed before the first run.
  P1 together: 100 exchanges of 1,000 bytes complete with no byte wrong (the companion reads at most 7
     bytes at a time, so each exchange is many short reads and writes).
  P2 a channel written to without reading says so (-11) after taking exactly 65,536 bytes, and all
-    of them come back once it is read.
+    of them come back once it is read. The companion is first asked to hold and says it has, so that
+    nothing is taken from the channel while it is filled, however the two programs are scheduled;
+    while it holds it writes 65,537 bytes, the last of which waits for room, and the front reads
+    exactly those.
  P3 each program, where the processor has 256-bit registers, kept its own pattern through every
     switch: both report 0 times that the register held something else, and both used the registers.
  P4 told to finish, the companion ends by itself and the front's next read answers 0.
@@ -77,9 +80,10 @@ def main():
     status, lines = boot(args.qemu, kernel, [front, back], words % (digest(front), digest(back)))
     common("together", status, lines)
     require("together, front", said(lines, "front: "), ["opening the channel answered 0", "exchanges completed 100", "bytes that came back wrong 0",
-            "the full channel answered -11", "bytes it took before that 65536", "bytes that came back after it 65536", "telling it to finish answered 1",
+            "asking it to hold answered 254", "the full channel answered -11", "bytes it took before that 65536",
+            "bytes the companion wrote while it held 65537", "of those, bytes that were not what it wrote 0", "bytes that came back after it 65536", "telling it to finish answered 1",
             "the read after that answered 0", "wide registers used 1", "times its register held something else 0"])
-    require("together, back", said(lines, "back: "), ["opening the channel answered 0", "told to finish after 165536", "bytes answered 165536",
+    require("together, back", said(lines, "back: "), ["opening the channel answered 0", "held until it had written 65537", "told to finish after 165536", "bytes answered 165536",
             "wide registers used 1", "times its register held something else 0"])
     if not any(line.startswith("companion talk-back: it exited with 0") for line in lines):
         problems.append("together: the companion did not end by itself when told to finish")
@@ -87,7 +91,7 @@ def main():
 
     status, lines = boot(args.qemu, kernel, [front, leaving], words % (digest(front), digest(leaving)))
     common("companion leaves", status, lines)
-    require("companion leaves, front", said(lines, "front: "), ["the other end was gone in round 1", "that read answered 0", "a write to it then answered -32",
+    require("companion leaves, front", said(lines, "front: "), ["the other end was gone in round 1", "a read of it then answered 0", "a write to it then answered -32",
             "exchanges completed 1", "bytes that came back wrong 0", "times its register held something else 0"])
     print("companion leaves: " + "; ".join(said(lines, "front: ")))
 
