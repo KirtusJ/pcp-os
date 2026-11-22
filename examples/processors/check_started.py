@@ -28,6 +28,10 @@ or 75 where there are more (the count of S9 as well).
     started came up holding other memory types than the first and was given the first's (this
     emulator returns a restarted processor with those registers cleared; a real processor keeps
     them, and the kernel then writes nothing). The check that all hold the same afterwards passes.
+ S11 (C3's control) on a machine of four whose processors have the page-attribute table and no memory-range
+    registers (cpu "max,mtrr=off,pat=on"), the only difference a started processor can have from the first is
+    the table the kernel changed. The kernel says each of the three was given the first's table with its ranges
+    untouched, says nothing of memory types, and the boot is sound with an exact count.
  S9 in every boot of S1 to S3 with more than one processor, the kernel says the count all
     processors added to together is exactly processors x 20000, and its check passes.
  S10 the control, 4 processors: the kernel built so that the lock is not waited for during that
@@ -71,19 +75,20 @@ import time
 from pathlib import Path
 
 
-def machine(qemu, kernel, kind, memory, smp):
-    return [qemu, "-machine", kind, "-accel", "tcg", "-cpu", "max", "-smp", smp, "-m", memory, "-kernel", str(kernel), "-append", "then=off",
+def machine(qemu, kernel, kind, memory, smp, cpu="max"):
+    return [qemu, "-machine", kind, "-accel", "tcg", "-cpu", cpu, "-smp", smp, "-m", memory, "-kernel", str(kernel), "-append", "then=off",
             "-display", "none", "-nic", "none", "-no-reboot"]
 
 
-def boot(qemu, kernel, kind, memory, smp):
+def boot(qemu, kernel, kind, memory, smp, cpu="max"):
     began = time.monotonic()
-    done = subprocess.run(machine(qemu, kernel, kind, memory, smp) + ["-serial", "stdio", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"], capture_output=True, timeout=900)
+    done = subprocess.run(machine(qemu, kernel, kind, memory, smp, cpu) + ["-serial", "stdio", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"], capture_output=True, timeout=900)
     lines = done.stdout.decode(errors="replace").splitlines()
     return {"status": done.returncode, "passes": sum(1 for line in lines if line.startswith("  pass ")), "fails": [line for line in lines if line.startswith("  FAIL ")],
             "said": [line for line in lines if line.startswith("other processors: ") and "started and parked" in line],
             "count": [line for line in lines if line.startswith("other processors: all ")],
-            "given": [line for line in lines if line.startswith("other processors: ") and "memory types" in line], "lines": lines, "took": time.monotonic() - began}
+            "given": [line for line in lines if line.startswith("other processors: ") and "memory types" in line],
+            "table": [line for line in lines if line.startswith("other processors: ") and "page-attribute table" in line], "lines": lines, "took": time.monotonic() - began}
 
 
 def registers(qemu, kernel, smp):
@@ -174,6 +179,14 @@ def main():
                 print("%s: %s" % (label, run["said"][0]))
             if kind == "pc" and count == 4:
                 four = run["took"]
+    run = boot(args.qemu, args.kernel, "pc", "256M", "4", cpu="max,mtrr=off,pat=on")
+    sound("S11", run, passes=75)
+    counted("S11", run, 4)
+    want = ["other processors: 3 came up with another page-attribute table than the first and were given the first's; their memory ranges agreed and were not touched"]
+    if run["table"] != want or run["given"]:
+        problems.append("S11: the kernel said %r and %r" % (run["table"], run["given"]))
+    else:
+        print("S11: %s" % run["table"][0])
     run = boot(args.qemu, args.kernel, "pc", "256M", "4,cores=2,threads=2")
     sound("S2", run, passes=75)
     given("S2", run, 3)
