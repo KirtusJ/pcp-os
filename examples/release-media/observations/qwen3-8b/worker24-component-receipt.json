@@ -1,0 +1,30 @@
+{
+  "scope": "Independent readback of the CI archive and two worker ELF files. The source-model identity is publisher metadata. C3 independently packed the shards. The finished 8B image awaits measurement.",
+  "tailorbird_commit": "9c14937c413d7fcd63878b9870ae0862d760c69c",
+  "os_gitlink": "5a87b5e75b63f12c4d92cd8345eccee1cc292e9e",
+  "github_run_id": 45018962869,
+  "github_artifact_id": 14752508424,
+  "archive_bytes": 381598,
+  "archive_sha256": "68dcadd474434705dddadeecd0487e0442f80581dc0089bd8254df0551d96e23",
+  "workers": {
+    "model-worker": {
+      "elf_bytes": 200960,
+      "elf_sha256": "2750a34540d0f4f4852b8b184ddb318cf8cc8dcd9d565233511c3cfc905dcd5b",
+      "embedded_manifest_sha256": "bbdaa8cd263d9454159f12b55ec32613d18a4b7b4d75d284ad0cadc932bc1f4b"
+    },
+    "model-worker-qwen3-8b": {
+      "elf_bytes": 200960,
+      "elf_sha256": "955df6cced1106dc913379c07c513166ccbe42225d70c407ad56432c90125541",
+      "embedded_manifest_sha256": "2c02ff6f00a2ee802ce09648dfbc56dda38a64b009635f0aeb383f09e1af67dc"
+    }
+  },
+  "qwen3_8b": {
+    "publisher_file": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/blob/7c41481f57cb95916b40956ab2f0b139b296d974/Qwen3-8B-Q4_K_M.gguf",
+    "publisher_sha256": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
+    "packing_observation": "https://github.com/KirtusJ/pcp-os/pull/276#issuecomment-7074823392",
+    "model_bytes_reported_by_c3": 5027783488,
+    "manifest_bytes_reported_by_c3": 2456,
+    "shards_reported_by_c3": 75
+  },
+  "compiler_reported_by_ci": "rustc 1.97.0-nightly (f53b654a8 2026-04-30)\nbinary: rustc\ncommit-hash: f53b654a8882fd5fc036c4ca7a4ff41ce32497a6\ncommit-date: 2026-04-30\nhost: x86_64-unknown-linux-gnu\nrelease: 1.97.0-nightly\nLLVM version: 22.1.4"
+}
