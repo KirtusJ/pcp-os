@@ -44,6 +44,12 @@ EFI_STATUS fw_free(EFI_PHYSICAL_ADDRESS start, UINTN pages) {
     return services->FreePages(start, pages);
 }
 EFI_STATUS fw_exit(UINTN key) { return services->ExitBootServices(image_handle, key); }
+UINT64 fw_acpi_table(UINT32 modern) {
+    EFI_GUID v2 = ACPI_20_TABLE_GUID, v1 = ACPI_TABLE_GUID;
+    VOID *table = NULL;
+    EFI_STATUS status = LibGetSystemConfigurationTable(modern ? &v2 : &v1, &table);
+    return EFI_ERROR(status) ? 0 : (UINT64)(UINTN)table;
+}
 struct mode { UINT64 base, size; UINT32 width, height, stride, format; };
 int fw_display(struct mode *out) {
     EFI_GUID guid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;

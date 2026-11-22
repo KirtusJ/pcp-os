@@ -1,6 +1,7 @@
 //! Unsafe calls are confined to firmware services and already owned physical pages.
 //! Single threaded up to the one-way Multiboot transfer.
 use crate::{
+    cmdline::Line,
     elf::Elf,
     memory::{self, Map, Owned, Pages, Range, Span, PAGE},
     payload::{self, Media},
@@ -42,6 +43,7 @@ extern "C" {
     fn fw_claim(pages: usize, address: *mut u64) -> usize;
     fn fw_free(addr: u64, pages: usize) -> usize;
     fn fw_exit(key: usize) -> usize;
+    fn fw_acpi_table(modern: u32) -> u64;
     fn fw_display(out: *mut Mode) -> i32;
     fn transfer(info: usize, entry: usize, sp: usize) -> !;
     static transfer_end: u8;
@@ -195,22 +197,6 @@ struct Boot {
     ranges: [Range; 65536 / 24],
     stack: Stack,
 }
-struct Line<'a> {
-    buf: &'a mut [u8],
-    n: usize,
-}
-impl Write for Line<'_> {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        let end = self.n.checked_add(s.len()).ok_or(fmt::Error)?;
-        if end >= self.buf.len() {
-            return Err(fmt::Error);
-        }
-        self.buf[self.n..end].copy_from_slice(s.as_bytes());
-        self.buf[end] = 0;
-        self.n = end;
-        Ok(())
-    }
-}
 fn prepare(b: &mut Boot, inputs: &[Span; 4], pieces: &[Span]) -> Result<()> {
     b.info[0] = 4 | 8 | 0x40;
     b.info[4] = b.line.as_ptr() as u32;
@@ -254,10 +240,7 @@ fn prepare(b: &mut Boot, inputs: &[Span; 4], pieces: &[Span]) -> Result<()> {
             }
         }
     }
-    let mut l = Line {
-        buf: &mut b.line,
-        n: 0,
-    };
+    let mut l = Line::new(&mut b.line);
     let err = "The kernel command line is too long.";
     write!(l,"image={} auto=tailorbird then=menu propose_image={} worker_for={} worker_image={} model_manifest={} model_memory=",config::MEASUREMENT,config::UI,config::UI,config::WORKER,config::MANIFEST).map_err(|_|err)?;
     let mut left = config::MODEL;
@@ -276,6 +259,8 @@ fn prepare(b: &mut Boot, inputs: &[Span; 4], pieces: &[Span]) -> Result<()> {
     if left != 0 {
         return Err("The kernel model command line is incomplete.");
     }
+    l.append_rsdp(|modern| unsafe { fw_acpi_table(u32::from(modern)) })
+        .map_err(|_| err)?;
     Ok(())
 }
 /// Caller holds the firmware allocation exclusively; initialize it before producing Rust references.
