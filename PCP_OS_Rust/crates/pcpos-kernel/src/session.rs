@@ -918,70 +918,113 @@ fn folder_view(folder: &mut Option<String>) {
     let across = (cols.saturating_sub(4) as usize).max(8);
     let mut typed = String::new();
     let mut said: (&str, u32) = ("", SOFT);
+    // Which of Shift, Ctrl and Alt are down, kept here from presses and releases: a key pressed with
+    // one of them is not the same key, and is never taken for it.
+    let (mut shift, mut ctrl, mut alt) = (0u8, false, false);
     loop {
         ui::clear(GROUND);
-        let mut row = if rows >= 16 { 1 } else { 0 };
+        let roomy = rows >= 22;
+        let now_rows = match folder.as_deref() {
+            Some(name) => 1 + name.len().div_ceil(across).max(1) as u32,
+            None => 2,
+        };
+        // Title, what it is (where there is room), the folder now, what a change does, the heading of
+        // the field, the hint, the result and the keys: the field gets the rows that are left, and
+        // shows the end of what is typed when that is longer.
+        let fixed = 1 + roomy as u32 + now_rows + 2 + 1 + 1 + 1 + 1;
+        let field_rows = (rows.saturating_sub(fixed) as usize).clamp(1, 117usize.div_ceil(across));
+        let mut row = 0u32;
         let mut line = |words: &str, colour: u32, row: &mut u32| {
-            if *row < rows {
+            if *row + 1 < rows {
                 at(2, *row, words, colour, GROUND);
             }
             *row += 1;
         };
-        // A long name goes on as many rows as it needs; it is never cut.
-        let whole = |name: &str, colour: u32, ground: u32, row: &mut u32| {
-            let bytes = name.as_bytes();
-            for part in bytes.chunks(across) {
-                if *row < rows {
-                    ui::fill(2 * ui::CELL_W, *row * ui::CELL_H, across as u32 * ui::CELL_W, ui::CELL_H, ground);
-                    at(2, *row, core::str::from_utf8(part).unwrap_or("?"), colour, ground);
-                }
-                *row += 1;
-            }
-            if bytes.is_empty() {
-                if *row < rows {
-                    ui::fill(2 * ui::CELL_W, *row * ui::CELL_H, across as u32 * ui::CELL_W, ui::CELL_H, ground);
-                }
-                *row += 1;
-            }
-        };
         line("PROJECTS FOLDER", ui::TEAL, &mut row);
-        line("Taylor builds only in this folder.", SOFT, &mut row);
+        if roomy {
+            line("Taylor builds only in this folder.", SOFT, &mut row);
+        }
         match folder.as_deref() {
             Some(name) => {
                 line("Now:", TEXT, &mut row);
-                whole(name, ui::GOOD, GROUND, &mut row);
+                // The folder now is always shown whole.
+                for part in name.as_bytes().chunks(across) {
+                    line(core::str::from_utf8(part).unwrap_or("?"), ui::GOOD, &mut row);
+                }
             }
             None => {
                 line("Now: not set. The name given was", ui::BAD, &mut row);
                 line("not valid, so Taylor cannot start.", ui::BAD, &mut row);
             }
         }
-        line("A change applies when Taylor is", SOFT, &mut row);
-        line("next opened. No file is moved.", SOFT, &mut row);
-        line("It lasts until power-off.", SOFT, &mut row);
-        line("New name:", TEXT, &mut row);
-        whole(&typed, TEXT, PANEL, &mut row);
-        line("a-z 0-9 . - and at most one /", SOFT, &mut row);
+        line("Applies when Taylor next opens.", SOFT, &mut row);
+        line("No file moves. Lasts to power-off.", SOFT, &mut row);
+        let chunks: Vec<&[u8]> = typed.as_bytes().chunks(across).collect();
+        let hidden = chunks.len().saturating_sub(field_rows);
+        let heading = if hidden > 0 { format!("New name ({} typed, end shown):", typed.len()) } else { format!("New name ({} typed):", typed.len()) };
+        line(&heading, TEXT, &mut row);
+        for n in 0..field_rows {
+            if row + 1 < rows {
+                ui::fill(2 * ui::CELL_W, row * ui::CELL_H, across as u32 * ui::CELL_W, ui::CELL_H, PANEL);
+                if let Some(part) = chunks.get(hidden + n) {
+                    at(2, row, core::str::from_utf8(part).unwrap_or("?"), TEXT, PANEL);
+                }
+            }
+            row += 1;
+        }
+        line("a-z 0-9 . - _ and at most one /", SOFT, &mut row);
         line(said.0, said.1, &mut row);
         if rows > 0 {
             at(2, rows - 1, "Enter sets   Esc leaves", SOFT, GROUND);
         }
         loop {
-            let (code, extended) = wait_key();
-            let letter = if extended { None } else { match code {
-                0x02..=0x0B => Some(b"1234567890"[(code - 0x02) as usize]),
-                0x10..=0x19 => Some(b"qwertyuiop"[(code - 0x10) as usize]),
-                0x1E..=0x26 => Some(b"asdfghjkl"[(code - 0x1E) as usize]),
-                0x2C..=0x32 => Some(b"zxcvbnm"[(code - 0x2C) as usize]),
-                0x0C => Some(b'-'),
-                0x34 => Some(b'.'),
-                0x35 => Some(b'/'),
-                _ => None,
-            } };
+            let key = loop {
+                match dev::key_take() {
+                    Some(k) => break k,
+                    None => arch::wait_for_interrupt(),
+                }
+            };
+            match (key.code, key.extended) {
+                (0x2A, false) => { if key.released { shift &= !1 } else { shift |= 1 }; continue; }
+                (0x36, false) => { if key.released { shift &= !2 } else { shift |= 2 }; continue; }
+                (0x1D, _) => { ctrl = !key.released; continue; }
+                (0x38, _) => { alt = !key.released; continue; }
+                _ => {}
+            }
+            if key.released {
+                continue;
+            }
+            let code = key.code;
+            // The character the key gives as it was pressed: with Shift a letter is a capital (which
+            // no folder name may hold, and which is shown and refused, not made small) and the hyphen
+            // key is an underscore. A key that gives no character a name could hold gives none.
+            let letter = if key.extended || ctrl || alt || key.ctrl { None } else {
+                let plain = match code {
+                    0x02..=0x0B => Some(b"1234567890"[(code - 0x02) as usize]),
+                    0x10..=0x19 => Some(b"qwertyuiop"[(code - 0x10) as usize]),
+                    0x1E..=0x26 => Some(b"asdfghjkl"[(code - 0x1E) as usize]),
+                    0x2C..=0x32 => Some(b"zxcvbnm"[(code - 0x2C) as usize]),
+                    0x0C => Some(b'-'),
+                    0x34 => Some(b'.'),
+                    0x35 => Some(b'/'),
+                    _ => None,
+                };
+                match (plain, shift != 0) {
+                    (Some(b), false) => Some(b),
+                    (Some(b), true) if b.is_ascii_lowercase() => Some(b.to_ascii_uppercase()),
+                    (Some(b'-'), true) => Some(b'_'),
+                    _ => None,
+                }
+            };
+            let typing_key = matches!(code, 0x02..=0x0C | 0x10..=0x19 | 0x1E..=0x26 | 0x2C..=0x32 | 0x34 | 0x35) && !key.extended;
             match (code, letter) {
                 (0x01, _) => return,
                 // One more than a name may have can be typed, so that too long is seen and refused, not cut.
                 (_, Some(b)) if typed.len() <= 116 => { typed.push(b as char); said = ("", SOFT); }
+                (_, Some(_)) => said = ("No more can be typed.", ui::BAD),
+                // A key that would be a letter or sign but was pressed with Ctrl, Alt or a Shift that
+                // gives nothing a name can hold: nothing is typed, and that is said.
+                (_, None) if typing_key => said = ("That key was not typed.", ui::BAD),
                 (0x0E, _) if !typed.is_empty() => { typed.pop(); said = ("", SOFT); }
                 (0x1C, _) if typed.is_empty() => continue,
                 (0x1C, _) => {
