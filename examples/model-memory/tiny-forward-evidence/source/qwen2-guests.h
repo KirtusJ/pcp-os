@@ -1,0 +1,3 @@
+#define FRONT_FILE 11120ULL
+#define READER_FILE 120608ULL
+#define LAUNCH_WORDS "auto=model-front then=off worker_for=04311cc468d718611f187c448c67fcc554b32affe8c03235daf3320ef83a0f29 worker_image=d2980fbf91bcc6713132c36e37b817451f4029cd81ee12ab43b537e294af2b32 "

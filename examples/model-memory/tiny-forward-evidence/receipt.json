@@ -1,0 +1,243 @@
+{
+  "kernel": {
+    "source": "16806df35ddbf8963a0907684df786abc77cdb53",
+    "flags": [
+      "proposals",
+      "model-memory"
+    ],
+    "relocation_mib": 32,
+    "elf": {
+      "bytes": 1119900,
+      "sha256": "d433ac6d8c03bc9c32a2066937c5c28be0fdc35e4285f753e7fcb93bba7095c2"
+    }
+  },
+  "forward_head": "a5e2a239509a583da2dca0117eb8bf8063e6513d",
+  "guest": {
+    "bytes": 120608,
+    "sha256": "d2980fbf91bcc6713132c36e37b817451f4029cd81ee12ab43b537e294af2b32"
+  },
+  "toolchain": "rustc 1.100.0 (0ef1bc386 2026-11-09)",
+  "emulator": "q35, QEMU 10.0.13, TCG, cpu max, 4096 MiB, OVMF, read-only xHCI FAT32, no network, fresh variables",
+  "libm_crate": {
+    "bytes": 164243,
+    "sha256": "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
+  },
+  "fixtures": {
+    "qwen2": {
+      "source": "a5e2a239509a583da2dca0117eb8bf8063e6513d",
+      "bytes": 81376,
+      "gguf_sha256": "f099e011f18177a93d7b6973de69541475106ad2f74303204cd9d2f646e9ea17",
+      "firmware_sha256": "84b5b473ccc5bc79d1198dd51d8691043976e6285a9e4d65ce255d3b9e67e1eb",
+      "manifest_sha256": "87062b05d1278f32572a8e0d023967a27abcb96def6401a2bed74dc8984cc513",
+      "model": "a model of 81376 bytes is held in memory, out of the pool, for a companion to read; its manifest (88 bytes) is the one the loader's line pins",
+      "positions": 4,
+      "logits": 64,
+      "bit_exact": 13,
+      "max_abs_error": 1.7881393432617188e-07,
+      "tokens": [
+        3,
+        7,
+        5,
+        2
+      ],
+      "selftests": 71,
+      "exit_code": 33,
+      "logits_f32_hex": [
+        [
+          "bd1005d5",
+          "bed91a0f",
+          "bde57e0b",
+          "bc0e0852",
+          "be2e0c79",
+          "be569c0f",
+          "bed3f824",
+          "3ecc5f55",
+          "3d09cc86",
+          "be4572b5",
+          "bed6eea5",
+          "bddc9488",
+          "bb8b3619",
+          "befa9a5b",
+          "be52045e",
+          "bed1a478"
+        ],
+        [
+          "bd3c9c24",
+          "be827d90",
+          "3d2aa82a",
+          "bd7adb78",
+          "be8cf3eb",
+          "be02a45d",
+          "be9a7b6d",
+          "3ebe4556",
+          "bd57a4b7",
+          "be5fe3bd",
+          "be812781",
+          "3d35ffc6",
+          "bd6f2684",
+          "bf1efe19",
+          "bdff3502",
+          "be98ebc8"
+        ],
+        [
+          "3f1a0043",
+          "3e84e1f4",
+          "be3a242d",
+          "beb4f5cc",
+          "bdf083ac",
+          "3f0347a1",
+          "be140776",
+          "be0685e2",
+          "3d1ba594",
+          "3ed96b6f",
+          "3e869230",
+          "be36a1fd",
+          "beb32956",
+          "be50470e",
+          "3f043ab5",
+          "be102176"
+        ],
+        [
+          "bb2704c3",
+          "bd6b7c06",
+          "3ec1fd85",
+          "be1ba238",
+          "bf0e676b",
+          "bd44dfc3",
+          "3daded44",
+          "3eeacd4e",
+          "becdc4de",
+          "bcfdf0b7",
+          "bd5c51c9",
+          "3ec3f67b",
+          "be178d47",
+          "bf7bfb9f",
+          "bd33bc8c",
+          "3db67cb0"
+        ]
+      ],
+      "trace_files": {
+        "qwen2-loader.txt": {
+          "bytes": 8553,
+          "sha256": "e92e4559b11d8a93e498bd9bf004d96f15ad32ba4331a7e24cfc51256cb887ba"
+        },
+        "qwen2-serial.txt": {
+          "bytes": 13054,
+          "sha256": "ac4cb21af80031741fcd9fa0117d291f064db8b7c667a76d78d0c2fe83998749"
+        }
+      },
+      "golden_source": "PCP_OS_Rust/crates/pcpos-qwen/tests/data/qwen2-forward.txt",
+      "cold_boot_media_sha256": "5a87494c87c69220ad42bb92c85f1ffdd5a056cd4e90dd6b5b7ff11ba94e3b30",
+      "loader_model_line": "model_memory=0x0000000100000000:0x0000000000008000,0x0000000100009000:0x000000000000bde0 model_manifest=87062b05d1278f32572a8e0d023967a27abcb96def6401a2bed74dc8984cc513",
+      "sha_validation": "File digest matches the first line of the checked-in reference; no GGUF payload is compiled into the native reader."
+    },
+    "qwen3": {
+      "source": "a5e2a239509a583da2dca0117eb8bf8063e6513d",
+      "bytes": 80896,
+      "gguf_sha256": "56a564b0ed5c43c56639883e83bc54b8d85ffd18266ff7f8dcaede9e37a930a8",
+      "firmware_sha256": "b0ebecede0edc657721c41b9bca59073593c3fca30bbe9a7de42c4fb459d512c",
+      "manifest_sha256": "c5b2bd8011adb2dd97f6335ba93876b684d75af598728acf996722a16892cdb1",
+      "model": "a model of 80896 bytes is held in memory, out of the pool, for a companion to read; its manifest (88 bytes) is the one the loader's line pins",
+      "positions": 4,
+      "logits": 64,
+      "bit_exact": 9,
+      "max_abs_error": 1.1920928955078125e-07,
+      "tokens": [
+        3,
+        7,
+        5,
+        2
+      ],
+      "selftests": 71,
+      "exit_code": 33,
+      "logits_f32_hex": [
+        [
+          "bd50627a",
+          "bedad6ed",
+          "bdcf80d9",
+          "bcc4f215",
+          "be16a099",
+          "be6f4813",
+          "becc336d",
+          "3ec6af8e",
+          "3d5331ec",
+          "be5ccc70",
+          "bed8a800",
+          "bdc68ac0",
+          "bca08e1d",
+          "bef028ec",
+          "be6aa93f",
+          "bec9dc64"
+        ],
+        [
+          "bca4d1de",
+          "be8dcd84",
+          "3dcb459e",
+          "bde8e4fd",
+          "be781837",
+          "be1e8174",
+          "be89f22a",
+          "3ec3743b",
+          "bd5177dd",
+          "be6ba84e",
+          "be8c6fb8",
+          "3dd10d5c",
+          "bde2ef78",
+          "bf11c282",
+          "be1b647d",
+          "be88597c"
+        ],
+        [
+          "3f19c90a",
+          "3e8a4c3d",
+          "be80d443",
+          "bec39101",
+          "bdd8056a",
+          "3f0c0ed3",
+          "be318c00",
+          "be3fad87",
+          "3d8b63ff",
+          "3eee2ddd",
+          "3e8c3448",
+          "be7db60b",
+          "bec18d50",
+          "be3c72c3",
+          "3f0d1c5f",
+          "be2d3a35"
+        ],
+        [
+          "bd5c9bcc",
+          "3cd6327a",
+          "3ebe3afa",
+          "be001f2f",
+          "bef1fdbc",
+          "bdab1e21",
+          "3de91aa2",
+          "3ed10732",
+          "be93a12b",
+          "be076178",
+          "3cf18a27",
+          "3ec00292",
+          "bdf8d676",
+          "bf720697",
+          "bda3368a",
+          "3df10215"
+        ]
+      ],
+      "trace_files": {
+        "qwen3-loader.txt": {
+          "bytes": 8553,
+          "sha256": "9a19c038e50925c1a3331a483ad5db613c7c2408bceb05ae90e46b0af15a6388"
+        },
+        "qwen3-serial.txt": {
+          "bytes": 13054,
+          "sha256": "07229df999eed2d75f0443e1d01e7bd0d6b7cbef3c9057cdeb34372abb2a137f"
+        }
+      },
+      "golden_source": "PCP_OS_Rust/crates/pcpos-qwen/tests/data/qwen3-forward.txt",
+      "cold_boot_media_sha256": "8c7d278e948956ee5fcecf6f632fffd2c069b4e486ee0501e59d43209d4e9a9c",
+      "loader_model_line": "model_memory=0x0000000100000000:0x0000000000008000,0x0000000100009000:0x000000000000bc00 model_manifest=c5b2bd8011adb2dd97f6335ba93876b684d75af598728acf996722a16892cdb1",
+      "sha_validation": "File digest matches the first line of the checked-in reference; no GGUF payload is compiled into the native reader."
+    }
+  }
+}
