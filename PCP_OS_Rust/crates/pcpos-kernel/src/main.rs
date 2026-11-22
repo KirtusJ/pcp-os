@@ -729,6 +729,12 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     let (cr0, _cr4, efer) = arch::protection_registers();
     say!("protections: paging {}, supervisor write protection {}, no-execute {}, long mode {}",
          cr0 >> 31 & 1 == 1, cr0 >> 16 & 1 == 1, efer >> 11 & 1 == 1, efer >> 10 & 1 == 1);
+    // Before any display is mapped and before any other processor is started.
+    match arch::combining_init() {
+        Some((was, now)) if arch::combining_on() => say!("display memory: writes will be combined (page-attribute table {:#018x}, was {:#018x})", now, was),
+        Some((was, now)) => say!("display memory: writes will NOT be combined: the page-attribute table reads {:#018x} after it was written (was {:#018x})", now, was),
+        None => say!("display memory: writes will not be combined: this processor has no page-attribute table"),
+    }
     #[cfg(feature = "processors")]
     arch::others::prepare();
     let (pool_start, pool_end) = arch::protect(&mut boot);
@@ -847,7 +853,11 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
         .and_then(|s| s.split_once('x')).and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)));
     let display = dev::display_init(&bus, &boot, requested);
     match display {
-        Some(d) => say!("display: {:?}, {}x{}, {} page(s), {} KiB of its memory mapped at {:#x}", d.kind, d.width, d.height, d.pages, d.mapped / 1024, d.memory),
+        Some(d) => {
+            say!("display: {:?}, {}x{}, {} page(s), {} KiB of its memory mapped at {:#x}", d.kind, d.width, d.height, d.pages, d.mapped / 1024, d.memory);
+            let (with, all) = arch::combining_readback(d.memory, d.pitch as usize * d.height as usize * d.pages as usize);
+            say!("display memory: {} of the {} pages a picture is written to are mapped write-combining, read back from the kernel's tables", with, all);
+        }
         None => say!("display: none this kernel can drive"),
     }
     let keyboard_start = dev::keyboard_init();
