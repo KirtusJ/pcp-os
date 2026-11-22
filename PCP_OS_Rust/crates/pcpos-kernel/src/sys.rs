@@ -109,6 +109,13 @@ pub struct Linux {
     shadow_asked: bool,
     /// Where that memory is in the program's address space, once it has mapped the display.
     shadow: Option<usize>,
+    /// What the kernel last put on the display for this program, so that the next picture costs only
+    /// the rows that changed. `None` until the first picture, and for good if the frames could not be had.
+    kept: Option<Kept>,
+    /// The frames for `kept` were asked for and refused: every row is written, and they are not asked for again.
+    kept_refused: bool,
+    /// This program has the display's own memory mapped: counted while it lives (`dev::display_direct_maps`).
+    direct_display: Option<DirectDisplay>,
     /// Which end of the channel to its companion this program holds, if it has one.
     #[cfg(feature = "companion")]
     pub talk: Option<usize>,
@@ -426,7 +433,7 @@ const TICK_NS: u64 = 999_847;
 impl Linux {
     pub fn new(image_end: usize) -> Linux {
         let console = || Some(Open { node: Node::Console, position: 0, nonblocking: false, writable: true, append: false });
-        Linux { files: alloc::vec![console(), console(), console()], heap_start: image_end, heap_end: image_end, next_map: arch::USER_BASE + (64 << 30), reserved: Vec::new(), extra_pages: 0, shadow_asked: false, shadow: None, #[cfg(feature = "proposals")] proposals: Proposals::default(), #[cfg(feature = "companion")] talk: None, #[cfg(feature = "model-memory")] model_at: None }
+        Linux { files: alloc::vec![console(), console(), console()], heap_start: image_end, heap_end: image_end, next_map: arch::USER_BASE + (64 << 30), reserved: Vec::new(), extra_pages: 0, shadow_asked: false, shadow: None, kept: None, kept_refused: false, direct_display: None, #[cfg(feature = "proposals")] proposals: Proposals::default(), #[cfg(feature = "companion")] talk: None, #[cfg(feature = "model-memory")] model_at: None }
     }
 }
 
@@ -1010,6 +1017,12 @@ fn mmap(p: &mut Process, caps: &CapSpace, len: u64, prot: u64, flags: u64, fd: u
             if !space.map_device(start, d.memory, pages) {
                 return err(ENOMEM);
             }
+            // It can now write the screen itself: counted for as long as it lives.
+            if let Some(l) = p.linux.as_mut() {
+                if l.direct_display.is_none() {
+                    l.direct_display = Some(DirectDisplay::given());
+                }
+            }
             start as u64
         }
         Some(_) => err(EACCES),
@@ -1085,27 +1098,165 @@ fn shadow_wanted(p: &Process, d: &dev::Display) -> bool {
     p.linux.as_ref().map(|l| l.shadow_asked).unwrap_or(false) && display_needs_shadow(d)
 }
 
-/// Copy a program's own picture to the display, row by row: only the pixels of the picture, through
-/// the kernel's bounded write. False if any row is not the program's memory or would leave the device.
-fn shadow_present(p: &Process, from: usize, d: &dev::Display) -> bool {
-    let space = match p.space.as_ref() {
-        Some(s) => s,
-        None => return false,
-    };
-    let mut bytes = alloc::vec![0u8; d.width as usize * 4];
-    let mut row = alloc::vec![0u32; d.width as usize];
-    for y in 0..d.height as usize {
-        if !space.copy_in(from + y * d.pitch as usize, &mut bytes) {
-            return false;
+/// Only with the `present-rows-demo` feature, and only when the loader's line says `present_keep=refuse`:
+/// behave as a pool that cannot spare the frames for a kept picture, to show that every row is then
+/// written and no picture fails.
+#[cfg(feature = "present-rows-demo")]
+static KEEP_REFUSED_DEMO: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+#[cfg(feature = "present-rows-demo")]
+pub fn demo_refuse_kept_pictures() {
+    KEEP_REFUSED_DEMO.store(true, core::sync::atomic::Ordering::Relaxed);
+}
+
+/// Held by a program that has the display's own memory mapped. While any such program lives, no kept
+/// picture is compared: it draws on the screen without the kernel seeing. Dropped with the program.
+struct DirectDisplay;
+
+impl DirectDisplay {
+    fn given() -> DirectDisplay {
+        dev::display_direct_map(true);
+        DirectDisplay
+    }
+}
+
+impl Drop for DirectDisplay {
+    fn drop(&mut self) {
+        dev::display_direct_map(false);
+    }
+}
+
+/// The kernel's own copy, in frames of the pool and not in its heap (a picture of 1920 by 1080 is
+/// eight mebibytes; the heap of the UEFI build is four), of the picture it last put on the display for
+/// one program: its rows one straight after another, four bytes a pixel. It is trusted only while
+/// `touched` is what `dev::display_touched` still says and the display is the one it was taken for;
+/// anything else that draws (the kernel's own screens, another program's picture, a change of mode)
+/// moves that number on. The frames go back to the pool when the program's state is dropped.
+struct Kept {
+    frames: Vec<usize>,
+    touched: u64,
+    display: (u32, u32, u32, usize),
+}
+
+impl Kept {
+    /// Frames for a picture of this display, or `None` (and nothing is held) if the pool cannot spare them.
+    fn take(d: &dev::Display) -> Option<Kept> {
+        #[cfg(feature = "present-rows-demo")]
+        if KEEP_REFUSED_DEMO.load(core::sync::atomic::Ordering::Relaxed) {
+            return None;
         }
-        for (word, four) in row.iter_mut().zip(bytes.chunks_exact(4)) {
-            *word = u32::from_le_bytes([four[0], four[1], four[2], four[3]]);
+        let pages = arch::kept_pages(d.width, d.height)?;
+        let mut kept = Kept { frames: Vec::new(), touched: 0, display: (d.width, d.height, d.pitch, d.memory) };
+        if kept.frames.try_reserve_exact(pages).is_err() {
+            return None;
         }
-        if !arch::device_write32(d.memory + y * d.pitch as usize, &row) {
-            return false;
+        for _ in 0..pages {
+            // Dropping `kept` on the way out gives back what was taken so far.
+            kept.frames.push(mem::take_data()?);
+        }
+        Some(kept)
+    }
+
+    fn fits(&self, d: &dev::Display) -> bool {
+        self.display == (d.width, d.height, d.pitch, d.memory)
+    }
+
+    fn row(&self, y: usize, into: &mut [u8]) -> bool {
+        arch::kept_parts(y * into.len(), into.len()).all(|(page, at, n, done)| match self.frames.get(page) {
+            Some(frame) => arch::frame_read(*frame, at, &mut into[done..done + n]),
+            None => false,
+        })
+    }
+
+    /// Record `bytes` as what the display shows from byte `from` of row `y`, where a row is `row_bytes` long.
+    fn set(&mut self, y: usize, row_bytes: usize, from: usize, bytes: &[u8]) -> bool {
+        arch::kept_parts(y * row_bytes + from, bytes.len()).all(|(page, at, n, done)| match self.frames.get(page) {
+            Some(frame) => arch::frame_write(*frame, at, &bytes[done..done + n]),
+            None => false,
+        })
+    }
+}
+
+impl Drop for Kept {
+    fn drop(&mut self) {
+        for frame in self.frames.drain(..) {
+            mem::give(frame);
         }
     }
-    true
+}
+
+/// Put a program's own picture on the display: only the pixels of the picture, through the kernel's
+/// bounded write. Rows the display already shows are not written again: the kernel keeps what it last
+/// put there for this program (`Kept`) and writes, in each row, from the first pixel that differs to
+/// the last. Every row is written whole when there is nothing to compare with: the first picture,
+/// after anything else has drawn, or where the frames for the copy could not be had.
+/// Returns how many rows were written, or `None` if a row is not the program's memory or would leave the device.
+fn shadow_present(p: &mut Process, from: usize, d: &dev::Display) -> Option<usize> {
+    let (space, linux) = match (p.space.as_ref(), p.linux.as_mut()) {
+        (Some(space), Some(linux)) => (space, linux),
+        _ => return None,
+    };
+    if linux.kept.as_ref().map_or(false, |k| !k.fits(d)) {
+        linux.kept = None;
+    }
+    if linux.kept.is_none() && !linux.kept_refused {
+        linux.kept = Kept::take(d);
+        linux.kept_refused = linux.kept.is_none();
+        match linux.kept.as_ref() {
+            Some(k) => crate::log(format_args!("display: the kernel keeps a copy of what it shows for this program, {} KiB in {} frames of the pool, and writes only the rows that change", k.frames.len() * 4, k.frames.len())),
+            None => crate::log(format_args!("display: the pool cannot spare the frames for a copy of what is shown, so every row of every picture is written")),
+        }
+    }
+    let mut kept = linux.kept.as_mut();
+    // What the kernel remembers is what the display shows only if nothing has drawn since and no
+    // program can draw on the screen behind its back.
+    let compare = kept.as_ref().map_or(false, |k| arch::may_compare(k.touched, dev::display_touched(), dev::display_direct_maps()));
+    // Before the first row is written: from here the display is no longer what anyone else remembers,
+    // whether this picture is finished or fails partway (C3). This program's own copy is marked good
+    // again only at the end, and only if every row written was also recorded.
+    dev::display_touch();
+    if let Some(k) = kept.as_mut() {
+        k.touched = 0;
+    }
+    let width = d.width as usize;
+    let mut bytes = alloc::vec![0u8; width * 4];
+    let mut shown = alloc::vec![0u8; if compare { width * 4 } else { 0 }];
+    let mut row = alloc::vec![0u32; width];
+    let mut written = 0;
+    let mut recorded = true;
+    for y in 0..d.height as usize {
+        if !space.copy_in(from + y * d.pitch as usize, &mut bytes) {
+            // Left marked not good, as it was set before the first row.
+            return None;
+        }
+        let span = match kept.as_ref() {
+            Some(k) if compare && k.row(y, &mut shown) => arch::changed_span(&shown, &bytes),
+            _ => Some((0, width)),
+        };
+        let (first, end) = match span {
+            Some(span) => span,
+            None => continue,
+        };
+        for (word, four) in row[first..end].iter_mut().zip(bytes[first * 4..end * 4].chunks_exact(4)) {
+            *word = u32::from_le_bytes([four[0], four[1], four[2], four[3]]);
+        }
+        if !arch::device_write32(d.memory + y * d.pitch as usize + first * 4, &row[first..end]) {
+            return None;
+        }
+        written += 1;
+        if let Some(k) = kept.as_mut() {
+            recorded &= k.set(y, width * 4, first * 4, &bytes[first * 4..end * 4]);
+        }
+    }
+    // Finished. This program's copy is what the display shows if every row written was recorded in
+    // it: either it was good before and every change went in, or every row was just written and
+    // recorded. Nothing else can have drawn during this call, so the count is still the one set above.
+    if let Some(k) = kept {
+        k.touched = if recorded { dev::display_touched() } else { 0 };
+    }
+    #[cfg(feature = "present-rows-demo")]
+    crate::log(format_args!("present: {} of {} rows written", written, d.height));
+    Some(written)
 }
 
 fn display_call(p: &mut Process, caps: &CapSpace, request: u64, arg: u64) -> u64 {
@@ -1146,7 +1297,7 @@ fn display_call(p: &mut Process, caps: &CapSpace, request: u64, arg: u64) -> u64
                     Some(from) if arg == 0 => from,
                     _ => return err(EINVAL),
                 };
-                if !shadow_present(p, from, &d) {
+                if shadow_present(p, from, &d).is_none() {
                     return err(EINVAL);
                 }
                 dev::display_count_show();

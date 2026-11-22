@@ -131,6 +131,41 @@ static DISPLAY: arch::Single<Option<Display>> = arch::Single::new(None);
 /// Times a program has asked for a page to be shown since the start: each is one finished picture put before the person.
 static SHOWS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
+/// Raised every time anything puts pixels on the display or changes its mode: the kernel's own drawing
+/// (`display_fill`, `display_row`, which every screen of the kernel is drawn with), a change of mode,
+/// and each picture a program shows through the kernel. Whoever remembers what the display shows
+/// remembers this number with it, and knows its memory is stale when the number has moved on.
+static TOUCHED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(1);
+
+/// What `TOUCHED` stands at. Never zero.
+pub fn display_touched() -> u64 {
+    TOUCHED.load(Ordering::Relaxed)
+}
+
+/// Say that pixels were just put on the display, and return the new count.
+pub fn display_touch() -> u64 {
+    TOUCHED.fetch_add(1, Ordering::Relaxed) + 1
+}
+
+/// How many programs alive now have the display's own memory mapped into them: each writes the screen
+/// as it pleases, and the kernel does not see it.
+static DIRECT_MAPS: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+
+pub fn display_direct_maps() -> usize {
+    DIRECT_MAPS.load(Ordering::Relaxed)
+}
+
+/// A program was given the display's own memory, or (`false`) one that had it has ended. What it may
+/// have written is not known, so the count of what has touched the display moves on both times.
+pub fn display_direct_map(given: bool) {
+    if given {
+        DIRECT_MAPS.fetch_add(1, Ordering::Relaxed);
+    } else {
+        let _ = DIRECT_MAPS.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1));
+    }
+    display_touch();
+}
+
 /// Pictures shown since the start.
 pub fn display_shows() -> u64 {
     SHOWS.load(Ordering::Relaxed)
@@ -228,6 +263,7 @@ pub fn display_set(width: u32, height: u32) -> Option<Display> {
             d.height = height;
             d.pitch = width * 4;
             d.shown = 0;
+            display_touch(); // the device has cleared its memory: nothing anyone remembers of it holds
             Some(*d)
         })
     })
@@ -251,6 +287,7 @@ pub fn display_show(page: u32) -> bool {
 
 /// Fill a rectangle of page 0 with one colour. What falls outside the display is left out.
 pub fn display_fill(x: u32, y: u32, w: u32, h: u32, colour: u32) {
+    display_touch();
     if let Some(d) = display() {
         let (x1, y1) = ((x + w).min(d.width), (y + h).min(d.height));
         if x >= x1 {
@@ -264,6 +301,7 @@ pub fn display_fill(x: u32, y: u32, w: u32, h: u32, colour: u32) {
 
 /// Write a row of pixels on page 0, starting at (x, y). What falls outside the display is left out.
 pub fn display_row(x: u32, y: u32, pixels: &[u32]) {
+    display_touch();
     if let Some(d) = display() {
         if y < d.height && x < d.width {
             let n = pixels.len().min((d.width - x) as usize);

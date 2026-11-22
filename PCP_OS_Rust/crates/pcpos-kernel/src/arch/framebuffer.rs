@@ -150,6 +150,54 @@ pub fn draws_off_screen(pages: u32, _mappable_whole: bool) -> bool {
     pages == 1
 }
 
+/// Whether the kernel's kept copy of a program's picture may be compared with the next one, so that
+/// only what differs is written. It may only when the copy is what the display shows: it was recorded
+/// whole (`kept_at` is not zero, which is never the count), nothing has put pixels on the display
+/// since (`display_at`, the count of everything that has, is still what it was then), and no program
+/// has the display's own memory mapped (`direct_maps`): such a program writes the screen without the
+/// kernel seeing it, so nothing the kernel remembers of the screen can be trusted while it lives.
+pub fn may_compare(kept_at: u64, display_at: u64, direct_maps: usize) -> bool {
+    kept_at != 0 && kept_at == display_at && direct_maps == 0
+}
+
+/// The pixels of one row that must be written to the display for it to show `new` where it shows
+/// `kept`: the first pixel that differs through the last that differs, as (first, one past the last).
+/// `None` when the rows are the same and nothing need be written. Both are a row's bytes, four to a
+/// pixel. Rows of different lengths, or of a length that is not whole pixels, are not compared: the
+/// whole of `new` is to be written, which is always right.
+pub fn changed_span(kept: &[u8], new: &[u8]) -> Option<(usize, usize)> {
+    if kept.len() != new.len() || new.len() % 4 != 0 {
+        return if new.is_empty() { None } else { Some((0, new.len() / 4)) };
+    }
+    let first = kept.iter().zip(new.iter()).position(|(a, b)| a != b)?;
+    let last = kept.iter().zip(new.iter()).rposition(|(a, b)| a != b)?;
+    Some((first / 4, last / 4 + 1))
+}
+
+/// How many 4 KiB pages hold a picture of `width` by `height` pixels, four bytes each, its rows one
+/// straight after another. `None` if that number cannot be had.
+pub fn kept_pages(width: u32, height: u32) -> Option<usize> {
+    (width as usize).checked_mul(height as usize)?.checked_mul(4).map(|bytes| (bytes + PAGE as usize - 1) / PAGE as usize)
+}
+
+/// The parts of `len` bytes beginning at byte `offset` of a picture kept in pages, a page at a time:
+/// (which page, where in it, how many bytes, where in the `len` bytes). A row is seldom a whole number
+/// of pages, so it falls across two or three.
+pub fn kept_parts(offset: usize, len: usize) -> impl Iterator<Item = (usize, usize, usize, usize)> {
+    let page = PAGE as usize;
+    let mut done = 0;
+    core::iter::from_fn(move || {
+        if done >= len {
+            return None;
+        }
+        let at = offset + done;
+        let n = (page - at % page).min(len - done);
+        let part = (at / page, at % page, n, done);
+        done += n;
+        Some(part)
+    })
+}
+
 /// Whether a program may be given `pages` whole pages of a device beginning at `phys`, when `bytes` is
 /// the [start, end) the kernel may write there. Every byte of every page must be inside it: a picture
 /// that ends partway through a page does not make the rest of that page the program's.

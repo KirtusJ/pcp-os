@@ -35,6 +35,7 @@ Every entry at the top of the repository, and every folder one level down in the
 | `audit/live19` | Record of an earlier live session. | no |
 | `audit/live20` | Record of an earlier live session. | no |
 | `audit/sim` | Record of an earlier simulation. | no |
+| `examples/changed-rows-present` | Check: on a one-page display the kernel writes only the rows a program's new picture changed, and every row after anything else has drawn. | no |
 | `examples/companion` | Check: two programs side by side exchanging bytes (kernel feature companion). | no |
 | `examples/desktop-source-cd` | Record: the source-built tester CD booted on three desktop hosts. | no |
 | `examples/firmware-model-loader` | Builds and tests the UEFI loader for preloaded model media. | no |
