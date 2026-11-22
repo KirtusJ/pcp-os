@@ -1,0 +1,4 @@
+register: NOT READ BACK (the kernel does not print its register): only counted, {'allowed': 49, 'refused-esc': 48}
+proposals: allowed once by F12 then Enter and made by the kernel; refused three ways; a held Enter does not allow; F12 with nothing waiting says so; refused unseen; not offered without the grant
+cases in which the probe had a companion beside it: allowed, another-folder, at-640x480, f12-with-nothing, held-enter, long-at-800x600, not-granted, refused-enter-alone, refused-esc, refused-f12-then-other, too-small
+full-store cases run: store-one-byte-short, an ordinary write into the room left after the refusal, store-exactly-enough

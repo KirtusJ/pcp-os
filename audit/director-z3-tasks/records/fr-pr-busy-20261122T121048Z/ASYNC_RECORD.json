@@ -1,0 +1,44 @@
+{
+ "tool": "async_run.py",
+ "plan": "plan.json",
+ "plan_sha256": "e9853f1262834c815567a654a0c282778d8320621a59bc047b04823d2b7481a7",
+ "width": 1,
+ "tasks": [
+  {
+   "id": "T",
+   "argv": [
+    "python3",
+    "-IB",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/wfr/examples/proposals/check.py",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/fr-norm.elf32",
+    "/home/user/pcp-os/examples/proposals/guest/target/x86_64-unknown-none/release/proposal-probe",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/pe-fr-busy",
+    "--filler-over",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/fill-4194247/store-filler",
+    "--filler-exact",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/fill-4194246/store-filler",
+    "--filler-after",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/fill-after57/store-after",
+    "--companion",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/tq-spin/talk-back"
+   ],
+   "exit": 0,
+   "expect_exit": 0,
+   "timed_out": false,
+   "seconds": 177.46,
+   "ended_as_expected": true,
+   "copied_in": [],
+   "files": {
+    "STDERR.txt": {
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+     "bytes": 0
+    },
+    "STDOUT.txt": {
+     "sha256": "d3e2ea57e3d6bedcc1f9cec9736889c37af434ae7204b2b00d2a42d21e68129b",
+     "bytes": 648
+    }
+   }
+  }
+ ],
+ "all_ended_as_expected": true
+}
