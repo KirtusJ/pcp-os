@@ -1,4 +1,4 @@
-use pcpos_model_media::{LoadError, Manifest, ManifestError, ReadAt, VerifiedModel, HEADER_BYTES, MAGIC};
+use pcpos_model_media::{LoadError, Manifest, ManifestError, ReadAt, VerifiedModel, VerifiedSlices, HEADER_BYTES, MAGIC};
 use sha2::{Digest, Sha256};
 
 fn digest(bytes: &[u8]) -> [u8;32] { Sha256::digest(bytes).into() }
@@ -150,4 +150,68 @@ fn model_length_above_four_gibibytes_is_not_truncated() {
     let mut source=Source::new(&[]); source.declared=total as u32 as u64;
     assert_eq!(VerifiedModel::load(&description,&mut source,|_| true).unwrap_err(),LoadError::Length);
     assert_eq!(source.reads,0);
+}
+
+#[test]
+fn borrowed_verification_retains_the_original_slices_and_crosses_boundaries() {
+    let bytes: Vec<u8>=(0..2103).map(|i| (i%251) as u8).collect();
+    let encoded=manifest(&bytes);
+    let description=Manifest::parse(&encoded,digest(&encoded)).unwrap();
+    let shards: Vec<&[u8]>=bytes.chunks(1024).collect();
+    let model=VerifiedSlices::verify(&description,&shards,|_| true).unwrap();
+    assert_eq!(model.len(),bytes.len() as u64); assert_eq!(model.digest(),digest(&bytes));
+    for (i, original) in shards.iter().enumerate() {
+        let kept=model.shard(i).unwrap();
+        assert_eq!((kept.as_ptr(),kept.len()),(original.as_ptr(),original.len()));
+    }
+    assert_eq!(model.shard(shards.len()),None);
+    let mut out=[0;1100]; model.copy_into(1000,&mut out).unwrap();
+    assert_eq!(&out,&bytes[1000..2100]);
+    let mut untouched=[0xa5;4];
+    assert!(model.copy_into(u64::MAX,&mut untouched).is_err()); assert_eq!(untouched,[0xa5;4]);
+    assert!(model.copy_into(2100,&mut untouched).is_err()); assert_eq!(untouched,[0xa5;4]);
+    assert!(model.copy_into(2103,&mut []).is_ok());
+    assert!(model.copy_into(2104,&mut []).is_err());
+}
+
+#[test]
+fn borrowed_extents_must_match_every_manifest_shard_exactly() {
+    let bytes=vec![7;2049]; let encoded=manifest(&bytes);
+    let description=Manifest::parse(&encoded,digest(&encoded)).unwrap();
+    for shards in [vec![&bytes[..1024],&bytes[1024..]],
+                   vec![&bytes[..1023],&bytes[1024..2048],&bytes[2048..]],
+                   vec![&bytes[..1024],&bytes[1024..2048],&bytes[2047..]],
+                   vec![&bytes[..1024],&bytes[1024..2048],&bytes[2048..],&[]]] {
+        assert_eq!(VerifiedSlices::verify(&description,&shards,|_| true).unwrap_err(),LoadError::Length);
+    }
+}
+
+#[test]
+fn borrowed_verification_checks_order_shard_bytes_and_whole_model_digest() {
+    let bytes=[vec![1;1024],vec![2;1024]].concat();
+    let encoded=manifest(&bytes); let description=Manifest::parse(&encoded,digest(&encoded)).unwrap();
+    let reversed=[&bytes[1024..],&bytes[..1024]];
+    assert_eq!(VerifiedSlices::verify(&description,&reversed,|_| true).unwrap_err(),LoadError::ShardDigest{shard:0});
+    let mut changed=bytes.clone(); changed[1024]^=1;
+    let changed_shards=[&changed[..1024],&changed[1024..]];
+    assert_eq!(VerifiedSlices::verify(&description,&changed_shards,|_| true).unwrap_err(),LoadError::ShardDigest{shard:1});
+    let mut bad_whole=encoded.clone(); bad_whole[24]^=1;
+    let description=Manifest::parse(&bad_whole,digest(&bad_whole)).unwrap();
+    let original=[&bytes[..1024],&bytes[1024..]];
+    assert_eq!(VerifiedSlices::verify(&description,&original,|_| true).unwrap_err(),LoadError::ModelDigest);
+}
+
+#[test]
+fn borrowed_verification_is_cancellable_within_a_large_shard() {
+    let bytes=vec![9;131072];
+    let mut encoded=MAGIC.to_vec(); encoded.extend_from_slice(&(bytes.len() as u64).to_le_bytes());
+    encoded.extend_from_slice(&131072u32.to_le_bytes()); encoded.extend_from_slice(&1u32.to_le_bytes());
+    encoded.extend_from_slice(&digest(&bytes)); encoded.extend_from_slice(&digest(&bytes));
+    let description=Manifest::parse(&encoded,digest(&encoded)).unwrap(); let shards=[bytes.as_slice()];
+    let mut seen=Vec::new();
+    assert_eq!(VerifiedSlices::verify(&description,&shards,|p| {seen.push(p);p.bytes_read<65536}).unwrap_err(),LoadError::Cancelled);
+    assert_eq!(seen.last().unwrap().bytes_read,65536); assert_eq!(seen.last().unwrap().verified_shards,0);
+    assert_eq!(VerifiedSlices::verify(&description,&shards,|_| false).unwrap_err(),LoadError::Cancelled);
+    assert_eq!(VerifiedSlices::verify(&description,&shards,|p| p.verified_shards==0).unwrap_err(),LoadError::Cancelled);
+    assert!(VerifiedSlices::verify(&description,&shards,|_| true).is_ok());
 }

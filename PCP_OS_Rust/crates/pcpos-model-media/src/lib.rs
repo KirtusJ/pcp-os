@@ -1,4 +1,4 @@
-//! Image-pinned model identity and verified owned bytes, independent of any device ABI.
+//! Image-pinned model identity and verified owned or borrowed bytes, independent of any device ABI.
 //!
 //! The manifest digest comes from a trusted image/launch binding, never from the
 //! same untrusted medium as the manifest. No model is returned until all bytes
@@ -138,21 +138,78 @@ impl VerifiedModel {
     /// Copy a requested logical range, including ranges crossing a shard boundary.
     /// An invalid range fails before modifying output.
     pub fn copy_into(&self, offset: u64, output: &mut [u8]) -> Result<(), RangeError> {
-        if offset.checked_add(output.len() as u64).filter(|&end| end <= self.total).is_none() {
-            return Err(RangeError);
-        }
-        let mut position = offset;
-        let mut written = 0;
-        while written < output.len() {
-            let shard = (position / self.shard_bytes as u64) as usize;
-            let within = (position % self.shard_bytes as u64) as usize;
-            let part = (self.shards[shard].len() - within).min(output.len() - written);
-            output[written..written + part].copy_from_slice(&self.shards[shard][within..within + part]);
-            position += part as u64;
-            written += part;
-        }
-        Ok(())
+        copy_from_shards(self.total, self.shard_bytes, offset, output, |i| &self.shards[i])
     }
+}
+
+/// Verified references to bytes the caller already holds immutably. No model-sized
+/// copy or allocation is made. The lifetime retains the very bytes that were hashed.
+///
+/// A native adapter constructing slices over mapped firmware pages must first prove
+/// their validity and lifetime, read-only/NX mapping, absence of writable aliases and
+/// exclusion from allocators. This safe library neither establishes nor bypasses
+/// that unsafe boundary. A replaceable ReadAt source cannot supply this guarantee.
+#[derive(Debug)]
+pub struct VerifiedSlices<'a> {
+    shards: &'a [&'a [u8]], total: u64, shard_bytes: u32, digest: [u8; 32],
+}
+
+impl<'a> VerifiedSlices<'a> {
+    /// Hash each immutable shard and the entire ordered model. Each slice must be
+    /// exactly one manifest shard, including the short last shard. Work and progress
+    /// use the same at-most-64-KiB boundaries as owned loading. False cancels.
+    pub fn verify(manifest: &Manifest<'_>, shards: &'a [&'a [u8]],
+                  mut keep_going: impl FnMut(Progress) -> bool) -> Result<Self, LoadError<core::convert::Infallible>> {
+        let mut progress = Progress { bytes_read: 0, total_bytes: manifest.total, verified_shards: 0 };
+        if !keep_going(progress) { return Err(LoadError::Cancelled); }
+        if shards.len() != manifest.count as usize { return Err(LoadError::Length); }
+        // Validate every extent before reading model bytes; no extra or omitted bytes.
+        for (ordinal, bytes) in shards.iter().enumerate() {
+            let length = (manifest.total - ordinal as u64 * manifest.shard_bytes as u64).min(manifest.shard_bytes as u64);
+            if bytes.len() as u64 != length { return Err(LoadError::Length); }
+        }
+        let mut whole = Sha256::new();
+        for (ordinal, bytes) in shards.iter().enumerate() {
+            let mut shard_hash = Sha256::new();
+            for block in bytes.chunks(READ_BYTES) {
+                if !keep_going(progress) { return Err(LoadError::Cancelled); }
+                shard_hash.update(block); whole.update(block);
+                progress.bytes_read += block.len() as u64;
+            }
+            if <[u8; 32]>::from(shard_hash.finalize()) != manifest.digest(ordinal as u32) {
+                return Err(LoadError::ShardDigest { shard: ordinal as u32 });
+            }
+            progress.verified_shards += 1;
+            if !keep_going(progress) { return Err(LoadError::Cancelled); }
+        }
+        if <[u8; 32]>::from(whole.finalize()) != manifest.model_digest { return Err(LoadError::ModelDigest); }
+        Ok(Self { shards, total: manifest.total, shard_bytes: manifest.shard_bytes, digest: manifest.model_digest })
+    }
+    pub fn len(&self) -> u64 { self.total }
+    pub fn is_empty(&self) -> bool { self.total == 0 }
+    pub fn digest(&self) -> [u8; 32] { self.digest }
+    /// The same immutable shard that was verified, without copying it.
+    pub fn shard(&self, ordinal: usize) -> Option<&'a [u8]> { self.shards.get(ordinal).copied() }
+    pub fn copy_into(&self, offset: u64, output: &mut [u8]) -> Result<(), RangeError> {
+        copy_from_shards(self.total, self.shard_bytes, offset, output, |i| self.shards[i])
+    }
+}
+
+fn copy_from_shards<'a>(total: u64, shard_bytes: u32, offset: u64, output: &mut [u8],
+                       shard: impl Fn(usize) -> &'a [u8]) -> Result<(), RangeError> {
+    if offset.checked_add(output.len() as u64).filter(|&end| end <= total).is_none() { return Err(RangeError); }
+    let mut position = offset;
+    let mut written = 0;
+    while written < output.len() {
+        let ordinal = (position / shard_bytes as u64) as usize;
+        let within = (position % shard_bytes as u64) as usize;
+        let bytes = shard(ordinal);
+        let part = (bytes.len() - within).min(output.len() - written);
+        output[written..written + part].copy_from_slice(&bytes[within..within + part]);
+        position += part as u64;
+        written += part;
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
