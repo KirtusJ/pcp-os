@@ -2914,14 +2914,14 @@ mod module_removal_tests {
             let se = session(root.to_str()).unwrap();
             begin(&mut tx, &se, None, false).unwrap();
             tx.commit().unwrap();
-            let before = fs::read(&tx.h.path).unwrap();
+            let before = read_all(&mut tx.h).unwrap();
             let accepted = tx.put("host", "HOST", "HOST_EVENT", obj(vec![("event", s("MODULE_REMOVED"))])).unwrap();
             let Put::Written { head, .. } = accepted else { panic!("removal event was refused") };
             // A read-only handle models a failed commit without an OS-specific fault mechanism.
-            tx.h.file = File::open(&tx.h.path).unwrap();
             if changed {
-                OpenOptions::new().append(true).open(&tx.h.path).unwrap().write_all(b"partial line").unwrap();
+                tx.h.file.write_all(b"partial line").unwrap();
             }
+            tx.h.file = File::open(&tx.h.path).unwrap();
             let error = commit_module_removal(&mut tx, &home, "sample", &head).unwrap_err();
             let holding = home.join(format!(".pcpos-remove-sample-{head}"));
             if changed {
@@ -2930,7 +2930,7 @@ mod module_removal_tests {
                 assert_eq!(fs::read(holding.join("payload/SOURCE/Specification.md")).unwrap(), b"module bytes");
             } else {
                 assert!(error.contains("was restored"));
-                assert_eq!(fs::read(&tx.h.path).unwrap(), before);
+                assert_eq!(read_all(&mut tx.h).unwrap(), before);
                 assert_eq!(fs::read(directory.join("SOURCE/Specification.md")).unwrap(), b"module bytes");
                 assert!(!holding.exists());
             }
