@@ -1,0 +1,17 @@
+[package]
+name = "vector-probe"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Uses the 256-bit vector registers and reports what it found in them: a test program for examples/vector-state/check.py"
+
+[dependencies]
+pcp-game-guest = { path = "../../../store/native/guest" }
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+codegen-units = 1
+overflow-checks = true
+
+[workspace]
