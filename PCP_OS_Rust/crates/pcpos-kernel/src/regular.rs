@@ -34,6 +34,11 @@ impl Files {
         self.names.len()
     }
 
+    /// Whether this many more bytes are within the budget all files share.
+    pub fn fits(&self, bytes: usize) -> bool {
+        bytes <= LIMIT - self.used.get()
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &(String, File)> {
         self.names.iter()
     }

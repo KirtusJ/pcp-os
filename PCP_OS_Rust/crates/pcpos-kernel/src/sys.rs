@@ -123,17 +123,32 @@ pub struct Proposal {
 #[derive(Default)]
 struct Proposals {
     allowed: bool,
+    /// Which run of a proposing program this is, counted by the kernel from its start.
+    launch: u64,
     pending: Option<Proposal>,
-    /// The receipt the next read gives.
+    /// The receipt of the last proposal the kernel took. It stays, and can be read again, until the
+    /// next one is taken.
     receipt: Option<[u8; RECEIPT]>,
-    /// Every receipt of this run, so that the same proposal made again is answered and not done again.
-    kept: Vec<(u64, u64, [u8; RECEIPT])>,
+    /// Every receipt of this run with the digest of the exact request: the same request made again is
+    /// answered and not done again; another request under the same numbers is refused.
+    kept: Vec<(u64, u64, [u8; 32], [u8; RECEIPT])>,
 }
 
-/// A receipt: version, outcome (1 created, 2 denied, 3 refused), attempt, proposal, the content's
-/// SHA-256, and whether it outlasts power (0: it does not).
 #[cfg(feature = "proposals")]
-pub const RECEIPT: usize = 4 + 4 + 8 + 8 + 32 + 4;
+static LAUNCHES: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+/// The most lines of the kernel's screen a proposal may need (64 pages of 22 lines of 76 characters,
+/// the room on the smallest display the question is shown on).
+#[cfg(feature = "proposals")]
+const PROPOSAL_LINES: usize = 64 * 22;
+#[cfg(feature = "proposals")]
+const PROPOSAL_ACROSS: usize = 76;
+
+/// A receipt, 100 bytes: version (u32, 1); outcome (u32: 1 created, 2 refused by the person, 3 the name
+/// was taken, 5 no room in the store); the kernel's number for this run (u64); attempt and proposal
+/// (u64 each); SHA-256 of the exact request (lengths, name, content); SHA-256 of the content; and
+/// whether it outlasts power (u32, 0: it does not).
+#[cfg(feature = "proposals")]
+pub const RECEIPT: usize = 4 + 4 + 8 + 8 + 8 + 32 + 32 + 4;
 #[cfg(feature = "proposals")]
 pub const PROPOSAL_NAME: usize = 64;
 #[cfg(feature = "proposals")]
@@ -142,20 +157,39 @@ pub const PROPOSAL_CONTENT: usize = 16 * 1024;
 pub const E_INVALID: u64 = (-EINVAL) as u64;
 
 #[cfg(feature = "proposals")]
-fn receipt(outcome: u32, proposal: &Proposal) -> [u8; RECEIPT] {
+fn receipt(outcome: u32, launch: u64, proposal: &Proposal) -> [u8; RECEIPT] {
     let mut r = [0u8; RECEIPT];
     r[0..4].copy_from_slice(&1u32.to_le_bytes());
     r[4..8].copy_from_slice(&outcome.to_le_bytes());
-    r[8..16].copy_from_slice(&proposal.attempt.to_le_bytes());
-    r[16..24].copy_from_slice(&proposal.number.to_le_bytes());
-    r[24..56].copy_from_slice(&pcpos_core::sha256(&proposal.content));
+    r[8..16].copy_from_slice(&launch.to_le_bytes());
+    r[16..24].copy_from_slice(&proposal.attempt.to_le_bytes());
+    r[24..32].copy_from_slice(&proposal.number.to_le_bytes());
+    r[32..64].copy_from_slice(&request_digest(proposal));
+    r[64..96].copy_from_slice(&pcpos_core::sha256(&proposal.content));
     r
+}
+
+#[cfg(feature = "proposals")]
+fn request_digest(proposal: &Proposal) -> [u8; 32] {
+    let mut whole = Vec::with_capacity(8 + proposal.name.len() + proposal.content.len());
+    whole.extend_from_slice(&(proposal.name.len() as u32).to_le_bytes());
+    whole.extend_from_slice(&(proposal.content.len() as u32).to_le_bytes());
+    whole.extend_from_slice(proposal.name.as_bytes());
+    whole.extend_from_slice(&proposal.content);
+    pcpos_core::sha256(&whole)
 }
 
 #[cfg(feature = "proposals")]
 impl Linux {
     pub fn allow_proposals(&mut self, allowed: bool) {
         self.proposals.allowed = allowed;
+        if allowed {
+            self.proposals.launch = LAUNCHES.fetch_add(1, core::sync::atomic::Ordering::SeqCst) + 1;
+        }
+    }
+
+    pub fn proposals_allowed(&self) -> bool {
+        self.proposals.allowed
     }
 
     /// The proposal the program is waiting on, taken once.
@@ -166,20 +200,24 @@ impl Linux {
     /// The person has answered. On yes the kernel makes the file, with exactly the bytes it showed,
     /// unless the name has been taken meanwhile; then, as on no, nothing is made.
     pub fn proposal_settled(&mut self, proposal: Proposal, allowed: bool, world: &mut World) {
-        let free = world.store.named(&proposal.name).is_none() && !world.files.iter().any(|f| f.0 == proposal.name) && world.store.len() < 256;
-        let outcome = if allowed && free {
+        let free = world.store.named(&proposal.name).is_none() && !world.files.iter().any(|f| f.0 == proposal.name);
+        let room = world.store.len() < 256 && world.store.fits(proposal.content.len());
+        let outcome = if !allowed {
+            2
+        } else if !free {
+            3
+        } else if !room {
+            5
+        } else {
+            // The whole file or nothing: the room was counted first, and the bytes go in in one piece.
             world.store.insert(proposal.name.clone(), proposal.content.clone());
             1
-        } else if allowed {
-            3
-        } else {
-            2
         };
-        let r = receipt(outcome, &proposal);
+        let r = receipt(outcome, self.proposals.launch, &proposal);
         self.proposals.receipt = Some(r);
-        self.proposals.kept.push((proposal.attempt, proposal.number, r));
+        self.proposals.kept.push((proposal.attempt, proposal.number, request_digest(&proposal), r));
         crate::log(format_args!("proposal {} of attempt {}: {} ({} bytes, SHA-256 {}) {}", proposal.number, proposal.attempt, proposal.name, proposal.content.len(),
-                    pcpos_core::sha256_hex(&proposal.content), match outcome { 1 => "CREATED after the person allowed it", 2 => "DENIED by the person; nothing made", _ => "REFUSED; nothing made" }));
+                    pcpos_core::sha256_hex(&proposal.content), match outcome { 1 => "CREATED after the person allowed it", 2 => "DENIED by the person; nothing made", 3 => "REFUSED: the name was taken; nothing made", _ => "REFUSED: no room in the store; nothing made" }));
         crate::log(format_args!("\n"));
     }
 }
@@ -204,22 +242,32 @@ fn propose(p: &mut Process, world: &World, addr: u64, len: u64) -> Outcome {
     // printable characters, spaces and new lines: what the kernel's screen can show exactly, and no more.
     let named = name[0] != b'.' && name.iter().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-'));
     let shown = content.iter().all(|b| (0x20..0x7f).contains(b) || *b == b'\n');
-    if !named || !shown {
+    // What the kernel cannot show whole, in a number of pages a person can turn, it does not ask about.
+    let lines: usize = content.split(|b| *b == b'\n').map(|line| line.len().div_ceil(PROPOSAL_ACROSS).max(1)).sum();
+    if !named || !shown || lines > PROPOSAL_LINES {
+        crate::log(format_args!("a proposal was refused unseen: {}\n", if !named { "its name has a character a name may not have" }
+            else if !shown { "its text has a character the kernel's screen cannot show exactly" } else { "it is too long to show" }));
         return Outcome::Return(err(EINVAL));
     }
     let proposal = Proposal { attempt: long(8), number: long(16), name: String::from_utf8_lossy(name).into_owned(), content: content.to_vec(), length: len };
     let Some(l) = p.linux.as_mut() else { return Outcome::Return(err(ENOSYS)) };
-    if let Some((_, _, kept)) = l.proposals.kept.iter().find(|(a, n, _)| *a == proposal.attempt && *n == proposal.number) {
+    if let Some((_, _, request, kept)) = l.proposals.kept.iter().find(|(a, n, _, _)| *a == proposal.attempt && *n == proposal.number) {
+        if *request != request_digest(&proposal) {
+            // The same numbers for other bytes: never answered with the earlier result.
+            crate::log(format_args!("proposal {} of attempt {} REFUSED unseen: these numbers were used for a different request\n", proposal.number, proposal.attempt));
+            return Outcome::Return(err(16));
+        }
         l.proposals.receipt = Some(*kept);
         return Outcome::Return(len as u64);
     }
     if world.store.named(&proposal.name).is_some() || world.files.iter().any(|f| f.0 == proposal.name) {
-        let r = receipt(3, &proposal);
+        let r = receipt(3, l.proposals.launch, &proposal);
         l.proposals.receipt = Some(r);
-        l.proposals.kept.push((proposal.attempt, proposal.number, r));
+        l.proposals.kept.push((proposal.attempt, proposal.number, request_digest(&proposal), r));
         crate::log(format_args!("proposal {} of attempt {}: {} REFUSED without asking: the name is taken\n", proposal.number, proposal.attempt, proposal.name));
         return Outcome::Return(err(EEXIST));
     }
+    l.proposals.receipt = None;
     l.proposals.pending = Some(proposal);
     Outcome::Wait(Waiting::Consent, false)
 }
@@ -418,8 +466,9 @@ fn read(p: &mut Process, world: &World, fd: u64, addr: u64, len: u64) -> Outcome
     #[cfg(feature = "proposals")]
     if matches!(f.node, Node::Proposal) {
         // The receipt of the last proposal, once.
-        let Some(r) = p.linux.as_mut().and_then(|l| l.proposals.receipt.take()) else { return Outcome::Return(0) };
-        return Outcome::Return(if len >= RECEIPT && put(p, addr, &r) { RECEIPT as u64 } else { err(EINVAL) });
+        // It is not used up by being read, and a read too small for it takes nothing.
+        let Some(r) = p.linux.as_ref().and_then(|l| l.proposals.receipt) else { return Outcome::Return(0) };
+        return Outcome::Return(if len < RECEIPT { err(EINVAL) } else if put(p, addr, &r) { RECEIPT as u64 } else { err(EFAULT) });
     }
     let bytes: &[u8] = match &f.node {
         #[cfg(feature = "proposals")]

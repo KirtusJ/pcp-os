@@ -3,7 +3,7 @@
 //! A test program for the kernel's `proposals` feature. It can make nothing by itself: it asks the
 //! kernel to make one file, twice over, and says on the console what the kernel answered each time.
 //! What it prints is read by `examples/proposals/check.py`; the person's answer is given there by keys.
-use pcp_game_guest::{call, exit, log, open};
+use pcp_game_guest::{call, exit, log, open, sleep_us};
 
 const NAME: &[u8] = b"note-from-taylor.txt";
 const CONTENT: &[u8] = b"Hello.\nThis file was made by PCP OS after you allowed it.\n";
@@ -55,10 +55,10 @@ fn ask(fd: isize, attempt: u64, number: u64, name: &[u8], content: &[u8]) {
     let mut buffer = [0u8; 256];
     let length = record(&mut buffer, attempt, number, name, content);
     say(b"probe: write answered ", call(1, fd as usize, buffer.as_ptr() as usize, length, 0, 0, 0));
-    let mut receipt = [0u8; 60];
+    let mut receipt = [0u8; 100];
     let got = call(0, fd as usize, receipt.as_mut_ptr() as usize, receipt.len(), 0, 0, 0);
     say(b"probe: receipt bytes ", got);
-    if got == 60 {
+    if got == 100 {
         say(b"probe: outcome ", u32::from_le_bytes([receipt[4], receipt[5], receipt[6], receipt[7]]) as isize);
     }
 }
@@ -73,8 +73,19 @@ pub extern "C" fn probe_main() -> ! {
     if fd < 0 {
         exit(3);
     }
+    // Three seconds in which the person may press F12 with nothing waiting.
+    log(b"probe: idle\n");
+    let mut waited = 0;
+    while waited < 300 {
+        sleep_us(10_000);
+        waited += 1;
+    }
+    log(b"probe: asking\n");
     ask(fd, 7, 1, NAME, CONTENT); // the person is asked
+    let mut small = [0u8; 10];
+    say(b"probe: a read too small answered ", call(0, fd as usize, small.as_mut_ptr() as usize, small.len(), 0, 0, 0));
     ask(fd, 7, 1, NAME, CONTENT); // the same proposal again: answered from the receipt, nobody asked
+    ask(fd, 7, 1, NAME, b"other words"); // the same numbers for other bytes: refused, the receipt unchanged
     ask(fd, 7, 2, NAME, CONTENT); // a new proposal for a name now taken (if the first was allowed)
     ask(fd, 7, 3, b"Bad Name.txt", CONTENT); // refused unseen: a capital and a space
     ask(fd, 7, 4, b"tab.txt", b"a\tb"); // refused unseen: a character the kernel's screen cannot show exactly

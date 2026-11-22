@@ -1555,78 +1555,124 @@ fn register_view(rec: &Record) {
     text_screen(&title, ui::TEAL, Some(table), &lines, "Up/Down scroll    Esc back", false, true);
 }
 
-/// The kernel's own question, asked with the program stopped and the display and keyboard taken from it:
-/// may this one new file be made? The whole proposal is shown from the kernel's copy, in pages. The
-/// answer is no unless the person has seen the last page, then pressed F12 (a key no program is given
-/// here) and then Enter, each as a fresh press. Any other key, at any point after the last page, is no.
+/// The kernel's own screen, shown with the program stopped and the display and keyboard taken from it.
+/// With a proposal: may this one new file be made? The whole of it is shown from the kernel's copy, in
+/// pages. The answer is no unless the person has seen the last page, then freshly pressed F12 (which
+/// no program is given while this one runs, held or not), then freshly pressed Enter with Enter seen up
+/// in between. Any other key once F12 has been pressed, or any key but the arrows before, is no.
+/// With no proposal (F12 was pressed and nothing waits): it says so and goes back on any key.
 /// Interrupts are off on entry and on return.
 #[cfg(feature = "proposals")]
-fn consent(proposal: &crate::sys::Proposal) -> bool {
+fn consent(proposal: Option<&crate::sys::Proposal>) -> bool {
     use ui::{at, AMBER, GOOD, GROUND, SOFT, TEXT};
     let shown_before = dev::display().map(|d| d.shown).unwrap_or(0);
     dev::display_show(0);
     arch::interrupts_on();
     let (cols, rows) = ui::grid();
     let across = (cols as usize).saturating_sub(4).max(1);
-    let text = String::from_utf8_lossy(&proposal.content).into_owned();
-    let mut body: Vec<String> = Vec::new();
-    for line in text.split('\n') {
-        if line.is_empty() {
-            body.push(String::new());
+    enum Event { Ask, Key(u8, bool) }
+    let event = |armed: bool, enter_up: &mut bool| loop {
+        if armed && !dev::enter_down() {
+            *enter_up = true;
         }
-        let characters: Vec<char> = line.chars().collect();
-        for piece in characters.chunks(across) {
-            body.push(piece.iter().collect());
+        if dev::ask_taken() {
+            break Event::Ask;
         }
-    }
-    let head = [
-        (String::from("PCP OS ASKS YOU"), AMBER),
-        (String::from("Taylor wants to make a new file. Nothing has been made yet."), TEXT),
-        (format!("Name: {}", proposal.name), TEXT),
-        (format!("Size: {} characters, {} lines. It will last until the computer is switched off.", proposal.content.len(), body.len()), SOFT),
-    ];
-    let head_rows: usize = head.iter().map(|(t, _)| wrapped_words(t, across).len()).sum();
-    let per = (rows as usize).saturating_sub(head_rows + 4).max(1);
-    let pages = body.len().div_ceil(per).max(1);
-    let (mut page, mut armed, mut seen_last) = (0usize, false, pages == 1);
-    dev::keys_forget();
-    let allowed = loop {
-        ui::clear(GROUND);
-        let mut row = 0u32;
-        for (words, colour) in head.iter() {
-            for part in wrapped_words(words, across) {
-                at(2, row, &part, *colour, GROUND);
-                row += 1;
-            }
-        }
-        row += 1;
-        for line in body.iter().skip(page * per).take(per) {
-            at(2, row, line, TEXT, GROUND);
-            row += 1;
-        }
-        let foot = if armed { String::from("Press Enter to allow it. Any other key refuses.") }
-            else if seen_last { format!("Page {} of {}. F12 then Enter allows. Esc refuses. Arrows turn pages.", page + 1, pages) }
-            else { format!("Page {} of {}. Down arrow shows more. Esc refuses.", page + 1, pages) };
-        for (n, part) in wrapped_words(&foot, across).iter().enumerate() {
-            at(2, rows.saturating_sub(2) + n as u32, part, if armed { GOOD } else { SOFT }, GROUND);
-        }
-        let (code, extended) = wait_key();
-        match (code, extended) {
-            (0x1C, false) if armed => break true,
-            _ if armed => break false,
-            (0x58, false) if seen_last => armed = true,
-            (0x50, true) if page + 1 < pages => {
-                page += 1;
-                seen_last |= page + 1 == pages;
-            }
-            (0x48, true) if page > 0 => page -= 1,
-            (0x50, true) | (0x48, true) => {}
-            _ => break false,
+        match dev::key_take() {
+            Some(k) if !k.released => break Event::Key(k.code, k.extended),
+            Some(_) => {}
+            None => arch::wait_for_interrupt(),
         }
     };
-    // Nothing of the question is left where the program can read it, and no key of the answer reaches it.
+    let allowed = match proposal {
+        None => {
+            ui::clear(GROUND);
+            at(2, 1, "PCP OS", AMBER, GROUND);
+            for (n, part) in wrapped_words("No file is waiting for your approval. Nothing has been made or changed.", across).iter().enumerate() {
+                at(2, 3 + n as u32, part, TEXT, GROUND);
+            }
+            at(2, rows.saturating_sub(2), "Press any key to go back.", SOFT, GROUND);
+            dev::keys_forget();
+            let _ = dev::ask_taken(); // the press that brought this screen is used up by it
+            let _ = event(false, &mut false);
+            false
+        }
+        Some(proposal) => {
+            let text = String::from_utf8_lossy(&proposal.content).into_owned();
+            let ends_with_line = text.ends_with('\n');
+            let mut body: Vec<(String, u32)> = Vec::new();
+            let source: Vec<&str> = if ends_with_line { text[..text.len() - 1].split('\n').collect() } else { text.split('\n').collect() };
+            for line in source.iter().filter(|_| !text.is_empty()) {
+                let characters: Vec<char> = line.chars().collect();
+                if characters.is_empty() {
+                    body.push((String::new(), TEXT));
+                }
+                for piece in characters.chunks(across) {
+                    body.push((piece.iter().collect(), TEXT));
+                }
+                // Spaces at the end of a line cannot be seen, so they are counted out loud.
+                let trailing = line.len() - line.trim_end_matches(' ').len();
+                if trailing > 0 {
+                    body.push((format!("  (the line above ends with {} space{})", trailing, if trailing == 1 { "" } else { "s" }), SOFT));
+                }
+            }
+            body.push((String::from(if text.is_empty() { "(the file is empty)" } else if ends_with_line { "(end of the file)" } else { "(end of the file; its last line is not ended)" }), SOFT));
+            let head = [
+                (String::from("PCP OS ASKS YOU"), AMBER),
+                (String::from("Taylor wants to make a new file. Nothing has been made yet."), TEXT),
+                (format!("Name: {}", proposal.name), TEXT),
+                (format!("Size: {} characters. It will last until the computer is switched off.", proposal.content.len()), SOFT),
+            ];
+            let head_rows: usize = head.iter().map(|(t, _)| wrapped_words(t, across).len()).sum();
+            let per = (rows as usize).saturating_sub(head_rows + 4).max(1);
+            let pages = body.len().div_ceil(per).max(1);
+            let (mut page, mut armed, mut seen_last, mut enter_up) = (0usize, false, pages == 1, false);
+            dev::keys_forget();
+            let _ = dev::ask_taken(); // a press from before the question was on the screen is not an answer to it
+            loop {
+                ui::clear(GROUND);
+                let mut row = 0u32;
+                for (words, colour) in head.iter() {
+                    for part in wrapped_words(words, across) {
+                        at(2, row, &part, *colour, GROUND);
+                        row += 1;
+                    }
+                }
+                row += 1;
+                for (line, colour) in body.iter().skip(page * per).take(per) {
+                    at(2, row, line, *colour, GROUND);
+                    row += 1;
+                }
+                let foot = if armed { String::from("Now press Enter to allow it. Any other key refuses.") }
+                    else if seen_last { format!("Page {} of {}. To allow: press F12, then Enter. Esc refuses. Arrows turn pages.", page + 1, pages) }
+                    else { format!("Page {} of {}. Down arrow shows more. Esc refuses.", page + 1, pages) };
+                for (n, part) in wrapped_words(&foot, across).iter().enumerate() {
+                    at(2, rows.saturating_sub(2) + n as u32, part, if armed { GOOD } else { SOFT }, GROUND);
+                }
+                match event(armed, &mut enter_up) {
+                    Event::Ask if seen_last && !armed => {
+                        armed = true;
+                        enter_up = !dev::enter_down();
+                    }
+                    Event::Ask => {}
+                    Event::Key(0x1C, false) if armed && enter_up => break true,
+                    Event::Key(0x1C, false) if armed => {} // Enter held since before: not a fresh press
+                    Event::Key(..) if armed => break false,
+                    Event::Key(0x50, true) if page + 1 < pages => {
+                        page += 1;
+                        seen_last |= page + 1 == pages;
+                    }
+                    Event::Key(0x48, true) if page > 0 => page -= 1,
+                    Event::Key(0x50, true) | Event::Key(0x48, true) => {}
+                    Event::Key(..) => break false,
+                }
+            }
+        }
+    };
+    // Nothing of the screen is left where the program can read it, and no key of the answer reaches it.
     ui::clear(GROUND);
     dev::keys_forget();
+    let _ = dev::ask_taken();
     arch::interrupts_off();
     dev::display_show(shown_before);
     allowed

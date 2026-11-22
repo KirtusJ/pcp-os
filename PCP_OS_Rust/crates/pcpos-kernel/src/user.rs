@@ -172,6 +172,10 @@ pub struct Table {
     pub world: World,
     /// Timer ticks in which the processor was idling.
     idle: u64,
+    /// A program stopped for the kernel's screen though it had asked nothing (F12 with nothing
+    /// waiting), and what it was waiting for, which it goes back to.
+    #[cfg(feature = "proposals")]
+    parked: Option<(usize, Waiting)>,
 }
 
 static TABLE: arch::Single<Option<Table>> = arch::Single::new(None);
@@ -193,17 +197,17 @@ pub struct Program<'a> {
     pub budget: u64,
     /// Asked, with the program stopped, when it proposes an effect: whether the person allows it.
     #[cfg(feature = "proposals")]
-    pub consent: fn(&sys::Proposal) -> bool,
+    pub consent: fn(Option<&sys::Proposal>) -> bool,
 }
 
 /// The answer where nobody can be asked.
 #[cfg(feature = "proposals")]
-pub fn nobody_to_ask(_: &sys::Proposal) -> bool {
+pub fn nobody_to_ask(_: Option<&sys::Proposal>) -> bool {
     false
 }
 
 fn new_table(world: World) -> Table {
-    Table { procs: Vec::new(), current: None, kernel: None, tasks: TaskTable::new(), caps: CapSpace::new(64), fpu_owner: None, fs_loaded: 0, world, idle: 0 }
+    Table { procs: Vec::new(), current: None, kernel: None, tasks: TaskTable::new(), caps: CapSpace::new(64), fpu_owner: None, fs_loaded: 0, world, idle: 0, #[cfg(feature = "proposals")] parked: None }
 }
 
 pub(crate) fn empty_world() -> World {
@@ -316,6 +320,8 @@ pub fn run_program(program: &Program, world: World) -> (Result<Process, &'static
         return (Err("the program could not be admitted as a task"), t.world);
     }
     dev::keys_forget();
+    #[cfg(feature = "proposals")]
+    dev::ask_reserve(program.grants.propose);
     let _ = dev::stop_requested(); // a stop asked for before the program existed is not a stop of it
     #[cfg(feature = "proposals")]
     loop {
@@ -325,23 +331,34 @@ pub fn run_program(program: &Program, world: World) -> (Result<Process, &'static
         };
         let Some(i) = t.procs.iter().position(|p| p.end.is_none() && p.waiting == Waiting::Consent) else { break };
         // The program is stopped where it asked. The kernel's own code asks the person and acts.
-        let Table { procs, world, .. } = &mut t;
+        let Table { procs, world, parked, .. } = &mut t;
         let p = &mut procs[i];
-        let answer = match p.linux.as_mut().and_then(|l| l.proposal_taken()) {
+        let mut back = Waiting::Nothing;
+        match p.linux.as_mut().and_then(|l| l.proposal_taken()) {
             Some(proposal) => {
-                let allowed = (program.consent)(&proposal);
-                let answer = proposal.length as u64;
+                let allowed = (program.consent)(Some(&proposal));
+                // The call is answered with the record's length: that the kernel took the proposal,
+                // never that anything was made. Only the receipt says what happened.
+                p.frame.answer(proposal.length as u64);
                 if let Some(l) = p.linux.as_mut() {
                     l.proposal_settled(proposal, allowed, world);
                 }
-                answer
             }
-            None => sys::E_INVALID,
-        };
-        p.frame.answer(answer);
-        p.waiting = Waiting::Nothing;
+            // F12 with nothing waiting. The program was stopped by the clock, not in a call: it goes on
+            // exactly where it was.
+            None => {
+                let _ = (program.consent)(None);
+                if let Some((_, waiting)) = parked.take() {
+                    back = waiting;
+                }
+            }
+        }
+        p.waiting = back;
         dev::keys_forget();
+        dev::ask_reserve(true);
     }
+    #[cfg(feature = "proposals")]
+    dev::ask_reserve(false);
     #[cfg(feature = "proposals")]
     let t = Some(settled(t));
     #[cfg(not(feature = "proposals"))]
@@ -532,6 +549,16 @@ impl Table {
     fn next(&mut self, frame: &mut Frame, from: usize) {
         let n = self.procs.len();
         let now = arch::ticks();
+        // F12 with nothing waiting: the program that may propose is stopped where it is, running or
+        // asleep, and the kernel's own screen says that nothing waits. Its state has been saved by
+        // whoever called this.
+        #[cfg(feature = "proposals")]
+        if self.parked.is_none() && dev::ask_waiting() {
+            if let Some(i) = self.procs.iter().position(|p| p.end.is_none() && p.waiting != Waiting::Consent && p.linux.as_ref().is_some_and(|l| l.proposals_allowed())) {
+                self.parked = Some((i, self.procs[i].waiting));
+                self.procs[i].waiting = Waiting::Consent;
+            }
+        }
         let key = dev::keys_waiting();
         for p in self.procs.iter_mut() {
             match p.waiting {
