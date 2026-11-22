@@ -10,6 +10,8 @@
 //! started at a time. One that does not answer is sent INIT again, which returns it to waiting, and
 //! no further one is tried.
 use super::*;
+mod types;
+use types::{decide, Decision, Types, TABLE, TYPE_REGISTERS};
 core::arch::global_asm!(include_str!("others.s"), options(att_syntax));
 use core::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
@@ -178,14 +180,11 @@ fn abilities() -> [u32; 7] {
 }
 
 /// How a processor is told to treat each range of memory (cached, uncached, write-combining): the
-/// registers that say so, with their values, and how many there are. Every processor of a machine
-/// must hold the same. Firmware sets them on all, and on a real processor a start-up message leaves
-/// them alone; an emulator's processor can come back with them cleared, and firmware is not always
-/// right, which is why the usual practice, followed here, is that each processor started is given
-/// the first one's when its own differ.
-const TYPE_REGISTERS: usize = 2 * 32 + 11 + 2;
-type Types = ([(u32, u64); TYPE_REGISTERS], usize);
-
+/// registers that say so, with their values, and how many there are (`types::Types`). Every
+/// processor of a machine must hold the same. Firmware sets them on all, and on a real processor a
+/// start-up message leaves them alone; an emulator's processor can come back with them cleared, and
+/// firmware is not always right. What is then done is in `types::decide`: the ranges of a started
+/// processor are never rewritten here.
 fn memory_types() -> Types {
     let features = core::arch::x86_64::__cpuid(1).edx;
     let mut out: Types = ([(0, 0); TYPE_REGISTERS], 0);
@@ -207,62 +206,20 @@ fn memory_types() -> Types {
         keep(0x2FF); // which kind is the default, and whether the registers above are in force: written last
     }
     if features & (1 << 16) != 0 {
-        keep(0x277);
+        keep(TABLE);
     }
     out
 }
 
-/// Give this processor the first one's memory types, by the procedure the processor makers give for
-/// changing them: caches put in no-fill mode and emptied, translations forgotten, the registers
-/// turned off, written, and turned on again by the last write, caches and translations emptied again.
-/// The caller has interrupts off and restores CR0 afterwards.
+/// Give this processor the first one's page-attribute table and nothing else, by the procedure the
+/// processor makers give: caches in no-fill mode and emptied, translations forgotten, the one
+/// register written, both emptied again, and the caches turned back on as they were.
 ///
 /// # Safety
-/// The processor must be one whose registers are the same kind and number as the first's (its
-/// abilities equal), running nothing else, and `types` what the first processor holds.
-unsafe fn take_memory_types(types: &Types) {
-    let mut cr0: u64;
-    asm!("mov {}, cr0", out(reg) cr0, options(nomem, nostack, preserves_flags));
-    cr0 = (cr0 | 1 << 30) & !(1 << 29);
-    asm!("mov cr0, {}", in(reg) cr0, options(nomem, nostack, preserves_flags));
-    asm!("wbinvd", "mov {t}, cr3", "mov cr3, {t}", t = out(reg) _, options(nostack, preserves_flags));
-    if types.0[..types.1].iter().any(|(register, _)| *register == 0x2FF) {
-        wrmsr(0x2FF, rdmsr(0x2FF) & !(1 << 11));
-    }
-    for &(register, value) in &types.0[..types.1] {
-        if register != 0x2FF {
-            wrmsr(register, value);
-        }
-    }
-    if let Some(&(_, value)) = types.0[..types.1].iter().find(|(register, _)| *register == 0x2FF) {
-        wrmsr(0x2FF, value);
-    }
-    asm!("wbinvd", "mov {t}, cr3", "mov cr3, {t}", t = out(reg) _, options(nostack, preserves_flags));
-}
-
-/// Whether two processors' memory-type registers differ in the ranges (everything but the
-/// page-attribute table), and whether they differ in that table.
-fn differences(first: &Types, mine: &Types) -> (bool, bool) {
-    let ranges = |t: &Types| -> ([(u32, u64); TYPE_REGISTERS], usize) {
-        let mut out = ([(0, 0); TYPE_REGISTERS], 0);
-        for &entry in t.0[..t.1].iter().filter(|(register, _)| *register != 0x277) {
-            out.0[out.1] = entry;
-            out.1 += 1;
-        }
-        out
-    };
-    let table = |t: &Types| t.0[..t.1].iter().find(|(register, _)| *register == 0x277).map(|&(_, value)| value);
-    (ranges(first) != ranges(mine), table(first) != table(mine))
-}
-
-/// Give this processor the first one's page-attribute table and nothing else, by the same
-/// procedure: caches in no-fill mode and emptied, translations forgotten, the one register written,
-/// both emptied again, and the caches turned back on as they were.
-///
-/// # Safety
-/// As `take_memory_types`. The table is this processor's own; no other processor's state is touched.
+/// The processor must have the table (`decide` gave `GiveTable`), run nothing else and have
+/// interrupts off. The table is this processor's own; no other processor's state is touched.
 unsafe fn take_page_attributes(types: &Types) {
-    let value = match types.0[..types.1].iter().find(|(register, _)| *register == 0x277) {
+    let value = match types.0[..types.1].iter().find(|(register, _)| *register == TABLE) {
         Some(&(_, value)) => value,
         None => return,
     };
@@ -270,7 +227,7 @@ unsafe fn take_page_attributes(types: &Types) {
     asm!("mov {}, cr0", out(reg) cr0, options(nomem, nostack, preserves_flags));
     asm!("mov cr0, {}", in(reg) (cr0 | 1 << 30) & !(1 << 29), options(nomem, nostack, preserves_flags));
     asm!("wbinvd", "mov {t}, cr3", "mov cr3, {t}", t = out(reg) _, options(nostack, preserves_flags));
-    wrmsr(0x277, value);
+    wrmsr(TABLE, value);
     asm!("wbinvd", "mov {t}, cr3", "mov cr3, {t}", t = out(reg) _, options(nostack, preserves_flags));
     asm!("mov cr0, {}", in(reg) cr0, options(nomem, nostack, preserves_flags));
 }
@@ -288,7 +245,7 @@ static ANSWERED: AtomicUsize = AtomicUsize::new(0);
 const UNKNOWN_THREADS: u64 = 1 << 40;
 const NOT_ITSELF: u64 = 1 << 41;
 const DIFFERENT: u64 = 1 << 42;
-const GIVEN_TYPES: u64 = 1 << 43;
+const OTHER_RANGES: u64 = 1 << 43;
 const GIVEN_TABLE: u64 = 1 << 44;
 static SAID: [AtomicU64; OTHERS] = [const { AtomicU64::new(0) }; OTHERS];
 
@@ -306,23 +263,20 @@ extern "C" fn ap_main() -> ! {
     // The first processor wrote these before any other was started and does not write them again.
     let mut same = FIRST_ABILITIES.with(|first| *first == abilities());
     if same {
-        // The ranges and the page-attribute table are compared apart (C3). The table is each
-        // processor's own, and the first's was changed by this kernel (`combining_init`), so a
-        // processor fresh from its start differs there even where firmware set every range alike.
-        // The ranges can be shared between the two threads of a core, and rewriting them while the
-        // first processor runs is not to be done for a difference that is only the table's.
+        // The ranges and the page-attribute table are compared apart (C3), and the ranges are never
+        // written (A3): see `types::decide`. A processor held for its ranges is counted apart from
+        // one that cannot do what the first can; it is brought up like the rest and given no work.
         let mine = memory_types();
-        let (ranges_differ, table_differs) = FIRST_TYPES.with(|first| differences(first, &mine));
-        if ranges_differ {
-            // Safety: its abilities equal the first's, it runs nothing else, and interrupts are off.
-            unsafe { FIRST_TYPES.with(|first| take_memory_types(first)) };
-            said |= GIVEN_TYPES;
-        } else if table_differs {
-            // Safety: as above; only this processor's own table is written.
-            unsafe { FIRST_TYPES.with(|first| take_page_attributes(first)) };
-            said |= GIVEN_TABLE;
+        match FIRST_TYPES.with(|first| decide(first, &mine)) {
+            Decision::Same => {}
+            Decision::GiveTable => {
+                // Safety: it has the table, it runs nothing else, and interrupts are off.
+                unsafe { FIRST_TYPES.with(|first| take_page_attributes(first)) };
+                said |= GIVEN_TABLE;
+                same = FIRST_TYPES.with(|first| *first == memory_types());
+            }
+            Decision::Hold => said |= OTHER_RANGES,
         }
-        same = FIRST_TYPES.with(|first| *first == memory_types());
     }
     // Safety: the segment table and task state segment are this processor's own, filled by `prepare`;
     // loading the task register writes one bit into that read-only page, which is why write
@@ -478,19 +432,21 @@ static REACH: AtomicUsize = AtomicUsize::new(0);
 /// How many others are parked, and each one's identity.
 static PARKED: AtomicUsize = AtomicUsize::new(0);
 /// Once starting the others has been tried and not refused: one, then how many answered and are
-/// parked, then how many the firmware listed that this kernel would start. Zero until then.
+/// parked, how many the firmware listed that this kernel would start, and how many hold other
+/// memory ranges than the first. Zero until then.
 static OUTCOME: AtomicUsize = AtomicUsize::new(0);
 
-/// Once starting the others has been tried and not refused: how many are parked, of how many listed.
-pub fn outcome() -> Option<(usize, usize)> {
+/// Once starting the others has been tried and not refused: how many are parked, of how many
+/// listed, and how many of the parked hold other memory ranges than the first (so none is given work).
+pub fn outcome() -> Option<(usize, usize, usize)> {
     match OUTCOME.load(Ordering::SeqCst) {
         0 => None,
-        told => Some((told >> 8 & 0xFF, told >> 16 & 0xFF)),
+        told => Some((told >> 8 & 0xFF, told >> 16 & 0xFF, told >> 24 & 0xFF)),
     }
 }
 
 fn tell(out: Started) -> Result<Started, &'static str> {
-    OUTCOME.store(1 | out.parked.min(255) << 8 | out.listed.min(255) << 16, Ordering::SeqCst);
+    OUTCOME.store(1 | out.parked.min(255) << 8 | out.listed.min(255) << 16 | out.other_ranges.min(255) << 24, Ordering::SeqCst);
     Ok(out)
 }
 static IDENTITY: [AtomicU32; OTHERS] = [const { AtomicU32::new(0) }; OTHERS];
@@ -649,11 +605,12 @@ pub struct Started {
     /// How many answered, in 64-bit mode on their own stacks, and are parked.
     pub parked: usize,
     /// Of those, how many said they were someone else than the one addressed, and how many cannot do
-    /// what the first can, or still hold other memory types than it after being given its (those are left with write protection and nothing more).
+    /// what the first can, or still hold another page-attribute table than it after being given its (those are left with write protection and nothing more).
     pub not_itself: usize,
     pub different: usize,
-    /// How many came up holding other memory types than the first and were given the first's.
-    pub given_types: usize,
+    /// How many came up holding other memory ranges than the first. Their registers are left as
+    /// they came, and while there is one no processor is given work.
+    pub other_ranges: usize,
     /// How many differed from the first only in the page-attribute table and were given the first's table, their ranges untouched.
     pub given_table: usize,
     /// How many were not tried because their identity needs the extended mode and the machine is not in it.
@@ -847,7 +804,7 @@ pub fn start(found: &processors::Found, page: Option<u64>) -> Result<Started, &'
     for said in SAID[..slot].iter().map(|s| s.load(Ordering::SeqCst)) {
         out.not_itself += (said & NOT_ITSELF != 0) as usize;
         out.different += (said & DIFFERENT != 0) as usize;
-        out.given_types += (said & GIVEN_TYPES != 0) as usize;
+        out.other_ranges += (said & OTHER_RANGES != 0) as usize;
         out.given_table += (said & GIVEN_TABLE != 0) as usize;
         known &= said & UNKNOWN_THREADS == 0;
         let core = (said as u32) >> (said >> 32 & 31);
@@ -856,7 +813,7 @@ pub fn start(found: &processors::Found, page: Option<u64>) -> Result<Started, &'
         }
     }
     // Only if every one is as the first may any be asked to do something.
-    if out.not_itself == 0 && out.different == 0 {
+    if out.not_itself == 0 && out.different == 0 && out.other_ranges == 0 {
         PARKED.store(slot, Ordering::SeqCst);
     }
     out.threads = 1 + slot;

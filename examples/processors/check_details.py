@@ -20,7 +20,12 @@ D6  On every kernel the Details screen carries the two sentences on how the scre
 D7  On every kernel the Details screen carries the `elapsed clock:` sentence and it is the serial line's: the
     HPET on the machines above, and on a machine built without one (q35,hpet=off) the fallback's sentence.
 
-What this does not show: a reading of a real sensor, which no emulator here offers.
+D8  Every boot above is on processors with no memory-range registers (cpu "max,mtrr=off,pat=on"), where this
+    emulator's started processors can be given work. On the ordinary cpu "max" a restarted processor comes back
+    with those registers cleared; the kernel leaves them so, and a kernel built with `processors` on a machine
+    of four shows `other processors: 3 of 3 started; 3 hold other memory ranges than the first, so none is given work`.
+
+What this does not show: the colour of that sentence (it is read by the font, not its colour); a reading of a real sensor, which no emulator here offers.
 
 Usage: check_details.py <plain kernel> <kernel with processors,heat> <new output directory>
 """
@@ -39,7 +44,7 @@ def squeeze(text):
     return " ".join(text.split())
 
 
-def details(kernel, cpus, output, size=None, documents=0, machine="q35"):
+def details(kernel, cpus, output, size=None, documents=0, machine="q35", cpu="max,mtrr=off,pat=on"):
     """Boot on `cpus` processors straight to Details; return (every page read from the screen, the serial text).
     With `size` the desktop is asked for that mode; `documents` small files are handed over by the loader."""
     output.mkdir(parents=True)
@@ -49,7 +54,7 @@ def details(kernel, cpus, output, size=None, documents=0, machine="q35"):
         names.append("note%d.txt" % index)
         (output / names[-1]).write_text("a file from the loader, number %d\n" % index)
     command = "first=details" + ((" desktop=" + size) if size else "")
-    invocation = ["qemu-system-x86_64", "-machine", machine, "-accel", "tcg", "-cpu", "max", "-smp", str(cpus), "-m", "256M",
+    invocation = ["qemu-system-x86_64", "-machine", machine, "-accel", "tcg", "-cpu", cpu, "-smp", str(cpus), "-m", "256M",
                   "-kernel", str(kernel)] + (["-initrd", ",".join(names)] if names else []) + [
                   "-append", command, "-vga", "std", "-display", "none", "-nic", "none",
                   "-serial", "file:" + str(serial.resolve()), "-no-reboot", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-qmp", "stdio"]
@@ -142,6 +147,10 @@ def main():
                  and fixed(sentence(pages, "heat:")) == fixed(serial_sentence(serial, "heat: ")))
         check("D5 %s: Details scrolls, and all three sentences are read whole" % label, scrolls and whole,
               "scrolls=%r pages=%d %r / %r / %r" % (scrolls, len(pages), sentence(pages, "processors:"), sentence(pages, "other processors:"), sentence(pages, "heat:")))
+    pages, serial = details(full, 4, output / "held-4", cpu="max")
+    others = sentence(pages, "other processors:")
+    check("D8 held-4: processors whose memory ranges are not the first's are said to be given no work",
+          others == "other processors: 3 of 3 started; 3 hold other memory ranges than the first, so none is given work", repr(others))
     pages, serial = details(plain, 1, output / "no-hpet", machine="q35,hpet=off")
     shown, told = sentence(pages, "elapsed clock: "), serial_sentence(serial, "elapsed clock: ")
     check("D7 no-hpet: without the timer, Details says the fallback, as the serial line does", shown is not None and shown == told and "delivered PIT interrupts" in shown, "%r / %r" % (shown, told))
