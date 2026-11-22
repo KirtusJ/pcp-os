@@ -687,6 +687,19 @@ fn check_space_cutoffs(failed: &mut u32) {
 }
 
 /// The kernel proper, entered from `arch` in 64-bit mode with interrupts off.
+/// How the display's memory is mapped, read back from the kernel's own tables now: the sentence
+/// written at start and shown under Details.
+pub fn display_memory_words(d: &dev::Display) -> alloc::string::String {
+    let (with, all) = arch::combining_readback(d.memory, d.pitch as usize * d.height as usize * d.pages as usize);
+    alloc::format!("display memory: {} of the {} pages a picture is written to are mapped write-combining, read back from the kernel's tables", with, all)
+}
+
+/// Where a program that asks draws, in the sentence written at start and shown under Details.
+pub fn display_drawing_words(d: &dev::Display) -> alloc::string::String {
+    alloc::format!("display: a program that asks {}", if sys::display_needs_shadow(d) { "draws to memory of its own, and the kernel shows each finished picture" }
+                                                       else { "draws on the page that is not shown, and the kernel shows it when it is finished" })
+}
+
 /// What the firmware says of processors, in the one sentence written at start and shown under Details.
 pub fn processors_words(boot: &arch::BootInfo) -> alloc::string::String {
     match &boot.processors {
@@ -855,10 +868,8 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     match display {
         Some(d) => {
             say!("display: {:?}, {}x{}, {} page(s), {} KiB of its memory mapped at {:#x}", d.kind, d.width, d.height, d.pages, d.mapped / 1024, d.memory);
-            let (with, all) = arch::combining_readback(d.memory, d.pitch as usize * d.height as usize * d.pages as usize);
-            say!("display memory: {} of the {} pages a picture is written to are mapped write-combining, read back from the kernel's tables", with, all);
-            say!("display: a program that asks {}", if sys::display_needs_shadow(&d) { "draws to memory of its own, and the kernel shows each finished picture" }
-                                                       else { "draws on the page that is not shown, and the kernel shows it when it is finished" });
+            say!("{}", display_memory_words(&d));
+            say!("{}", display_drawing_words(&d));
         }
         None => say!("display: none this kernel can drive"),
     }

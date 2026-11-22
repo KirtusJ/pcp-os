@@ -1838,6 +1838,16 @@ fn machine_words(start: &Start) -> Vec<(String, u32)> {
         Some((parked, listed)) => format!("other processors: {} of {} started; each waits, parked, and runs no program", parked, listed),
         None => String::from("other processors: none started"),
     }, ui::SOFT));
+    // How the screen is written, for a machine with no serial line to read it from: both sentences
+    // are made now, from the tables and the display as they stand.
+    if let Some(d) = dev::display() {
+        let memory = crate::display_memory_words(&d);
+        // Not combined is not a fault, but on a real panel it is the difference between a picture
+        // that appears and one that is seen arriving, so it is not left in the quiet colour.
+        let combined = arch::combining_on() && !memory.starts_with("display memory: 0 of");
+        out.push((memory, if combined { ui::SOFT } else { ui::AMBER }));
+        out.push((crate::display_drawing_words(&d), ui::SOFT));
+    }
     // One reading gives both the words and their colour.
     #[cfg(feature = "heat")]
     {
