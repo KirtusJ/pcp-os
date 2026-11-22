@@ -8,8 +8,7 @@ it and for which task, and all sixty-four digits of the digest of its bytes.
 
 Predicates, fixed before the first run.
  R1 a file is proposed and allowed (F12, then Enter). The program ends and the desktop comes back.
-    F4 then shows, somewhere in the register (the screen is scrolled to its end, every row read
-    on the way), exactly these three lines, each on a row of its own, in this order and next to
+    F4 then shows, somewhere in the register, exactly these three lines, each on a row of its own, in this order and next to
     one another: `file <the whole path>`; `<size> bytes, PRODUCED, for task <the id of the task
     the kernel started for that program in this boot>`; `sha256 <the SHA-256 of the bytes
     proposed>`. The task's id is read from the same screen (the row of the task's start).
@@ -17,6 +16,12 @@ Predicates, fixed before the first run.
  R3 the comparison refuses, before anything is booted, a screen with another digest, another size,
     another task, another path, the digest cut short, the three lines out of order or apart, and
     a screen with none of them.
+ R5 the whole register is read in both boots: the screen opens at its end, is taken up until it
+    no longer moves, and every row is read on the way down, a row met on two
+    screenfuls being counted once (a made-up register longer than the screen, with its file only on
+    the first screenful, is read whole before anything is booted); the events read are numbered from 0
+    with none missing, and are as many as the screen's title says. (A3 found that an earlier
+    version read only the last screenful, so its "no file anywhere" looked at one screen.)
  R4 both boots end with status 33 after F10 and Enter, and 71 self-tests pass.
 
 Usage: check_register_screen.py <kernel.elf32 built with proposals> <proposal-probe ELF> <new evidence folder>
@@ -45,7 +50,35 @@ def shows(rows, wanted):
     return len(places) == 1 and sum(1 for row in seen if row.startswith("file ")) == 1
 
 
+def body(shown):
+    """The rows of one screenful that belong to the register: not the title, the row of headings
+    (both stay at the top of every screenful), the two rows at the foot, or empty rows."""
+    return [row for row in shown[:-2] if row.strip() and "REGISTER" not in row and not row.strip().startswith("seq  time")]
+
+
+def gather(pages):
+    """Every row of the register, from screenfuls taken from the top down. A screenful repeats rows
+    of the one before it; the longest run that ends the rows read and begins the new ones is met once."""
+    rows = []
+    for shown in pages:
+        fresh = body(shown)
+        overlap = next((n for n in range(min(len(fresh), len(rows)), 0, -1) if rows[-n:] == fresh[:n]), 0)
+        rows += fresh[overlap:]
+    return rows
+
+
 def selftest():
+    # A register longer than the screen, with the file only on the first screenful: it is found, once.
+    head, foot = ["  THE KERNEL'S REGISTER: 9 events", "  seq  time  actor  kind"], ["", "  Esc back"]
+    whole = ["  %d    2026-11-22T10:00:00Z  kernel    E" % n for n in range(9)]
+    whole[2:2] = ["      file a/b.txt", "      1 bytes, PRODUCED, for task T1", "      sha256 " + "1" * 64]
+    for step in (1, 3, 5):
+        pages = [head + whole[at:at + 5] + foot for at in range(0, len(whole) - 4, step)]
+        if pages[-1] != head + whole[-5:] + foot:
+            pages.append(head + whole[-5:] + foot)
+        assert gather(pages) == whole, step
+    assert gather([head + whole[-5:] + foot]) == whole[-5:]
+
     good = identity(NAME, CONTENT, "T15")
     around = ["42 TASK_STARTED", "43   2026-11-22T10:00:00Z  kernel    ARTIFACT_ADDED"]
     assert shows(around + ["      " + line for line in good] + ["44 TASK_ENDED"], good)
@@ -95,21 +128,37 @@ def main():
             time.sleep(2.0)
             guest.key("f4")
             time.sleep(1.0)
+            # The screen opens at the end of the register (A3: scrolling only down read just the last
+            # screenful). Go up until it no longer moves, then read every row on the way down.
             last = None
             for page in range(80):
-                shown = guest.screen("register-%02d" % page, glyphs)
+                shown = guest.screen("register-up-%02d" % page, glyphs)
                 if not any("REGISTER" in row for row in shown):
                     problems.append("%s: F4 did not show the register: %r" % (name, [row.strip() for row in shown if row.strip()][:3]))
                     break
                 if shown == last:
                     break
-                # Rows already read on the page before are met again when the screen moves half a page.
-                fresh = shown[2:-2]
-                overlap = next((n for n in range(min(len(fresh), len(rows)), 0, -1) if rows[-n:] == fresh[:n]), 0)
-                rows += fresh[overlap:]
+                last = shown
+                guest.key("up")
+                time.sleep(0.3)
+            title = next((row for row in (last or []) if "REGISTER" in row), "")
+            last = None
+            pages = []
+            for page in range(80):
+                shown = guest.screen("register-%02d" % page, glyphs)
+                if shown == last:
+                    break
+                pages.append(shown)
                 last = shown
                 guest.key("down")
                 time.sleep(0.3)
+            rows = gather(pages)
+            # Every event was read: they are numbered from 0 with none missing, as many as the title says.
+            numbers = [int(row.split()[0]) for row in rows if len(row.split()) > 2 and row.split()[0].isdigit() and row.split()[1][:2] == "20" and row.split()[1].endswith("Z")]
+            said = [int(word) for word, after in zip(title.split(), title.split()[1:]) if after.startswith("events") and word.isdigit()]
+            if numbers != list(range(len(numbers))) or said != [len(numbers)]:
+                problems.append("%s: the register screen was not read whole: events %r..%r in order %r, title says %r" % (
+                    name, numbers[:1], numbers[-1:], numbers == list(range(len(numbers))), said))
             guest.key("esc")
             time.sleep(0.5)
             guest.key("f10")
