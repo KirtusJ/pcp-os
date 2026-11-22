@@ -1,0 +1,60 @@
+{
+  "22": {
+    "prefill-stop": {
+      "event": "prefill-stop",
+      "boot_s": 215.14263911000126,
+      "ui_confirmation_s": 0.25099761900128215
+    },
+    "reply-submitted": {
+      "event": "reply-submitted",
+      "boot_s": 218.70531468400077,
+      "prompt": "Say hello in one short sentence.",
+      "turn": 2
+    },
+    "reply-first-text": {
+      "event": "reply-first-text",
+      "boot_s": 4247.735736987001,
+      "previous_lower_s": 4027.476799227001,
+      "first_observed_upper_s": 4028.7988316909996,
+      "readback": "Hello"
+    },
+    "reply-terminal": {
+      "event": "reply-terminal",
+      "boot_s": 4512.141448213,
+      "observed_s": 4293.24033456,
+      "serial": "tailorbird: reply 2 kept 6 bytes and is complete",
+      "readback": "Hello!"
+    }
+  },
+  "24": {
+    "prefill-stop": {
+      "event": "prefill-stop",
+      "boot_s": 126.04936710999937,
+      "ui_confirmation_s": 0.25053625399959856
+    },
+    "reply-submitted": {
+      "event": "reply-submitted",
+      "boot_s": 129.66566532899924,
+      "prompt": "Say hello in one short sentence.",
+      "turn": 2
+    },
+    "reply-first-text": {
+      "event": "reply-first-text",
+      "boot_s": 921.4519881329998,
+      "previous_lower_s": 790.2821197760004,
+      "first_observed_upper_s": 791.6005923490011,
+      "readback": "Hello"
+    },
+    "reply-terminal": {
+      "event": "reply-terminal",
+      "boot_s": 972.0022902269993,
+      "observed_s": 842.1628547910004,
+      "serial": "tailorbird: reply 2 kept 6 bytes and is complete",
+      "readback": "Hello!"
+    }
+  },
+  "first_text_control_over_sse2_lower": 5.087763751257232,
+  "first_text_control_over_sse2_upper": 5.097924818080071,
+  "terminal_observation_ratio": 5.097874253341954,
+  "scope": "One ordinary replacement prompt per image after prefill Stop and New Chat. Identical complete 0.5B model and Q35 TCG configuration on a shared host, different worker builds and compiler toolchains. Terminal times are first observations of completion."
+}
