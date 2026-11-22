@@ -41,7 +41,4 @@ opt-level = 1
 overflow-checks = true
 
 [profile.release]
-panic = "abort"
-opt-level = "s"
-overflow-checks = true
 debug = false
