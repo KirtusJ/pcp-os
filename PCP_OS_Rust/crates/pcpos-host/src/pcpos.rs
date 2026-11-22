@@ -1748,12 +1748,18 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
             if open_review_floor(&tx).is_none() {
                 return Ok(format!("{text}No review is open, so this was not recorded as a check: a check is run for a review.\nNothing was written.\n"));
             }
+            let result = clip(&found.text, 1500);
+            let result_is_preview = result != found.text;
             let canonical = String::from_utf8_lossy(&input.canonical_json()).to_string();
             let mut body = vec![("argv", Value::List(vec![s("instrument"), s(which), s(&clip(&canonical, 4000))])), ("via", s("INSTRUMENT")), ("exit", Value::Int(if found.holds { 0 } else { 1 })), ("expect_exit", Value::Int(0)),
                                 ("timeout", Value::Bool(false)), ("stdout", s(&sha256_hex(found.text.as_bytes()))), ("stderr", s(&sha256_hex(b""))), ("output", s("INSTRUMENT_TEXT")), ("observed", s("RAN_BY_THIS_PROGRAM")),
-                                ("instrument", s(which)), ("result", s(&clip(&found.text, 1500)))];
+                                ("instrument", s(which)), ("result", Value::Str(result))];
             if let Some(n) = text_arg("name")? {
                 body.push(("name", s(n)));
+            }
+            if result_is_preview {
+                body.push(("result_is_preview", Value::Bool(true)));
+                body.push(("result_bytes", Value::Int(found.text.len() as i64)));
             }
             match tx.put(&se.actor, "HOST", "CHECK_RAN", obj(body))? {
                 Put::Refused(r) => Ok(refusal_text(&r)),
