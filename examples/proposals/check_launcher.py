@@ -14,11 +14,21 @@ READ = runpy.run_path(str(ROOT / "examples/tester-cd/check_compact_pins.py"))["r
 DEFAULT_FOLDER = "taylor"
 APPROVAL = "Creating a file needs your approval."
 CUT_NOTICE = "Loader line cut. Cannot run."
+CUT_ACTION = "Shorten or correct the start-up settings and restart."
+CUT_EFFECT = "No files changed."
 
 
-def check_cut_access(words):
+def check_cut_access(words, cut):
+    if not cut:
+        if any(phrase in words for phrase in (CUT_NOTICE, CUT_ACTION, CUT_EFFECT)):
+            raise AssertionError("Unexpected cut-line message: " + words)
+        return
     if CUT_NOTICE not in words:
         raise AssertionError("Missing cut-line refusal: " + words)
+    # On the graphical card the right border separates one wrapped row from the next.
+    _, action, after = words.partition(CUT_ACTION)
+    if not action or CUT_EFFECT not in after:
+        raise AssertionError("Missing instructions for correcting the start-up settings: " + words)
     for stale in ("Access:", "may use:", "starting it lets it use:", "Can list and read",
                   "Creating a file needs", "You approve each new file", "Ethernet grant:", "Optional game cable:",
                   "Enter open", "Enter start"):
@@ -113,8 +123,7 @@ def main():
             key("ret")
             launcher = capture("programs", lambda text: guest.name in text and
                                ("Access:" in text or "may use:" in text or CUT_NOTICE in text))
-            if args.cut_line:
-                check_cut_access(launcher)
+            check_cut_access(launcher, args.cut_line)
             creation = "You approve each new file." if width // 10 - 4 < len(APPROVAL) else APPROVAL
             required = not args.without_grant and not args.cut_line
             if (SCOPE in launcher) != required or (creation in launcher) != required:
@@ -154,8 +163,8 @@ def main():
                     details += " " + page
                 if "FILES FROM THE LOADER" not in details:
                     raise AssertionError("Details never reached the end of the program records")
+            check_cut_access(details, args.cut_line)
             if args.cut_line:
-                check_cut_access(details)
                 if "the loader's line was not taken whole" not in serial.read_text():
                     raise AssertionError("Missing native cut-line observation")
             if (SCOPE in details) != required or (APPROVAL in details) != required:
