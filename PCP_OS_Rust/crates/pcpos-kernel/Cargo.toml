@@ -26,7 +26,7 @@ lost-key-demo = []         # the controller answers the replay probe and then lo
 keyboard-busy-demo = []    # keyboard start-up ends as a controller that did not take its set-up, without touching a port
 keyboard-silent-demo = []  # keyboard start-up ends as a keyboard that did not acknowledge, without touching a port
 proposals = []           # one hash-granted program may propose one new text file; the kernel asks and creates it
-heat = []                  # say at start how far the processor is from the temperature at which it slows itself (Intel's digital sensor); reads one register
+heat = []                  # say at start how many degrees the processor reports below its highest junction temperature (Intel's digital sensor); reads one register, decides nothing
 companion = []             # one program named by digest runs beside another and the two exchange bytes over dev/talk
 model-memory = ["companion", "dep:pcpos-model-media"] # memory a loader filled with a model and named is kept out of the pool and mapped read-only to the companion
 model-memory-fixture = ["model-memory"] # EMULATOR ONLY: the line's fixture_model_ram= stands for a loader marking memory in its map; never in a release

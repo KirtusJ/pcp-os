@@ -2,23 +2,25 @@
 //! reports it. No I/O here: the caller reads the two values and this says what they mean.
 //!
 //! An Intel processor with a digital sensor reports, for the core asked, how many degrees it is
-//! below the temperature at which it begins to slow itself, whether it is slowing itself now, and
-//! whether it has reached the temperature at which the machine should be shut down. The processor
-//! acts on these by itself, kernel or no kernel: it slows, and at the last it stops. What the
-//! kernel adds is to stop giving a hot processor work before that, and to say so. Nothing here
-//! gives a temperature in degrees: that would need a further value which not every processor has,
-//! and the margin is the number that matters.
+//! below its highest junction temperature (TjMax), whether it is limiting itself now, and whether
+//! its critical-temperature status is set. The processor acts on heat by itself, kernel or no kernel.
+//!
+//! The distance is NOT how far the processor is from slowing itself. Firmware can set the point at
+//! which the processor begins to limit itself some degrees below TjMax, and that setting is not
+//! read here, so the real headroom may be smaller than the distance by an amount this code does not
+//! know (Director B3, from Intel's datasheet for the 10th generation). For that reason nothing
+//! here says whether a processor should be given work: this only reports.
 
 /// What a processor says about its heat.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Heat {
-    /// Degrees below the temperature at which it begins to slow itself. Zero is at it.
-    pub margin: u8,
-    /// It is slowing itself now.
-    pub slowing: bool,
-    /// It has slowed itself at some time since this was last cleared (nothing here clears it).
-    pub has_slowed: bool,
-    /// It is at the temperature at which the machine should be shut down.
+    /// Degrees below TjMax. The processor may begin to limit itself before this reaches zero.
+    pub below_highest: u8,
+    /// Its thermal status is set: it is limiting itself now.
+    pub limiting: bool,
+    /// It has limited itself at some time since this was last cleared (nothing here clears it).
+    pub has_limited: bool,
+    /// Its critical-temperature status is set. What follows from that is the machine's doing and is not predicted here.
     pub critical: bool,
 }
 
@@ -34,14 +36,7 @@ pub fn read(status: u64) -> Option<Heat> {
     if status & (1 << 31) == 0 {
         return None;
     }
-    Some(Heat { margin: (status >> 16 & 0x7F) as u8, slowing: status & 1 != 0, has_slowed: status & 2 != 0, critical: status & (1 << 4) != 0 })
-}
-
-/// Whether a processor that says this should be given work. Not within `least` degrees of slowing
-/// itself, not slowing itself, and not critical; and a processor that gives no valid reading while
-/// claiming a sensor is not given the benefit of the doubt.
-pub fn fit_for_work(heat: Option<Heat>, least: u8) -> bool {
-    matches!(heat, Some(h) if !h.critical && !h.slowing && h.margin >= least)
+    Some(Heat { below_highest: (status >> 16 & 0x7F) as u8, limiting: status & 1 != 0, has_limited: status & 2 != 0, critical: status & (1 << 4) != 0 })
 }
 
 #[cfg(test)]
@@ -59,22 +54,11 @@ mod tests {
     fn the_status_is_read_field_by_field() {
         assert_eq!(read(0), None);
         assert_eq!(read(0x0000_0000_7FFF_FFFF), None); // everything but the bit that says it is valid
-        assert_eq!(read(0x8832_0000), Some(Heat { margin: 50, slowing: false, has_slowed: false, critical: false })); // a cool core: 50 below
-        assert_eq!(read(0x8800_0003), Some(Heat { margin: 0, slowing: true, has_slowed: true, critical: false }));
-        assert_eq!(read(0x8805_0002), Some(Heat { margin: 5, slowing: false, has_slowed: true, critical: false }));
-        assert_eq!(read(0x8800_0013), Some(Heat { margin: 0, slowing: true, has_slowed: true, critical: true }));
-        assert_eq!(read(0x80FF_0000).map(|h| h.margin), Some(127)); // seven bits and no more
-        assert_eq!(read(0xFFFF_FFFF_8000_0000 | 20 << 16).map(|h| h.margin), Some(20)); // the upper half is not read
-    }
-
-    #[test]
-    fn work_goes_only_to_a_processor_with_margin_to_spare() {
-        let at = |margin, slowing, critical| Some(Heat { margin, slowing, has_slowed: false, critical });
-        assert!(fit_for_work(at(50, false, false), 10) && fit_for_work(at(10, false, false), 10));
-        assert!(!fit_for_work(at(9, false, false), 10));
-        assert!(!fit_for_work(at(50, true, false), 10) && !fit_for_work(at(50, false, true), 10));
-        assert!(!fit_for_work(None, 10));
-        // Having slowed in the past does not by itself keep work away.
-        assert!(fit_for_work(Some(Heat { margin: 30, slowing: false, has_slowed: true, critical: false }), 10));
+        assert_eq!(read(0x8832_0000), Some(Heat { below_highest: 50, limiting: false, has_limited: false, critical: false })); // a cool core: 50 below
+        assert_eq!(read(0x8800_0003), Some(Heat { below_highest: 0, limiting: true, has_limited: true, critical: false }));
+        assert_eq!(read(0x8805_0002), Some(Heat { below_highest: 5, limiting: false, has_limited: true, critical: false }));
+        assert_eq!(read(0x8800_0013), Some(Heat { below_highest: 0, limiting: true, has_limited: true, critical: true }));
+        assert_eq!(read(0x80FF_0000).map(|h| h.below_highest), Some(127)); // seven bits and no more
+        assert_eq!(read(0xFFFF_FFFF_8000_0000 | 20 << 16).map(|h| h.below_highest), Some(20)); // the upper half is not read
     }
 }
