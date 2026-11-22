@@ -700,7 +700,7 @@ fn script_tick(ticks: u64) {
         if s.next < s.len && ticks >= s.at && in8(0x64) & 3 == 0 {
             if let KeyPacing::Sleeping { idle_ticks, timeout } = s.pacing {
                 if ticks.saturating_sub(s.at) < timeout &&
-                    !crate::user::sleeping_idle_ticks(ticks).is_some_and(|idle| idle >= idle_ticks) {
+                    !crate::user::sleeping_idle_ticks().is_some_and(|idle| idle >= idle_ticks) {
                     return;
                 }
             }

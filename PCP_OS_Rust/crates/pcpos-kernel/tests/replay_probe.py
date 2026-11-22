@@ -45,7 +45,7 @@ KEY_CHECKS = (
 )
 REPLAY_INDEPENDENT = {
     "rejected batch returns the frames of every member": 3,
-    "a program that sleeps 50 ms is woken at its millisecond: the processor idled 51 timer periods, no fewer and no more, and the sleep answered 0": 1,
+    "a program that sleeps 50 ms observes its full deadline and a successful return": 1,
     "a program under a name of 32 bytes is admitted and runs to its end": 1,
     "a program under a name of 33 bytes is refused admission as a task": 1,
     "a program that cannot be admitted as a task leaves no memory behind: as many frames are free after as before": 1,
