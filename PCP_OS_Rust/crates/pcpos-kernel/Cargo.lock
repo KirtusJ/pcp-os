@@ -74,6 +74,14 @@ name = "pcpos-kernel"
 version = "0.3.1"
 dependencies = [
  "pcpos-core",
+ "pcpos-model-media",
+]
+
+[[package]]
+name = "pcpos-model-media"
+version = "1.0.22"
+dependencies = [
+ "sha2",
 ]
 
 [[package]]
