@@ -47,6 +47,7 @@ Every entry at the top of the repository, and every folder one level down in the
 | `examples/optical-disk-check` | CI check: booting the CD does not write to an attached disk. | no |
 | `examples/proposals` | Checks: a program proposes a file, the kernel asks, records and shows it (kernel feature proposals). | no |
 | `examples/qwen` | Example: a local model reading a PCP register through llama.cpp on the host. | no |
+| `examples/release-media` | Tools for assembling and verifying release media. | no |
 | `examples/resident-workers` | CI check: 24 guests with resident numerical workers. | no |
 | `examples/tester-cd` | CI: builds the tester CD from source. | no |
 | `examples/vector-state` | Check: saved vector register states are what return. | no |
