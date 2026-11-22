@@ -696,11 +696,12 @@ pub fn processors_words(boot: &arch::BootInfo) -> alloc::string::String {
     }
 }
 
-/// What the processor this runs on says of its heat now, in the one sentence written at start and
-/// shown under Details. Each call reads the sensor again.
+/// What a reading of the processor's heat says, in the one sentence written at start and shown
+/// under Details. The caller reads the sensor, so that words and anything else drawn from the
+/// reading come from the same one.
 #[cfg(feature = "heat")]
-pub fn heat_words() -> alloc::string::String {
-    match arch::heat_now() {
+pub fn heat_words(reading: Result<arch::heat::Heat, &'static str>) -> alloc::string::String {
+    match reading {
         Ok(h) => alloc::format!("heat: this processor reports {} degrees below its highest junction temperature{}{}{}; it may begin to limit itself before that reaches zero, by a setting not read here", h.below_highest,
                                 if h.limiting { "; IT IS LIMITING ITSELF NOW" } else { "" }, if h.has_limited { "; it has limited itself before" } else { "" },
                                 if h.critical { "; ITS CRITICAL-TEMPERATURE STATUS IS SET" } else { "" }),
@@ -749,7 +750,7 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     let on = |bit: u32| if offered >> bit & 1 == 0 { "not offered by this processor" } else if enabled >> bit & 1 == 1 { "on" } else { "OFFERED AND NOT ON" };
     say!("further protections: supervisor execution prevention {}, supervisor access prevention {}, user-mode instruction prevention {}", on(20), on(21), on(11));
     #[cfg(feature = "heat")]
-    say!("{}", heat_words());
+    say!("{}", heat_words(arch::heat_now()));
     let measured = sha256_hex(arch::image());
     // K-12: the measurement is compared with a value the kernel did not compute, where whoever started it named one
     // (`image=<SHA-256>` on the loader's command line; tools/measure.py computes it from the image file without

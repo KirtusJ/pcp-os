@@ -4,20 +4,23 @@
 A laptop without a serial connector has no other way to show these. Predicates, fixed before the first run:
 
 D1  On every kernel the Details screen carries the whole `processors:` sentence, and it is the sentence on the serial line.
-D2  A kernel built with `processors`, on a machine of four, shows `other processors: 3 of 3 started and parked`;
-    on a machine of one it shows `other processors: 0 of 0 started and parked`.
+D2  A kernel built with `processors`, on a machine of four, shows `other processors: 3 of 3 started; each waits,
+    parked, and runs no program`; on a machine of one, `0 of 0`.
 D3  A kernel built with `heat` shows a `heat:` sentence that is the serial line's sentence (the emulator offers
     no sensor, so both say so; a reading can differ between two samples and is then compared by its fixed words only).
 D4  A kernel built without those features shows neither an `other processors:` nor a `heat:` line.
+D5  Where the plain list cannot hold everything above its keys (B3: 1024 by 600 with files from the loader; any
+    display under 96 columns), Details is the screen of text that scrolls, and each of the three sentences can
+    be read whole by pressing Down. Run on four processors at 1024x600 with nine files from the loader, and at 640x480.
 
-What this does not show: the narrow Details screen (under 96 columns) draws the same sentences through the
-same function but is not opened here; and no reading of a real sensor, which no emulator here offers.
+What this does not show: a reading of a real sensor, which no emulator here offers.
 
 Usage: check_details.py <plain kernel> <kernel with processors,heat> <new output directory>
 """
 import runpy
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -29,21 +32,36 @@ def squeeze(text):
     return " ".join(text.split())
 
 
-def details(kernel, cpus, output):
-    """Boot on `cpus` processors straight to Details; return (everything read from the screen, the serial text)."""
+def details(kernel, cpus, output, size=None, documents=0):
+    """Boot on `cpus` processors straight to Details; return (every page read from the screen, the serial text).
+    With `size` the desktop is asked for that mode; `documents` small files are handed over by the loader."""
     output.mkdir(parents=True)
     serial = output / "serial.txt"
+    names = []
+    for index in range(documents):
+        names.append("note%d.txt" % index)
+        (output / names[-1]).write_text("a file from the loader, number %d\n" % index)
+    command = "first=details" + ((" desktop=" + size) if size else "")
     invocation = ["qemu-system-x86_64", "-machine", "q35", "-accel", "tcg", "-cpu", "max", "-smp", str(cpus), "-m", "256M",
-                  "-kernel", kernel.name, "-append", "first=details", "-vga", "std", "-display", "none", "-nic", "none",
-                  "-serial", "file:" + str(serial), "-no-reboot", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-qmp", "stdio"]
-    with subprocess.Popen(invocation, stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd=kernel.parent) as vm:
+                  "-kernel", str(kernel)] + (["-initrd", ",".join(names)] if names else []) + [
+                  "-append", command, "-vga", "std", "-display", "none", "-nic", "none",
+                  "-serial", "file:" + str(serial.resolve()), "-no-reboot", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-qmp", "stdio"]
+    with subprocess.Popen(invocation, stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd=output) as vm:
         try:
             monitor = OPTICAL["Monitor"](vm)
             monitor.call("qmp_capabilities")
-            screens = OPTICAL["DesktopScreens"](monitor, output, 60)
+            screens = OPTICAL["DesktopScreens"](monitor, output.resolve(), 60)
             screens.read = READ
-            # `first=details` opens the wide Details list where the display has 96 columns or more.
-            pages = [screens.wait("details-00", lambda rows: any("MACHINE" in row for row in rows) and any(row.strip().startswith("store:") for row in rows))]
+            pages = [screens.wait("details-00", lambda rows: any("PROGRAMS" in row for row in rows))]
+            # The screen of text scrolls with Down, half a page at a time; the plain list does not scroll.
+            if any("Up/Down scroll" in row for row in pages[0]):
+                for step in range(1, 40):
+                    monitor.key("down")
+                    time.sleep(0.4)
+                    rows = screens.wait("details-%02d" % step, lambda rows: any("Esc back" in row for row in rows))
+                    if rows == pages[-1]:
+                        break
+                    pages.append(rows)
             for index, rows in enumerate(pages):
                 (output / ("details-%02d.txt" % index)).write_text("\n".join(rows) + "\n")
         finally:
@@ -52,18 +70,21 @@ def details(kernel, cpus, output):
 
 
 def sentence(pages, start):
-    """The wrapped sentence beginning with `start`, joined, from the page that shows its beginning."""
+    """The wrapped sentence beginning with `start`, joined: the longest reading of it on any page (a page can cut it)."""
+    best = None
     for rows in pages:
         body = [row.strip() for row in rows]
         for index, row in enumerate(body):
             if row.startswith(start):
                 words = [row]
                 for more in body[index + 1:]:
-                    if not more or more.split(":")[0] in ("heat", "other processors", "processors", "display", "keyboard", "store") or "Esc back" in more:
+                    if not more or more.split(":")[0] in ("heat", "other processors", "processors", "display", "keyboard", "store") or "Esc back" in more or "Up/Down" in more:
                         break
                     words.append(more)
-                return squeeze(" ".join(words))
-    return None
+                found = squeeze(" ".join(words))
+                if best is None or len(found) > len(best):
+                    best = found
+    return best
 
 
 def serial_sentence(text, start):
@@ -89,13 +110,23 @@ def main():
         check("D1 %s: the processors sentence on Details is the serial line's" % label, shown is not None and shown == said, "%r / %r" % (shown, said))
         others, heat = sentence(pages, "other processors:"), sentence(pages, "heat:")
         if kernel is full:
-            want = "other processors: %d of %d started and parked; none runs any work yet" % (cpus - 1, cpus - 1)
+            want = "other processors: %d of %d started; each waits, parked, and runs no program" % (cpus - 1, cpus - 1)
             check("D2 %s: other processors as started" % label, others == want, repr(others))
             said_heat = serial_sentence(serial, "heat: ")
             fixed = lambda s: s and " ".join(w for w in s.split() if not w.isdigit())
             check("D3 %s: the heat sentence on Details is the serial line's" % label, heat is not None and fixed(heat) == fixed(said_heat), "%r / %r" % (heat, said_heat))
         else:
             check("D4 %s: no other-processors or heat line without the features" % label, others is None and heat is None, "%r / %r" % (others, heat))
+    for label, size, documents in (("short-1024x600", "1024x600", 9), ("narrow-640x480", "640x480", 0)):
+        pages, serial = details(full, 4, output / label, size, documents)
+        scrolls = any("Up/Down scroll" in row for row in pages[0])
+        said = serial_sentence("\n".join(l for l in serial.splitlines() if "root pointer" not in l), "processors: ")
+        fixed = lambda s: s and " ".join(w for w in s.split() if not w.isdigit())
+        whole = (sentence(pages, "processors:") == said
+                 and sentence(pages, "other processors:") == "other processors: 3 of 3 started; each waits, parked, and runs no program"
+                 and fixed(sentence(pages, "heat:")) == fixed(serial_sentence(serial, "heat: ")))
+        check("D5 %s: Details scrolls, and all three sentences are read whole" % label, scrolls and whole,
+              "scrolls=%r pages=%d %r / %r / %r" % (scrolls, len(pages), sentence(pages, "processors:"), sentence(pages, "other processors:"), sentence(pages, "heat:")))
     print("%s: %d failed" % ("FAILED" if failed else "ALL PASS", failed))
     sys.exit(1 if failed else 0)
 
