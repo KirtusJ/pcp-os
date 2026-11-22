@@ -107,10 +107,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "pcpos-model-simd"
+version = "1.0.22"
+
+[[package]]
 name = "pcpos-model-tensor"
 version = "1.0.22"
 dependencies = [
  "pcpos-gguf",
+ "pcpos-model-simd",
 ]
 
 [[package]]
