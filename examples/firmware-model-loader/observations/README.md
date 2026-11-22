@@ -1,0 +1,9 @@
+# Preloaded EFI loader and real-worker control
+
+The submitted loader at `c5eb3b0a25127e34453291ed0844c7531709b270` booted a read-only FAT32 volume under OVMF with the full 491,400,064-byte Qwen2.5-Coder-0.5B-Instruct Q4_K_M reference. The firmware verified the eight shards and the complete model. The normal #371 kernel admitted the model and started Tailorbird #20 and its inference worker. The actual worker reported that verification, tokenizer admission and its forward preflight succeeded. The UI then reported Ready.
+
+The first request was cancelled during prefill and the UI retained zero reply bytes. New Chat started a second request. Ctrl+Alt+Delete ended the foreground and its companion and returned to the 1920×1080 desktop. F10 displayed the power question. Enter completed the kernel run with 72 passing checks and QEMU exit 33. Every tracked low and high frame returned. These controls establish the startup/Stop/desktop path. They do not establish a completed generated reply, history erasure, bounded wall-clock Stop latency, physical performance or release qualification.
+
+The serial file is the unedited output from firmware and kernel. The six PNG files are lossless framebuffer captures; the receipt records the original PPM, RGB and PNG digests. The nine refusal controls used the same submitted EFI binary. Each returned before handoff and reported release of resources. The C-function tests separately examined partial firmware reads, a failed allocation, cleanup, fragmentation, page padding and a stale exit key.
+
+The run uses the documented 32 MiB kernel relocation. `preloaded-inputs.json` is the exact independent build receipt used for this EFI image. The machine, compiler versions, program pins, media hash, official model revision, kernel launch line and both frame-pool counts are in `receipt.json`.
