@@ -878,6 +878,28 @@ fn remove_selects_the_exact_local_installation_and_preserves_other_directories()
 }
 
 #[test]
+fn repair_preserves_an_existing_fragment_and_can_resume_with_matching_bytes() {
+    let root = dir("resume-repair");
+    assert!(pcpos(&root).args(["init", REG, "--principal", "p"]).output().unwrap().status.success());
+    let register = root.join(REG);
+    let complete = fs::read(&register).unwrap();
+    let fragment = b"interrupted append";
+    let sidecar = register.with_extension(format!("fragment-{}", &sha256_hex(fragment)[..12]));
+    let mut interrupted = complete.clone();
+    interrupted.extend_from_slice(fragment);
+    fs::write(&register, &interrupted).unwrap();
+    fs::write(&sidecar, b"previous evidence").unwrap();
+    assert!(!pcpos(&root).args(["repair", REG]).output().unwrap().status.success());
+    assert_eq!(fs::read(&register).unwrap(), interrupted);
+    assert_eq!(fs::read(&sidecar).unwrap(), b"previous evidence");
+    fs::write(&sidecar, fragment).unwrap();
+    assert!(pcpos(&root).args(["repair", REG]).output().unwrap().status.success());
+    assert_eq!(fs::read(&register).unwrap(), complete);
+    assert_eq!(fs::read(&sidecar).unwrap(), fragment);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn a_person_adds_a_module_beside_the_register_and_it_never_displaces_the_method_s_own() {
     let root = dir("module-add");
     let m = small_method(&root);
