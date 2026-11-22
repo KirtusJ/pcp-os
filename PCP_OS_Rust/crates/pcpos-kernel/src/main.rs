@@ -904,6 +904,9 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
                         if o.given_types > 0 {
                             say!("other processors: {} came up holding other memory types than the first and were given the first's", o.given_types);
                         }
+                        if o.given_table > 0 {
+                            say!("other processors: {} came up with another page-attribute table than the first and were given the first's; their memory ranges agreed and were not touched", o.given_table);
+                        }
                         if o.out_of_reach > 0 {
                             say!("other processors: {} not tried: their identities need a mode the machine is not in", o.out_of_reach);
                         }
