@@ -729,6 +729,13 @@ pub fn map_loader_display(boot: &BootInfo) -> Result<usize, &'static str> {
     done
 }
 
+/// Whether a program could be given `pages` whole pages of device memory from `phys`: the question
+/// `map_device` asks, with nothing mapped.
+pub fn device_grantable(phys: usize, pages: usize) -> bool {
+    let count = DEVICES.with(|d| d.1);
+    DEVICE_BYTES.with(|b| b[..count].iter().any(|&bytes| framebuffer::grant(bytes, phys, pages)))
+}
+
 /// Write 32-bit words into mapped device memory. False if any of them would fall outside it.
 pub fn device_write32(phys: usize, words: &[u32]) -> bool {
     let end = match phys.checked_add(words.len() * 4) {
