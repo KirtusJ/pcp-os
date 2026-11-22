@@ -1,5 +1,7 @@
 #![cfg_attr(target_os = "none", no_std)]
 
+#[cfg(any(target_os = "none", test))]
+mod cmdline;
 pub mod elf;
 pub mod memory;
 pub mod payload;

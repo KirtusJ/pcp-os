@@ -16,6 +16,29 @@ fn map(b: &[u8]) -> Map<'_> {
     Map::new(b, 48, 1).unwrap()
 }
 #[test]
+fn acpi_tables_keep_their_multiboot_types_and_stay_out_of_allocation() {
+    let mut raw = Vec::new();
+    for start in [PAGE, HIGH] {
+        raw.extend(descriptor(9, start, 2, 8));
+        raw.extend(descriptor(10, start + 2 * PAGE, 1, 8));
+    }
+    assert!(low(map(&raw), PAGE, PAGE).is_err());
+    assert_eq!(high_plan(map(&raw), PAGE).unwrap_err(), 0);
+    let mut out = [Range::default(); 4];
+    assert_eq!(translate(map(&raw), &[], &mut out).unwrap(), 4);
+    let actual = out.map(|r| (r.start, r.size, r.kind));
+    assert_eq!(
+        actual,
+        [
+            (PAGE, 2 * PAGE, 3),
+            (3 * PAGE, PAGE, 4),
+            (HIGH, 2 * PAGE, 3),
+            (HIGH + 2 * PAGE, PAGE, 4),
+        ]
+    );
+}
+
+#[test]
 fn restricted_memory_and_changed_final_attributes() {
     for attr in [
         0,

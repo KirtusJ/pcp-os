@@ -129,6 +129,8 @@ pub fn translate(map: Map, pieces: &[Span], output: &mut [Range]) -> Result<usiz
             let mut next = d.span.end();
             let mut kind = if d.free() {
                 1
+            } else if d.kind == 9 {
+                3 // ACPI reclaimable after the kernel finishes using the tables
             } else if d.kind == 10 {
                 4
             } else {
