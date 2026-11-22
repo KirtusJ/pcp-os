@@ -1,6 +1,45 @@
 use pcpos_model_tensor::{Row, Error, TensorType::*};
 
 #[test]
+fn selected_k_block_math_preserves_order_and_cancellation() {
+    let backend = pcpos_model_tensor::Projection::detect();
+    #[cfg(all(target_arch="x86_64", target_feature="sse2"))]
+    assert_eq!(matches!(backend, pcpos_model_tensor::Projection::Avx2(_)), std::is_x86_feature_detected!("avx2"));
+    let mut seed = 0x396_2026u32;
+    let mut next = || { seed = seed.wrapping_mul(1664525).wrapping_add(1013904223); seed };
+    for (kind, bytes) in [(Q4K,144), (Q6K,210)] {
+        // An odd byte offset covers unaligned encoded rows.
+        let mut raw = vec![0u8; 1 + 5*bytes];
+        for b in &mut raw { *b = (next() >> 24) as u8; }
+        for block in raw[1..].chunks_exact_mut(bytes) {
+            let at = if kind==Q6K {208} else {0};
+            block[at..at+2].copy_from_slice(&0xbc01u16.to_le_bytes());
+            if kind==Q4K {block[2..4].copy_from_slice(&0x3421u16.to_le_bytes());}
+        }
+        let row = Row::new(kind, 1280, &raw[1..]).unwrap();
+        for _ in 0..16 {
+            let x: Vec<_>=(0..1280).map(|_| f32::from_bits((next() & 0x807f_ffff) | ((65+next()%105)<<23))).collect();
+            let mut calls=0;
+            assert_eq!(backend.dot(&row,&x,||{calls+=1;true}).unwrap().to_bits(),row.dot(&x,||true).unwrap().to_bits());
+            assert_eq!(calls,5);
+            for stop in 1..=5 {
+                let mut n=0;
+                assert_eq!(backend.dot(&row,&x,||{n+=1;n!=stop}),Err(Error::Cancelled));
+                assert_eq!(n,stop);
+            }
+        }
+        let mut x=vec![1.0;1280];
+        for i in [0,3,4,7,8,15,63,127,255,256,1279] {
+            for bad in [f32::NAN,f32::INFINITY,f32::NEG_INFINITY] {
+                x[i]=bad;assert_eq!(backend.dot(&row,&x,||true),Err(Error::NonFinite));
+            }
+            x[i]=1.0;
+        }
+        assert_eq!(backend.dot(&row,&x[..1279],||true),Err(Error::Length));
+    }
+}
+
+#[test]
 fn upstream_golden_rows_match_every_float_bit() {
     let mut count = 0;
     for line in include_str!("data/ggml-b12387.txt").lines().filter(|l| !l.starts_with('#') && !l.is_empty()) {
@@ -20,6 +59,8 @@ fn upstream_golden_rows_match_every_float_bit() {
             sum + f32::from_le_bytes(b.try_into().unwrap()) as f64 * x as f64
         }) as f32;
         let dot = row.dot(&vector, ||true);
+        let selected = pcpos_model_tensor::Projection::detect().dot(&row, &vector, ||true);
+        assert_eq!(selected.map(f32::to_bits), dot.map(f32::to_bits), "dispatched fixture row {count}");
         if reference.is_finite() { assert_eq!(dot.unwrap().to_bits(), reference.to_bits()); }
         else { assert_eq!(dot,Err(Error::NonFinite)); }
         count += 1;
