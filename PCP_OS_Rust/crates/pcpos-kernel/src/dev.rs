@@ -147,6 +147,25 @@ pub fn display_touch() -> u64 {
     TOUCHED.fetch_add(1, Ordering::Relaxed) + 1
 }
 
+/// How many programs alive now have the display's own memory mapped into them: each writes the screen
+/// as it pleases, and the kernel does not see it.
+static DIRECT_MAPS: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+
+pub fn display_direct_maps() -> usize {
+    DIRECT_MAPS.load(Ordering::Relaxed)
+}
+
+/// A program was given the display's own memory, or (`false`) one that had it has ended. What it may
+/// have written is not known, so the count of what has touched the display moves on both times.
+pub fn display_direct_map(given: bool) {
+    if given {
+        DIRECT_MAPS.fetch_add(1, Ordering::Relaxed);
+    } else {
+        let _ = DIRECT_MAPS.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1));
+    }
+    display_touch();
+}
+
 /// Pictures shown since the start.
 pub fn display_shows() -> u64 {
     SHOWS.load(Ordering::Relaxed)

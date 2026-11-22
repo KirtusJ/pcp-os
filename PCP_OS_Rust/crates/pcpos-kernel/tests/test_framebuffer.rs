@@ -2,7 +2,7 @@
 //!   rustc --edition=2021 --test tests/test_framebuffer.rs -o /tmp/test-framebuffer && /tmp/test-framebuffer
 #[path = "../src/arch/framebuffer.rs"]
 mod framebuffer;
-use framebuffer::{changed_span, decide, draws_off_screen, grant, kept_pages, kept_parts, Window};
+use framebuffer::{changed_span, decide, draws_off_screen, grant, kept_pages, kept_parts, may_compare, Window};
 
 fn entry(base: u64, length: u64, kind: u32) -> Vec<u8> {
     let mut e = Vec::new();
@@ -234,4 +234,33 @@ fn a_row_falls_across_its_pages_with_nothing_lost_or_repeated() {
         assert_eq!(done, 7680);
     }
     assert_eq!(next, 2025 * 4096);
+}
+
+#[test]
+fn a_kept_picture_is_compared_only_while_it_is_what_the_display_shows() {
+    assert!(may_compare(7, 7, 0), "recorded at 7, nothing has drawn since, nobody has the screen itself");
+    assert!(!may_compare(7, 8, 0), "something drew after it was recorded");
+    assert!(!may_compare(0, 0, 0), "zero is never the count: a copy marked zero was never recorded whole");
+    assert!(!may_compare(0, 7, 0), "not recorded whole");
+}
+
+#[test]
+fn nothing_is_compared_while_a_program_has_the_screen_itself_mapped() {
+    // The kernel session's case: a program that maps the display directly writes it unseen.
+    assert!(!may_compare(7, 7, 1), "one such program alive");
+    assert!(!may_compare(7, 7, 3));
+    assert!(may_compare(7, 7, 0), "and again once it has ended, if the count had not moved (it does move: see dev::display_direct_map)");
+}
+
+#[test]
+fn a_picture_that_fails_partway_leaves_no_copy_trusted() {
+    // C3's case, as the kernel orders it: the count moves on BEFORE the first row is written, and the
+    // presenting program's own copy is marked zero until it has finished and recorded every row.
+    let (mut display_at, other_kept_at) = (5u64, 5u64);
+    assert!(may_compare(other_kept_at, display_at, 0), "another program's copy is good before");
+    display_at += 1; // shadow_present, before its first device write
+    let presenting_kept_at = 0u64;
+    // ... some rows reach the display, then a row fails and the call returns ...
+    assert!(!may_compare(other_kept_at, display_at, 0), "the other copy is stale though the picture was never finished");
+    assert!(!may_compare(presenting_kept_at, display_at, 0), "and the presenting program's own copy is not good either");
 }

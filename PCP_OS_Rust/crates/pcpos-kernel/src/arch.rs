@@ -972,7 +972,7 @@ pub fn map_loader_display(boot: &BootInfo) -> Result<usize, &'static str> {
 /// The rule for drawing off the screen, which is `framebuffer`'s and tested on a host.
 /// See `framebuffer::changed_span`, `kept_pages` and `kept_parts`: what of a picture must be written,
 /// and where a kept picture's bytes lie in its pages.
-pub use framebuffer::{changed_span, kept_pages, kept_parts};
+pub use framebuffer::{changed_span, kept_pages, kept_parts, may_compare};
 
 pub fn display_draws_off_screen(pages: u32, mappable_whole: bool) -> bool {
     framebuffer::draws_off_screen(pages, mappable_whole)

@@ -150,6 +150,16 @@ pub fn draws_off_screen(pages: u32, _mappable_whole: bool) -> bool {
     pages == 1
 }
 
+/// Whether the kernel's kept copy of a program's picture may be compared with the next one, so that
+/// only what differs is written. It may only when the copy is what the display shows: it was recorded
+/// whole (`kept_at` is not zero, which is never the count), nothing has put pixels on the display
+/// since (`display_at`, the count of everything that has, is still what it was then), and no program
+/// has the display's own memory mapped (`direct_maps`): such a program writes the screen without the
+/// kernel seeing it, so nothing the kernel remembers of the screen can be trusted while it lives.
+pub fn may_compare(kept_at: u64, display_at: u64, direct_maps: usize) -> bool {
+    kept_at != 0 && kept_at == display_at && direct_maps == 0
+}
+
 /// The pixels of one row that must be written to the display for it to show `new` where it shows
 /// `kept`: the first pixel that differs through the last that differs, as (first, one past the last).
 /// `None` when the rows are the same and nothing need be written. Both are a row's bytes, four to a

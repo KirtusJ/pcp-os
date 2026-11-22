@@ -114,6 +114,8 @@ pub struct Linux {
     kept: Option<Kept>,
     /// The frames for `kept` were asked for and refused: every row is written, and they are not asked for again.
     kept_refused: bool,
+    /// This program has the display's own memory mapped: counted while it lives (`dev::display_direct_maps`).
+    direct_display: Option<DirectDisplay>,
     /// Which end of the channel to its companion this program holds, if it has one.
     #[cfg(feature = "companion")]
     pub talk: Option<usize>,
@@ -431,7 +433,7 @@ const TICK_NS: u64 = 999_847;
 impl Linux {
     pub fn new(image_end: usize) -> Linux {
         let console = || Some(Open { node: Node::Console, position: 0, nonblocking: false, writable: true, append: false });
-        Linux { files: alloc::vec![console(), console(), console()], heap_start: image_end, heap_end: image_end, next_map: arch::USER_BASE + (64 << 30), reserved: Vec::new(), extra_pages: 0, shadow_asked: false, shadow: None, kept: None, kept_refused: false, #[cfg(feature = "proposals")] proposals: Proposals::default(), #[cfg(feature = "companion")] talk: None, #[cfg(feature = "model-memory")] model_at: None }
+        Linux { files: alloc::vec![console(), console(), console()], heap_start: image_end, heap_end: image_end, next_map: arch::USER_BASE + (64 << 30), reserved: Vec::new(), extra_pages: 0, shadow_asked: false, shadow: None, kept: None, kept_refused: false, direct_display: None, #[cfg(feature = "proposals")] proposals: Proposals::default(), #[cfg(feature = "companion")] talk: None, #[cfg(feature = "model-memory")] model_at: None }
     }
 }
 
@@ -1015,6 +1017,12 @@ fn mmap(p: &mut Process, caps: &CapSpace, len: u64, prot: u64, flags: u64, fd: u
             if !space.map_device(start, d.memory, pages) {
                 return err(ENOMEM);
             }
+            // It can now write the screen itself: counted for as long as it lives.
+            if let Some(l) = p.linux.as_mut() {
+                if l.direct_display.is_none() {
+                    l.direct_display = Some(DirectDisplay::given());
+                }
+            }
             start as u64
         }
         Some(_) => err(EACCES),
@@ -1101,6 +1109,23 @@ pub fn demo_refuse_kept_pictures() {
     KEEP_REFUSED_DEMO.store(true, core::sync::atomic::Ordering::Relaxed);
 }
 
+/// Held by a program that has the display's own memory mapped. While any such program lives, no kept
+/// picture is compared: it draws on the screen without the kernel seeing. Dropped with the program.
+struct DirectDisplay;
+
+impl DirectDisplay {
+    fn given() -> DirectDisplay {
+        dev::display_direct_map(true);
+        DirectDisplay
+    }
+}
+
+impl Drop for DirectDisplay {
+    fn drop(&mut self) {
+        dev::display_direct_map(false);
+    }
+}
+
 /// The kernel's own copy, in frames of the pool and not in its heap (a picture of 1920 by 1080 is
 /// eight mebibytes; the heap of the UEFI build is four), of the picture it last put on the display for
 /// one program: its rows one straight after another, four bytes a pixel. It is trusted only while
@@ -1177,10 +1202,22 @@ fn shadow_present(p: &mut Process, from: usize, d: &dev::Display) -> Option<usiz
     if linux.kept.is_none() && !linux.kept_refused {
         linux.kept = Kept::take(d);
         linux.kept_refused = linux.kept.is_none();
+        match linux.kept.as_ref() {
+            Some(k) => crate::log(format_args!("display: the kernel keeps a copy of what it shows for this program, {} KiB in {} frames of the pool, and writes only the rows that change", k.frames.len() * 4, k.frames.len())),
+            None => crate::log(format_args!("display: the pool cannot spare the frames for a copy of what is shown, so every row of every picture is written")),
+        }
     }
     let mut kept = linux.kept.as_mut();
-    // What the kernel remembers is what the display shows only if nothing has drawn since.
-    let compare = kept.as_ref().map_or(false, |k| k.touched == dev::display_touched());
+    // What the kernel remembers is what the display shows only if nothing has drawn since and no
+    // program can draw on the screen behind its back.
+    let compare = kept.as_ref().map_or(false, |k| arch::may_compare(k.touched, dev::display_touched(), dev::display_direct_maps()));
+    // Before the first row is written: from here the display is no longer what anyone else remembers,
+    // whether this picture is finished or fails partway (C3). This program's own copy is marked good
+    // again only at the end, and only if every row written was also recorded.
+    dev::display_touch();
+    if let Some(k) = kept.as_mut() {
+        k.touched = 0;
+    }
     let width = d.width as usize;
     let mut bytes = alloc::vec![0u8; width * 4];
     let mut shown = alloc::vec![0u8; if compare { width * 4 } else { 0 }];
@@ -1189,10 +1226,7 @@ fn shadow_present(p: &mut Process, from: usize, d: &dev::Display) -> Option<usiz
     let mut recorded = true;
     for y in 0..d.height as usize {
         if !space.copy_in(from + y * d.pitch as usize, &mut bytes) {
-            // Rows already written were recorded as they went; nothing is marked good that is not.
-            if let Some(k) = kept {
-                k.touched = 0;
-            }
+            // Left marked not good, as it was set before the first row.
             return None;
         }
         let span = match kept.as_ref() {
@@ -1207,9 +1241,6 @@ fn shadow_present(p: &mut Process, from: usize, d: &dev::Display) -> Option<usiz
             *word = u32::from_le_bytes([four[0], four[1], four[2], four[3]]);
         }
         if !arch::device_write32(d.memory + y * d.pitch as usize + first * 4, &row[first..end]) {
-            if let Some(k) = kept {
-                k.touched = 0;
-            }
             return None;
         }
         written += 1;
@@ -1217,13 +1248,11 @@ fn shadow_present(p: &mut Process, from: usize, d: &dev::Display) -> Option<usiz
             recorded &= k.set(y, width * 4, first * 4, &bytes[first * 4..end * 4]);
         }
     }
-    // This picture is itself something put on the display: anyone else's memory of it is now stale.
-    // This program's copy is good from here: either it was good and every change was recorded in it,
-    // or every row was just written and recorded. If a row could not be recorded it is not trusted
-    // (zero is never the count), and the next picture writes every row.
-    let now = dev::display_touch();
+    // Finished. This program's copy is what the display shows if every row written was recorded in
+    // it: either it was good before and every change went in, or every row was just written and
+    // recorded. Nothing else can have drawn during this call, so the count is still the one set above.
     if let Some(k) = kept {
-        k.touched = if recorded { now } else { 0 };
+        k.touched = if recorded { dev::display_touched() } else { 0 };
     }
     #[cfg(feature = "present-rows-demo")]
     crate::log(format_args!("present: {} of {} rows written", written, d.height));
