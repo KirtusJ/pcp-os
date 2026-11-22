@@ -64,7 +64,11 @@ impl Fixture {
         let (b,n)=self.bytes();let idx=Index::parse(&b,n).unwrap();Model::admit(&idx).unwrap_err()
     }
     pub fn full(arch:&str)->Vec<u8> {
+        Self::full_context(arch,1024)
+    }
+    pub fn full_context(arch:&str,context:u32)->Vec<u8> {
         let mut f=Self::new(arch);
+        f.set(&format!("{arch}.context_length"),V::U(context));
         f.set("tokenizer.ggml.model",V::S("gpt2".into()));
         f.set("tokenizer.ggml.pre",V::S("qwen2".into()));
         f.set("tokenizer.ggml.merges",V::Merges);
