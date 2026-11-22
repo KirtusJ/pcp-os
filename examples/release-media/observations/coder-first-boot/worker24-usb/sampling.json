@@ -1,0 +1,127 @@
+{
+  "input": "Hello",
+  "enter_command_began": 1795350490.4288933,
+  "enter_command_acknowledged": 1795350490.750212,
+  "transcript_changes": [
+    {
+      "after_seconds": 668.046,
+      "by_seconds": 673.443,
+      "frame": "response-001.png",
+      "terminal": null
+    },
+    {
+      "after_seconds": 693.539,
+      "by_seconds": 698.928,
+      "frame": "response-002.png",
+      "terminal": null
+    },
+    {
+      "after_seconds": 719.159,
+      "by_seconds": 724.569,
+      "frame": "response-003.png",
+      "terminal": null
+    },
+    {
+      "after_seconds": 744.852,
+      "by_seconds": 750.317,
+      "frame": "response-004.png",
+      "terminal": null
+    },
+    {
+      "after_seconds": 765.316,
+      "by_seconds": 770.714,
+      "frame": "response-005.png",
+      "terminal": null
+    },
+    {
+      "after_seconds": 790.917,
+      "by_seconds": 796.31,
+      "frame": "response-006.png",
+      "terminal": null
+    },
+    {
+      "after_seconds": 816.39,
+      "by_seconds": 821.803,
+      "frame": "response-007.png",
+      "terminal": null
+    },
+    {
+      "after_seconds": 841.878,
+      "by_seconds": 847.28,
+      "frame": "response-008.png",
+      "terminal": null
+    },
+    {
+      "after_seconds": 862.243,
+      "by_seconds": 867.644,
+      "frame": "response-009.png",
+      "terminal": null
+    },
+    {
+      "after_seconds": 887.783,
+      "by_seconds": 893.265,
+      "frame": "response-010.png",
+      "terminal": null
+    },
+    {
+      "after_seconds": 913.404,
+      "by_seconds": 918.793,
+      "frame": "response-011.png",
+      "terminal": null
+    },
+    {
+      "after_seconds": 938.865,
+      "by_seconds": 944.338,
+      "frame": "response-012.png",
+      "terminal": null
+    },
+    {
+      "after_seconds": 964.545,
+      "by_seconds": 969.947,
+      "frame": "response-013.png",
+      "terminal": null
+    },
+    {
+      "after_seconds": 984.926,
+      "by_seconds": 990.319,
+      "frame": "response-014.png",
+      "terminal": null
+    },
+    {
+      "after_seconds": 1010.394,
+      "by_seconds": 1015.792,
+      "frame": "response-015.png",
+      "terminal": null
+    },
+    {
+      "after_seconds": 1035.879,
+      "by_seconds": 1041.272,
+      "frame": "response-016.png",
+      "terminal": null
+    },
+    {
+      "after_seconds": 1061.404,
+      "by_seconds": 1066.813,
+      "frame": "response-017.png",
+      "terminal": null
+    },
+    {
+      "after_seconds": 1087.036,
+      "by_seconds": 1092.442,
+      "frame": "response-018.png",
+      "terminal": null
+    },
+    {
+      "after_seconds": 1112.573,
+      "by_seconds": 1118.046,
+      "frame": "response-019.png",
+      "terminal": null
+    },
+    {
+      "after_seconds": 1133.201,
+      "by_seconds": 1138.679,
+      "frame": "response-020.png",
+      "terminal": "tailorbird: reply 1 kept 68 bytes and is complete"
+    }
+  ]
+}

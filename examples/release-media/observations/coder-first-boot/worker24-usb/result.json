@@ -1,0 +1,61 @@
+{
+  "medium_kind": "standalone read-only EFI FAT volume, raw xHCI USB",
+  "medium_sha256": "891a3feef3b1c305921b26fe5ce82783c2d7474808227d27834af9d56cadceeb",
+  "foreground_sha256": "97da808610494446a0be3f2ab5d65b41b8e2a2ce98a12d2ec43517c5ea9b48ff",
+  "worker_head": "9c14937c413d7fcd63878b9870ae0862d760c69c",
+  "worker_sha256": "2750a34540d0f4f4852b8b184ddb318cf8cc8dcd9d565233511c3cfc905dcd5b",
+  "model": "Qwen2.5-Coder-0.5B-Instruct Q4_K_M",
+  "model_bytes": 491400064,
+  "model_sha256": "1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32",
+  "emulator": "Q35, QEMU TCG, CPU max, 4 GiB, OVMF fresh variables, standard VGA, no network or internal disk",
+  "prompt": "Hello",
+  "entry": "Typed and submitted after Ready.",
+  "enter_utc": "2026-11-22T12:28:10.428893+00:00",
+  "first_visible_text": "Hello",
+  "first_visible_seconds": {
+    "after": 668.046,
+    "by": 673.443
+  },
+  "terminal_serial": "tailorbird: reply 1 kept 68 bytes and is complete",
+  "terminal_observed_seconds": {
+    "after": 1133.201,
+    "by": 1139.02
+  },
+  "selected_first_capture": "response-001.png",
+  "sampling_files": "Sampling records retain the local acquisition filenames. The selected first visible sample is preserved as first-visible.png; completed-answer.png is a separate capture taken after the terminal serial record.",
+  "response_visible_text": "Hello! I'm Taylor, the PCP OS assistant. How can I assist you today?",
+  "response_utf8_bytes": 68,
+  "timing_basis": "Host wall time from the accepted Enter, bracketed by consecutive QMP samples. The upper bound for terminal completion uses a separate frame captured after the terminal serial record was seen.",
+  "file": {
+    "path": "taylor/my-first-project/note-1.txt",
+    "utf8": "Memo\n",
+    "length": 5,
+    "sha256": "4d2ba447ef9bae8d6941eb75c759fcbebc54246eab3056b74e3e320781f2aced",
+    "confirmation": "F12 then Enter on a separate kernel file proposal after chat.",
+    "reopened": "The viewer showed the same path, Memo, five characters and the verified file-content caption.",
+    "lifetime": "Until power-off."
+  },
+  "kernel_checks": 72,
+  "guest_stop": "Ctrl+Alt+Delete",
+  "power_off": "F10, then Enter",
+  "emulator_exit": 33,
+  "low_frame_pool": [
+    248832,
+    248832,
+    251808,
+    251808
+  ],
+  "high_frame_pool": [
+    403968,
+    403968,
+    14146,
+    14146
+  ],
+  "pool_fields": [
+    "free",
+    "total",
+    "handed_out",
+    "given_back"
+  ],
+  "serial_sha256": "fbc9c28bcbc51e3812de5b2538756b8a68cd62c72ee9f0dc0949c18dd1db78ba"
+}
