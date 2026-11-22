@@ -1,0 +1,15 @@
+allowed: the emulator ended with status None, not 33
+allowed: the emulator ended with status None, not 33
+allowed: bad-folder: the emulator ended with status None, not 33
+allowed: two-folders: the emulator ended with status None, not 33
+allowed: cut-line: the emulator ended with status None, not 33
+allowed: cut-nomination: the emulator ended with status None, not 33
+refused-esc: the emulator ended with status None, not 33
+refused-enter-alone: the emulator ended with status None, not 33
+refused-f12-then-other: the emulator ended with status None, not 33
+held-enter: the emulator ended with status None, not 33
+f12-with-nothing: the emulator ended with status None, not 33
+too-small: S1: status None, answers ['119', '100', '6'], or something was created
+long-at-800x600: the emulator ended with status None, not 33
+at-640x480: the emulator ended with status None, not 33
+not-granted: the emulator ended with status None, not 33

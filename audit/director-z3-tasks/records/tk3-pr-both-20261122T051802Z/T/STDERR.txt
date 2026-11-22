@@ -1,0 +1,16 @@
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/wtk/examples/proposals/check.py", line 465, in <module>
+    main()
+    ~~~~^^
+  File "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/wtk/examples/proposals/check.py", line 383, in main
+    found, log = case(name, granted, keys, True)
+                 ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/wtk/examples/proposals/check.py", line 185, in case
+    guest = Guest(args.qemu, args.kernel, args.probe, evidence / name, append)
+  File "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/wtk/examples/proposals/check.py", line 99, in __init__
+    self.file.readline()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "/usr/local/lib/python3.13/socket.py", line 723, in readinto
+    return self._sock.recv_into(b)
+           ~~~~~~~~~~~~~~~~~~~~^^^
+OSError: [Errno 22] Invalid argument

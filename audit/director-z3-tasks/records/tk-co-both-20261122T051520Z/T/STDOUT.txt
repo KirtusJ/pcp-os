@@ -1,0 +1,4 @@
+together: opening the channel answered 0; exchanges completed 100; bytes that came back wrong 0; the full channel answered -11; bytes it took before that 66474; bytes that came back after it 66474; telling it to finish answered 1; the read after that answered 0; wide registers used 1; times its register held something else 0
+companion leaves: opening the channel answered 0; a write was refused in round 1; exchanges completed 1; bytes that came back wrong 0; wide registers used 1; times its register held something else 0
+no companion named: opening the channel answered -13
+a worker that is not loaded: opening the channel answered -13

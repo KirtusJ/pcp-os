@@ -1,0 +1,6 @@
+allowed: cut-line: the kernel did not say the program was not started, or why
+allowed: cut-line: the program ran, or a proposal was taken
+allowed: cut-line: the emulator ended with status None, not 33
+allowed: cut-nomination: the kernel did not say the program was not started, or why
+allowed: cut-nomination: the program ran, or a proposal was taken
+allowed: cut-nomination: the emulator ended with status None, not 33

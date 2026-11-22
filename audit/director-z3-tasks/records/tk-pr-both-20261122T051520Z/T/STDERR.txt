@@ -1,0 +1,14 @@
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/wtk/examples/proposals/check.py", line 451, in <module>
+  File "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/wtk/examples/proposals/check.py", line 369, in main
+    "probe: opening the note to read and empty answered -13", "probe: opening the note to read after all that answered 0", "probe: opening the note to make it anew answered -13",
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/wtk/examples/proposals/check.py", line 171, in case
+    parser.add_argument("--companion", type=Path)
+                ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/wtk/examples/proposals/check.py", line 91, in __init__
+    for _ in range(100):
+  File "/usr/local/lib/python3.13/socket.py", line 723, in readinto
+    return self._sock.recv_into(b)
+           ~~~~~~~~~~~~~~~~~~~~^^^
+OSError: [Errno 22] Invalid argument
