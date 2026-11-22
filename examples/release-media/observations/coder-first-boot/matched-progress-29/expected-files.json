@@ -1,0 +1,54 @@
+{
+  "EFI/BOOT/BOOTX64.EFI": {
+    "bytes": 354304,
+    "sha256": "9b73eae40779ae53740e0d4841edaa86d673e17b7db80463298788c7db1fd35b"
+  },
+  "PCPOS/KERNEL.ELF": {
+    "bytes": 1130124,
+    "sha256": "6a3cb8bf80a110ee7d765e31012ae6feed0b5e0429035ee8e86dd9b555e69e66"
+  },
+  "PCPOS/TAILOR.ELF": {
+    "bytes": 216856,
+    "sha256": "ad8e859a148c7e0b23fb52eedb23fff38c36a80e3a401bf8281ca7d1964c1343"
+  },
+  "PCPOS/WORKER.ELF": {
+    "bytes": 206280,
+    "sha256": "3c15280c116937a557ab44f70afcb6bc11ea89f3fe6e5e38556898f3e3923220"
+  },
+  "PCPOS/model.manifest": {
+    "bytes": 312,
+    "sha256": "bbdaa8cd263d9454159f12b55ec32613d18a4b7b4d75d284ad0cadc932bc1f4b"
+  },
+  "PCPOS/shard-00000.bin": {
+    "bytes": 67108864,
+    "sha256": "e7fd135f9a4d78d25240baf1360df065de058106caa002a863b3d41d85e8b06e"
+  },
+  "PCPOS/shard-00001.bin": {
+    "bytes": 67108864,
+    "sha256": "7338348414bf83a1be9c0124b0056e97963ff36ec485196d807e1854c898d851"
+  },
+  "PCPOS/shard-00002.bin": {
+    "bytes": 67108864,
+    "sha256": "676357b2562fb24ec78a727cd8f0a41a03e3249988d557cb95796c5651ba50e9"
+  },
+  "PCPOS/shard-00003.bin": {
+    "bytes": 67108864,
+    "sha256": "9680ad63cb6c5282f074d2a16157c28d61af7b6632d3bf16eae3ae6e8d4a565b"
+  },
+  "PCPOS/shard-00004.bin": {
+    "bytes": 67108864,
+    "sha256": "b37d210762bb960cdf41644d790e1481d87b6603fb2564aea80b3200b5e9b5c9"
+  },
+  "PCPOS/shard-00005.bin": {
+    "bytes": 67108864,
+    "sha256": "f2b809a97ed2399dbc221141d4b0e4e02511bb2391414334d989e8882a8b6034"
+  },
+  "PCPOS/shard-00006.bin": {
+    "bytes": 67108864,
+    "sha256": "b271a09e0f5ad4fc94ca5d7433e3625c5b3843c511e5190e4ab87e546237515a"
+  },
+  "PCPOS/shard-00007.bin": {
+    "bytes": 21638016,
+    "sha256": "8638639c2def9ef289e4d5b982544c0f013ce0064df4927526d39a116e8c9048"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "archive_pins": {
+    "TAILOR.ELF": [
+      14755473765,
+      "00ee09aeb101d4a0e98867a81973d59b92aa588a9c03528efbad5ca017297e6b"
+    ],
+    "WORKER.ELF": [
+      14755772010,
+      "f1514ea1fd39be07abe89090eff59987df2bc0bda10f177c244b63f589a22176"
+    ]
+  },
+  "efi_build_sha256": "59f969a8cbf044812e36ac866926f9b7e8f81508cfac4fbbfdd5c6d38aecb43c",
+  "efi_sha256": "9b73eae40779ae53740e0d4841edaa86d673e17b7db80463298788c7db1fd35b",
+  "fat_bytes": 587202560,
+  "fat_sha256": "c62c80224b7eac39e0e157edc3e23569cd6b96efc5dd2047b0f264a576fc9a9e",
+  "files": 13,
+  "input_receipt_sha256": "70b002ac7b18fb4e63b9372c9e3590bd89f937d57fb693835e95e3153f6657e7",
+  "inventory_sha256": "76a41ccc45bc2452b4080899946cb19360d948c900f9a3d0998cc1f62e8e85ea",
+  "kernel_head": "41e35d1f167dd9c2bd043380cd454fdfa41db6e3",
+  "kind": "standalone read-only FAT32 xHCI USB test volume",
+  "loader_head": "2837f72074988a1bb1fc8c54feadeb5cc6cf11c2",
+  "model_bytes": 491400064,
+  "source": "1aeef6457d86e3d2fbdad9913617062e6082a03c",
+  "whole_model_sha256": "1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32"
+}

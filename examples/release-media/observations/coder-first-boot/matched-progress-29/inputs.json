@@ -1,0 +1,15 @@
+{
+  "files": {
+    "KERNEL.ELF": "6a3cb8bf80a110ee7d765e31012ae6feed0b5e0429035ee8e86dd9b555e69e66",
+    "TAILOR.ELF": "ad8e859a148c7e0b23fb52eedb23fff38c36a80e3a401bf8281ca7d1964c1343",
+    "WORKER.ELF": "3c15280c116937a557ab44f70afcb6bc11ea89f3fe6e5e38556898f3e3923220",
+    "model.manifest": "bbdaa8cd263d9454159f12b55ec32613d18a4b7b4d75d284ad0cadc932bc1f4b"
+  },
+  "format": "pcpos-preloaded-inputs/1",
+  "kernel_features": [
+    "proposals",
+    "companion",
+    "model-memory"
+  ],
+  "worker_manifest_sha256": "bbdaa8cd263d9454159f12b55ec32613d18a4b7b4d75d284ad0cadc932bc1f4b"
+}
