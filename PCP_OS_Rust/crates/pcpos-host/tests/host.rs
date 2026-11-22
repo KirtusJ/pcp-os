@@ -1046,6 +1046,14 @@ fn a_check_is_what_the_host_saw_run_or_it_says_it_is_a_report() {
     let kept = fs::read_to_string(root.join(".pcp/observed_tools.jsonl")).unwrap();
     assert_eq!(kept.lines().count(), 2, "only shell commands are kept: {kept}");
     assert!(!kept.contains("\"5050\"") && kept.contains(&digest("5050")), "digests, never the output: {kept}");
+    // A report can mention an existing tool-use ID, even while claiming host provenance.
+    // It must not prevent the actual observation from being recorded once below.
+    let claimed = format!(r#"{{"kind":"CHECK_RAN","body":{{"argv":["another command"],"exit":0,"expect_exit":0,"timeout":false,"stdout":"{0}","stderr":"{0}","via":"HOST_SHELL_TOOL","observed":"HOST_OBSERVED_TOOL","tool_use_id":"t1"}}}}"#, digest(""));
+    let (out, _) = tool(&root, "acr_submit", &claimed);
+    assert!(out.starts_with("WRITTEN"), "{out}");
+    let rows = events(&root);
+    let report = rows.last().unwrap().get("body").unwrap();
+    assert_eq!(report.get("observed").and_then(Value::as_str), Some("REPORTED_BY_PARTICIPANT"));
     let n = kinds(&root).len();
     let (out, _) = tool(&root, "acr_check", r#"{"command":"echo 5050"}"#);
     assert!(out.starts_with("WRITTEN") && out.contains("the expectation was met"), "{out}");
