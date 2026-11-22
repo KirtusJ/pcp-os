@@ -4,12 +4,16 @@ on:
   pull_request:
     paths:
       - "examples/release-media/preloaded_gate.py"
+      - "examples/release-media/hybrid_readback.py"
+      - "examples/model-media-iso/build.py"
       - "examples/release-media/test_preloaded_gate.py"
       - ".github/workflows/preloaded-gate.yml"
   push:
     branches: [master]
     paths:
       - "examples/release-media/preloaded_gate.py"
+      - "examples/release-media/hybrid_readback.py"
+      - "examples/model-media-iso/build.py"
       - "examples/release-media/test_preloaded_gate.py"
       - ".github/workflows/preloaded-gate.yml"
 
@@ -19,6 +23,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - name: Run source-only adverse controls
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install FAT and ISO tools
+        run: sudo apt-get update && sudo apt-get install -y dosfstools mtools xorriso
+      - name: Run inventory and finished-image checks
         run: python3 examples/release-media/test_preloaded_gate.py

@@ -3,10 +3,13 @@ import hashlib
 import json
 from pathlib import Path
 import struct
+import subprocess
+import sys
 import tempfile
 import unittest
 
-from preloaded_gate import build, inventory, verify_tree
+from preloaded_gate import build, digest, inventory, verify_tree
+from hybrid_readback import verify_embedded_fat
 
 
 def sha(data):
@@ -123,6 +126,32 @@ class GateTests(unittest.TestCase):
         del bad["EFI/BOOT/BOOTX64.EFI"]
         with self.assertRaisesRegex(ValueError, "missing fixed"):
             self.approved(bad)
+
+    def test_cli_reopens_finished_medium_and_keeps_existing_output(self):
+        # Exercise the normal invocation with synthetic, non-distributable test data.
+        for name in ("PCPOS/MODEL-LICENSE.txt", "PCPOS/MODEL-NOTICE.txt"):
+            text = ("fixture text for " + name).encode()
+            (self.root / name).write_bytes(text)
+            self.parts[name] = text
+        records = self.make_records()
+        inventory_file = self.temp / "expected.json"
+        inventory_file.write_text(json.dumps(records, sort_keys=True))
+        output = self.temp / "fixture.iso"
+        interpreter = [sys.executable] + (["-O"] if sys.flags.optimize else [])
+        command = [*interpreter, Path(__file__).with_name("preloaded_gate.py"),
+                   self.root, "--inventory", inventory_file, "--inventory-sha256",
+                   digest(inventory_file), "--model-sha256", self.model_pin,
+                   "--fat-bytes", str(128 << 20), output]
+        first = subprocess.run(command, capture_output=True, text=True)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        image_pin = digest(output)
+        self.assertIn(image_pin, first.stdout)
+        again = subprocess.run(command, capture_output=True, text=True)
+        self.assertNotEqual(again.returncode, 0)
+        self.assertEqual(digest(output), image_pin)
+        # A different approved FAT digest cannot clear the same embedded bytes.
+        with self.assertRaisesRegex(ValueError, "embedded FAT differs"):
+            verify_embedded_fat(output, 128 << 20, "0" * 64)
 
     def test_existing_output_is_never_overwritten(self):
         image = self.temp / "exists.iso"

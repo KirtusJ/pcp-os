@@ -15,6 +15,8 @@ import struct
 import subprocess
 import tempfile
 
+from hybrid_readback import verify_embedded_fat
+
 
 FIXED = {
     "EFI/BOOT/BOOTX64.EFI",
@@ -23,6 +25,7 @@ FIXED = {
     "PCPOS/WORKER.ELF",
     "PCPOS/model.manifest",
 }
+PUBLISHER_TEXTS = {"PCPOS/MODEL-LICENSE.txt", "PCPOS/MODEL-NOTICE.txt"}
 SHARD = re.compile(r"PCPOS/shard-([0-9]{5})\.bin\Z")
 HEX = re.compile(r"[0-9a-f]{64}\Z")
 EPOCH = "1794614400"
@@ -55,7 +58,7 @@ def inventory(path, approved_sha256):
     shard_numbers = []
     folded = set()
     for name, entry in found.items():
-        if type(name) is not str or (name not in FIXED and not SHARD.fullmatch(name)):
+        if type(name) is not str or (name not in FIXED and name not in PUBLISHER_TEXTS and not SHARD.fullmatch(name)):
             raise ValueError("unexpected release path: " + str(name))
         if name.casefold() in folded:
             raise ValueError("case-colliding release path: " + name)
@@ -66,8 +69,9 @@ def inventory(path, approved_sha256):
             type(entry["sha256"]) is not str or not HEX.fullmatch(entry["sha256"])
         ):
             raise ValueError("invalid bytes or digest: " + name)
-        if name not in FIXED:
-            shard_numbers.append(int(SHARD.fullmatch(name).group(1)))
+        match = SHARD.fullmatch(name)
+        if match:
+            shard_numbers.append(int(match.group(1)))
     if not FIXED.issubset(found):
         raise ValueError("missing fixed executable or manifest path")
     if not shard_numbers or sorted(shard_numbers) != list(range(len(shard_numbers))):
@@ -164,14 +168,16 @@ def build(root, expected, model_sha256, size, output):
         for name in sorted(expected):
             execute("mcopy", "-i", str(fat), str(root / name), "::/" + name)
         verify_fat(fat, expected, model_sha256, scratch)
+        verified_fat_sha256 = digest(fat)
 
         helper = Path(__file__).resolve().parents[1] / "model-media-iso/build.py"
         hybrid = runpy.run_path(str(helper))["build"]
         private_iso = scratch / "candidate.iso"
         image_size, image_sha256 = hybrid(fat, private_iso)
+        verify_embedded_fat(private_iso, size, verified_fat_sha256)
         joliet = scratch / "joliet-readback"
         joliet.mkdir()
-        execute("xorriso", "-osirrox", "on", "-indev", str(private_iso), "-extract", "/", str(joliet))
+        execute("xorriso", "-read_fs", "norock", "-osirrox", "on", "-indev", str(private_iso), "-extract", "/", str(joliet))
         verify_tree(joliet, expected, model_sha256)
         if private_iso.stat().st_size != image_size or digest(private_iso) != image_sha256:
             raise ValueError("finished ISO digest differs after final readback")
