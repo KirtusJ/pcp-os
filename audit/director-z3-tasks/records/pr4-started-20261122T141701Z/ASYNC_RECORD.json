@@ -1,0 +1,36 @@
+{
+ "tool": "async_run.py",
+ "plan": "plan.json",
+ "plan_sha256": "a63f0d8487fae07fd81964a3295a8a0101b836a2497a9c79b013fb510e658aa4",
+ "width": 1,
+ "tasks": [
+  {
+   "id": "T",
+   "argv": [
+    "python3",
+    "/home/user/pcp-os/examples/processors/check_started.py",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/pr4-processors.elf32",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/pr4-plain.elf32",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/pr4-processors-extended-demo.elf32",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/pr4-processors-silent-demo.elf32"
+   ],
+   "exit": 1,
+   "expect_exit": 0,
+   "timed_out": false,
+   "seconds": 19.57,
+   "ended_as_expected": false,
+   "copied_in": [],
+   "files": {
+    "STDERR.txt": {
+     "sha256": "03bdb46ab2c63982982314c6518e0d3551f80775fc2b61d53418fa33672c8b0b",
+     "bytes": 395
+    },
+    "STDOUT.txt": {
+     "sha256": "4e216f7218eeb23ce4e8133cfcf636c4c2612056f921be513d970da89fa6a929",
+     "bytes": 1776
+    }
+   }
+  }
+ ],
+ "all_ended_as_expected": false
+}

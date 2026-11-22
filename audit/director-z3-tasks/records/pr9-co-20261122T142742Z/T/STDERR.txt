@@ -1,0 +1,6 @@
+FAIL together: status 33, 73 passes, or a failure
+FAIL companion leaves: status 33, 73 passes, or a failure
+FAIL no companion named: status 33, 73 passes, or a failure
+FAIL a worker that is not loaded: status 33, 73 passes, or a failure
+FAIL a companion that never yields: status 33, 73 passes, or a failure
+FAIL stopped by the person: status 33, 73 passes, or a failure

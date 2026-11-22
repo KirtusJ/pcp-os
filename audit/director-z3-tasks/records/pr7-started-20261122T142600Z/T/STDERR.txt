@@ -1,0 +1,1 @@
+S4: processor 0 is not halted in ring 0

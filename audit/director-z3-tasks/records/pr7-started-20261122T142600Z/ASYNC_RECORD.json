@@ -1,0 +1,36 @@
+{
+ "tool": "async_run.py",
+ "plan": "plan.json",
+ "plan_sha256": "a1df954a71b716330d331e82220e6fa25ba971e57a720ff959b36c0f10dce44a",
+ "width": 1,
+ "tasks": [
+  {
+   "id": "T",
+   "argv": [
+    "python3",
+    "/home/user/pcp-os/examples/processors/check_started.py",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/pr7-processors.elf32",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/pr7-plain.elf32",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/pr7-processors-extended-demo.elf32",
+    "/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/pr7-processors-silent-demo.elf32"
+   ],
+   "exit": 1,
+   "expect_exit": 0,
+   "timed_out": false,
+   "seconds": 19.7,
+   "ended_as_expected": false,
+   "copied_in": [],
+   "files": {
+    "STDERR.txt": {
+     "sha256": "6bd1e67c2f1614ef885cd87053713a9e616137214ea8074fd3a79bb16e663990",
+     "bytes": 40
+    },
+    "STDOUT.txt": {
+     "sha256": "8e23351bbbdfb087093e026f42207260832ee5f9489e057c21d421234f68d16e",
+     "bytes": 1903
+    }
+   }
+  }
+ ],
+ "all_ended_as_expected": false
+}

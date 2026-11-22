@@ -1,0 +1,3 @@
+S5: said []; the others' CR0: ['00000011', '00000011', '00000011']
+S6: the kernel said ['other processors: 3 of 3 started and parked, the interrupt controller reached through memory; 4 thread(s) on 4 core(s) in all; none runs any work yet']
+S7: status 35, 59 passes, FAIL lines ['  FAIL every other processor that was tried answered, as itself and able to do what the first can, and is parked']
