@@ -1552,6 +1552,11 @@ fn exception_entry(frame: &mut Frame) {
         }
         #[cfg(feature = "processors")]
         240 if !user => others::message(),
+        // An interrupt controller that is on can raise an interrupt with nothing behind it; it names
+        // vector 255 for that (`others::listen`). It is harmless, wants no acknowledgement, and must
+        // not stop the kernel (the automated review of this stage).
+        #[cfg(feature = "processors")]
+        255 => others::nothing_behind(),
         128 if user => crate::user::trap(frame, Trap::Call, true),
         129 if !user => crate::user::trap(frame, Trap::Enter, false),
         130 if user => crate::user::trap(frame, Trap::Syscall, true),

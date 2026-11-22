@@ -10,9 +10,9 @@ not waited for; that a kernel built without the feature starts none; and that a 
 is not answered ends, is said, and leaves nothing behind. The kernel's own word is not taken for the
 processors' state: it is read from the emulator, which is outside the kernel.
 
-Predicates, fixed before the first run. "Sound" means status 33 with no FAIL line, and 73 passes
-where there is one processor (the 71 of a kernel without the feature, and two this feature adds) or
-74 where there are more (the count of S9 as well).
+Predicates, fixed before the first run. "Sound" means status 33 with no FAIL line, and 74 passes
+where there is one processor (the 71 of a kernel without the feature, and three this feature adds)
+or 75 where there are more (the count of S9 as well).
  S1 with 1, 2, 4 and 8 processors on a "pc" machine with 256 MiB, and 4 on a "q35" machine with
     6 GiB, the kernel says all the others started and are parked, the interrupt controller reached
     through memory, N threads on N cores; and the boot is sound.
@@ -142,7 +142,7 @@ def main():
     args = parser.parse_args()
     problems = []
 
-    def sound(label, run, passes=73, status=33):
+    def sound(label, run, passes=74, status=33):
         if run["status"] != status or run["passes"] != passes or (status == 33 and run["fails"]):
             problems.append("%s: status %r, %d passes, FAIL lines %r" % (label, run["status"], run["passes"], run["fails"]))
 
@@ -165,7 +165,7 @@ def main():
         for count in counts:
             run = boot(args.qemu, args.kernel, kind, memory, str(count))
             label = "S1 %s, %s, %d" % (kind, memory, count)
-            sound(label, run, passes=74 if count > 1 else 73)
+            sound(label, run, passes=75 if count > 1 else 74)
             given(label, run, count - 1)
             counted(label, run, count)
             if run["said"] != line(count - 1, count - 1, "through memory", count, count):
@@ -175,7 +175,7 @@ def main():
             if kind == "pc" and count == 4:
                 four = run["took"]
     run = boot(args.qemu, args.kernel, "pc", "256M", "4,cores=2,threads=2")
-    sound("S2", run, passes=74)
+    sound("S2", run, passes=75)
     given("S2", run, 3)
     counted("S2", run, 4)
     if run["said"] != line(3, 3, "through memory", 4, 2):
@@ -183,7 +183,7 @@ def main():
     else:
         print("S2: %s" % run["said"][0])
     run = boot(args.qemu, args.kernel, "pc", "256M", "2,maxcpus=4")
-    sound("S3", run, passes=74)
+    sound("S3", run, passes=75)
     given("S3", run, 1)
     counted("S3", run, 2)
     listed = [text for text in run["lines"] if text.startswith("processors: the firmware lists")]
@@ -228,7 +228,7 @@ def main():
         print("S6: NOT RUN: this emulator does not offer the extended mode (%s)" % offered.stderr.decode(errors="replace").strip().splitlines()[0])
     else:
         run = boot(args.qemu, args.extended, "pc", "256M", "4")
-        sound("S6", run, passes=74)
+        sound("S6", run, passes=75)
         if run["said"] != line(3, 3, "in its extended mode", 4, 4):
             problems.append("S6: the kernel said %r" % run["said"])
         else:

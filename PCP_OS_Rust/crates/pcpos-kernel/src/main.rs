@@ -879,6 +879,10 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
                             check("every processor answers a message, and with all of them in and out of the kernel at once its one lock lets in one at a time: the count is exact",
                                   finished && count == wanted, &mut failed);
                         }
+                        let counted = arch::others::nothing_behind_count();
+                        arch::others::raise_nothing();
+                        check("an interrupt with nothing behind it (vector 255) is counted and the kernel goes on",
+                              arch::others::nothing_behind_count() == counted + 1, &mut failed);
                         let after = arch::kernel_map_audit();
                         check("after starting them the kernel's map is as it was, with at most the one page of the interrupt controller's registers added, never executable",
                               arch::MapAudit { controller_pages: 0, ..after } == before && after.controller_pages == (o.through_memory && o.listed > 0) as u32, &mut failed);

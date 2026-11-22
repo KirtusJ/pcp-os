@@ -481,6 +481,25 @@ fn listen() {
     }
 }
 
+/// How many interrupts with nothing behind them have arrived, on any processor.
+static NOTHING: AtomicU64 = AtomicU64::new(0);
+
+/// Vector 255 arrived: an interrupt with nothing behind it. Counted, and nothing else.
+pub fn nothing_behind() {
+    NOTHING.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Raise vector 255 on this processor as the controller would, for the self-test.
+pub fn raise_nothing() {
+    // Safety: a software interrupt to a vector that has a handler which only counts.
+    unsafe { asm!("int 0xff") }
+}
+
+/// How many such have been counted.
+pub fn nothing_behind_count() -> u64 {
+    NOTHING.load(Ordering::Relaxed)
+}
+
 /// A message arrived on this processor (vector 240): say it was taken, and do what was asked.
 pub fn message() {
     match reach() {
@@ -515,28 +534,28 @@ pub fn ask(slot: usize, work: fn(usize)) -> bool {
 }
 
 /// The check of the lock: every processor at once adds one to the same count, `rounds` times each,
-/// giving the lock up and taking it again around every addition. The count is an ordinary value, read
-/// and written back with a pause between, so two processors in the kernel together would lose
+/// giving the lock up and taking it again around every addition. The count is read and written back in
+/// two steps with a pause between, so two processors in the kernel together would lose
 /// additions. Returns (the count, what it must be, whether every processor finished in time).
 /// Interrupts must be on: time is told by the timer.
 pub fn count_together(rounds: u64) -> (u64, u64, bool) {
-    static COUNT: Single<u64> = Single::new(0);
+    // Read and written back in two separate steps on purpose, so that additions are lost if two
+    // processors are in at once; an atomic, so that the control without the lock is still defined
+    // behaviour and only the count is wrong (the automated review of this stage).
+    static COUNT: AtomicU64 = AtomicU64::new(0);
     static ROUNDS: AtomicU64 = AtomicU64::new(0);
     fn add(_: usize) {
         for _ in 0..ROUNDS.load(Ordering::SeqCst) {
             relax();
-            COUNT.with(|count| {
-                // Safety: a plain value read and written through its own address.
-                let now = unsafe { core::ptr::read_volatile(count) };
-                for _ in 0..8 {
-                    core::hint::spin_loop();
-                }
-                unsafe { core::ptr::write_volatile(count, now + 1) };
-            });
+            let now = COUNT.load(Ordering::Relaxed);
+            for _ in 0..8 {
+                core::hint::spin_loop();
+            }
+            COUNT.store(now + 1, Ordering::Relaxed);
         }
     }
     let parked = PARKED.load(Ordering::SeqCst);
-    COUNT.with(|count| *count = 0);
+    COUNT.store(0, Ordering::SeqCst);
     ROUNDS.store(rounds, Ordering::SeqCst);
     let before: alloc::vec::Vec<u64> = DONE[..parked].iter().map(|d| d.load(Ordering::SeqCst)).collect();
     #[cfg(feature = "processors-unlocked-demo")]
@@ -554,7 +573,7 @@ pub fn count_together(rounds: u64) -> (u64, u64, bool) {
     let all = asked && (0..parked).all(finished);
     #[cfg(feature = "processors-unlocked-demo")]
     DEMO_UNLOCKED.store(false, Ordering::SeqCst);
-    (COUNT.with(|count| *count), (parked as u64 + 1) * rounds, all)
+    (COUNT.load(Ordering::SeqCst), (parked as u64 + 1) * rounds, all)
 }
 
 /// How starting the others went.
