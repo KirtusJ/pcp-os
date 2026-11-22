@@ -1,5 +1,6 @@
 #!/bin/bash
 # The method build: the Implementation packet, the reading copies and the three base editions.
+# The successor cryptography edit and its evidence replay are documented in crypto_predicate_evidence.md.
 # The scripts are as they stand after the fifteenth round (in the source archive of build 21 they were, by an oversight,
 # as they stood before the fourteenth); they work in the folder
 # /home/claude/build, as they always have. Needs WeasyPrint 70.0, markdown-it-py, pymupdf, and the fonts Inter
