@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/home/user/pcp-os/examples/proposals/check_launcher.py", line 167, in <module>
+    main()
+    ~~~~^^
+  File "/home/user/pcp-os/examples/proposals/check_launcher.py", line 89, in main
+    raise AssertionError("The list of keys does not name F7 and the projects folder: " + listed)
+AssertionError: The list of keys does not name F7 and the projects folder: KEYS ON THE DESKTOP Up/Down choose among all the programs and the pinned programs Left/Right turn the parts of a long name Enter Up/Down scroll Esc back
