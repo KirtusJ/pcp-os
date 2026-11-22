@@ -959,6 +959,11 @@ pub fn map_loader_display(boot: &BootInfo) -> Result<usize, &'static str> {
 }
 
 /// Whether a program could be given `pages` whole pages of device memory from `phys`: the question
+/// The rule for drawing off the screen, which is `framebuffer`'s and tested on a host.
+pub fn display_draws_off_screen(pages: u32, mappable_whole: bool) -> bool {
+    framebuffer::draws_off_screen(pages, mappable_whole)
+}
+
 /// `map_device` asks, with nothing mapped.
 pub fn device_grantable(phys: usize, pages: usize) -> bool {
     let count = DEVICES.with(|d| d.1);
