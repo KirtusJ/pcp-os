@@ -12,7 +12,7 @@ permissions:
 jobs:
   firmware:
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    timeout-minutes: 20
     env:
       OMP_THREAD_LIMIT: '1'
       PCPOS_KERNEL_FEATURES: uefi-demo-heap
@@ -64,6 +64,8 @@ jobs:
               raise SystemExit("Default BIOS regression failed")
           PY
           python3 examples/guarded-uefi/default_optical.py distribution "$kernel" "$RUNNER_TEMP/default-optical"
+          # The count of processors the kernel reads from firmware, on machines of 1 to 8, and the words it refuses.
+          python3 examples/processors/check.py "$DEFAULT_KERNEL" | tee "$RUNNER_TEMP/processors.txt"
           cp "$RUNNER_TEMP/uefi-demo.elf32" "$kernel/target/pcpos-kernel.elf32"
       - name: Check the released ELF and guard the experimental handoff
         run: python3 examples/guarded-uefi/trial.py distribution PCP_OS_Rust/crates/pcpos-kernel "$RUNNER_TEMP/guarded-uefi"
@@ -74,6 +76,7 @@ jobs:
           path: |
             ${{ runner.temp }}/guarded-uefi
             ${{ runner.temp }}/default-bios.txt
+            ${{ runner.temp }}/processors.txt
             ${{ runner.temp }}/default-optical
           if-no-files-found: warn
           retention-days: 14
