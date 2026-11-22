@@ -52,6 +52,9 @@ Predicates, fixed before the first run.
  N1 without `propose_image` on the command line the program is refused the proposal device (-13) and
     nobody is asked: no screen, no CREATED, no DENIED.
  Every case: the emulator ends with status 33 (the kernel's own checks passed and it powered off).
+ G1 the kernel's own register records a file it made (an artifact, produced, with its digest, size,
+    path and the task it was made for): the allowed case ends with exactly one event more than the
+    case refused with Esc, and in no case does the register refuse an event the kernel gave it.
  C1 (with --companion, on a kernel built with the companion feature as well): every case comes out
     the same with a second program beside the probe, waiting on the channel, and in the cases that
     ask the person the kernel says it started that program. Without --companion none is started.
@@ -546,6 +549,19 @@ def main():
     if not args.companion and beside:
         problems.append("companion: a companion was started although none was named: %r" % beside)
     results["with_companion"] = beside
+    # G1: the kernel's register. One event more where a file was made than where it was refused, and
+    # the register refused nothing the kernel gave it in any case.
+    def register(name):
+        text = (evidence / name / "serial.txt").read_text(errors="replace")
+        counts = [int(line.split()[2]) for line in text.splitlines() if line.startswith("kernel register: ") and line.split()[3:4] == ["events,"]]
+        return (counts[-1] if counts else None), "the register refused" in text
+    for name in sorted(d.name for d in evidence.iterdir() if (d / "serial.txt").is_file()):
+        if register(name)[1]:
+            problems.append("G1 %s: the kernel's register refused an event" % name)
+    made, not_made = register("allowed")[0], register("refused-esc")[0]
+    if made is None or not_made is None or made != not_made + 1:
+        problems.append("G1: the register holds %r events where the file was made and %r where it was refused, not one more" % (made, not_made))
+    results["register_events"] = {"allowed": made, "refused-esc": not_made}
     (evidence / "result.json").write_text(json.dumps({"probe_sha256": digest, "problems": problems, "results": results}, indent=2) + "\n")
     if problems:
         sys.exit("\n".join(problems))

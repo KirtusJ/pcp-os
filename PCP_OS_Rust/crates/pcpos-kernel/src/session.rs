@@ -2058,6 +2058,16 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
     let refusal = result.as_ref().err().copied();
     let message = match result {
         Ok(p) => {
+            // Every file the kernel made for this program after the person allowed it is in the
+            // register, however the program then ended: its name, its size, the digest of its bytes,
+            // and the task it was made for. A file the person refused was never made and is not here.
+            #[cfg(feature = "proposals")]
+            for (name, size, sha) in p.linux.as_ref().map(|l| l.files_made()).unwrap_or(&[]) {
+                recorded &= logged("ARTIFACT_ADDED", rec.submit(&now(), "kernel", "HOST", "ARTIFACT_ADDED",
+                    obj(&[("sha256", text(sha)), ("size", Value::Int(*size as i64)), ("origin", text("PRODUCED")), ("stored", Value::Bool(false)),
+                          // A register's "name" is a short label and may hold no '/'; where the file is goes in "path".
+                          ("path", text(name)), ("filename", text(name.rsplit('/').next().unwrap_or(name))), ("task", text(&id))]))).is_ok();
+            }
             let digest = sha256_hex(&p.output);
             let (outcome, result, how) = match p.end {
                 Some(End::Exited(0)) => {
