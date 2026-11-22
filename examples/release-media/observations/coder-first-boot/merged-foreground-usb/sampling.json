@@ -1,0 +1,25 @@
+{
+  "input": "Say hello in one short sentence.",
+  "enter_command_began": 1795351756.907048,
+  "enter_command_acknowledged": 1795351757.228189,
+  "transcript_changes": [
+    {
+      "after_seconds": 779.601,
+      "by_seconds": 785.071,
+      "frame": "response-001.png",
+      "terminal": null
+    },
+    {
+      "after_seconds": 805.098,
+      "by_seconds": 810.571,
+      "frame": "response-002.png",
+      "terminal": null
+    },
+    {
+      "after_seconds": 825.698,
+      "by_seconds": 831.084,
+      "frame": "response-003.png",
+      "terminal": "tailorbird: reply 1 kept 6 bytes and is complete"
+    }
+  ]
+}

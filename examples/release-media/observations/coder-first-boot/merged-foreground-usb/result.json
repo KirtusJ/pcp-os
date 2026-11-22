@@ -1,0 +1,63 @@
+{
+  "medium_kind": "model-preloaded hybrid ISO, raw read-only xHCI USB",
+  "medium_sha256": "8e17dc8236e4ad965f2059b599d2bb305b7f15c51d309faec3d9746390e3dd7b",
+  "foreground_sha256": "81e727ff73d517476d71e8490227c14251f218fc6b77a84cbbdd96470364deec",
+  "worker_head": "9c14937c413d7fcd63878b9870ae0862d760c69c",
+  "worker_sha256": "2750a34540d0f4f4852b8b184ddb318cf8cc8dcd9d565233511c3cfc905dcd5b",
+  "model": "Qwen2.5-Coder-0.5B-Instruct Q4_K_M",
+  "model_bytes": 491400064,
+  "model_sha256": "1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32",
+  "emulator": "Q35, QEMU TCG, CPU max, 4 GiB, OVMF fresh variables, standard VGA, no network or internal disk",
+  "prompt": "Say hello in one short sentence.",
+  "entry": "Typed and submitted while loading; the foreground kept the draft and showed a refusal. Enter after Ready, without editing, sent the request.",
+  "enter_utc": "2026-11-22T12:49:16.907048+00:00",
+  "first_visible_text": "Hello",
+  "first_visible_seconds": {
+    "after": 779.601,
+    "by": 785.071
+  },
+  "terminal_serial": "tailorbird: reply 1 kept 6 bytes and is complete",
+  "terminal_observed_seconds": {
+    "after": 825.698,
+    "by": 831.517
+  },
+  "selected_first_capture": "response-001.png",
+  "sampling_files": "Sampling records retain the local acquisition filenames. The selected first visible sample is preserved as first-visible.png; completed-answer.png is a separate capture taken after the terminal serial record.",
+  "response_visible_text": "Hello!",
+  "response_utf8_bytes": 6,
+  "timing_basis": "Host wall time from the accepted Enter, bracketed by consecutive QMP samples. The upper bound for terminal completion uses a separate frame captured after the terminal serial record was seen.",
+  "file": {
+    "path": "taylor/my-first-project/note-1.txt",
+    "utf8": "Memo\n",
+    "length": 5,
+    "sha256": "4d2ba447ef9bae8d6941eb75c759fcbebc54246eab3056b74e3e320781f2aced",
+    "confirmation": "F12 then Enter on a separate kernel file proposal after chat.",
+    "reopened": "The viewer showed the same path, Memo, five characters and the verified file-content caption.",
+    "lifetime": "Until power-off."
+  },
+  "kernel_checks": 72,
+  "guest_stop": "Ctrl+Alt+Delete",
+  "power_off": "F10, then Enter",
+  "emulator_exit": 33,
+  "low_frame_pool": [
+    248832,
+    248832,
+    251808,
+    251808
+  ],
+  "high_frame_pool": [
+    403968,
+    403968,
+    14146,
+    14146
+  ],
+  "pool_fields": [
+    "free",
+    "total",
+    "handed_out",
+    "given_back"
+  ],
+  "serial_sha256": "62c373fdee3e38ced9dcccf0964276c0f0015b77d6b16ab1e0d35b096c00bc0b",
+  "reference_pixels": "The 758 × 33 RGB-pixel answer region agrees exactly with the independent waiting, Hello, punctuation and completed reference frames after a 120-pixel vertical shift for the earlier refused draft.",
+  "ready_screen_observation": "After Ready, the status said Ready to talk and Model: ready while the previous attempt footer still said MODEL STILL LOADING - NOT SENT. Nothing was submitted automatically. A second Enter sent the retained input."
+}
