@@ -8,3 +8,8 @@ publish.workspace = true
 
 [dependencies]
 pcpos-gguf = { path = "../pcpos-gguf" }
+pcpos-model-tensor = { path = "../pcpos-model-tensor" }
+libm = { version = "=0.2.16", default-features = false }
+
+[dev-dependencies]
+sha2 = { version = "0.10.9", default-features = false }
