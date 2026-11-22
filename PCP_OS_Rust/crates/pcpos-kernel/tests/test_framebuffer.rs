@@ -2,7 +2,7 @@
 //!   rustc --edition=2021 --test tests/test_framebuffer.rs -o /tmp/test-framebuffer && /tmp/test-framebuffer
 #[path = "../src/arch/framebuffer.rs"]
 mod framebuffer;
-use framebuffer::{decide, grant, Window};
+use framebuffer::{decide, draws_off_screen, grant, Window};
 
 fn entry(base: u64, length: u64, kind: u32) -> Vec<u8> {
     let mut e = Vec::new();
@@ -139,4 +139,29 @@ fn a_program_is_granted_only_pages_that_lie_wholly_inside_the_picture() {
     assert!(!grant(odd, 0x8000_1000, 3));
     // A picture that fills whole pages is granted whole.
     assert!(grant((0x8000_0000, 0x8000_0000 + 4_096_000), 0x8000_0000, 1000));
+}
+
+#[test]
+fn a_one_page_display_is_drawn_off_the_screen_whether_or_not_its_memory_maps_whole() {
+    // The owner's laptop: 1920 by 1080 by 4 is 8,294,400 bytes, exactly 2,025 pages, so the picture
+    // can be granted whole. The rule this replaces answered "no" here and handed over the screen.
+    let laptop = (0x8000_0000usize, 0x8000_0000 + 1920 * 1080 * 4);
+    assert_eq!(1920 * 1080 * 4 % 4096, 0);
+    let whole = grant(laptop, laptop.0, 2025);
+    assert!(whole);
+    assert!(draws_off_screen(1, whole));
+    // 800 by 600 ends partway through a page: its last page cannot be granted. Drawn off the screen, as before.
+    let small = (0x06ab_2000usize, 0x06ab_2000 + 800 * 600 * 4);
+    assert_ne!(800 * 600 * 4 % 4096, 0);
+    let whole = grant(small, small.0, (800 * 600 * 4 + 4095) / 4096);
+    assert!(!whole);
+    assert!(draws_off_screen(1, whole));
+}
+
+#[test]
+fn a_display_with_a_second_page_is_drawn_on_the_page_not_shown() {
+    // The control: with two pages a program draws on the one that is not shown, whatever maps whole.
+    assert!(!draws_off_screen(2, true));
+    assert!(!draws_off_screen(2, false));
+    assert!(!draws_off_screen(0, true));
 }

@@ -1078,7 +1078,7 @@ fn sleep(p: &Process, world: &World, request: u64, absolute_on: Option<u64>) -> 
 /// pages, so that machine was handed the screen itself. No emulated display here has one page and
 /// whole pages unless a loader sets it, which is why no run had shown it.
 pub fn display_needs_shadow(d: &dev::Display) -> bool {
-    d.pages == 1
+    arch::display_draws_off_screen(d.pages, arch::device_grantable(d.memory, pages_of(d.pitch as usize * d.height as usize)))
 }
 
 fn shadow_wanted(p: &Process, d: &dev::Display) -> bool {
