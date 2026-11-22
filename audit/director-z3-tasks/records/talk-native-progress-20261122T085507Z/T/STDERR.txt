@@ -1,0 +1,9 @@
+warning: unused import: `DEFAULT_BUILD_FOLDER`
+ --> guest/src/note.rs:6:61
+  |
+6 | use crate::project_location::{BuildFolder, ProjectLocation, DEFAULT_BUILD_FOLDER};
+  |                                                             ^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+T9 checking: the screen is not what the renderer draws for the steps taken
