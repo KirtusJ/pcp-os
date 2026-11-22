@@ -806,7 +806,8 @@ fn grow(p: &mut Process, start: usize, pages: usize, write: bool, exec: bool) ->
         None => return false,
     };
     for n in 0..pages {
-        let ok = match mem::take() {
+        // A program's own pages come from the memory above four gibibytes where the machine has any.
+        let ok = match mem::take_data() {
             Some(frame) => {
                 let mapped = space.map(start + n * 4096, frame, write, exec);
                 if !mapped {

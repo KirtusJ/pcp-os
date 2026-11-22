@@ -1,0 +1,77 @@
+use pcpos_model_tensor::{Row, Error, TensorType::*};
+
+#[test]
+fn upstream_golden_rows_match_every_float_bit() {
+    let mut count = 0;
+    for line in include_str!("data/ggml-b12387.txt").lines().filter(|l| !l.starts_with('#') && !l.is_empty()) {
+        let fields: Vec<_> = line.split_whitespace().collect();
+        let kind = match fields[0] { "0" => F32, "1" => F16, "6" => Q5_0, "8" => Q8_0,
+            "12" => Q4K, "14" => Q6K, "30" => Bf16, _ => panic!("fixture type") };
+        let unhex = |s: &str| (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i+2], 16).unwrap()).collect::<Vec<_>>();
+        let encoded = unhex(fields[2]);
+        let expected = unhex(fields[3]);
+        let columns = fields[1].parse().unwrap();
+        let row = Row::new(kind, columns, &encoded).unwrap();
+        let mut values = vec![f32::NAN; columns];
+        row.decode(&mut values).unwrap();
+        assert_eq!(values.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<_>>(), expected, "fixture row {count}");
+        let vector: Vec<f32> = (0..columns).map(|i| ((i % 7) as f32 - 3.0) / 4.0).collect();
+        let reference = expected.chunks_exact(4).zip(&vector).fold(0.0f64, |sum,(b,&x)| {
+            sum + f32::from_le_bytes(b.try_into().unwrap()) as f64 * x as f64
+        }) as f32;
+        let dot = row.dot(&vector, ||true);
+        if reference.is_finite() { assert_eq!(dot.unwrap().to_bits(), reference.to_bits()); }
+        else { assert_eq!(dot,Err(Error::NonFinite)); }
+        count += 1;
+    }
+    assert_eq!(count, 27);
+}
+
+#[test]
+fn shapes_and_lengths_refuse_without_writing() {
+    assert_eq!(Row::new(Q4K, 255, &[0;144]).unwrap_err(), Error::Shape);
+    assert_eq!(Row::new(F32, 0, &[]).unwrap_err(), Error::Shape);
+    assert_eq!(Row::new(F32, usize::MAX, &[]).unwrap_err(), Error::Length);
+    assert_eq!(Row::new(Q5_0, 32, &[0;21]).unwrap_err(), Error::Length);
+    assert_eq!(Row::new(Q6K, 256, &[0;211]).unwrap_err(), Error::Length);
+    assert_eq!(Row::new(Q2K, 256, &[0;84]).unwrap_err(), Error::Unsupported);
+    let bytes = 1.0f32.to_le_bytes();
+    let row = Row::new(F32, 1, &bytes).unwrap();
+    let mut output = [123.0,456.0];
+    assert_eq!(row.decode(&mut output), Err(Error::Length));
+    assert_eq!(output, [123.0,456.0]);
+}
+
+#[test]
+fn all_floating_fields_are_checked_including_later_blocks() {
+    for (kind, size, scales) in [(F16,2,vec![0]), (Bf16,2,vec![0]), (Q5_0,22,vec![0]),
+        (Q8_0,34,vec![0]), (Q4K,144,vec![0,2]), (Q6K,210,vec![208])] {
+        for scale in scales {
+            for bits in [0x7c00u16,0x7e00,0xfc00] {
+                let mut bytes = vec![0u8;size*2];
+                let bits = if kind == Bf16 { match bits {0x7c00=>0x7f80,0x7e00=>0x7fc0,_=>0xff80} } else {bits};
+                bytes[size+scale..size+scale+2].copy_from_slice(&bits.to_le_bytes());
+                assert_eq!(Row::new(kind, kind.block_layout().0 as usize * 2, &bytes).unwrap_err(), Error::NonFinite);
+            }
+        }
+    }
+    for value in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        assert_eq!(Row::new(F32,1,&value.to_le_bytes()).unwrap_err(), Error::NonFinite);
+    }
+}
+
+#[test]
+fn dot_uses_bounded_scratch_and_can_cancel_between_quant_blocks() {
+    let mut bytes = [0u8;68];
+    for start in [0,34] { bytes[start..start+2].copy_from_slice(&0x3c00u16.to_le_bytes()); bytes[start+2..start+34].fill(2); }
+    let row = Row::new(Q8_0,64,&bytes).unwrap();
+    assert_eq!(row.columns(),64);
+    assert_eq!(row.dot(&[3.0;64],||true),Ok(384.0));
+    let mut calls=0;
+    assert_eq!(row.dot(&[3.0;64],||{calls+=1;calls<2}),Err(Error::Cancelled));
+    assert_eq!(calls,2);
+    assert_eq!(row.dot(&[3.0;63],||true),Err(Error::Length));
+    assert_eq!(row.dot(&[f32::NAN;64],||true),Err(Error::NonFinite));
+    let large=f32::MAX.to_le_bytes();
+    assert_eq!(Row::new(F32,1,&large).unwrap().dot(&[2.0],||true),Err(Error::NonFinite));
+}

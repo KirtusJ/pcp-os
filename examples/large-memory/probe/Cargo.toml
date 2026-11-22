@@ -1,0 +1,17 @@
+[package]
+name = "memory-probe"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Maps and touches memory 64 MiB at a time until refused: a test program for examples/large-memory/check.py"
+
+[dependencies]
+pcp-game-guest = { path = "../../../store/native/guest" }
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+codegen-units = 1
+overflow-checks = true
+
+[workspace]

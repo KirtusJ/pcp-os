@@ -844,6 +844,84 @@ fn a_prompt_that_is_only_a_word_to_stop_is_a_halt_the_host_saw_and_other_prompts
 }
 
 #[test]
+fn remove_selects_the_exact_local_installation_and_preserves_other_directories() {
+    let root = dir("exact-module-removal");
+    let method = small_method(&root);
+    let cli = |args: &[&str]| {
+        let mut command = with_method(&root, &method);
+        command.args(args);
+        feed(command, b"")
+    };
+    for name in ["My-Notes", "My_Notes"] {
+        let source = root.join(name);
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("Specification.md"), format!("**Component:** `local.{name}`, Version 1.0\n")).unwrap();
+        assert_eq!(cli(&["module", "add", REG, name, "--by", "p"]).1, 0);
+    }
+    let modules = root.join(".pcp/modules");
+    fs::create_dir(modules.join("drafts")).unwrap();
+    fs::write(modules.join("drafts/note"), b"keep").unwrap();
+    let before = fs::read(root.join(REG)).unwrap();
+    for name in ["acr.My-Notes", "my-notes", "drafts", "absent"] {
+        assert_ne!(cli(&["module", "remove", REG, name, "--by", "p"]).1, 0);
+        assert_eq!(fs::read(root.join(REG)).unwrap(), before);
+    }
+    assert_eq!(fs::read(modules.join("drafts/note")).unwrap(), b"keep");
+    assert_eq!(cli(&["module", "remove", REG, "local.My-Notes", "--by", "p"]).1, 0);
+    assert!(!modules.join("My-Notes").exists());
+    assert!(modules.join("My_Notes/SOURCE/Specification.md").is_file());
+    let ledger = events(&root);
+    let body = ledger.last().unwrap().get("body").unwrap();
+    assert_eq!(body.get("event").and_then(Value::as_str), Some("MODULE_REMOVED"));
+    assert_eq!(body.get("module").unwrap().get("id").and_then(Value::as_str), Some("local.My-Notes"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn repair_preserves_an_existing_fragment_and_can_resume_with_matching_bytes() {
+    let root = dir("resume-repair");
+    assert!(pcpos(&root).args(["init", REG, "--principal", "p"]).output().unwrap().status.success());
+    let register = root.join(REG);
+    let complete = fs::read(&register).unwrap();
+    let fragment = b"interrupted append";
+    let sidecar = register.with_extension(format!("fragment-{}", &sha256_hex(fragment)[..12]));
+    let mut interrupted = complete.clone();
+    interrupted.extend_from_slice(fragment);
+    fs::write(&register, &interrupted).unwrap();
+    fs::write(&sidecar, b"previous evidence").unwrap();
+    assert!(!pcpos(&root).args(["repair", REG]).output().unwrap().status.success());
+    assert_eq!(fs::read(&register).unwrap(), interrupted);
+    assert_eq!(fs::read(&sidecar).unwrap(), b"previous evidence");
+    fs::write(&sidecar, fragment).unwrap();
+    assert!(pcpos(&root).args(["repair", REG]).output().unwrap().status.success());
+    assert_eq!(fs::read(&register).unwrap(), complete);
+    assert_eq!(fs::read(&sidecar).unwrap(), fragment);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn concurrent_installers_share_one_module_registration() {
+    let root = dir("same-module");
+    let method = small_method(&root);
+    let initialize = pcpos(&root).args(["init", REG, "--principal", "p"]).output().unwrap();
+    assert!(initialize.status.success());
+    let spec = "**Component:** `local.shared`, Version 1.0\n";
+    fs::write(root.join("incoming.md"), spec).unwrap();
+    let mut children = Vec::new();
+    for _ in 0..8 {
+        let mut command = with_method(&root, &method);
+        children.push(command.args(["module", "add", REG, "incoming.md", "--by", "p"])
+            .stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap());
+    }
+    let successes = children.into_iter().map(|mut c| c.wait().unwrap()).filter(|s| s.success()).count();
+    assert_eq!(successes, 1);
+    assert_eq!(fs::read_to_string(root.join(".pcp/modules/shared/SOURCE/Specification.md")).unwrap(), spec);
+    let ledger = events(&root);
+    assert_eq!(ledger.iter().filter(|e| e.get("body").and_then(|b| b.get("event")).and_then(Value::as_str) == Some("MODULE_ADDED")).count(), 1);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn a_person_adds_a_module_beside_the_register_and_it_never_displaces_the_method_s_own() {
     let root = dir("module-add");
     let m = small_method(&root);
