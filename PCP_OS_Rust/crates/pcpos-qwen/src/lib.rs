@@ -6,6 +6,7 @@
 
 extern crate alloc;
 pub mod forward;
+pub mod tokenizer;
 
 use core::fmt::{self, Write};
 use pcpos_gguf::{Index, Tensor, TensorType, Value};
