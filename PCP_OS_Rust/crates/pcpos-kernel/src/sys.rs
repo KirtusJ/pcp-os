@@ -54,6 +54,9 @@ pub enum Outcome {
 /// What an open file is.
 #[derive(Clone, Debug)]
 pub enum Node {
+    /// Where a program that may propose effects hands the kernel a proposal and reads the receipt.
+    #[cfg(feature = "proposals")]
+    Proposal,
     #[cfg(feature = "guest-ethernet")]
     Ethernet,
     #[cfg(feature = "game-link")]
@@ -66,6 +69,12 @@ pub enum Node {
     Music,
     /// Reads nothing and swallows what is written.
     Null,
+    /// This program's end of the channel to its companion.
+    #[cfg(feature = "companion")]
+    Talk,
+    /// The model held in memory: its manifest to read, its bytes to map. For a companion only.
+    #[cfg(feature = "model-memory")]
+    Model,
     /// The one directory there is.
     Directory,
     /// One of the loader's files: its index in `World::files`.
@@ -100,6 +109,277 @@ pub struct Linux {
     shadow_asked: bool,
     /// Where that memory is in the program's address space, once it has mapped the display.
     shadow: Option<usize>,
+    /// Which end of the channel to its companion this program holds, if it has one.
+    #[cfg(feature = "companion")]
+    pub talk: Option<usize>,
+    /// Where the model is mapped in this program, once it has mapped it.
+    #[cfg(feature = "model-memory")]
+    model_at: Option<usize>,
+    #[cfg(feature = "proposals")]
+    proposals: Proposals,
+}
+
+/// What came of the kernel's question.
+#[cfg(feature = "proposals")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Answer {
+    Allowed,
+    Refused,
+    /// The display has no room to show the proposal whole and legibly, so the person was not asked.
+    CannotBeShown,
+}
+
+/// One effect a program asks the kernel to make: one new file of text, whole and exact.
+#[cfg(feature = "proposals")]
+#[derive(Clone, Debug)]
+pub struct Proposal {
+    pub attempt: u64,
+    pub number: u64,
+    pub name: String,
+    pub content: Vec<u8>,
+    /// The length of the record the program wrote, which its call is answered with.
+    pub length: usize,
+}
+
+#[cfg(feature = "proposals")]
+#[derive(Default)]
+struct Proposals {
+    allowed: bool,
+    /// The folder this run builds into: copied from the kernel's setting when the program started, and
+    /// the same until it ends, whatever the setting becomes meanwhile.
+    root: String,
+    /// Which run of a proposing program this is, counted by the kernel from its start.
+    launch: u64,
+    pending: Option<Proposal>,
+    /// The receipt of the last proposal the kernel took. It stays, and can be read again, until the
+    /// next one is taken.
+    receipt: Option<[u8; RECEIPT]>,
+    /// Every receipt of this run with the digest of the exact request: the same request made again is
+    /// answered and not done again; another request under the same numbers is refused.
+    kept: Vec<(u64, u64, [u8; 32], [u8; RECEIPT])>,
+    /// Every file the kernel made in this run after the person allowed it: name, size and the
+    /// SHA-256 of its bytes. For the kernel's register, which records what was made and by what task.
+    made: Vec<(String, usize, String)>,
+}
+
+#[cfg(feature = "proposals")]
+static LAUNCHES: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+/// The most lines of the kernel's screen a proposal may need (64 pages of 22 lines of 76 characters,
+/// the room on the smallest display the question is shown on).
+#[cfg(feature = "proposals")]
+const PROPOSAL_LINES: usize = 64 * 22;
+#[cfg(feature = "proposals")]
+const PROPOSAL_ACROSS: usize = 76;
+/// The most proposals one run of a program may have answered. Their receipts are kept, so that none can
+/// be asked or done twice; when there is room for no more, a new proposal is refused, and no receipt
+/// is ever dropped to make room (C3: the list grew without limit in the kernel's own memory).
+#[cfg(feature = "proposals")]
+const PROPOSALS_KEPT: usize = 64;
+
+/// A receipt, 100 bytes: version (u32, 1); outcome (u32: 1 created, 2 refused by the person, 3 the name
+/// was taken, 5 no room in the store, 6 the display could not show it whole (too small, or over 64 pages) so nobody was asked); the kernel's number for this run (u64); attempt and proposal
+/// (u64 each); SHA-256 of the exact request (lengths, name, content); SHA-256 of the content; and
+/// whether it outlasts power (u32, 0: it does not).
+#[cfg(feature = "proposals")]
+pub const RECEIPT: usize = 4 + 4 + 8 + 8 + 8 + 32 + 32 + 4;
+#[cfg(feature = "proposals")]
+pub const PROPOSAL_NAME: usize = 120;
+#[cfg(feature = "proposals")]
+pub const PROPOSAL_CONTENT: usize = 16 * 1024;
+#[cfg(feature = "proposals")]
+pub const E_INVALID: u64 = (-EINVAL) as u64;
+
+/// The folder a program that may propose files builds into unless the kernel's setting names another.
+/// It is fixed when the program starts; the program may list and read what is under it and nothing
+/// else in the store.
+#[cfg(feature = "proposals")]
+pub const BUILD_FOLDER: &str = "taylor";
+#[cfg(feature = "proposals")]
+const LISTED: usize = 256;
+#[cfg(feature = "proposals")]
+const LISTING: usize = 64 * 1024;
+
+/// Whether a name may be a build folder: one or two parts, each of small letters, digits, dot,
+/// underscore and hyphen, not empty and not beginning with a dot, the first not "dev", at most 116 bytes
+/// (so that a project and a file still fit in a proposal's 120).
+#[cfg(feature = "proposals")]
+pub fn build_folder(name: &str) -> bool {
+    let part = |p: &str| !p.is_empty() && !p.starts_with('.') && p.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-'));
+    name.len() <= 116 && name.split('/').count() <= 2 && name.split('/').all(part) && name.split('/').next() != Some("dev")
+}
+
+/// Whether a store name is inside the folder: the folder, a slash, and something after it.
+#[cfg(feature = "proposals")]
+fn under(root: &str, name: &str) -> bool {
+    name.len() > root.len() + 1 && name.starts_with(root) && name.as_bytes()[root.len()] == b'/'
+}
+
+/// What is under the build folder now, version 1, little-endian: version, count, complete (1 or 0),
+/// length of the folder's name (u32 each), this run's number (u64), the folder's name; then for each file
+/// the length of its name (u16), zero (u16), its size (u32) and its whole name, in byte order. At most
+/// 256 files and 64 KiB; when there is more, complete is 0 and the first in byte order are given.
+#[cfg(feature = "proposals")]
+fn listing(store: &crate::regular::Files, root: &str, launch: u64) -> Vec<u8> {
+    let mut names: Vec<(&str, usize)> = store.iter().filter(|(n, _)| under(root, n)).map(|(n, f)| (n.as_str(), f.len())).collect();
+    names.sort();
+    let mut out = Vec::new();
+    out.extend_from_slice(&[0u8; 24]);
+    out.extend_from_slice(root.as_bytes());
+    let (mut count, mut complete) = (0u32, 1u32);
+    for (name, size) in names {
+        if count as usize == LISTED || out.len() + 8 + name.len() > LISTING {
+            complete = 0;
+            break;
+        }
+        out.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&(size.min(u32::MAX as usize) as u32).to_le_bytes());
+        out.extend_from_slice(name.as_bytes());
+        count += 1;
+    }
+    out[0..4].copy_from_slice(&1u32.to_le_bytes());
+    out[4..8].copy_from_slice(&count.to_le_bytes());
+    out[8..12].copy_from_slice(&complete.to_le_bytes());
+    out[12..16].copy_from_slice(&(root.len() as u32).to_le_bytes());
+    out[16..24].copy_from_slice(&launch.to_le_bytes());
+    out
+}
+
+#[cfg(feature = "proposals")]
+fn receipt(outcome: u32, launch: u64, proposal: &Proposal) -> [u8; RECEIPT] {
+    let mut r = [0u8; RECEIPT];
+    r[0..4].copy_from_slice(&1u32.to_le_bytes());
+    r[4..8].copy_from_slice(&outcome.to_le_bytes());
+    r[8..16].copy_from_slice(&launch.to_le_bytes());
+    r[16..24].copy_from_slice(&proposal.attempt.to_le_bytes());
+    r[24..32].copy_from_slice(&proposal.number.to_le_bytes());
+    r[32..64].copy_from_slice(&request_digest(proposal));
+    r[64..96].copy_from_slice(&pcpos_core::sha256(&proposal.content));
+    r
+}
+
+#[cfg(feature = "proposals")]
+fn request_digest(proposal: &Proposal) -> [u8; 32] {
+    let mut whole = Vec::with_capacity(8 + proposal.name.len() + proposal.content.len());
+    whole.extend_from_slice(&(proposal.name.len() as u32).to_le_bytes());
+    whole.extend_from_slice(&(proposal.content.len() as u32).to_le_bytes());
+    whole.extend_from_slice(proposal.name.as_bytes());
+    whole.extend_from_slice(&proposal.content);
+    pcpos_core::sha256(&whole)
+}
+
+#[cfg(feature = "proposals")]
+impl Linux {
+    pub fn allow_proposals(&mut self, allowed: bool, folder: &str) {
+        // Without a folder that may be one there is no right to propose: no other folder stands in.
+        let allowed = allowed && build_folder(folder);
+        self.proposals.allowed = allowed;
+        self.proposals.root = String::from(if allowed { folder } else { "" });
+        if allowed {
+            self.proposals.launch = LAUNCHES.fetch_add(1, core::sync::atomic::Ordering::SeqCst) + 1;
+        }
+    }
+
+    pub fn proposals_allowed(&self) -> bool {
+        self.proposals.allowed
+    }
+
+    /// The proposal the program is waiting on, taken once.
+    pub fn proposal_taken(&mut self) -> Option<Proposal> {
+        self.proposals.pending.take()
+    }
+
+    /// The files the kernel made for this program in this run: name, size, SHA-256.
+    pub fn files_made(&self) -> &[(String, usize, String)] {
+        &self.proposals.made
+    }
+
+    /// The person has answered. On yes the kernel makes the file, with exactly the bytes it showed,
+    /// unless the name has been taken meanwhile; then, as on no, nothing is made.
+    pub fn proposal_settled(&mut self, proposal: Proposal, answer: Answer, world: &mut World) {
+        let allowed = answer == Answer::Allowed;
+        let free = world.store.named(&proposal.name).is_none() && !world.files.iter().any(|f| f.0 == proposal.name);
+        let room = world.store.len() < 256 && world.store.fits(proposal.content.len());
+        let outcome = if answer == Answer::CannotBeShown {
+            6
+        } else if !allowed {
+            2
+        } else if !free {
+            3
+        } else if !room {
+            5
+        } else {
+            // The whole file or nothing: the room was counted first, and the bytes go in in one piece.
+            world.store.insert(proposal.name.clone(), proposal.content.clone());
+            self.proposals.made.push((proposal.name.clone(), proposal.content.len(), pcpos_core::sha256_hex(&proposal.content)));
+            1
+        };
+        let r = receipt(outcome, self.proposals.launch, &proposal);
+        self.proposals.receipt = Some(r);
+        self.proposals.kept.push((proposal.attempt, proposal.number, request_digest(&proposal), r));
+        crate::log(format_args!("proposal {} of attempt {}: {} ({} bytes, SHA-256 {}) {}", proposal.number, proposal.attempt, proposal.name, proposal.content.len(),
+                    pcpos_core::sha256_hex(&proposal.content), match outcome { 1 => "CREATED after the person allowed it", 2 => "DENIED by the person; nothing made", 3 => "REFUSED: the name was taken; nothing made", 6 => "REFUSED: it could not be shown whole on this display (too small, or too many pages), so nobody was asked; nothing made", _ => "REFUSED: no room in the store; nothing made" }));
+        crate::log(format_args!("\n"));
+    }
+}
+
+/// A program writes one proposal. The record is read whole and checked; a proposal already answered in
+/// this run is answered again from its receipt; a new one stops the program until the kernel has asked.
+#[cfg(feature = "proposals")]
+fn propose(p: &mut Process, world: &World, addr: u64, len: u64) -> Outcome {
+    let len = len as usize;
+    if !(32..=32 + PROPOSAL_NAME + PROPOSAL_CONTENT).contains(&len) {
+        return Outcome::Return(err(EINVAL));
+    }
+    let Some(bytes) = p.space.as_ref().and_then(|s| s.read(addr as usize, len)) else { return Outcome::Return(err(EFAULT)) };
+    let word = |at: usize| u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]);
+    let long = |at: usize| u64::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3], bytes[at + 4], bytes[at + 5], bytes[at + 6], bytes[at + 7]]);
+    let (name_len, content_len) = (word(24) as usize, word(28) as usize);
+    if word(0) != 1 || word(4) != 1 || name_len == 0 || name_len > PROPOSAL_NAME || content_len > PROPOSAL_CONTENT || 32 + name_len + content_len != len {
+        return Outcome::Return(err(EINVAL));
+    }
+    let (name, content) = (&bytes[32..32 + name_len], &bytes[32 + name_len..]);
+    // A name is a file in at most three folders, one inside another ("taylor/my-project/notes.txt"):
+    // each part of small letters, digits, dot, underscore and hyphen, not empty and not beginning with a
+    // dot, and the first not "dev", where the kernel's devices are; and it is under the build folder,
+    // the one place such a program builds into and can afterwards list and read. Content of printable characters,
+    // spaces and new lines: what the kernel's screen can show exactly, and no more.
+    let part = |p: &[u8]| !p.is_empty() && p[0] != b'.' && p.iter().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-'));
+    let named = name.split(|b| *b == b'/').count() <= 4 && name.split(|b| *b == b'/').all(part) && !name.starts_with(b"dev/") && name != b"dev"
+        && core::str::from_utf8(name).is_ok_and(|n| p.linux.as_ref().is_some_and(|l| under(&l.proposals.root, n)));
+    let shown = content.iter().all(|b| (0x20..0x7f).contains(b) || *b == b'\n');
+    // What the kernel cannot show whole, in a number of pages a person can turn, it does not ask about.
+    let lines: usize = content.split(|b| *b == b'\n').map(|line| line.len().div_ceil(PROPOSAL_ACROSS).max(1)).sum();
+    if !named || !shown || lines > PROPOSAL_LINES {
+        crate::log(format_args!("a proposal was refused unseen: {}\n", if !named { "its name has a character a name may not have" }
+            else if !shown { "its text has a character the kernel's screen cannot show exactly" } else { "it is too long to show" }));
+        return Outcome::Return(err(EINVAL));
+    }
+    let proposal = Proposal { attempt: long(8), number: long(16), name: String::from_utf8_lossy(name).into_owned(), content: content.to_vec(), length: len };
+    let Some(l) = p.linux.as_mut() else { return Outcome::Return(err(ENOSYS)) };
+    if let Some((_, _, request, kept)) = l.proposals.kept.iter().find(|(a, n, _, _)| *a == proposal.attempt && *n == proposal.number) {
+        if *request != request_digest(&proposal) {
+            // The same numbers for other bytes: never answered with the earlier result.
+            crate::log(format_args!("proposal {} of attempt {} REFUSED unseen: these numbers were used for a different request\n", proposal.number, proposal.attempt));
+            return Outcome::Return(err(16));
+        }
+        l.proposals.receipt = Some(*kept);
+        return Outcome::Return(len as u64);
+    }
+    if l.proposals.kept.len() >= PROPOSALS_KEPT {
+        crate::log(format_args!("proposal {} of attempt {} REFUSED unseen: this run has made as many proposals as the kernel keeps receipts for\n", proposal.number, proposal.attempt));
+        return Outcome::Return(err(28));
+    }
+    if world.store.named(&proposal.name).is_some() || world.files.iter().any(|f| f.0 == proposal.name) {
+        let r = receipt(3, l.proposals.launch, &proposal);
+        l.proposals.receipt = Some(r);
+        l.proposals.kept.push((proposal.attempt, proposal.number, request_digest(&proposal), r));
+        crate::log(format_args!("proposal {} of attempt {}: {} REFUSED without asking: the name is taken\n", proposal.number, proposal.attempt, proposal.name));
+        return Outcome::Return(err(EEXIST));
+    }
+    l.proposals.receipt = None;
+    l.proposals.pending = Some(proposal);
+    Outcome::Wait(Waiting::Consent, false)
 }
 
 /// Limits for the `brk` heap and for a single mapping.
@@ -112,7 +392,7 @@ const TICK_NS: u64 = 999_847;
 impl Linux {
     pub fn new(image_end: usize) -> Linux {
         let console = || Some(Open { node: Node::Console, position: 0, nonblocking: false, writable: true, append: false });
-        Linux { files: alloc::vec![console(), console(), console()], heap_start: image_end, heap_end: image_end, next_map: arch::USER_BASE + (64 << 30), reserved: Vec::new(), extra_pages: 0, shadow_asked: false, shadow: None }
+        Linux { files: alloc::vec![console(), console(), console()], heap_start: image_end, heap_end: image_end, next_map: arch::USER_BASE + (64 << 30), reserved: Vec::new(), extra_pages: 0, shadow_asked: false, shadow: None, #[cfg(feature = "proposals")] proposals: Proposals::default(), #[cfg(feature = "companion")] talk: None, #[cfg(feature = "model-memory")] model_at: None }
     }
 }
 
@@ -171,9 +451,16 @@ fn stat_bytes(mode: u32, size: usize, links: u64) -> [u8; 144] {
 
 fn node_stat(world: &World, node: &Node) -> Option<[u8; 144]> {
     Some(match node {
+        #[cfg(feature = "proposals")]
+        Node::Proposal => stat_bytes(0o020660, 0, 1),
         #[cfg(feature = "guest-ethernet")]
         Node::Ethernet => stat_bytes(0o020660, 0, 1),
         Node::Console | Node::Display | Node::Keys | Node::Sound | Node::Music | Node::Null => stat_bytes(0o020666, 0, 1),
+        #[cfg(feature = "companion")]
+        Node::Talk => stat_bytes(0o020660, 0, 1),
+        // The size said is the manifest's: that is what a read of it gives.
+        #[cfg(feature = "model-memory")]
+        Node::Model => stat_bytes(0o100440, world.model.map(|m| m.manifest.len()).unwrap_or(0), 1),
         #[cfg(feature = "game-link")]
         Node::GameLink => stat_bytes(0o020666, 0, 1),
         Node::Directory => stat_bytes(0o040755, 0, 1),
@@ -193,12 +480,46 @@ fn lookup(p: &Process, caps: &CapSpace, world: &World, path: &str) -> Result<Nod
         #[cfg(feature = "game-link")]
         "dev/game-link" => need(Object::GameLink, Rights::READ.with(Rights::APPEND), Node::GameLink),
         "dev/null" => Ok(Node::Null),
+        #[cfg(feature = "proposals")]
+        "dev/proposal" => if p.linux.as_ref().is_some_and(|l| l.proposals.allowed) { Ok(Node::Proposal) } else { Err(err(EACCES)) },
+        // A picture of the build folder taken now, read like a file that has no name and cannot be written.
+        #[cfg(feature = "proposals")]
+        "dev/build-folder" => match p.linux.as_ref().filter(|l| l.proposals.allowed) {
+            Some(l) => {
+                let bytes = listing(&world.store, &l.proposals.root, l.proposals.launch);
+                if world.store.fits(bytes.len()) { Ok(Node::Stored(world.store.detached(bytes))) } else { Err(err(ENOSPC)) }
+            }
+            None => Err(err(EACCES)),
+        },
+        // The model held in memory: only for the companion (end 0 of the channel), and only if one is given.
+        #[cfg(feature = "model-memory")]
+        "dev/model" => match (p.linux.as_ref().and_then(|l| l.talk), world.model.is_some()) {
+            (Some(0), true) => Ok(Node::Model),
+            (Some(0), false) => Err(err(ENOENT)),
+            _ => Err(err(EACCES)),
+        },
+        // The channel to the program's companion: only for a program the kernel gave an end of it.
+        #[cfg(feature = "companion")]
+        "dev/talk" => if p.linux.as_ref().is_some_and(|l| l.talk.is_some()) { Ok(Node::Talk) } else { Err(err(EACCES)) },
         "dev/console" | "dev/tty" => need(Object::Console, Rights::APPEND, Node::Console),
         "dev/fb0" => need(Object::Display, Rights::APPEND, Node::Display),
         "dev/kbd" => need(Object::Keys, Rights::READ, Node::Keys),
         "dev/audio" => need(Object::Sound, Rights::APPEND, Node::Sound),
         "dev/fm" if dev::fm_state().0 => need(Object::Sound, Rights::APPEND, Node::Music),
         _ => {
+            // A program that may propose files reads what is under its build folder, and for it nothing
+            // else in the store has a name: the answer for another folder's file is that of no file.
+            #[cfg(feature = "proposals")]
+            if let Some(l) = p.linux.as_ref().filter(|l| l.proposals.allowed && !p.holds(caps, Object::Store, Rights::READ)) {
+                return match world.store.named(&name) {
+                    Some(file) if under(&l.proposals.root, &name) => Ok(Node::Stored(file.clone())),
+                    Some(_) => Err(err(ENOENT)),
+                    None => match world.files.iter().position(|f| f.0 == name) {
+                        Some(i) => need(Object::Files, Rights::READ, Node::File(i)),
+                        None => Err(err(ENOENT)),
+                    },
+                };
+            }
             if let Some(file) = world.store.named(&name) {
                 return need(Object::Store, Rights::READ, Node::Stored(file.clone()));
             }
@@ -218,6 +539,10 @@ fn open(p: &mut Process, caps: &CapSpace, world: &mut World, path: u64, flags: u
     let (writing, create, truncate) = (flags & 3 != 0, flags & 0x40 != 0, flags & 0x200 != 0);
     enum Target { Existing(Node), Create(String) }
     let target = match lookup(p, caps, world, &path) {
+        // A program that may propose files opens stored files, and the picture of its build folder, to read
+        // and for nothing else, whatever else it holds: any flag that means to write, make or empty is refused.
+        #[cfg(feature = "proposals")]
+        Ok(Node::Stored(_)) if (writing || create || truncate) && p.linux.as_ref().is_some_and(|l| l.proposals.allowed) => return err(EACCES),
         Ok(_) if create && flags & 0x80 != 0 => return err(EEXIST), // O_CREAT | O_EXCL
         #[cfg(feature = "guest-ethernet")]
         Ok(Node::Ethernet) if flags & 3 != 2 => return err(EINVAL), // raw packet sessions require O_RDWR
@@ -289,7 +614,16 @@ fn read(p: &mut Process, world: &World, fd: u64, addr: u64, len: u64) -> Outcome
     };
     let len = len.min(1 << 30) as usize;
     let stored;
+    #[cfg(feature = "proposals")]
+    if matches!(f.node, Node::Proposal) {
+        // The receipt of the last proposal, once.
+        // It is not used up by being read, and a read too small for it takes nothing.
+        let Some(r) = p.linux.as_ref().and_then(|l| l.proposals.receipt) else { return Outcome::Return(0) };
+        return Outcome::Return(if len < RECEIPT { err(EINVAL) } else if put(p, addr, &r) { RECEIPT as u64 } else { err(EFAULT) });
+    }
     let bytes: &[u8] = match &f.node {
+        #[cfg(feature = "proposals")]
+        Node::Proposal => return Outcome::Return(0),
         #[cfg(feature = "guest-ethernet")]
         Node::Ethernet => {
             let mut frame = [0u8; dev::virtio_tx::guest::MTU];
@@ -316,6 +650,10 @@ fn read(p: &mut Process, world: &World, fd: u64, addr: u64, len: u64) -> Outcome
             return Outcome::Return(result);
         }
         Node::Console | Node::Null => return Outcome::Return(0),
+        #[cfg(feature = "companion")]
+        Node::Talk => return Outcome::Return(err(EINVAL)), // answered in `call`, where the channel is
+        #[cfg(feature = "model-memory")]
+        Node::Model => return Outcome::Return(err(EINVAL)), // answered in `call`
         Node::Display | Node::Directory | Node::Sound | Node::Music => return Outcome::Return(err(EINVAL)),
         Node::Keys => {
             // Each key event is two bytes: the key's number, then bit 0 set if it was released and bit 1 if it is of the second group.
@@ -359,7 +697,14 @@ fn write(p: &mut Process, caps: &CapSpace, fd: u64, addr: u64, len: u64) -> u64 
     };
     let len = len.min(1 << 24) as usize;
     match &f.node {
+        #[cfg(feature = "proposals")]
+        Node::Proposal => err(EINVAL), // a proposal is taken where the call is answered, before this
         Node::Null => len as u64,
+        #[cfg(feature = "companion")]
+        Node::Talk => err(EINVAL), // answered in `call`, where the channel is
+        // Nothing is written to a model, whatever the descriptor was opened as.
+        #[cfg(feature = "model-memory")]
+        Node::Model => err(EBADF),
         #[cfg(feature = "guest-ethernet")]
         Node::Ethernet => {
             if !f.writable || !p.holds(caps, Object::Ethernet, Rights::APPEND) { return err(EBADF); }
@@ -797,13 +1142,158 @@ fn display_call(p: &mut Process, caps: &CapSpace, request: u64, arg: u64) -> u64
 }
 
 /// Answer one call of process `i`.
+/// A read or a write on the channel to the companion. Bytes only: the kernel carries them in order and
+/// reads none. A read takes what is waiting, or waits; with the other program gone and nothing left it
+/// answers 0. A write queues what there is room for, or waits for room; to a program that is gone it
+/// answers EPIPE. A descriptor opened not to wait is answered EAGAIN where the other would wait.
+#[cfg(feature = "companion")]
+fn talk(t: &mut Table, i: usize, writing: bool, fd: u64, addr: u64, len: u64) -> Outcome {
+    let p = &t.procs[i];
+    let (Some(f), Some(end)) = (file(p, fd), p.linux.as_ref().and_then(|l| l.talk)) else { return Outcome::Return(err(EBADF)) };
+    let Some(channel) = t.talk.as_mut() else { return Outcome::Return(err(EBADF)) };
+    let len = len.min(crate::talk::ROOM as u64) as usize;
+    if len == 0 {
+        return Outcome::Return(0);
+    }
+    if writing {
+        // A descriptor opened for reading only does not write, here as for any other file.
+        if !f.writable {
+            return Outcome::Return(err(EBADF));
+        }
+        if !channel.peer(end) {
+            return Outcome::Return(err(32)); // EPIPE
+        }
+        let room = channel.room(end).min(len);
+        if room == 0 {
+            return if f.nonblocking { Outcome::Return(err(EAGAIN)) } else { Outcome::Wait(Waiting::TalkRoom, true) };
+        }
+        // The bytes are copied through a buffer the kernel may be refused: a program's write must not
+        // be able to stop the kernel for want of memory. Nothing is queued unless all of it was read.
+        let mut bytes = Vec::new();
+        if bytes.try_reserve_exact(room).is_err() {
+            return Outcome::Return(err(ENOMEM));
+        }
+        bytes.resize(room, 0);
+        return if p.space.as_ref().is_some_and(|s| s.copy_in(addr as usize, &mut bytes)) {
+            Outcome::Return(channel.write(end, &bytes) as u64)
+        } else {
+            Outcome::Return(err(EFAULT))
+        };
+    }
+    if !channel.readable(end) {
+        return if !channel.peer(end) {
+            Outcome::Return(0)
+        } else if f.nonblocking {
+            Outcome::Return(err(EAGAIN))
+        } else {
+            Outcome::Wait(Waiting::TalkBytes, true)
+        };
+    }
+    // What is handed over is taken from the queue only once the program's memory has accepted it.
+    let mut bytes = Vec::new();
+    if bytes.try_reserve_exact(len).is_err() {
+        return Outcome::Return(err(ENOMEM));
+    }
+    bytes.extend(channel.peek(end, len));
+    if !put(p, addr, &bytes) {
+        return Outcome::Return(err(EFAULT));
+    }
+    Outcome::Return(channel.read(end, bytes.len(), |_| ()) as u64)
+}
+
+/// What the loader left and the kernel decided to give: see `session::model_given`.
+#[cfg(feature = "model-memory")]
+#[derive(Clone, Copy)]
+pub struct ModelGiven {
+    pub manifest: &'static [u8],
+    /// The SHA-256 of the manifest, from the loader's line. The manifest was checked against it.
+    pub digest: [u8; 32],
+    pub bytes: u64,
+}
+
+/// The request on `dev/model` that says what is held: 48 bytes, the manifest's length and the
+/// model's length (each 8 bytes, little-endian) and the manifest's pinned SHA-256.
+#[cfg(feature = "model-memory")]
+pub const MODEL_DESCRIBE: u64 = 0x6D01;
+
+/// Calls on `dev/model`. None if the call is not one of them, and the ordinary handling follows.
+/// read: the manifest, from the descriptor's position. ioctl MODEL_DESCRIBE: what is held.
+/// mmap: the whole model, once, readable only; any other length, protection or a second mapping is refused.
+#[cfg(feature = "model-memory")]
+fn model_call(p: &mut Process, world: &World, number: u64, a: &[u64; 6]) -> Option<u64> {
+    let fd = match number {
+        0 | 16 => a[0],
+        9 if a[3] & 0x20 == 0 => a[4],
+        _ => return None,
+    };
+    let open = file(p, fd).filter(|f| matches!(f.node, Node::Model))?;
+    let Some(given) = world.model else { return Some(err(ENOENT)) };
+    Some(match number {
+        0 => {
+            let from = open.position.min(given.manifest.len());
+            let count = (a[2] as usize).min(given.manifest.len() - from);
+            if !put(p, a[1], &given.manifest[from..from + count]) {
+                return Some(err(EFAULT));
+            }
+            set_position(p, fd, from + count);
+            count as u64
+        }
+        16 => {
+            if a[1] != MODEL_DESCRIBE {
+                return Some(err(ENOTTY));
+            }
+            let mut said = [0u8; 48];
+            said[0..8].copy_from_slice(&(given.manifest.len() as u64).to_le_bytes());
+            said[8..16].copy_from_slice(&given.bytes.to_le_bytes());
+            said[16..48].copy_from_slice(&given.digest);
+            if put(p, a[2], &said) { 0 } else { err(EFAULT) }
+        }
+        _ => {
+            // Readable and nothing else; the whole model and nothing else; at an address the kernel
+            // chooses; once.
+            let mapped = p.linux.as_ref().map(|l| l.model_at.is_some()).unwrap_or(true);
+            if a[2] != 1 || a[3] & 0x10 != 0 || a[1] != given.bytes || a[5] != 0 || mapped {
+                return Some(err(EINVAL));
+            }
+            let pages = (given.bytes as usize).div_ceil(4096);
+            let start = match p.linux.as_mut() {
+                Some(l) => {
+                    let s = l.next_map;
+                    l.next_map += (pages + 1) * 4096;
+                    s
+                }
+                None => return Some(err(ENOSYS)),
+            };
+            match p.space.as_mut().and_then(|s| s.map_model(start)) {
+                Some(_) => {
+                    if let Some(l) = p.linux.as_mut() {
+                        l.model_at = Some(start);
+                    }
+                    start as u64
+                }
+                None => err(ENOMEM),
+            }
+        }
+    })
+}
+
 pub fn call(t: &mut Table, i: usize, frame: &Frame) -> Outcome {
     let (number, a) = frame.linux_call();
+    #[cfg(feature = "companion")]
+    if matches!(number, 0 | 1) && file(&t.procs[i], a[0]).is_some_and(|f| matches!(f.node, Node::Talk)) {
+        return talk(t, i, number == 1, a[0], a[1], a[2]);
+    }
     let Table { procs, caps, world, fs_loaded, .. } = t;
     let p = &mut procs[i];
     let ret = Outcome::Return;
+    #[cfg(feature = "model-memory")]
+    if let Some(answer) = model_call(p, world, number, &a) {
+        return ret(answer);
+    }
     match number {
         0 => read(p, world, a[0], a[1], a[2]),
+        #[cfg(feature = "proposals")]
+        1 if file(p, a[0]).is_some_and(|f| matches!(f.node, Node::Proposal)) => propose(p, world, a[1], a[2]),
         1 => ret(write(p, caps, a[0], a[1], a[2])),
         2 => ret(open(p, caps, world, a[0], a[1])),
         257 => ret(open(p, caps, world, a[1], a[2])), // openat: every path is taken from the one directory

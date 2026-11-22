@@ -75,3 +75,39 @@ fn dot_uses_bounded_scratch_and_can_cancel_between_quant_blocks() {
     let large=f32::MAX.to_le_bytes();
     assert_eq!(Row::new(F32,1,&large).unwrap().dot(&[2.0],||true),Err(Error::NonFinite));
 }
+
+#[test]
+fn unrolled_dot_matches_reference_with_bounded_rounding_error_and_cancellation() {
+    let mut rows=0;let mut seed=491u64;
+    for line in include_str!("data/ggml-b12387.txt").lines().filter(|l|!l.starts_with('#')&&!l.is_empty()) {
+        let f:Vec<_>=line.split_whitespace().collect();let kind=match f[0]{"0"=>F32,"1"=>F16,"6"=>Q5_0,"8"=>Q8_0,"12"=>Q4K,"14"=>Q6K,"30"=>Bf16,_=>panic!()};
+        let raw:Vec<_>=(0..f[2].len()).step_by(2).map(|i|u8::from_str_radix(&f[2][i..i+2],16).unwrap()).collect();
+        let width:usize=f[1].parse().unwrap();
+        for copies in [1,2,17,257] {
+            let bytes=raw.repeat(copies);let row=Row::new(kind,width*copies,&bytes).unwrap();
+            let input:Vec<_>=(0..row.columns()).map(|_|{seed=seed.wrapping_mul(6364136223846793005).wrapping_add(1);((seed>>40)as i32-(1<<23))as f32/(1<<20)as f32}).collect();
+            let scalar=row.dot(&input,||true);let fast=row.dot_unrolled(&input,||true);
+            match (scalar,fast){(Ok(a),Ok(b))=>assert!((a-b).abs()<=2e-5+2e-6*a.abs(),"{kind:?} {copies}: {a} {b}"),(Err(a),Err(b))=>assert_eq!(a,b),other=>panic!("{other:?}")}
+            let mut count=0;let _=row.dot_unrolled(&input,||{count+=1;true});
+            // Every boundary on small rows; distributed, first and final on large rows.
+            let mut cuts=std::collections::BTreeSet::from([0,count/2,count-1]);
+            if count<=1024{cuts.extend(0..count);}else{cuts.extend((0..64).map(|i|count*i/64));}
+            for cut in cuts {let mut n=0;assert_eq!(row.dot_unrolled(&input,||{n+=1;n<=cut}),Err(Error::Cancelled));assert_eq!(row.dot_unrolled(&input,||true),fast);}
+            let mut bad=input.clone();*bad.last_mut().unwrap()=f32::NAN;assert_eq!(row.dot_unrolled(&bad,||true),Err(Error::NonFinite));
+            assert_eq!(row.dot_unrolled(&input[..input.len()-1],||true),Err(Error::Length));rows+=1;
+        }
+    }
+    assert_eq!(rows,108);
+    let bytes=f32::MAX.to_le_bytes();assert_eq!(Row::new(F32,1,&bytes).unwrap().dot_unrolled(&[2.0],||true),Err(Error::NonFinite));
+}
+
+#[test]
+fn reordered_accumulation_is_explicit_for_ill_conditioned_inputs() {
+    let mut bytes=[1u8;34];bytes[..2].copy_from_slice(&0x3c00u16.to_le_bytes());
+    let row=Row::new(Q8_0,32,&bytes).unwrap();let mut input=[0.0;32];input[..4].copy_from_slice(&[1e30,1.0,-1e30,1.0]);
+    // Both are finite floating-point reductions, not exact-real arithmetic.
+    // Keep the sequential API and expose this difference instead of asserting
+    // universal bit parity from ordinary model-vector measurements.
+    assert_eq!(row.dot(&input,||true),Ok(1.0));
+    assert_eq!(row.dot_unrolled(&input,||true),Ok(0.0));
+}

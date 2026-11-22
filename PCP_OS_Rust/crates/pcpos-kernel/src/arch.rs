@@ -204,7 +204,7 @@ pub struct BootInfo {
 }
 
 impl BootInfo {
-    #[cfg(any(feature = "guest-ethernet", feature = "vm-store"))]
+    #[cfg(any(feature = "guest-ethernet", feature = "vm-store", feature = "proposals", feature = "companion", feature = "model-memory"))]
     pub(crate) fn exact_command_line(&self) -> Option<&str> {
         self.command_line_exact.then_some(self.command_line.as_str())
     }
@@ -427,6 +427,8 @@ const HUGE: u64 = 0x80;
 const NX: u64 = 1 << 63;
 /// A software bit in a leaf entry of a program's tables: the page is device memory, not a frame the space owns.
 const NOT_OWNED: u64 = 1 << 9;
+/// A page whose protection never changes: what it was mapped as, it stays.
+const SEALED: u64 = 1 << 10;
 const ADDRESS: u64 = 0x000f_ffff_ffff_f000;
 const MIB2: usize = 2 << 20;
 /// 4 KiB pages for the first 128 MiB, which holds the whole kernel image and the files the loader placed after it.
@@ -555,7 +557,19 @@ pub fn protect(boot: &mut BootInfo) -> (usize, usize) {
         }
         // Memory above four gibibytes, where the loader's map shows any and the pool below exists: mapped
         // by the same rule as the pool, in 2 MiB leaves, from tables that are part of the kernel image.
-        let high = match (&boot.memory_map, pool_start < pool_end) {
+        // The map the pools are made from. With the emulator fixture, memory the line says the
+        // loader marked is added to it as the model's kind first, as a loader would have handed it.
+        #[cfg(feature = "model-memory-fixture")]
+        let marked = fixture_map(boot);
+        #[cfg(feature = "model-memory-fixture")]
+        let map = marked.as_ref().or(boot.memory_map.as_ref());
+        #[cfg(not(feature = "model-memory-fixture"))]
+        let map = boot.memory_map.as_ref();
+        // Memory the loader marked in its map as holding a model, and named on its line, is decided
+        // here. Such memory is never part of the pool, named or not: the map's kind keeps it out.
+        #[cfg(feature = "model-memory")]
+        MODEL.with(|m| *m = model_named(boot, map));
+        let high = match (map, pool_start < pool_end) {
             (Some(map), true) => frame_map::high(map),
             _ => ([(0, 0); frame_map::HIGH_RANGES], 0),
         };
@@ -577,6 +591,77 @@ pub fn protect(boot: &mut BootInfo) -> (usize, usize) {
         asm!("mov cr3, {}", in(reg) pml4 as u64, options(nostack, preserves_flags));
     }
     (pool_start, pool_end)
+}
+
+/// What the loader's line and map say about memory holding a model.
+#[cfg(feature = "model-memory")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Model {
+    /// The line names none.
+    None,
+    /// The line names memory the loader's map marks as a model's: out of the pool, mapped nowhere by the kernel.
+    Held { extents: [(u64, u64); frame_map::MODEL_EXTENTS], count: usize, bytes: u64 },
+    /// The line names memory that is not given as a model's, and why.
+    Refused(&'static str),
+}
+
+#[cfg(feature = "model-memory")]
+static MODEL: Single<Model> = Single::new(Model::None);
+
+/// The memory kept for a model, as decided once at start.
+#[cfg(feature = "model-memory")]
+pub fn model() -> Model {
+    let on = interrupts_save_off();
+    let model = MODEL.with(|m| *m);
+    interrupts_restore(on);
+    model
+}
+
+#[cfg(feature = "model-memory")]
+fn model_named(boot: &BootInfo, map: Option<&alloc::vec::Vec<u8>>) -> Model {
+    // A line that was cut may have lost part of what it names; nothing is taken from it.
+    let Some(line) = boot.exact_command_line() else {
+        return if boot.command_line.contains("model_memory=") { Model::Refused("the loader's line was cut") } else { Model::None };
+    };
+    let mut named = line.split_whitespace().filter_map(|word| word.strip_prefix("model_memory="));
+    let Some(word) = named.next() else { return Model::None };
+    if named.next().is_some() {
+        return Model::Refused("model_memory is given more than once");
+    }
+    let Some((extents, count)) = frame_map::model_extents(word) else {
+        return Model::Refused("model_memory is not address:bytes pieces in hexadecimal");
+    };
+    let Some(map) = map else { return Model::Refused("the loader gave no memory map") };
+    match frame_map::model_allowed(map, &extents[..count]) {
+        Ok(bytes) => Model::Held { extents, count, bytes },
+        Err(why) => Model::Refused(why),
+    }
+}
+
+/// FOR THE EMULATOR ONLY. An emulator's own loader cannot mark memory in its map as a model's, as
+/// the loader stage on a real machine does. With this feature the line's `fixture_model_ram=` (the
+/// same form as `model_memory=`) stands for that marking: its pieces, in whole pages, are added to
+/// a copy of the map as the model's kind, and everything after reads the copy exactly as it would
+/// read a loader's map. No release is built with it, and the kernel says at start when it is in use.
+#[cfg(feature = "model-memory-fixture")]
+fn fixture_map(boot: &BootInfo) -> Option<alloc::vec::Vec<u8>> {
+    let mut map = boot.memory_map.clone()?;
+    let word = boot.exact_command_line()?.split_whitespace().find_map(|w| w.strip_prefix("fixture_model_ram="))?;
+    let (extents, count) = frame_map::model_extents(word)?;
+    for &(base, bytes) in &extents[..count] {
+        let whole = bytes.checked_add(4095)? / 4096 * 4096;
+        map.extend_from_slice(&20u32.to_le_bytes());
+        map.extend_from_slice(&base.to_le_bytes());
+        map.extend_from_slice(&whole.to_le_bytes());
+        map.extend_from_slice(&frame_map::MODEL_RAM.to_le_bytes());
+    }
+    Some(map)
+}
+
+/// Whether the emulator fixture marked any memory in this boot.
+#[cfg(feature = "model-memory-fixture")]
+pub fn model_fixture_used(boot: &BootInfo) -> bool {
+    fixture_map(boot).is_some_and(|map| Some(&map) != boot.memory_map.as_ref())
 }
 
 /// The frame memory: [start, end).
@@ -1842,6 +1927,40 @@ impl Space {
         true
     }
 
+    /// Give the program the memory kept for a model, piece after piece from `addr`, a page at a time:
+    /// readable, never writable, never executable, and sealed so that no later call can change that.
+    /// Only memory `model()` holds can be given. Every page of the program's must be free; if any is
+    /// not, or there is no room for the tables, nothing is mapped. The space does not own the pages.
+    #[cfg(feature = "model-memory")]
+    pub fn map_model(&mut self, addr: usize) -> Option<usize> {
+        let Model::Held { extents, count, .. } = model() else { return None };
+        if addr % 4096 != 0 {
+            return None;
+        }
+        let frames = |visit: &mut dyn FnMut(usize, u64) -> bool| -> Option<usize> {
+            let mut page = 0usize;
+            for &(base, bytes) in &extents[..count] {
+                for n in 0..bytes.div_ceil(4096) {
+                    if !visit(addr.checked_add(page.checked_mul(4096)?)?, base + n * 4096) {
+                        return None;
+                    }
+                    page += 1;
+                }
+            }
+            Some(page)
+        };
+        // First every slot is found, which makes any tables it needs, and seen to be free.
+        // Safety (both passes): the slot is a leaf entry of this space's own tables.
+        frames(&mut |at, _| matches!(self.slot(at, true), Some(e) if unsafe { *e } & P == 0))?;
+        frames(&mut |at, frame| match self.slot(at, true) {
+            Some(e) => {
+                unsafe { *e = frame | P | U | NX | NOT_OWNED | SEALED };
+                true
+            }
+            None => false,
+        })
+    }
+
     /// Take a page away from the program. Returns the frame if the space owned it, for the caller to give back to the pool.
     pub fn unmap(&mut self, addr: usize) -> Option<usize> {
         let e = self.slot(addr & !0xfff, false)?;
@@ -1863,7 +1982,7 @@ impl Space {
         match self.slot(addr & !0xfff, false) {
             // Safety: as `map`.
             Some(e) => unsafe {
-                if *e & P == 0 {
+                if *e & P == 0 || *e & SEALED != 0 {
                     return false;
                 }
                 *e = (*e & (ADDRESS | NOT_OWNED)) | P | U | if write { W } else { 0 } | if exec { 0 } else { NX };

@@ -1,0 +1,17 @@
+[package]
+name = "model-probe"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Test programs for examples/model-memory/check.py: a companion maps and reads the model held in memory; the other program is refused it"
+
+[dependencies]
+pcp-game-guest = { path = "../../../store/native/guest" }
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+codegen-units = 1
+overflow-checks = true
+
+[workspace]
