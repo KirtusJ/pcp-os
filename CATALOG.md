@@ -14,6 +14,7 @@ Every entry at the top of the repository, and every folder one level down in the
 | `ASYNC.md` | How asynchronous tasks are run and recorded. Proposed to move under os-docs (issue 368). | no |
 | `audit` | Records of audits and of sessions' runs. Most of it is proposed to leave master for a named branch (issue 368). | no |
 | `build` | Scripts that assemble a release, its documents and the plugins. | not determined |
+| `CATALOG.md` | This page. | no |
 | `CLAUDE.md` | Standing rules for Claude sessions working here. | no |
 | `COORDINATION.md` | Agreements of the baseline work, each with where it was made. Proposed to move under os-docs (issue 368). | no |
 | `examples` | Checks and experiments, each in its own folder; several are run by CI. | no |

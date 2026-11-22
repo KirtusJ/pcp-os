@@ -7,11 +7,15 @@ Predicates.
  K1 every tracked entry at the top of the repository is a row of CATALOG.md.
  K2 every tracked folder one level down in a folder named in DEEP is a row of CATALOG.md.
  K3 every row of CATALOG.md is a tracked path.
- K4 no tracked text file outside ALLOWED holds a session's address or a session's scratch path.
+ K4 every tracked file is read, and none outside ALLOWED holds a session's address or a session's
+    scratch path. A file that cannot be read fails the check: it has not been scanned. A symbolic
+    link is scanned as the path it names and is not followed.
  K5 the comparison refuses, before the tree is read, a catalogue with a row missing, a row for a
-    path that is not there, and a file holding a session's address.
+    path that is not there, a file holding a session's address, and a file that cannot be read.
+    These controls are not asserts, so they also run under python -O.
 Exit 0 only if all hold. Standard library and git only.
 """
+import os
 import re
 import subprocess
 import sys
@@ -43,39 +47,60 @@ def problems(files, text, contents):
     found += ["K3: in the catalogue but not tracked: " + p for p in sorted(set(rows) - tracked)]
     found += ["K3: listed twice: " + p for p in sorted({p for p in rows if rows.count(p) > 1})]
     for name, data in contents:
-        if not name.startswith(ALLOWED) and name not in SELF and CONTEXT.search(data):
+        if data is None:
+            found.append("K4: could not be read, so not scanned: " + name)
+        elif not name.startswith(ALLOWED) and name not in SELF and CONTEXT.search(data):
             found.append("K4: session context in " + name)
     return found
+
+
+def require(condition, what):
+    """A control that must hold. Not `assert`: Python run with -O drops asserts, and these must run."""
+    if not condition:
+        sys.exit("K5: the check's own control failed: " + what)
 
 
 def selftest():
     files = ["README.md", "examples/a/x.py", "examples/a/y.py", "examples/top.txt", "audit/b/c/d.txt"]
     good = "| `README.md` | r | no |\n| `examples` | e | no |\n| `examples/a` | a | no |\n| `audit` | a | no |\n| `audit/b` | b | no |\n"
     address = b"see https://claude.ai/code/session_" + b"01AbCdEf"
-    assert problems(files, good, [("README.md", b"plain")]) == []
-    assert problems(files, good.replace("| `examples/a` | a | no |\n", ""), []) == ["K1/K2: not in the catalogue: examples/a"]
-    assert problems(files, good + "| `gone` | g | no |\n", []) == ["K3: in the catalogue but not tracked: gone"]
-    assert problems(files, good + "| `audit` | again | no |\n", []) == ["K3: listed twice: audit"]
-    assert problems(files, good, [("README.md", address)]) == ["K4: session context in README.md"]
-    assert problems(files, good, [(ALLOWED[0] + "r.txt", address)]) == []
+    require(problems(files, good, [("README.md", b"plain")]) == [], "a true catalogue passes")
+    require(problems(files, good.replace("| `examples/a` | a | no |\n", ""), []) == ["K1/K2: not in the catalogue: examples/a"], "a missing row")
+    require(problems(files, good + "| `gone` | g | no |\n", []) == ["K3: in the catalogue but not tracked: gone"], "a row for nothing")
+    require(problems(files, good + "| `audit` | again | no |\n", []) == ["K3: listed twice: audit"], "a row twice")
+    require(problems(files, good, [("README.md", address)]) == ["K4: session context in README.md"], "a session address")
+    require(problems(files, good, [(ALLOWED[0] + "r.txt", address)]) == [], "the allowed place")
+    require(problems(files, good, [("README.md", None)]) == ["K4: could not be read, so not scanned: README.md"], "an unreadable file (C3)")
+    # A link is not followed: what it names is scanned, and a session address in the name is found.
+    require(problems(files, good, [("README.md", address)]) != [], "a link whose target names a session")
+
+
+def read(name):
+    """The bytes to scan for one tracked path, or None if they cannot be had. A symbolic link is
+    scanned as the path it names, never followed; a submodule entry has no bytes here and is
+    scanned as its name."""
+    try:
+        if os.path.islink(name):
+            return os.readlink(name).encode()
+        if os.path.isdir(name):
+            return name.encode()
+        with open(name, "rb") as handle:
+            return handle.read()
+    except OSError:
+        return None
 
 
 def main():
     selftest()
     files = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\0")[:-1]
-    contents = []
-    for name in files:
-        try:
-            with open(name, "rb") as handle:
-                contents.append((name, handle.read()))
-        except OSError:
-            pass  # a tracked path that is not a readable file here (a link out of the tree)
-    found = problems(files, open("CATALOG.md", encoding="utf-8").read(), contents)
+    contents = [(name, read(name)) for name in files]
+    text = open("CATALOG.md", encoding="utf-8").read()
+    found = problems(files, text, contents)
     if found:
         sys.exit("\n".join(found))
     allowed = sum(1 for name, data in contents if name.startswith(ALLOWED) and CONTEXT.search(data))
-    print("catalogue: %d tracked files, %d rows, all agree; session context only in the %d files still allowed" % (
-        len(files), len(listed(open("CATALOG.md", encoding="utf-8").read())), allowed))
+    print("catalogue: %d tracked files, every one read, %d rows, all agree; session context only in the %d files still allowed" % (
+        len(files), len(listed(text)), allowed))
 
 
 if __name__ == "__main__":
