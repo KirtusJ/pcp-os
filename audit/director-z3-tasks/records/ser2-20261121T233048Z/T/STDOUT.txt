@@ -1,0 +1,42 @@
+  "kernel_measurement": "7030af10b1a7ab286110f57c360e6964d5d0acaaf0b11fb5b096bef2465a5155",
+  "iso_bytes": 2646016,
+  "iso_sha256": "c140c4ddf10cf28c4fc44e3b0826965c898414f41a29684fec7e543ec900fa3e"
+}
+small screens: Settings at nine sizes, the list of programs at five and the screens of text at six, three of them the full desktop, passed; controls refused
+75 port writes in the source, 75 reviewed, 0 problem(s)
+  "kernel_measurement": "7030af10b1a7ab286110f57c360e6964d5d0acaaf0b11fb5b096bef2465a5155",
+  "iso_bytes": 2646016,
+  "iso_sha256": "c140c4ddf10cf28c4fc44e3b0826965c898414f41a29684fec7e543ec900fa3e"
+}
+640x480  {'first_pin_row_4': 'Places 1 to 12 of 15', 'last_pin_row_4': 'Places 4 to 15 of 15', 'controls_refused': ['another program named', 'the keys overwritten', 'the size and digest replaced by the keys'], 'widget_lines': ['memory 106 MiB, 106 MiB free', 'Session files | cleared at power-off'], 'exit_code': 0}
+320x200  {'first_pin_row_4': 'Places 2 to 2 of 15', 'last_pin_row_4': 'Places 15 to 15 of 15', 'exit_code': 0}
+refused-640x480 {'said': ['Not started: the program could not be admitted as a task', 'a-name-of-forty-characters-in-all-xxxx.elf could not be star', 'ted: the program could not be admitted as a task.'], 'exit_code': 0}
+aliases-320x200 {'parts': [['aaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'aaAzzzzzzzzzzzzzzzzzzzzzzzzz', 'zzzz.elf'], ['aaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'aaBzzzzzzzzzzzzzzzzzzzzzzzzz', 'zzzz.elf']], 'differ_in_part': [2], 'hidden_widgets_row': '2 widget line(s) not shown', 'exit_code': 0}
+ten-parts-320x200 {'row_4_first': '16/16 | name 1/10 <- ->', 'row_4_last': '16/16 | name 10/10 <- ->', 'joined_equals_name': True, 'exit_code': 0}
+w440     {'row_4': ['Place 2/3 | name 1/2 <- ->', 'Place 2/3 | name 2/2 <- ->'], 'joined_equals_name': True, 'exit_code': 0}
+passed
+pc   ordinary            passed
+pc   instruction-counted passed
+q35  ordinary            passed
+q35  instruction-counted passed
+q35-counted/launcher.ppm: original accepted; rejected erased suffix, forged console-only policy, surplus grant, malformed size
+  "kernel_measurement": "7030af10b1a7ab286110f57c360e6964d5d0acaaf0b11fb5b096bef2465a5155",
+  "iso_bytes": 2701312,
+  "iso_sha256": "91d2cfb601edceff812f1d4a6471d0c9a4687ff022f49c50a64570c5791ce0a0"
+}
+pc   ordinary            passed
+pc   instruction-counted passed
+q35  ordinary            passed
+q35  instruction-counted passed
+save Disk save cold morning
+restore Queue restored cold morning
+exit 1
+    Finished `release` profile [optimized] target(s) in 3.21s
+    Finished `release` profile [optimized] target(s) in 3.09s
+    Finished `release` profile [optimized] target(s) in 3.06s
+    Finished `release` profile [optimized] target(s) in 3.03s
+    Finished `release` profile [optimized] target(s) in 3.12s
+    Finished `release` profile [optimized] target(s) in 0.04s
+replay probe: 72 self-tests with replay, 66 without, and the kernel says which were not run
+stopped screen: whole with and without a keyboard at three sizes; the tests not run are named on F5 and on it
+no serial port: the kernel verified itself and ended in 0.7 s without one (0.6 s with one)

@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "/home/user/pcp-os/examples/guarded-uefi/default_optical.py", line 95, in <module>
+    run(args.distribution.resolve(), args.kernel.resolve(), args.output.resolve())
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/user/pcp-os/examples/guarded-uefi/default_optical.py", line 24, in run
+    out.mkdir()
+    ~~~~~~~~~^^
+  File "/usr/local/lib/python3.13/pathlib/_local.py", line 722, in mkdir
+    os.mkdir(self, mode)
+    ~~~~~~~~^^^^^^^^^^^^
+FileExistsError: [Errno 17] File exists: '/tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/go17'
