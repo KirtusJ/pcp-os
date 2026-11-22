@@ -13,6 +13,18 @@ OPTICAL = runpy.run_path(str(ROOT / "examples/optical-disk-check/check.py"))
 READ = runpy.run_path(str(ROOT / "examples/tester-cd/check_compact_pins.py"))["read"]
 DEFAULT_FOLDER = "taylor"
 APPROVAL = "Creating a file needs your approval."
+CUT_NOTICE = "Loader line cut. Cannot run."
+
+
+def check_cut_access(words):
+    if CUT_NOTICE not in words:
+        raise AssertionError("Missing cut-line refusal: " + words)
+    for stale in ("Access:", "may use:", "starting it lets it use:", "Can list and read",
+                  "Creating a file needs", "You approve each new file", "Ethernet grant:", "Optional game cable:",
+                  "Enter open", "Enter start"):
+        if stale in words:
+            raise AssertionError("Unavailable action or grant on a cut line: " + words)
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -20,6 +32,7 @@ def main():
     parser.add_argument("guest", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--size", default="800x600")
+    parser.add_argument("--cut-line", action="store_true", help="show the pre-launch refusal on an incomplete command line")
     parser.add_argument("--without-grant", action="store_true")
     # The folder the launcher must name is the one in effect, however it came to be: the usual one, the
     # loader's build_folder= option, or a name typed on the kernel's Projects folder screen (F7) in
@@ -39,6 +52,8 @@ def main():
         command += " propose_image=" + hashlib.sha256(guest.read_bytes()).hexdigest()
     if args.boot_folder:
         command += " build_folder=" + args.boot_folder
+    if args.cut_line:
+        command += " padding=" + "x" * 1200
     effective = args.typed_folder or args.boot_folder or DEFAULT_FOLDER
     SCOPE = "Can list and read %s/" % effective
     STALE = None if effective == DEFAULT_FOLDER else "Can list and read %s/" % DEFAULT_FOLDER
@@ -80,15 +95,36 @@ def main():
                 capture("home-again", lambda text: "Programs" in text)
             key("ret")
             launcher = capture("programs", lambda text: guest.name in text and
-                               ("Access:" in text or "may use:" in text))
+                               ("Access:" in text or "may use:" in text or CUT_NOTICE in text))
+            if args.cut_line:
+                check_cut_access(launcher)
             creation = "You approve each new file." if width // 10 - 4 < len(APPROVAL) else APPROVAL
-            required = not args.without_grant
+            required = not args.without_grant and not args.cut_line
             if (SCOPE in launcher) != required or (creation in launcher) != required:
                 raise AssertionError("Programs has incorrect folder or approval disclosure: " + launcher)
             if STALE and STALE in launcher:
                 raise AssertionError("Programs names the usual folder while another is in effect: " + launcher)
-            if width < 960 and "Enter open" not in launcher:
+            if width < 960 and not args.cut_line and "Enter open" not in launcher:
                 raise AssertionError("Programs lost its launch instruction: " + launcher)
+            if args.cut_line:
+                key("ctrl", "p")
+                key("esc")
+                capture("pin-home", lambda s: "Programs" in s)
+                key("down" if width < 1280 else "right")
+                def pin_refusal(words):
+                    return "loader line cut" in words.lower()
+
+                pin = capture("pin-chosen", pin_refusal)
+                if "Enter starts" in pin or "Enter open" in pin:
+                    raise AssertionError("Pinned program still offers to start: " + pin)
+                key("ret")
+                capture("refused", lambda s: "was not started" in s or pin_refusal(s))
+                log = serial.read_text()
+                if guest.name + " was not started:" not in log or "starting " + guest.name + " (" in log:
+                    raise AssertionError("Expected a refusal before starting the guest")
+                key("up" if width < 1280 else "left")
+                key("ret")
+                capture("programs-again", lambda s: CUT_NOTICE in s)
             key("ctrl", "d")
             details = capture("details-0", lambda s: "kernel" in s and "PROGRAMS" in s)
             if width < 960:
@@ -101,6 +137,10 @@ def main():
                     details += " " + page
                 if "FILES FROM THE LOADER" not in details:
                     raise AssertionError("Details never reached the end of the program records")
+            if args.cut_line:
+                check_cut_access(details)
+                if "the loader's line was not taken whole" not in serial.read_text():
+                    raise AssertionError("Missing native cut-line observation")
             if (SCOPE in details) != required or (APPROVAL in details) != required:
                 raise AssertionError("Details has incorrect folder or approval disclosure: " + details)
             if STALE and STALE in details:
