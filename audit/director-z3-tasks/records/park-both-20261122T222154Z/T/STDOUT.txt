@@ -1,0 +1,25 @@
+0772ca68f9985328b0a615edc5d0df4543252dc522739b01c360a5c1960c0670  /tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/kp/kernel-plain.elf32
+0ce04608f6aed12d46ddc4677ad8152bc4e72ea2dfcc5232fd4732bab1962d2f  /tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/kp/kernel-processors,heat.elf32
+b7e76780851c097e39da126859a4208c1651d2e943e20bf1babf4c8737629b3f  /tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/kp/kernel-processors-extended-demo.elf32
+d7d2a41cbe05424dbaef7e982aa8423391a06f3e70583dc6fbb5a93582c70248  /tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/kp/kernel-processors-silent-demo.elf32
+7fdee18fa9c9979ef477492347703f82e3b57cac35a94bd53f1a315b98336685  /tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/kp/kernel-processors-unlocked-demo.elf32
+235832501951899e47b3e1e28a83ecf4332b3cf51a0ae7d5882536c0ca2dff42  /tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/kp/kernel-processors.elf32
+S1 pc, 256M, 1: other processors: 0 of 0 started and parked, the interrupt controller reached through memory; 1 thread(s) on 1 core(s) in all; none runs any work yet
+S1 pc, 256M, 2: other processors: 1 of 1 started and parked, the interrupt controller reached through memory; 2 thread(s) on 2 core(s) in all; none runs any work yet
+S1 pc, 256M, 4: other processors: 3 of 3 started and parked, the interrupt controller reached through memory; 4 thread(s) on 4 core(s) in all; none runs any work yet
+S1 pc, 256M, 8: other processors: 7 of 7 started and parked, the interrupt controller reached through memory; 8 thread(s) on 8 core(s) in all; none runs any work yet
+S1 q35, 6G, 4: other processors: 3 of 3 started and parked, the interrupt controller reached through memory; 4 thread(s) on 4 core(s) in all; none runs any work yet
+S8: other processors: 3 came up holding other memory ranges than the first; their registers are left as they came, and no processor is given work
+S2: other processors: 3 of 3 started and parked, the interrupt controller reached through memory; 4 thread(s) on 2 core(s) in all; none runs any work yet
+S3: processors: the firmware lists 2 usable (found where a BIOS puts it); 0 more than this kernel would start, 2 not to be used; this kernel runs on one | other processors: 1 of 1 started and parked, the interrupt controller reached through memory; 2 thread(s) on 2 core(s) in all; none runs any work yet
+S4: by the emulator's account (VM status: paused (shutdown)) all four are in ring 0, the other three halted with interrupts on in 64-bit mode with CR0 80010033, CR4 00340e20, CR3 0000000001242000, segment tables at 0000000001240000, 00000000012a0000, 00000000012b9000, 00000000012d2000
+S5: without the feature nothing is said of other processors, and their CR0 is 00000011, 00000011, 00000011: paging off, never on the kernel's map
+S6: NOT RUN: this emulator does not offer the extended mode (qemu-system-x86_64: warning: TCG doesn't support requested feature: CPUID.01H:ECX.x2apic [bit 21])
+S7: other processors: 3 of 4 started and parked, the interrupt controller reached through memory; 4 thread(s) on 4 core(s) in all; none runs any work yet; the one check fails and the map check passes; 1.6 s against 1.6 s
+S10: without waiting for the lock the count was 23126 of 80000, and that one check failed
+S9: in every boot with more than one processor the count was exact
+S11: every processor started in S1 to S3 was given the first's table, its ranges untouched, and said so
+other processors: started and parked as the predicates require, on every machine tried
+PASS D8 held-4: processors whose memory ranges are not the first's are said to be given no work, in the numbers this boot's serial line gives | 'other processors: 3 of 3 started; 3 hold other memory ranges than the first, so none is given work' / ['other processors: 3 of 3 started and parked, the interrupt controller reached through memory; 4 thread(s) on 4 core(s) in all; none runs any work yet', 'other processors: 3 came up holding other memory ranges than the first; their registers are left as they came, and no processor is given work']
+PASS D7 no-hpet: without the timer, Details says the fallback, as the serial line does | 'elapsed clock: delivered PIT interrupts (elapsed time can be lost under load)' / 'elapsed clock: delivered PIT interrupts (elapsed time can be lost under load)'
+ALL PASS: 0 failed
