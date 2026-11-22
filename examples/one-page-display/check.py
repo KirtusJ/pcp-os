@@ -11,10 +11,15 @@ Predicates, fixed before the first run.
  O1 the kernel reports "display: Loader, 1920x1080, 1 page(s)" and 8100 KiB mapped: the laptop's case, whole pages.
  O2 the kernel says "display: a program that asks draws to memory of its own, and the kernel shows each
     finished picture". With --before (the kernel as it was) that line is absent: the control.
- O3 the program presents its first frame. The screen after it, and again after two letters are typed, is a
-    whole 1920 by 1080 picture (the file's header and length say so) with more than one colour counted over
-    every pixel, and typing changes some rows and not all of them. With --before the two screens are byte for
+ O3 the program presents its first frame. Each of four screens (after the first frame; after a wait with no
+    key; after "h"; after "i") is a whole 1920 by 1080 picture (the file's header and length say so) with more
+    than one colour counted over every pixel. With --before the first and the two typed screens are byte for
     byte the same as this kernel's: what is shown is the same picture, and only where it was drawn has changed.
+ O4 the monitor accepts both keys; the screen left alone for as long as a key is given is byte for byte
+    unchanged; and each key then changes some rows and not all of them. So a change is a key's, one at a time.
+
+What O3 and O4 do not show: what the picture is of. Nothing here reads a letter or a title, so a screen that
+answered each key by changing one pixel would pass. What Tailorbird draws is read in its own checks.
 
 What this does not show: the repaint itself. An emulator writes a framebuffer at the speed of memory, so the
 wipe the owner saw cannot be seen here, with either kernel. That the wipe is gone needs the laptop.
@@ -84,15 +89,18 @@ def run(kernel, guest, efi, out):
             time.sleep(0.5)
         time.sleep(2)
         call("screendump", filename=str(out / "first.ppm"))
-        for letter in ("h", "i"):
-            call("send-key", keys=[{"type": "qcode", "data": letter}])
-            time.sleep(0.6)
-        time.sleep(1.5)
-        call("screendump", filename=str(out / "typed.ppm"))
+        time.sleep(2.1)
+        call("screendump", filename=str(out / "idle.ppm"))
+        sent = []
+        for letter, name in (("h", "typed-h.ppm"), ("i", "typed.ppm")):
+            sent.append("return" in call("send-key", keys=[{"type": "qcode", "data": letter}]))
+            time.sleep(2.1)
+            call("screendump", filename=str(out / name))
     finally:
         vm.kill()
         vm.wait()
-    return presented, serial.read_text(errors="replace").splitlines(), (out / "first.ppm").read_bytes(), (out / "typed.ppm").read_bytes()
+    shots = [(out / name).read_bytes() for name in ("first.ppm", "idle.ppm", "typed-h.ppm", "typed.ppm")]
+    return presented, serial.read_text(errors="replace").splitlines(), all(sent) and len(sent) == 2, shots
 
 
 def picture(data):
@@ -136,20 +144,24 @@ def main():
         failed += not passed
         print(("PASS " if passed else "FAIL ") + name + ((" | " + detail) if detail else ""))
 
-    presented, lines, first, typed = run(args.kernel.resolve(), args.guest.resolve(), efi, out / "kernel")
+    presented, lines, sent, (first, idle, after_h, typed) = run(args.kernel.resolve(), args.guest.resolve(), efi, out / "kernel")
     display = [line for line in lines if line.startswith("display:")]
     check("O1 the loader's display is one page of 1920 by 1080, mapped whole", any(line.startswith("display: Loader, 1920x1080, 1 page(s), 8100 KiB") for line in display), repr(display[:1]))
     check("O2 the kernel says a program that asks draws to memory of its own", OWN in display, repr(display[1:2]))
-    one, two = picture(first), picture(typed)
-    whole = one is not None and two is not None and one[:2] == (1920, 1080) and two[:2] == (1920, 1080)
-    kinds = (colours(one[2]), colours(two[2])) if whole else (0, 0)
-    changed = rows_changed(one[2], two[2], 1920) if whole else []
-    check("O3 the program presented, and both screens are whole 1920x1080 pictures that typing changed in part",
-          presented and whole and min(kinds) >= 2 and 0 < len(changed) < 1080, "colours %s, rows changed %d" % (kinds, len(changed)))
+    shots = [picture(shot) for shot in (first, idle, after_h, typed)]
+    whole = all(shot is not None and shot[:2] == (1920, 1080) for shot in shots)
+    kinds = [colours(shot[2]) for shot in shots] if whole else []
+    check("O3 the program presented, and all four screens are whole 1920x1080 pictures of more than one colour",
+          presented and whole and min(kinds) >= 2, "colours %s" % kinds)
+    by_h = rows_changed(shots[1][2], shots[2][2], 1920) if whole else []
+    by_i = rows_changed(shots[2][2], shots[3][2], 1920) if whole else []
+    check("O4 left alone the screen does not change; each accepted key changes it, in part",
+          whole and sent and first == idle and 0 < len(by_h) < 1080 and 0 < len(by_i) < 1080,
+          "keys accepted %s, idle the same %s, rows changed by h %d, by i %d" % (sent, first == idle, len(by_h), len(by_i)))
     if args.before:
-        was, old_lines, old_first, old_typed = run(args.before.resolve(), args.guest.resolve(), efi, out / "before")
+        was, old_lines, _, (old_first, _, old_h, old_typed) = run(args.before.resolve(), args.guest.resolve(), efi, out / "before")
         check("O2 control: the kernel as it was does not say so", OWN not in old_lines)
-        check("O3 control: the kernel as it was shows the same two pictures, byte for byte", was and old_first == first and old_typed == typed)
+        check("O3 control: the kernel as it was shows the same three pictures, byte for byte", was and old_first == first and old_h == after_h and old_typed == typed)
     print("%s: %d failed" % ("FAILED" if failed else "ALL PASS", failed))
     sys.exit(1 if failed else 0)
 
