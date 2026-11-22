@@ -1,0 +1,15 @@
+[package]
+name = "proposal-probe"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Asks the kernel to make one file and reports the receipt: a test program for the proposals feature"
+
+[dependencies]
+pcp-game-guest = { path = "../../../store/native/guest" }
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+codegen-units = 1
+overflow-checks = true

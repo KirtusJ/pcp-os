@@ -535,7 +535,7 @@ fn asynchronous(failed: &mut u32, replays: bool) {
                 let t0 = arch::ticks();
                 // The first scan code is due no earlier than `after` ticks from here.
                 dev::keyboard_script(t0 + after, keys, pacing);
-                let (r, _) = user::run_program(&Program { name: args[0], image: &image, args, grants, budget: u64::MAX }, world());
+                let (r, _) = user::run_program(&Program { name: args[0], image: &image, args, grants, budget: u64::MAX, #[cfg(feature = "proposals")] consent: user::nobody_to_ask }, world());
                 (r, arch::ticks() - t0)
             }
             None => (Err("no such test program"), 0),

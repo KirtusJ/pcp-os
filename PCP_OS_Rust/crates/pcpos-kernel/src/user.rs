@@ -65,6 +65,9 @@ pub struct Grants {
     pub files: bool,
     pub store: bool,
     pub sound: bool,
+    /// May propose effects to the kernel (and is then given no right to make files by itself).
+    #[cfg(feature = "proposals")]
+    pub propose: bool,
     #[cfg(feature = "game-link")]
     pub game_link: bool,
     #[cfg(feature = "guest-ethernet")]
@@ -88,6 +91,9 @@ pub enum Waiting {
     Until(u64),
     /// A key event.
     Key,
+    /// The kernel's answer to a proposal the program has made.
+    #[cfg(feature = "proposals")]
+    Consent,
 }
 
 pub struct Process {
@@ -185,6 +191,15 @@ pub struct Program<'a> {
     pub grants: Grants,
     /// Timer periods it may use; `u64::MAX` for a program the person stops when they choose.
     pub budget: u64,
+    /// Asked, with the program stopped, when it proposes an effect: whether the person allows it.
+    #[cfg(feature = "proposals")]
+    pub consent: fn(&sys::Proposal) -> bool,
+}
+
+/// The answer where nobody can be asked.
+#[cfg(feature = "proposals")]
+pub fn nobody_to_ask(_: &sys::Proposal) -> bool {
+    false
 }
 
 fn new_table(world: World) -> Table {
@@ -227,9 +242,17 @@ impl Table {
 
 /// Run whatever the table holds until no process is left, then settle and give back every process's memory.
 fn run_table(t: Table) -> Option<Table> {
+    entered(t).map(settled)
+}
+
+/// Run the programs of the table until none can go on: all ended, or one waits for the kernel's answer.
+fn entered(t: Table) -> Option<Table> {
     TABLE.with(|slot| *slot = Some(t));
     arch::enter_user();
-    let mut t = TABLE.with(|slot| slot.take())?;
+    TABLE.with(|slot| slot.take())
+}
+
+fn settled(mut t: Table) -> Table {
     // Completion is settled by the kernel's own reading of what each process wrote, after it exited.
     for p in t.procs.iter_mut() {
         if p.end == Some(End::Exited(0)) {
@@ -243,7 +266,7 @@ fn run_table(t: Table) -> Option<Table> {
             p.released = space.release();
         }
     }
-    Some(t)
+    t
 }
 
 /// Start each built-in program as a process, run them all until none is left, and return what the kernel observed.
@@ -285,13 +308,45 @@ pub fn run_program(program: &Program, world: World) -> (Result<Process, &'static
             return (Err(e), t.world);
         }
     };
-    let linux = sys::Linux::new(loaded.image_end);
+    #[allow(unused_mut)]
+    let mut linux = sys::Linux::new(loaded.image_end);
+    #[cfg(feature = "proposals")]
+    linux.allow_proposals(program.grants.propose);
     if t.admit(program.name, space, Frame::user(loaded.entry, loaded.stack), program.grants, program.budget, Some(linux)).is_none() {
         return (Err("the program could not be admitted as a task"), t.world);
     }
     dev::keys_forget();
     let _ = dev::stop_requested(); // a stop asked for before the program existed is not a stop of it
-    match run_table(t) {
+    #[cfg(feature = "proposals")]
+    loop {
+        t = match entered(t) {
+            Some(t) => t,
+            None => return (Err("the process table was lost"), empty_world()),
+        };
+        let Some(i) = t.procs.iter().position(|p| p.end.is_none() && p.waiting == Waiting::Consent) else { break };
+        // The program is stopped where it asked. The kernel's own code asks the person and acts.
+        let Table { procs, world, .. } = &mut t;
+        let p = &mut procs[i];
+        let answer = match p.linux.as_mut().and_then(|l| l.proposal_taken()) {
+            Some(proposal) => {
+                let allowed = (program.consent)(&proposal);
+                let answer = proposal.length as u64;
+                if let Some(l) = p.linux.as_mut() {
+                    l.proposal_settled(proposal, allowed, world);
+                }
+                answer
+            }
+            None => sys::E_INVALID,
+        };
+        p.frame.answer(answer);
+        p.waiting = Waiting::Nothing;
+        dev::keys_forget();
+    }
+    #[cfg(feature = "proposals")]
+    let t = Some(settled(t));
+    #[cfg(not(feature = "proposals"))]
+    let t = run_table(t);
+    match t {
         Some(mut t) => (t.procs.pop().ok_or("the process table was lost"), t.world),
         None => (Err("the process table was lost"), empty_world()),
     }
@@ -493,6 +548,16 @@ impl Table {
         }
         self.current = None;
         arch::kernel_space();
+        // A program that has made a proposal waits for the kernel itself: the kernel's own code goes on,
+        // asks the person, and comes back in. Nothing else is runnable, or it would have been resumed above.
+        #[cfg(feature = "proposals")]
+        if self.procs.iter().any(|p| p.end.is_none() && p.waiting == Waiting::Consent) {
+            match self.kernel.take() {
+                Some(k) => *frame = k,
+                None => crate::fault(255, 3, 0, 0),
+            }
+            return;
+        }
         if self.procs.iter().any(|p| p.end.is_none()) {
             *frame = Frame::idle();
             return;

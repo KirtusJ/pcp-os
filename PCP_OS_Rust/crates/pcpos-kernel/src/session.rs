@@ -1555,6 +1555,83 @@ fn register_view(rec: &Record) {
     text_screen(&title, ui::TEAL, Some(table), &lines, "Up/Down scroll    Esc back", false, true);
 }
 
+/// The kernel's own question, asked with the program stopped and the display and keyboard taken from it:
+/// may this one new file be made? The whole proposal is shown from the kernel's copy, in pages. The
+/// answer is no unless the person has seen the last page, then pressed F12 (a key no program is given
+/// here) and then Enter, each as a fresh press. Any other key, at any point after the last page, is no.
+/// Interrupts are off on entry and on return.
+#[cfg(feature = "proposals")]
+fn consent(proposal: &crate::sys::Proposal) -> bool {
+    use ui::{at, AMBER, GOOD, GROUND, SOFT, TEXT};
+    let shown_before = dev::display().map(|d| d.shown).unwrap_or(0);
+    dev::display_show(0);
+    arch::interrupts_on();
+    let (cols, rows) = ui::grid();
+    let across = (cols as usize).saturating_sub(4).max(1);
+    let text = String::from_utf8_lossy(&proposal.content).into_owned();
+    let mut body: Vec<String> = Vec::new();
+    for line in text.split('\n') {
+        if line.is_empty() {
+            body.push(String::new());
+        }
+        let characters: Vec<char> = line.chars().collect();
+        for piece in characters.chunks(across) {
+            body.push(piece.iter().collect());
+        }
+    }
+    let head = [
+        (String::from("PCP OS ASKS YOU"), AMBER),
+        (String::from("Taylor wants to make a new file. Nothing has been made yet."), TEXT),
+        (format!("Name: {}", proposal.name), TEXT),
+        (format!("Size: {} characters, {} lines. It will last until the computer is switched off.", proposal.content.len(), body.len()), SOFT),
+    ];
+    let head_rows: usize = head.iter().map(|(t, _)| wrapped_words(t, across).len()).sum();
+    let per = (rows as usize).saturating_sub(head_rows + 4).max(1);
+    let pages = body.len().div_ceil(per).max(1);
+    let (mut page, mut armed, mut seen_last) = (0usize, false, pages == 1);
+    dev::keys_forget();
+    let allowed = loop {
+        ui::clear(GROUND);
+        let mut row = 0u32;
+        for (words, colour) in head.iter() {
+            for part in wrapped_words(words, across) {
+                at(2, row, &part, *colour, GROUND);
+                row += 1;
+            }
+        }
+        row += 1;
+        for line in body.iter().skip(page * per).take(per) {
+            at(2, row, line, TEXT, GROUND);
+            row += 1;
+        }
+        let foot = if armed { String::from("Press Enter to allow it. Any other key refuses.") }
+            else if seen_last { format!("Page {} of {}. F12 then Enter allows. Esc refuses. Arrows turn pages.", page + 1, pages) }
+            else { format!("Page {} of {}. Down arrow shows more. Esc refuses.", page + 1, pages) };
+        for (n, part) in wrapped_words(&foot, across).iter().enumerate() {
+            at(2, rows.saturating_sub(2) + n as u32, part, if armed { GOOD } else { SOFT }, GROUND);
+        }
+        let (code, extended) = wait_key();
+        match (code, extended) {
+            (0x1C, false) if armed => break true,
+            _ if armed => break false,
+            (0x58, false) if seen_last => armed = true,
+            (0x50, true) if page + 1 < pages => {
+                page += 1;
+                seen_last |= page + 1 == pages;
+            }
+            (0x48, true) if page > 0 => page -= 1,
+            (0x50, true) | (0x48, true) => {}
+            _ => break false,
+        }
+    };
+    // Nothing of the question is left where the program can read it, and no key of the answer reaches it.
+    ui::clear(GROUND);
+    dev::keys_forget();
+    arch::interrupts_off();
+    dev::display_show(shown_before);
+    allowed
+}
+
 /// Run one program as a task in the register. Interrupts must be off; returns with them off.
 /// Returns the run summary, the resulting world and any reason the program could not start.
 fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, start: &Start, failed: &mut u32) -> (String, World, Option<&'static str>) {
@@ -1567,7 +1644,14 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
     args.extend(entry.arguments.split_whitespace());
     say!("starting {} ({} bytes, SHA-256 {}){}", entry.name, entry.image.len(), entry.digest, if entry.arguments.is_empty() { String::new() } else { format!(" with: {}", entry.arguments) });
     let none = option(start.boot.command_line.as_str(), "grant") == Some("none");
-    let grants = if none { Grants { console: true, ..Grants::default() } } else { Grants { console: true, display: start.display.is_some(), keys: start.keyboard, files: true, store: true, sound: start.sound,
+    // The one program named by its digest may propose effects to the kernel, and is then given no
+    // right to make files by itself: what it makes, the person has been asked about.
+    #[cfg(feature = "proposals")]
+    let proposes = !none && option(&start.boot.command_line, "propose_image") == Some(entry.digest.as_str());
+    #[cfg(not(feature = "proposals"))]
+    let proposes = false;
+    let grants = if none { Grants { console: true, ..Grants::default() } } else { Grants { console: true, display: start.display.is_some(), keys: start.keyboard, files: true, store: !proposes, sound: start.sound,
+        #[cfg(feature = "proposals")] propose: proposes,
         #[cfg(feature = "guest-ethernet")] ethernet: ethernet_grant(start.boot.exact_command_line(), &entry.digest),
         #[cfg(feature = "game-link")] game_link: option(&start.boot.command_line, "link_image") == Some(entry.digest.as_str()) && arch::game_link_init(), } };
     if none {
@@ -1575,7 +1659,7 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
     }
     let (free0, shows0, t0) = (user::frames_free(), dev::display_shows(), arch::ticks());
     let (_, sound0, dry0) = dev::sound_state();
-    let run = || user::run_program(&Program { name: &entry.name, image: entry.image, args: &args, grants, budget: u64::MAX }, world);
+    let run = || user::run_program(&Program { name: &entry.name, image: entry.image, args: &args, grants, budget: u64::MAX, #[cfg(feature = "proposals")] consent }, world);
     #[cfg(feature = "guest-ethernet")]
     let (result, world) = if grants.ethernet {
         let (outcome, status) = dev::virtio_tx::guest::during(run);

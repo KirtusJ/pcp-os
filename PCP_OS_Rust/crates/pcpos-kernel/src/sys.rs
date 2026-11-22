@@ -54,6 +54,9 @@ pub enum Outcome {
 /// What an open file is.
 #[derive(Clone, Debug)]
 pub enum Node {
+    /// Where a program that may propose effects hands the kernel a proposal and reads the receipt.
+    #[cfg(feature = "proposals")]
+    Proposal,
     #[cfg(feature = "guest-ethernet")]
     Ethernet,
     #[cfg(feature = "game-link")]
@@ -100,6 +103,125 @@ pub struct Linux {
     shadow_asked: bool,
     /// Where that memory is in the program's address space, once it has mapped the display.
     shadow: Option<usize>,
+    #[cfg(feature = "proposals")]
+    proposals: Proposals,
+}
+
+/// One effect a program asks the kernel to make: one new file of text, whole and exact.
+#[cfg(feature = "proposals")]
+#[derive(Clone, Debug)]
+pub struct Proposal {
+    pub attempt: u64,
+    pub number: u64,
+    pub name: String,
+    pub content: Vec<u8>,
+    /// The length of the record the program wrote, which its call is answered with.
+    pub length: usize,
+}
+
+#[cfg(feature = "proposals")]
+#[derive(Default)]
+struct Proposals {
+    allowed: bool,
+    pending: Option<Proposal>,
+    /// The receipt the next read gives.
+    receipt: Option<[u8; RECEIPT]>,
+    /// Every receipt of this run, so that the same proposal made again is answered and not done again.
+    kept: Vec<(u64, u64, [u8; RECEIPT])>,
+}
+
+/// A receipt: version, outcome (1 created, 2 denied, 3 refused), attempt, proposal, the content's
+/// SHA-256, and whether it outlasts power (0: it does not).
+#[cfg(feature = "proposals")]
+pub const RECEIPT: usize = 4 + 4 + 8 + 8 + 32 + 4;
+#[cfg(feature = "proposals")]
+pub const PROPOSAL_NAME: usize = 64;
+#[cfg(feature = "proposals")]
+pub const PROPOSAL_CONTENT: usize = 16 * 1024;
+#[cfg(feature = "proposals")]
+pub const E_INVALID: u64 = (-EINVAL) as u64;
+
+#[cfg(feature = "proposals")]
+fn receipt(outcome: u32, proposal: &Proposal) -> [u8; RECEIPT] {
+    let mut r = [0u8; RECEIPT];
+    r[0..4].copy_from_slice(&1u32.to_le_bytes());
+    r[4..8].copy_from_slice(&outcome.to_le_bytes());
+    r[8..16].copy_from_slice(&proposal.attempt.to_le_bytes());
+    r[16..24].copy_from_slice(&proposal.number.to_le_bytes());
+    r[24..56].copy_from_slice(&pcpos_core::sha256(&proposal.content));
+    r
+}
+
+#[cfg(feature = "proposals")]
+impl Linux {
+    pub fn allow_proposals(&mut self, allowed: bool) {
+        self.proposals.allowed = allowed;
+    }
+
+    /// The proposal the program is waiting on, taken once.
+    pub fn proposal_taken(&mut self) -> Option<Proposal> {
+        self.proposals.pending.take()
+    }
+
+    /// The person has answered. On yes the kernel makes the file, with exactly the bytes it showed,
+    /// unless the name has been taken meanwhile; then, as on no, nothing is made.
+    pub fn proposal_settled(&mut self, proposal: Proposal, allowed: bool, world: &mut World) {
+        let free = world.store.named(&proposal.name).is_none() && !world.files.iter().any(|f| f.0 == proposal.name) && world.store.len() < 256;
+        let outcome = if allowed && free {
+            world.store.insert(proposal.name.clone(), proposal.content.clone());
+            1
+        } else if allowed {
+            3
+        } else {
+            2
+        };
+        let r = receipt(outcome, &proposal);
+        self.proposals.receipt = Some(r);
+        self.proposals.kept.push((proposal.attempt, proposal.number, r));
+        crate::log(format_args!("proposal {} of attempt {}: {} ({} bytes, SHA-256 {}) {}", proposal.number, proposal.attempt, proposal.name, proposal.content.len(),
+                    pcpos_core::sha256_hex(&proposal.content), match outcome { 1 => "CREATED after the person allowed it", 2 => "DENIED by the person; nothing made", _ => "REFUSED; nothing made" }));
+        crate::log(format_args!("\n"));
+    }
+}
+
+/// A program writes one proposal. The record is read whole and checked; a proposal already answered in
+/// this run is answered again from its receipt; a new one stops the program until the kernel has asked.
+#[cfg(feature = "proposals")]
+fn propose(p: &mut Process, world: &World, addr: u64, len: u64) -> Outcome {
+    let len = len as usize;
+    if !(32..=32 + PROPOSAL_NAME + PROPOSAL_CONTENT).contains(&len) {
+        return Outcome::Return(err(EINVAL));
+    }
+    let Some(bytes) = p.space.as_ref().and_then(|s| s.read(addr as usize, len)) else { return Outcome::Return(err(EFAULT)) };
+    let word = |at: usize| u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]);
+    let long = |at: usize| u64::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3], bytes[at + 4], bytes[at + 5], bytes[at + 6], bytes[at + 7]]);
+    let (name_len, content_len) = (word(24) as usize, word(28) as usize);
+    if word(0) != 1 || word(4) != 1 || name_len == 0 || name_len > PROPOSAL_NAME || content_len > PROPOSAL_CONTENT || 32 + name_len + content_len != len {
+        return Outcome::Return(err(EINVAL));
+    }
+    let (name, content) = (&bytes[32..32 + name_len], &bytes[32 + name_len..]);
+    // A name of small letters, digits, dot, underscore and hyphen, not beginning with a dot; content of
+    // printable characters, spaces and new lines: what the kernel's screen can show exactly, and no more.
+    let named = name[0] != b'.' && name.iter().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-'));
+    let shown = content.iter().all(|b| (0x20..0x7f).contains(b) || *b == b'\n');
+    if !named || !shown {
+        return Outcome::Return(err(EINVAL));
+    }
+    let proposal = Proposal { attempt: long(8), number: long(16), name: String::from_utf8_lossy(name).into_owned(), content: content.to_vec(), length: len };
+    let Some(l) = p.linux.as_mut() else { return Outcome::Return(err(ENOSYS)) };
+    if let Some((_, _, kept)) = l.proposals.kept.iter().find(|(a, n, _)| *a == proposal.attempt && *n == proposal.number) {
+        l.proposals.receipt = Some(*kept);
+        return Outcome::Return(len as u64);
+    }
+    if world.store.named(&proposal.name).is_some() || world.files.iter().any(|f| f.0 == proposal.name) {
+        let r = receipt(3, &proposal);
+        l.proposals.receipt = Some(r);
+        l.proposals.kept.push((proposal.attempt, proposal.number, r));
+        crate::log(format_args!("proposal {} of attempt {}: {} REFUSED without asking: the name is taken\n", proposal.number, proposal.attempt, proposal.name));
+        return Outcome::Return(err(EEXIST));
+    }
+    l.proposals.pending = Some(proposal);
+    Outcome::Wait(Waiting::Consent, false)
 }
 
 /// Limits for the `brk` heap and for a single mapping.
@@ -112,7 +234,7 @@ const TICK_NS: u64 = 999_847;
 impl Linux {
     pub fn new(image_end: usize) -> Linux {
         let console = || Some(Open { node: Node::Console, position: 0, nonblocking: false, writable: true, append: false });
-        Linux { files: alloc::vec![console(), console(), console()], heap_start: image_end, heap_end: image_end, next_map: arch::USER_BASE + (64 << 30), reserved: Vec::new(), extra_pages: 0, shadow_asked: false, shadow: None }
+        Linux { files: alloc::vec![console(), console(), console()], heap_start: image_end, heap_end: image_end, next_map: arch::USER_BASE + (64 << 30), reserved: Vec::new(), extra_pages: 0, shadow_asked: false, shadow: None, #[cfg(feature = "proposals")] proposals: Proposals::default() }
     }
 }
 
@@ -171,6 +293,8 @@ fn stat_bytes(mode: u32, size: usize, links: u64) -> [u8; 144] {
 
 fn node_stat(world: &World, node: &Node) -> Option<[u8; 144]> {
     Some(match node {
+        #[cfg(feature = "proposals")]
+        Node::Proposal => stat_bytes(0o020660, 0, 1),
         #[cfg(feature = "guest-ethernet")]
         Node::Ethernet => stat_bytes(0o020660, 0, 1),
         Node::Console | Node::Display | Node::Keys | Node::Sound | Node::Music | Node::Null => stat_bytes(0o020666, 0, 1),
@@ -193,6 +317,8 @@ fn lookup(p: &Process, caps: &CapSpace, world: &World, path: &str) -> Result<Nod
         #[cfg(feature = "game-link")]
         "dev/game-link" => need(Object::GameLink, Rights::READ.with(Rights::APPEND), Node::GameLink),
         "dev/null" => Ok(Node::Null),
+        #[cfg(feature = "proposals")]
+        "dev/proposal" => if p.linux.as_ref().is_some_and(|l| l.proposals.allowed) { Ok(Node::Proposal) } else { Err(err(EACCES)) },
         "dev/console" | "dev/tty" => need(Object::Console, Rights::APPEND, Node::Console),
         "dev/fb0" => need(Object::Display, Rights::APPEND, Node::Display),
         "dev/kbd" => need(Object::Keys, Rights::READ, Node::Keys),
@@ -289,7 +415,15 @@ fn read(p: &mut Process, world: &World, fd: u64, addr: u64, len: u64) -> Outcome
     };
     let len = len.min(1 << 30) as usize;
     let stored;
+    #[cfg(feature = "proposals")]
+    if matches!(f.node, Node::Proposal) {
+        // The receipt of the last proposal, once.
+        let Some(r) = p.linux.as_mut().and_then(|l| l.proposals.receipt.take()) else { return Outcome::Return(0) };
+        return Outcome::Return(if len >= RECEIPT && put(p, addr, &r) { RECEIPT as u64 } else { err(EINVAL) });
+    }
     let bytes: &[u8] = match &f.node {
+        #[cfg(feature = "proposals")]
+        Node::Proposal => return Outcome::Return(0),
         #[cfg(feature = "guest-ethernet")]
         Node::Ethernet => {
             let mut frame = [0u8; dev::virtio_tx::guest::MTU];
@@ -359,6 +493,8 @@ fn write(p: &mut Process, caps: &CapSpace, fd: u64, addr: u64, len: u64) -> u64 
     };
     let len = len.min(1 << 24) as usize;
     match &f.node {
+        #[cfg(feature = "proposals")]
+        Node::Proposal => err(EINVAL), // a proposal is taken where the call is answered, before this
         Node::Null => len as u64,
         #[cfg(feature = "guest-ethernet")]
         Node::Ethernet => {
@@ -803,6 +939,8 @@ pub fn call(t: &mut Table, i: usize, frame: &Frame) -> Outcome {
     let ret = Outcome::Return;
     match number {
         0 => read(p, world, a[0], a[1], a[2]),
+        #[cfg(feature = "proposals")]
+        1 if file(p, a[0]).is_some_and(|f| matches!(f.node, Node::Proposal)) => propose(p, world, a[1], a[2]),
         1 => ret(write(p, caps, a[0], a[1], a[2])),
         2 => ret(open(p, caps, world, a[0], a[1])),
         257 => ret(open(p, caps, world, a[1], a[2])), // openat: every path is taken from the one directory
