@@ -57,3 +57,16 @@ fn the_first_of_a_repeated_option_is_the_one_read() {
     assert!(runs_only_beside(Some("worker_for=aaaa worker_image=bbbb worker_image=cccc"), WORKER, &[FRONT, WORKER, OTHER]));
     assert!(!runs_only_beside(Some("worker_for=aaaa worker_image=bbbb worker_image=cccc"), OTHER, &[FRONT, WORKER, OTHER]));
 }
+
+#[test]
+fn a_worker_for_a_file_that_is_not_a_program_stays_listed() {
+    // Director 2's case. The loader handed over a document whose digest the line names as the
+    // program the worker is for. It is among the loader's files and not among the programs, so
+    // nothing can start it, and the worker is the only thing a person could choose. The caller
+    // passes the digests of the programs only: the document's is not there.
+    let line = "worker_for=aaaa worker_image=bbbb";
+    let programs_only = [WORKER, OTHER];
+    assert!(!runs_only_beside(Some(line), WORKER, &programs_only));
+    // And where the same digest IS a program, the worker is hidden: the only difference is that.
+    assert!(runs_only_beside(Some(line), WORKER, &[FRONT, WORKER, OTHER]));
+}

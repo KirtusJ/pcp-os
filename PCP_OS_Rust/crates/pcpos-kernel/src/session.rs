@@ -195,10 +195,13 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     // and it is started as before when its program is (`run_entry` finds it among the files).
     #[cfg(feature = "companion")]
     {
-        let loaded: Vec<&str> = files.iter().map(|f| f.2.as_str()).collect();
+        // Only what a person can start counts as a program a worker is for: the digests of the list
+        // itself, taken before anything is left out of it, and not those of every file handed over.
+        let startable: Vec<String> = programs.iter().map(|p| p.digest.clone()).collect();
+        let startable: Vec<&str> = startable.iter().map(|d| d.as_str()).collect();
         let line = start.boot.exact_command_line();
         let before = programs.len();
-        programs.retain(|p| !paired::runs_only_beside(line, &p.digest, &loaded));
+        programs.retain(|p| !paired::runs_only_beside(line, &p.digest, &startable));
         if programs.len() != before {
             say!("programs: {} worker(s) started only beside another program are not listed; each is among the loader's files", before - programs.len());
         }
