@@ -13,12 +13,12 @@ Predicates.
     symbolic link is scanned as the path it names and is not followed.
  K6 every relative link in every tracked Markdown file names a tracked path, so that a move which
     breaks a link fails here. Two spellings are read: the inline "[words](target)" and the
-    reference definition "[label]: target" on its own line. A target in angle brackets is read
-    through the closing bracket; a bare one ends at white space. Percent-encoding is not decoded.
-    A definition is checked whether or
-    not anything uses it. Other ways a renderer can make a link (raw HTML, a bare address) are
-    not read. Links inside code fences are not looked at; links to another site and links within
-    a page are counted and reported, not checked.
+    reference definition "[label]: target" on one line. A target in angle brackets is read
+    through the closing bracket; a bare one ends at white space. A definition is checked whether
+    or not anything uses it. Not read: a definition whose target is on the following line,
+    percent-encoded paths (they are not decoded), raw HTML and bare addresses. Links inside code
+    fences, of backticks or tildes, are not looked at; links to another site and links within a
+    page are counted and reported, not checked.
  K7 every row says what its path is, and its last column is yes, no or not determined.
  K5 the comparison refuses, before the tree is read, a catalogue with a row missing, a row for a
     path that is not there, a file holding a session's address, a file that cannot be read, and a
@@ -53,7 +53,8 @@ def listed(text):
     return [m.group(1) for line in text.splitlines() for m in [re.match(r"\| `([^`]+)` \|", line)] if m]
 
 
-FENCE = re.compile(rb"```.*?```", re.S)
+# A code fence: three backticks anywhere, or three tildes opening a line, to the next such (B3).
+FENCE = re.compile(rb"```.*?```|^ {0,3}~~~.*?^ {0,3}~~~", re.S | re.M)
 # A target is either in angle brackets, read through the closing bracket and so able to hold
 # spaces, or bare, ending at the first white space (C3).
 LINK = re.compile(rb"\]\((?:<([^<>\n]*)>|([^)\s<][^)\s]*))(?:\s+\"[^\"]*\")?\)")
@@ -147,6 +148,10 @@ def selftest():
     reference = b"[Trial instructions][trial-guide]\n\n[trial-guide]: docs/obsolete-guide.md\n"
     require(problems(files, good, [("README.md", reference)]) == ["K6: README.md links to docs/obsolete-guide.md, which is not tracked"], "a reference definition to a path that is gone (B3)")
     require(problems(files, good, [("README.md", reference.replace(b"docs/obsolete-guide.md", b"<examples/a/x.py> \"title\""))]) == [], "a reference definition that holds, in angle brackets with a title")
+    tilde = b"~~~md\n[trial]: docs/obsolete.md\n[x](gone.md)\n~~~\n"
+    require(links("a.md", tilde, set()) == ([], 0, 0, 0), "nothing inside a tilde fence is a link (B3)")
+    require(links("a.md", tilde + b"[trial]: docs/obsolete.md\n", set())[0] == ["K6: a.md links to docs/obsolete.md, which is not tracked"], "and what follows the closed tilde fence is read")
+    require(links("a.md", b"[Read][t]\n\n[t]: <os-docs/B3 trial notes.md>\n", {"os-docs/B3 trial notes.md"}) == ([], 1, 0, 0), "B3's tracked name with spaces, in brackets, holds")
     spaced = b"[guide]: <docs/Trial guide.md>\n[inline](<docs/Trial guide.md>)\n"
     require(links("a.md", spaced, {"docs/Trial guide.md"}) == ([], 2, 0, 0), "a bracketed target with a space, tracked, holds in both spellings (C3)")
     require(links("a.md", spaced, {"docs/Trial"})[0] == ["K6: a.md links to docs/Trial guide.md, which is not tracked"] * 2, "a bracketed target with a space is not cut at the space (C3)")
