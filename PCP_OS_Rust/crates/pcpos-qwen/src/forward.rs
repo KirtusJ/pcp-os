@@ -1,12 +1,22 @@
-//! Scalar single-sequence forward execution. No tokenizer, sampler or native device I/O.
+//! Single-sequence forward execution. No tokenizer, sampler or native device I/O.
 //! All model bytes must be authenticated and immutable for the decoder's lifetime.
 use alloc::vec::Vec;
 use pcpos_gguf::Tensor;
+pub use pcpos_model_tensor::Projection;
 use pcpos_model_tensor::Row;
 use crate::{Config, Model};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error { Shape, Weights, Budget, Allocation, Cancelled, Token, ContextFull, NonFinite }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PrefillEvent {
+    /// Check whether the caller still wants this request to run.
+    Poll,
+    /// Number of fully processed tokens in this prompt, including the current one.
+    /// The decoder commits the entire prompt only when prefill returns successfully.
+    TokenProcessed { completed: usize, total: usize },
+}
 impl From<pcpos_model_tensor::Error> for Error {
     fn from(e: pcpos_model_tensor::Error) -> Self {
         match e {
@@ -21,7 +31,7 @@ impl From<pcpos_model_tensor::Error> for Error {
 /// A failed/cancelled step does not advance the sequence or return partial logits.
 /// Retrying overwrites the uncommitted KV position; all previous positions remain intact.
 pub struct Decoder<'m, 'i, 'b, 'w> {
-    model: &'m Model<'i, 'b>, weights: &'w [u8], context: usize, position: usize, unrolled: bool,
+    model: &'m Model<'i, 'b>, weights: &'w [u8], context: usize, position: usize, projection: Projection,
     keys: Vec<f32>, values: Vec<f32>,
     x: Vec<f32>, norm: Vec<f32>, temp: Vec<f32>, norm_weights: Vec<f32>,
     q: Vec<f32>, k: Vec<f32>, v: Vec<f32>, attention: Vec<f32>,
@@ -40,14 +50,20 @@ impl<'m, 'i, 'b, 'w> Decoder<'m, 'i, 'b, 'w> {
     }
 
     pub fn new(model: &'m Model<'i, 'b>, weights: &'w [u8], context: usize,
-        budget: u64, mut keep_going: impl FnMut() -> bool) -> Result<Self, Error> {
+        budget: u64, keep_going: impl FnMut() -> bool) -> Result<Self, Error> {
+        Self::with_projection(model, weights, context, budget, Projection::detect(), keep_going)
+    }
+
+    /// Construct a decoder with an explicit reference or locally detected projection.
+    pub fn with_projection(model: &'m Model<'i, 'b>, weights: &'w [u8], context: usize,
+        budget: u64, projection: Projection, mut keep_going: impl FnMut() -> bool) -> Result<Self, Error> {
         if weights.len() as u64 != model.file_bytes { return Err(Error::Weights); }
         if Self::buffer_bytes(model, context)? > budget { return Err(Error::Budget); }
         let c = model.config();
         let kv = c.layers.checked_mul(context).and_then(|v|v.checked_mul(c.kv_heads*c.head_width)).ok_or(Error::Budget)?;
         let mut new = |n| zeros(n, &mut keep_going);
         let mut result = Self {
-            model, weights, context, position:0, unrolled:false,
+            model, weights, context, position:0, projection,
             keys:new(kv)?, values:new(kv)?, x:new(c.embedding)?, norm:new(c.embedding)?, temp:new(c.embedding)?,
             norm_weights:new(c.embedding.max(c.head_width))?, q:new(c.heads*c.head_width)?,
             k:new(c.kv_heads*c.head_width)?, v:new(c.kv_heads*c.head_width)?, attention:new(c.heads*c.head_width)?,
@@ -62,14 +78,16 @@ impl<'m, 'i, 'b, 'w> Decoder<'m, 'i, 'b, 'w> {
 
     /// Opt in to four-lane f64 accumulation. This changes summation order and
     /// needs model-level numerical/quality qualification; `new` keeps the
-    /// sequential reference. Allocation and cancellation bounds are unchanged.
+    /// sequential reference's order. Allocation and cancellation bounds are unchanged.
     pub fn new_unrolled(model: &'m Model<'i, 'b>, weights: &'w [u8], context: usize,
         budget: u64, keep_going: impl FnMut() -> bool) -> Result<Self, Error> {
-        let mut decoder=Self::new(model,weights,context,budget,keep_going)?;
-        decoder.unrolled=true;Ok(decoder)
+        Self::with_projection(model, weights, context, budget, Projection::Unrolled, keep_going)
     }
 
     pub fn position(&self) -> usize { self.position }
+
+    /// Arithmetic selected for this decoder's matrix projections.
+    pub fn projection(&self) -> Projection { self.projection }
 
     /// Start a new logical sequence. Old positions become inaccessible immediately.
     /// This does not promise secure erasure of the worker's private memory.
@@ -88,14 +106,33 @@ impl<'m, 'i, 'b, 'w> Decoder<'m, 'i, 'b, 'w> {
     /// On any failure the logical position returns to its entry value; prior
     /// context remains untouched and the entire same prompt can be retried.
     pub fn prefill(&mut self, tokens: &[u32], mut keep_going: impl FnMut() -> bool) -> Result<&[f32], Error> {
+        self.prefill_with_progress(tokens, |event| match event {
+            PrefillEvent::Poll => keep_going(),
+            PrefillEvent::TokenProcessed { .. } => true,
+        })
+    }
+
+    /// As in `prefill`, with one progress notification after each completed token.
+    /// Returning false at either kind of event rolls back the whole call, including
+    /// when cancellation arrives after the last projection. Invalid prompts emit no events.
+    pub fn prefill_with_progress(
+        &mut self,
+        tokens: &[u32],
+        mut observe: impl FnMut(PrefillEvent) -> bool,
+    ) -> Result<&[f32], Error> {
         if tokens.is_empty() { return Err(Error::Token); }
         if tokens.len() > self.context - self.position { return Err(Error::ContextFull); }
         if tokens.iter().any(|&id| id as usize >= self.model.config().vocabulary) { return Err(Error::Token); }
         let start = self.position;
         for (i, &token) in tokens.iter().enumerate() {
-            if let Err(error) = self.advance(token, i + 1 == tokens.len(), &mut keep_going) {
+            let completed = i + 1;
+            if let Err(error) = self.advance(token, completed == tokens.len(), || observe(PrefillEvent::Poll)) {
                 self.position = start;
                 return Err(error);
+            }
+            if !observe(PrefillEvent::TokenProcessed { completed, total: tokens.len() }) {
+                self.position = start;
+                return Err(Error::Cancelled);
             }
         }
         Ok(&self.logits)
@@ -111,9 +148,9 @@ impl<'m, 'i, 'b, 'w> Decoder<'m, 'i, 'b, 'w> {
         for layer_index in 0..c.layers {
             let l = self.model.layer(layer_index).ok_or(Error::Shape)?;
             normalize(self.weights, l.attention_norm, &self.x, &mut self.norm, &mut self.norm_weights, c.rms_epsilon)?;
-            matmul(self.weights, l.query, &self.norm, &mut self.q, self.unrolled, &mut keep_going)?;
-            matmul(self.weights, l.key, &self.norm, &mut self.k, self.unrolled, &mut keep_going)?;
-            matmul(self.weights, l.value, &self.norm, &mut self.v, self.unrolled, &mut keep_going)?;
+            matmul(self.weights, l.query, &self.norm, &mut self.q, self.projection, &mut keep_going)?;
+            matmul(self.weights, l.key, &self.norm, &mut self.k, self.projection, &mut keep_going)?;
+            matmul(self.weights, l.value, &self.norm, &mut self.v, self.projection, &mut keep_going)?;
             for (bias, output) in [(l.query_bias, &mut self.q), (l.key_bias, &mut self.k), (l.value_bias, &mut self.v)] {
                 if let Some(bias) = bias { add_bias(self.weights,bias,output)?; }
             }
@@ -128,11 +165,11 @@ impl<'m, 'i, 'b, 'w> Decoder<'m, 'i, 'b, 'w> {
             self.values[at..at+kv_width].copy_from_slice(&self.v);
             attention(c,self.context,self.position,layer_index,&self.q,&self.keys,&self.values,
                 &mut self.scores,&mut self.attention,&mut keep_going)?;
-            matmul(self.weights,l.attention_output,&self.attention,&mut self.temp,self.unrolled,&mut keep_going)?;
+            matmul(self.weights,l.attention_output,&self.attention,&mut self.temp,self.projection,&mut keep_going)?;
             add(&mut self.x,&self.temp)?;
             normalize(self.weights,l.feed_forward_norm,&self.x,&mut self.norm,&mut self.norm_weights,c.rms_epsilon)?;
-            matmul(self.weights,l.gate,&self.norm,&mut self.gate,self.unrolled,&mut keep_going)?;
-            matmul(self.weights,l.up,&self.norm,&mut self.up,self.unrolled,&mut keep_going)?;
+            matmul(self.weights,l.gate,&self.norm,&mut self.gate,self.projection,&mut keep_going)?;
+            matmul(self.weights,l.up,&self.norm,&mut self.up,self.projection,&mut keep_going)?;
             for (i,(gate,up)) in self.gate.iter_mut().zip(&self.up).enumerate() {
                 if i%256==0 {check(&mut keep_going)?;}
                 // Stable sigmoid: avoid overflow in exp(-gate) for finite large negatives.
@@ -140,12 +177,12 @@ impl<'m, 'i, 'b, 'w> Decoder<'m, 'i, 'b, 'w> {
                     else {let e=libm::expf(*gate); e/(1.0+e)};
                 *gate=finite(*gate*sigmoid*up)?;
             }
-            matmul(self.weights,l.down,&self.gate,&mut self.temp,self.unrolled,&mut keep_going)?;
+            matmul(self.weights,l.down,&self.gate,&mut self.temp,self.projection,&mut keep_going)?;
             add(&mut self.x,&self.temp)?;
         }
         if project {
             normalize(self.weights,self.model.output_norm(),&self.x,&mut self.norm,&mut self.norm_weights,c.rms_epsilon)?;
-            matmul(self.weights,self.model.output(),&self.norm,&mut self.logits,self.unrolled,&mut keep_going)?;
+            matmul(self.weights,self.model.output(),&self.norm,&mut self.logits,self.projection,&mut keep_going)?;
         }
         check(&mut keep_going)?;
         self.position += 1;
@@ -173,10 +210,10 @@ fn row<'a>(weights:&'a[u8],t:&Tensor<'_>,r:usize)->Result<Row<'a>,Error>{
     let end=start.checked_add(bytes).ok_or(Error::Weights)?;
     Ok(Row::new(t.kind,columns,weights.get(start..end).ok_or(Error::Weights)?)?)
 }
-fn matmul(weights:&[u8],t:&Tensor<'_>,input:&[f32],output:&mut[f32],unrolled:bool,go:&mut impl FnMut()->bool)->Result<(),Error>{
+fn matmul(weights:&[u8],t:&Tensor<'_>,input:&[f32],output:&mut[f32],projection:Projection,go:&mut impl FnMut()->bool)->Result<(),Error>{
     if t.dimensions()!=[input.len() as u64,output.len() as u64]{return Err(Error::Shape);}
     for (i,out) in output.iter_mut().enumerate(){check(go)?;let row=row(weights,t,i)?;
-        *out=if unrolled{row.dot_unrolled(input,&mut *go)?}else{row.dot(input,&mut *go)?};}
+        *out=projection.dot(&row,input,&mut *go)?;}
     Ok(())
 }
 fn add(a:&mut[f32],b:&[f32])->Result<(),Error>{

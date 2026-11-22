@@ -5,6 +5,59 @@ use pcpos_qwen::{Model,forward::{Decoder,Error}};
 use sha2::{Digest,Sha256};
 
 #[test]
+fn progress_counts_only_completed_prompt_tokens_and_retry_preserves_context() {
+    use pcpos_qwen::forward::PrefillEvent::{Poll, TokenProcessed};
+
+    for arch in ["qwen2", "qwen3"] {
+        let bytes = Fixture::full(arch);
+        let index = Index::parse(&bytes, bytes.len() as u64).unwrap();
+        let model = Model::admit(&index).unwrap();
+        let make = || Decoder::new(&model, &bytes, 8, 1 << 20, || true).unwrap();
+        let mut reference = make();
+        reference.step(1, || true).unwrap();
+        let prompt = [7, 5, 2];
+        let mut reference_polls = 0;
+        let logits = reference.prefill(&prompt, || { reference_polls += 1; true }).unwrap().to_vec();
+        let continuation = reference.step(4, || true).unwrap().to_vec();
+
+        for stop_after in 1..=prompt.len() {
+            let mut decoder = make();
+            decoder.step(1, || true).unwrap();
+            let mut seen = Vec::new();
+            let result = decoder.prefill_with_progress(&prompt, |event| match event {
+                Poll => true,
+                TokenProcessed { completed, total } => {
+                    seen.push((completed, total));
+                    completed != stop_after
+                }
+            });
+            assert_eq!(result, Err(Error::Cancelled));
+            assert_eq!(decoder.position(), 1);
+            assert_eq!(seen, (1..=stop_after).map(|n| (n, 3)).collect::<Vec<_>>());
+
+            seen.clear();
+            let mut polls = 0;
+            let retry = decoder.prefill_with_progress(&prompt, |event| {
+                match event {
+                    Poll => polls += 1,
+                    TokenProcessed { completed, total } => seen.push((completed, total)),
+                }
+                true
+            }).unwrap();
+            assert_eq!(retry, logits);
+            assert_eq!(seen, [(1, 3), (2, 3), (3, 3)]);
+            assert_eq!(polls, reference_polls);
+            assert_eq!(decoder.step(4, || true).unwrap(), continuation);
+        }
+        let mut decoder = make();
+        for (input, error) in [(&[][..], Error::Token), (&[0, u32::MAX], Error::Token),
+                               (&[1; 9], Error::ContextFull)] {
+            assert_eq!(decoder.prefill_with_progress(input, |_| panic!("invalid prompt event")), Err(error));
+        }
+    }
+}
+
+#[test]
 fn full_forward_matches_pinned_llama_reference() {
     for (arch,golden) in [("qwen2",include_str!("data/qwen2-forward.txt")),("qwen3",include_str!("data/qwen3-forward.txt"))] {
         let b=Fixture::full(arch);let mut lines=golden.lines();
@@ -129,7 +182,18 @@ fn prefill_refuses_empty_bad_tokens_capacity_and_late_corruption_atomically() {
         drop(idx);b[at..at+4].copy_from_slice(&f32::INFINITY.to_le_bytes());
         let idx=Index::parse(&b,b.len() as u64).unwrap();let m=Model::admit(&idx).unwrap();
         let mut d=if unrolled{Decoder::new_unrolled(&m,&b,4,1<<20,||true)}else{Decoder::new(&m,&b,4,1<<20,||true)}.unwrap();
-        for _ in 0..8{assert_eq!(d.prefill(&[1,2,3],||true),Err(Error::NonFinite));assert_eq!(d.position(),0);}
+        for _ in 0..8 {
+            let mut processed = Vec::new();
+            let result = d.prefill_with_progress(&[1, 2, 3], |event| {
+                if let pcpos_qwen::forward::PrefillEvent::TokenProcessed { completed, total } = event {
+                    processed.push((completed, total));
+                }
+                true
+            });
+            assert_eq!(result, Err(Error::NonFinite));
+            assert_eq!(processed, [(1, 3), (2, 3)]);
+            assert_eq!(d.position(), 0);
+        }
     }
 }
 

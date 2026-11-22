@@ -1,4 +1,4 @@
-//! Bounded scalar weight-row decoding, not an inference engine or model admission.
+//! Bounded weight-row decoding and matrix projections for verified model bytes.
 //! Quantized layouts follow ggml a956a852c9c8bc1fb07206364838ddef299178c0;
 //! see THIRD_PARTY_NOTICES. Bytes must come from the caller's verified immutable model.
 #![no_std]
@@ -8,6 +8,43 @@ pub use pcpos_gguf::TensorType;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error { Unsupported, Shape, Length, NonFinite, Cancelled }
+
+#[derive(Clone, Copy, Debug)]
+pub enum Projection {
+    Scalar,
+    Unrolled,
+    #[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
+    Avx2(pcpos_model_simd::Avx2),
+}
+
+impl Projection {
+    /// Select once per decoder. Unavailable CPU or operating-system state uses scalar math.
+    pub fn detect() -> Self {
+        #[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
+        if let Some(cpu) = pcpos_model_simd::Avx2::detect() { return Self::Avx2(cpu); }
+        Self::Scalar
+    }
+
+    /// Backend used for the release model's Q4_K and Q6_K projections.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Scalar => "scalar",
+            Self::Unrolled => "unrolled",
+            #[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
+            Self::Avx2(_) => "AVX2",
+        }
+    }
+
+    pub fn dot(self, row: &Row<'_>, input: &[f32], keep_going: impl FnMut() -> bool) -> Result<f32, Error> {
+        match self {
+            Self::Unrolled => row.dot_unrolled(input, keep_going),
+            #[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
+            Self::Avx2(cpu) if matches!(row.kind, TensorType::Q4K | TensorType::Q6K) =>
+                row.dot_avx2(cpu, input, keep_going),
+            _ => row.dot(input, keep_going),
+        }
+    }
+}
 
 /// One exact encoded row. Construction validates geometry and every floating scale.
 /// This does not authenticate bytes or check a model's tensor names/architecture.
@@ -47,6 +84,31 @@ impl<'a> Row<'a> {
     }
 
     pub fn columns(&self) -> usize { self.columns }
+
+    #[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
+    fn dot_avx2(&self, cpu: pcpos_model_simd::Avx2, input: &[f32], mut keep_going: impl FnMut() -> bool) -> Result<f32, Error> {
+        if input.len() != self.columns { return Err(Error::Length); }
+        let mut sum = 0.0;
+        for (block, vector) in self.bytes.chunks_exact(self.block_bytes).zip(input.chunks_exact(256)) {
+            if !keep_going() { return Err(Error::Cancelled); }
+            let vector = vector.try_into().map_err(|_| Error::Length)?;
+            sum = match self.kind {
+                TensorType::Q4K => {
+                    let d = half(block);
+                    let minimum = half(&block[2..]);
+                    let scales = core::array::from_fn(|i| {
+                        let (s, m) = scale_min(&block[4..16], i);
+                        (d*s, minimum*m)
+                    });
+                    cpu.q4(block.try_into().map_err(|_| Error::Length)?, vector, &scales, sum)
+                }
+                TensorType::Q6K => cpu.q6(block.try_into().map_err(|_| Error::Length)?, vector, half(&block[208..]), sum),
+                _ => return Err(Error::Unsupported),
+            }.ok_or(Error::NonFinite)?;
+        }
+        let value = sum as f32;
+        if value.is_finite() { Ok(value) } else { Err(Error::NonFinite) }
+    }
 
     /// Decode into an exactly sized output. A wrong length leaves output untouched.
     pub fn decode(&self, output: &mut [f32]) -> Result<(), Error> {

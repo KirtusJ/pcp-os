@@ -135,6 +135,14 @@ context is untouched and retry overwrites only the uncommitted suffix. This is
 logical rollback, not memory erasure. Tests compare batched and individual steps,
 repeat resets/full contexts, and cut at early, late and seeded callback positions.
 
+`Decoder::prefill_with_progress` lets a caller report how many input tokens
+the model has processed for this reply. A `TokenProcessed` event counts one
+complete token. The total includes the chat template and any conversation
+history supplied by the caller. The final token includes the vocabulary
+projection. A caller can stop on a regular `Poll` or on a progress event,
+including the last one. Only a successful return makes the prompt available
+for the next decoder step.
+
 `Decoder::new` retains sequential f64 dot accumulation. `new_unrolled` explicitly
 selects four-lane f64 reduction; model-level numerical/quality checks are required
 because reassociation can differ materially on ill-conditioned inputs. Budgets,
