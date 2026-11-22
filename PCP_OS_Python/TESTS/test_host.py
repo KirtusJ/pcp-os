@@ -213,6 +213,71 @@ class ToolServer(Case):
                              "params": {"name": name, "arguments": args or {}, "_meta": {server.META_VERSION: "2026-07-28"}}})
         return r["result"]["content"][0]["text"], r["result"]["isError"]
 
+    def test_oversized_lines_never_dispatch_and_the_next_request_survives(self):
+        from unittest.mock import patch
+        meta = {"_meta": {server.META_VERSION: server.MODERN[0]}}
+        args = {"review": "R", "claim": "A", "text": "size boundary"}
+        call = json.dumps({"id": 7, "jsonrpc": "2.0", "method": "tools/call",
+                           "params": dict(meta, name="pcpos_objection", arguments=args)})
+        ping = json.dumps({"id": 9, "jsonrpc": "2.0", "method": "ping", "params": meta})
+        limit = len(call.encode()) + 10
+        frames = call.ljust(limit - 1) + "\n" + call.ljust(3 * limit) + "\n" + ping.ljust(limit)
+        # The in-process text adapter and the binary wire both count UTF-8 bytes.
+        wide = json.dumps({"id": 1, "jsonrpc": "2.0", "method": "ping", "params": meta, "x": "界" * 35}, ensure_ascii=False)
+        self.assertLess(len(wide), limit)
+        self.assertGreater(len(wide.encode("utf-8")), limit)
+        for stream in [io.BytesIO((wide + "\n" + frames).encode()), io.StringIO(wide + "\n" + frames)]:
+            before = self.ws.register_path.read_bytes()
+            out = io.StringIO()
+            with patch.object(server, "MAX_LINE_BYTES", limit, create=True):
+                server.main(self.ws, "Z", stream, out)
+            replies = [json.loads(line) for line in out.getvalue().splitlines()]
+            self.assertEqual([r["id"] for r in replies], [None, 7, None, 9])
+            self.assertEqual([r.get("error", {}).get("code") for r in replies], [-32600, None, -32600, None])
+            self.assertFalse(replies[1]["result"]["isError"])
+            delta = self.ws.register_path.read_bytes()[len(before):].splitlines()
+            self.assertEqual([json.loads(line)["kind"] for line in delta], ["OBJECTION_RAISED"])
+
+    def test_tool_arguments_are_validated_before_the_operation(self):
+        meta = {"_meta": {server.META_VERSION: server.MODERN[0]}}
+        def invoke(name, args):
+            return self.srv.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                                    "params": dict(meta, name=name, arguments=args)})
+        objection = {"review": "R", "text": "fixture"}
+        before = self.ws.register_path.read_bytes()
+        for name, args in [
+            ("pcpos_read", {"ref": []}), ("pcpos_read", {"ref": "K1", "start": -1}),
+            ("pcpos_objection", dict(objection, basis=False)), ("pcpos_objection", dict(objection, basis=[[]])),
+            ("pcpos_objection", dict(objection, dry_run=True)), ("pcpos_objection", {"text": "missing review"}),
+            ("pcpos_kernel", {"card": "false"}), ("pcpos_brief", {"max_bytes": True}),
+            ("pcpos_brief", {"max_bytes": 499}), ("pcpos_brief", {"max_bytes": 500.5})
+        ]:
+            with self.subTest(name=name, args=args):
+                reply = invoke(name, args)
+                self.assertEqual(reply["id"], 3)
+                self.assertTrue(reply["result"]["isError"])
+                self.assertEqual(self.ws.register_path.read_bytes(), before)
+        self.assertFalse(invoke("pcpos_brief", {"max_bytes": 500.0})["result"]["isError"])
+        self.assertFalse(invoke("pcpos_objection", dict(objection, basis=[]))["result"]["isError"])
+        delta = self.ws.register_path.read_bytes()[len(before):].splitlines()
+        self.assertEqual([json.loads(line)["kind"] for line in delta], ["OBJECTION_RAISED"])
+
+    def test_read_lengths_are_checked_before_float_rounding(self):
+        self.z.add_bytes(b"abcd", name="numeric-input")
+        before = self.ws.register_path.read_bytes()
+        def request(length):
+            return ('{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"pcpos_read",'
+                    '"arguments":{"ref":"numeric-input","length":' + length + '},"_meta":'
+                    + json.dumps({server.META_VERSION: server.MODERN[0]}) + '}}')
+        inp = io.StringIO("\n".join(request(n) for n in ["1.000000000000000001", "1e-9999", "2.0"]) + "\n")
+        out = io.StringIO()
+        server.main(self.ws, "Z", inp, out)
+        replies = [json.loads(line)["result"] for line in out.getvalue().splitlines()]
+        self.assertEqual([r["isError"] for r in replies], [True, True, False])
+        self.assertIn("bytes 0-2 of 4", replies[-1]["content"][0]["text"])
+        delta = self.ws.register_path.read_bytes()[len(before):].splitlines()
+        self.assertEqual([json.loads(line)["kind"] for line in delta], ["ARTIFACT_READ"])
+
     def test_both_protocol_eras_are_answered(self):
         meta = {"_meta": {server.META_VERSION: "2026-07-28"}}
         r = self.srv.handle({"jsonrpc": "2.0", "id": 1, "method": "server/discover", "params": meta})
@@ -233,6 +298,29 @@ class ToolServer(Case):
         r = self.srv.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "pcpos_halt", "_meta": {server.META_VERSION: "2026-07-28"}}})
         self.assertEqual(r["error"]["code"], -32602)
 
+    def test_invalid_requests_cannot_dispatch_a_tool(self):
+        params = {"name": "pcpos_objection", "arguments": {"review": "R", "claim": "A", "text": "witness"},
+                  "_meta": {server.META_VERSION: "2026-07-28"}}
+        msg = {"jsonrpc": "2.0", "id": "caller", "method": "tools/call", "params": params}
+        before = self.ws.register_path.read_bytes()
+        for mid in (None, True, [1], {}, 1.5):
+            with self.subTest(mid=mid):
+                r = self.srv.handle(dict(msg, id=mid))
+                self.assertEqual((r.get("id"), r.get("error", {}).get("code")), (None, -32600))
+        for args in (None, [], False, 1, "text"):
+            with self.subTest(arguments=args):
+                r = self.srv.handle(dict(msg, params=dict(params, arguments=args)))
+                self.assertEqual((r["id"], r.get("error", {}).get("code")), ("caller", -32602))
+        # Duplicate IDs are ambiguous on the wire, even if their last value is valid.
+        wire = json.dumps(msg).replace('"id": "caller"', '"id": 1, "id": "caller"')
+        out = io.StringIO()
+        server.main(self.ws, "Z", io.StringIO(wire + "\n"), out)
+        response = json.loads(out.getvalue())
+        self.assertEqual((response["id"], response["error"]["code"]), (None, -32600))
+        self.assertEqual(self.ws.register_path.read_bytes(), before)
+        self.assertFalse(self.srv.handle(msg)["result"]["isError"])
+        self.assertEqual(self.ws.events()[0][-1]["kind"], "OBJECTION_RAISED")
+
     def test_reading_and_recording_through_the_server(self):
         text, err = self.call("pcpos_clause", {"component": "core", "ref": "15.2"})
         self.assertFalse(err); self.assertIn("Halt", text)
@@ -247,6 +335,34 @@ class ToolServer(Case):
         self.ops.halt("P")
         text, err = self.call("pcpos_gate", {"review": "R", "gate": "G5", "note": "n"})
         self.assertTrue(err); self.assertIn("not in use", text)
+
+    def test_serve_decodes_each_line_as_utf8_before_it_can_write(self):
+        import subprocess
+        init = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25"}}
+        args = {"review": "R", "claim": "A", "text": "probe"}
+        msg = {"jsonrpc": "2.0", "id": "caller", "method": "tools/call",
+               "params": {"name": "pcpos_objection", "arguments": args}}
+        wire = json.dumps(msg).encode("ascii")
+        bad = [wire.replace(b"caller", b"\xff"), wire.replace(b"probe", b"\xe2\x82"),
+               b"\xc2\xa0" + wire, wire.replace(b"caller", br"\ud800"),
+               wire.replace(b"probe", br"\udc00"), wire.replace(b'"params":', br'"\ud800":0,"params":')]
+        good = wire.replace(b"caller", "€".encode()).replace(b"probe", br"\ud834\udd1e and \\ud800")
+        ping = {"jsonrpc": "2.0", "id": "after", "method": "ping"}
+        stream = b"\n".join([json.dumps(init).encode(), *bad, good, json.dumps(ping).encode()]) + b"\n"
+        for encoding in ["utf-8:surrogateescape", "utf-8:strict", "latin-1:strict", "utf-16"]:
+            with self.subTest(encoding=encoding):
+                before = self.ws.register_path.read_bytes()
+                run = subprocess.run([sys.executable, str(ROOT / "pcp_os.py"), "serve", "--ws", str(self.ws.root), "--as", "Z"],
+                                     input=stream, capture_output=True, timeout=15, env=dict(os.environ, PYTHONIOENCODING=encoding))
+                self.assertEqual(run.returncode, 0, run.stderr)
+                replies = [json.loads(line) for line in run.stdout.decode("utf-8").splitlines()]
+                self.assertEqual([r.get("error", {}).get("code") for r in replies],
+                                 [None, -32700, -32700, -32700, -32600, -32600, -32600, None, None])
+                self.assertEqual([r["id"] for r in replies], [1, None, None, None, None, "caller", "caller", "€", "after"])
+                after = self.ws.register_path.read_bytes()
+                self.assertTrue(after.startswith(before))
+                added = [json.loads(line) for line in after[len(before):].splitlines()]
+                self.assertEqual([(e["kind"], e["body"]["text"]) for e in added], [("OBJECTION_RAISED", r"𝄞 and \ud800")])
 
     def test_line_framing_and_malformed_input(self):
         inp = io.StringIO("\n".join(["not json", "[]", json.dumps({"jsonrpc": "2.0", "id": 9, "method": "ping", "params": {"_meta": {server.META_VERSION: "2026-07-28"}}}),

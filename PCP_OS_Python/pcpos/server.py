@@ -6,11 +6,13 @@ reaches the network, and cannot adopt, halt, commission or close: those remain a
 the work, made at the command line. What a tool returns is reference material, not an instruction.
 """
 from __future__ import annotations
-import json, sys
-from .base import PcposError
+from decimal import Decimal, InvalidOperation
+import json, re, sys
+from .base import PcposError, strict_loads
 from .ops import Ops
 from . import model, view, VERSION
 
+MAX_LINE_BYTES = 8 * 1024 * 1024  # Native stdio limit, including a line terminator when present.
 SERVER = {"name": "pcp-os", "version": VERSION}
 MODERN = ["2026-07-28"]
 LEGACY = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
@@ -50,6 +52,47 @@ TOOLS = [
      "inputSchema": _obj({"review": S, "claim": S, "disposition": S, "basis": LS, "contrary": LS, "conditions": LS, "estimate": S,
                           "left_open": S, "grounding": S, "noncritical": LS}, ("review", "claim", "disposition")), "annotations": WR},
 ]
+
+
+class _WireFloat(float):
+    """Retain the original number token for tool arguments that require exact integers."""
+    def __new__(cls, token):
+        value = super().__new__(cls, token)
+        value.token = token
+        return value
+
+
+def _validate_arguments(schema, args):
+    """Check the input types and constraints advertised by this server's tools."""
+    properties = schema["properties"]
+    for key in schema["required"]:
+        if key not in args:
+            raise ValueError("Missing required argument %r" % key)
+    for key, value in args.items():
+        if key not in properties:
+            raise ValueError("Unknown argument %r" % key)
+        spec = properties[key]
+        kind = spec["type"]
+        if kind == "string" and isinstance(value, str):
+            continue
+        if kind == "boolean" and type(value) is bool:
+            continue
+        if kind == "array" and isinstance(value, list) and all(isinstance(item, str) for item in value):
+            continue  # Every array argument advertised here contains strings.
+        if kind == "integer" and isinstance(value, _WireFloat) and value.is_integer():
+            # Binary floats can round a fraction to a whole number or change a large integer.
+            try:
+                exact = Decimal(value.token)
+            except InvalidOperation:
+                raise ValueError("Argument %r must be an integer" % key) from None
+            if exact == exact.to_integral_value():
+                value = args[key] = int(exact)
+        if kind == "integer" and (type(value) is int or (type(value) is float and value.is_integer())):
+            if "minimum" in spec and value < spec["minimum"]:
+                raise ValueError("Argument %r must be at least %d" % (key, spec["minimum"]))
+            continue
+        expected = "array of strings" if kind == "array" else kind
+        raise ValueError("Argument %r must have type %s" % (key, expected))
 
 
 def call_tool(ops, name, a):
@@ -95,14 +138,21 @@ class Server:
         return {"jsonrpc": "2.0", "id": mid, "error": err}
 
     def handle(self, msg):
-        if not isinstance(msg, dict) or msg.get("jsonrpc") != "2.0" or not isinstance(msg.get("method"), str):
-            if isinstance(msg, dict) and "method" not in msg:
-                return None
-            return self.error(msg.get("id") if isinstance(msg, dict) else None, -32600, "Invalid Request")
-        method, mid = msg["method"], msg.get("id")
-        params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
+        if not isinstance(msg, dict):
+            return self.error(None, -32600, "Invalid Request")
+        if "method" not in msg and ("result" in msg or "error" in msg):
+            return None
+        mid = msg.get("id")
+        if "id" in msg and type(mid) not in (str, int):
+            return self.error(None, -32600, "A request ID must be a string or integer")
+        if msg.get("jsonrpc") != "2.0" or not isinstance(msg.get("method"), str):
+            return self.error(mid, -32600, "Invalid Request")
         if "id" not in msg:
             return None
+        method = msg["method"]
+        params = msg.get("params", {})
+        if not isinstance(params, dict):
+            return self.error(mid, -32602, "params must be an object when present")
         meta = params.get("_meta") if isinstance(params.get("_meta"), dict) else {}
         modern = META_VERSION in meta
         if method == "initialize":
@@ -111,6 +161,8 @@ class Server:
             return {"jsonrpc": "2.0", "id": mid, "result": {"protocolVersion": self.legacy_version, "capabilities": {"tools": {"listChanged": False}},
                                                              "serverInfo": SERVER, "instructions": INSTRUCTIONS}}
         if modern:
+            if not isinstance(meta[META_VERSION], str):
+                return self.error(mid, -32602, "The protocol version must be a string")
             if meta[META_VERSION] not in MODERN:
                 return self.error(mid, -32022, "Unsupported protocol version", {"supported": MODERN + LEGACY, "requested": meta[META_VERSION]})
         elif method == "server/discover":
@@ -126,11 +178,14 @@ class Server:
         if method == "tools/list":
             return {"jsonrpc": "2.0", "id": mid, "result": dict(extra, tools=TOOLS)}
         if method == "tools/call":
-            name, args = params.get("name"), params.get("arguments")
-            args = args if isinstance(args, dict) else {}
-            if name not in [t["name"] for t in TOOLS]:
+            name, args = params.get("name"), params.get("arguments", {})
+            if not isinstance(args, dict):
+                return self.error(mid, -32602, "Tool arguments must be an object when present")
+            tool = next((t for t in TOOLS if t["name"] == name), None)
+            if tool is None:
                 return self.error(mid, -32602, "Unknown tool: %s" % name)
             try:
+                _validate_arguments(tool["inputSchema"], args)
                 text, is_error = call_tool(self.ops, name, args), False
             except PcposError as e:
                 text, is_error = e.render(), True
@@ -140,20 +195,85 @@ class Server:
         return self.error(mid, -32601, "Method not found: %s" % method)
 
 
+_SURROGATE = re.compile(r"[\ud800-\udfff]")
+
+
+def _scalar_strings(value):
+    """JSON can decode escaped lone surrogates, which the native record cannot represent."""
+    if isinstance(value, str):
+        return _SURROGATE.search(value) is None
+    if isinstance(value, list):
+        for item in value:
+            if not _scalar_strings(item):
+                return False
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            if _SURROGATE.search(key) or not _scalar_strings(item):
+                return False
+    return True
+
+
+def _request_lines(stream):
+    """Yield one message or None for one oversized frame. Never collect its discarded suffix."""
+    readline = getattr(stream, "readline", None)
+    if readline is None:
+        # Embedders can also supply an iterable of already-framed messages.
+        lines = iter(stream)
+    while True:
+        line = readline(MAX_LINE_BYTES + 1) if readline is not None else next(lines, None)
+        if line is None or (readline is not None and not line):
+            return
+        if len(line) > MAX_LINE_BYTES:
+            if readline is not None:
+                newline = b"\n" if isinstance(line, bytes) else "\n"
+                while line and not line.endswith(newline):
+                    line = readline(64 * 1024)
+            yield None
+        elif isinstance(line, str) and not line.isascii() and len(line.encode("utf-8", "surrogatepass")) > MAX_LINE_BYTES:
+            yield None
+        else:
+            yield line
+
+
+def _line_reply(server, line):
+    try:
+        if isinstance(line, bytes):
+            line = line.decode("utf-8")
+        if not line.strip(" \t\r\n"):
+            return None
+        msg = strict_loads(line, parse_float=_WireFloat)
+        scalar = _scalar_strings(msg)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return Server.error(None, -32700, "Parse error")
+    except (RecursionError, ValueError):
+        return Server.error(None, -32600, "Invalid Request")
+    if not scalar:
+        mid = msg.get("id") if isinstance(msg, dict) else None
+        if type(mid) not in (str, int) or not _scalar_strings(mid):
+            mid = None
+        return Server.error(mid, -32600, "Invalid Unicode in request")
+    if isinstance(msg, list):
+        return Server.error(None, -32600, "Batches are not supported")
+    return server.handle(msg)
+
+
 def main(ws, actor=None, stdin=None, stdout=None):
     server = Server(Ops(ws, actor))
-    stdin, out = stdin or sys.stdin, stdout or sys.stdout
-    for line in stdin:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            msg = json.loads(line)
-        except json.JSONDecodeError:
-            reply = Server.error(None, -32700, "Parse error")
+    if stdin is None:
+        stdin = getattr(sys.stdin, "buffer", sys.stdin)
+    wire_out = getattr(sys.stdout, "buffer", None) if stdout is None else None
+    out = stdout if stdout is not None else sys.stdout
+    for line in _request_lines(stdin):
+        if line is None:
+            reply = Server.error(None, -32600, "The message is longer than this server accepts")
         else:
-            reply = Server.error(None, -32600, "Batches are not supported") if isinstance(msg, list) else server.handle(msg)
+            reply = _line_reply(server, line)
         if reply is not None:
-            out.write(json.dumps(reply, ensure_ascii=True, separators=(",", ":")) + "\n")
-            out.flush()
+            message = json.dumps(reply, ensure_ascii=True, separators=(",", ":")) + "\n"
+            if wire_out is None:
+                out.write(message)
+                out.flush()
+            else:
+                wire_out.write(message.encode("utf-8"))
+                wire_out.flush()
     return 0

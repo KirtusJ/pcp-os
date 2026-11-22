@@ -49,21 +49,45 @@ mod instruments;
 
 mod lenient {
     use pcpos_core::value::Value;
+    use std::ops::Range;
     use std::collections::BTreeMap;
+
+    pub enum Recovery {
+        OneWay,
+        Reject(Option<Value>),
+    }
 
     struct P<'a> {
         b: &'a [u8],
         i: usize,
+        id: Option<Range<usize>>,
+        duplicate_envelope_field: bool,
     }
 
     pub fn parse(b: &[u8]) -> Option<Value> {
-        let mut p = P { b, i: 0 };
-        let v = p.value(0)?;
-        p.ws();
-        if p.i == b.len() { Some(v) } else { None }
+        P { b, i: 0, id: None, duplicate_envelope_field: false }.document()
+    }
+
+    // Use the original token for error correlation. The hook reader intentionally coerces some
+    // values and keeps the last duplicate, so its projected value cannot identify a caller.
+    pub fn recover(b: &[u8]) -> Result<Recovery, ()> {
+        let mut p = P { b, i: 0, id: None, duplicate_envelope_field: false };
+        let msg = p.document().ok_or(())?;
+        if !p.duplicate_envelope_field && super::one_way(&msg) {
+            return Ok(Recovery::OneWay);
+        }
+        let id = p.id.and_then(|span| Value::parse(&b[span]).ok())
+            .filter(|id| matches!(id, Value::Str(_) | Value::Int(_)));
+        Ok(Recovery::Reject(id))
     }
 
     impl P<'_> {
+        fn document(&mut self) -> Option<Value> {
+            let v = self.value(0)?;
+            self.ws();
+            (self.i == self.b.len()).then_some(v)
+        }
+
         fn ws(&mut self) {
             while matches!(self.b.get(self.i), Some(b' ' | b'\t' | b'\n' | b'\r')) {
                 self.i += 1;
@@ -131,7 +155,15 @@ mod lenient {
                             return None;
                         }
                         self.i += 1;
+                        let start = self.i;
                         let v = self.value(depth + 1)?;
+                        if depth == 0 && matches!(k.as_str(), "jsonrpc" | "id" | "method" | "result" | "error") {
+                            let duplicate = out.contains_key(&k);
+                            self.duplicate_envelope_field |= duplicate;
+                            if k == "id" {
+                                self.id = (!duplicate).then_some(start..self.i);
+                            }
+                        }
                         out.insert(k, v);
                     }
                 }
@@ -140,12 +172,22 @@ mod lenient {
                     if self.b[self.i] == b'-' {
                         self.i += 1;
                     }
-                    while matches!(self.b.get(self.i), Some(b'0'..=b'9')) {
+                    if self.b.get(self.i) == Some(&b'0') {
                         self.i += 1;
+                    } else {
+                        self.digits()?;
                     }
                     let whole = core::str::from_utf8(&self.b[start..self.i]).ok()?.parse::<i64>().unwrap_or(0);
-                    while matches!(self.b.get(self.i), Some(b'0'..=b'9' | b'.' | b'e' | b'E' | b'+' | b'-')) {
+                    if self.b.get(self.i) == Some(&b'.') {
                         self.i += 1;
+                        self.digits()?;
+                    }
+                    if matches!(self.b.get(self.i), Some(b'e' | b'E')) {
+                        self.i += 1;
+                        if matches!(self.b.get(self.i), Some(b'+' | b'-')) {
+                            self.i += 1;
+                        }
+                        self.digits()?;
                     }
                     Some(Value::Int(whole))
                 }
@@ -153,8 +195,18 @@ mod lenient {
             }
         }
 
+        fn digits(&mut self) -> Option<()> {
+            let start = self.i;
+            while matches!(self.b.get(self.i), Some(b'0'..=b'9')) {
+                self.i += 1;
+            }
+            (self.i != start).then_some(())
+        }
+
         fn hex4(&mut self) -> Option<u32> {
-            let t = core::str::from_utf8(self.b.get(self.i..self.i + 4)?).ok()?;
+            let digits = self.b.get(self.i..self.i + 4)?;
+            if !digits.iter().all(u8::is_ascii_hexdigit) { return None; }
+            let t = core::str::from_utf8(digits).ok()?;
             self.i += 4;
             u32::from_str_radix(t, 16).ok()
         }
@@ -196,6 +248,7 @@ mod lenient {
                         let mut buf = [0u8; 4];
                         out.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
                     }
+                    0..=31 => return None,
                     _ => out.push(c),
                 }
             }
@@ -1945,98 +1998,131 @@ fn call(se: &Session, name: &str, args: &Value) -> Result<String, String> {
     }
 }
 
+fn rpc_error(id: Value, code: i64, message: &str) -> Value {
+    obj(vec![("jsonrpc", s("2.0")), ("id", id), ("error", obj(vec![("code", Value::Int(code)), ("message", s(message))]))])
+}
+
+/// Only the envelope determines whether this peer message is one-way. In particular,
+/// parameters and result values may contain JSON outside the register's value profile.
+fn one_way(msg: &Value) -> bool {
+    if msg.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
+        return false;
+    }
+    match msg.get("method") {
+        Some(Value::Str(_)) => msg.get("id").is_none(),
+        None => msg.get("result").is_some() || msg.get("error").is_some(),
+        _ => false,
+    }
+}
+
+fn mcp_reply(se: &Session, line: &[u8]) -> Option<Value> {
+    let msg = match Value::parse(line) {
+        Ok(msg @ Value::Map(_)) => msg,
+        Ok(_) => return Some(rpc_error(Value::Null, -32600, "one message is one JSON object; batches are not accepted")),
+        Err(reason) => {
+            let (code, id) = match lenient::recover(line) {
+                Ok(lenient::Recovery::OneWay) => return None,
+                Ok(lenient::Recovery::Reject(id)) => (-32600, id.unwrap_or(Value::Null)),
+                Err(()) => (-32700, Value::Null),
+            };
+            let depth = matches!(reason, ParseError::TooDeep(_));
+            let message = if depth {
+                format!("the message exceeds the maximum nesting depth of {MAX_DEPTH}")
+            } else if code == -32600 {
+                "this server accepts signed 64-bit integers and distinct keys only".to_string()
+            } else {
+                "the message is not JSON this server accepts".to_string()
+            };
+            return Some(rpc_error(id, code, &message));
+        }
+    };
+    if one_way(&msg) {
+        return None;
+    }
+    let id = match msg.get("id") {
+        Some(id @ (Value::Str(_) | Value::Int(_))) => Some(id.clone()),
+        None => None,
+        _ => return Some(rpc_error(Value::Null, -32600, "the request ID must be a string or integer")),
+    };
+    if msg.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
+        return Some(rpc_error(id.unwrap_or(Value::Null), -32600, "a request needs jsonrpc 2.0"));
+    }
+    let Some(method) = msg.get("method").and_then(Value::as_str) else {
+        return Some(rpc_error(id.unwrap_or(Value::Null), -32600, "a request needs a string method"));
+    };
+    let id = id?; // A notification never invokes a tool or receives a reply.
+    let empty = Value::Map(BTreeMap::new());
+    let params = msg.get("params").unwrap_or(&empty);
+    if !matches!(params, Value::Map(_)) {
+        return Some(rpc_error(id, -32602, "params must be an object when present"));
+    }
+    let result = match method {
+        "initialize" => {
+            let asked = params.get("protocolVersion").and_then(Value::as_str).unwrap_or("");
+            let version = if PROTOCOL_VERSIONS.contains(&asked) { asked } else { PROTOCOL_VERSIONS[PROTOCOL_VERSIONS.len() - 1] };
+            Ok(obj(vec![("protocolVersion", s(version)), ("capabilities", obj(vec![("tools", empty.clone())])),
+                             ("serverInfo", obj(vec![("name", s("pcpos")), ("title", s("PCP OS")), ("version", s(env!("CARGO_PKG_VERSION")))]))]))
+        }
+        "ping" => Ok(empty.clone()),
+        "tools/list" => Ok(obj(vec![("tools", tools())])),
+        "tools/call" => {
+            let name = params.get("name").and_then(Value::as_str).unwrap_or("");
+            let args = params.get("arguments").unwrap_or(&empty);
+            if !matches!(args, Value::Map(_)) {
+                return Some(rpc_error(id, -32602, "tool arguments must be an object when present"));
+            }
+            match call(se, name, args) {
+                Err(e) if e.starts_with(NO_TOOL) => Err((-32602, e)),
+                r => {
+                    let (text, is_error) = match r {
+                        Ok(t) => (t, false),
+                        Err(e) => (e, true),
+                    };
+                    Ok(obj(vec![("content", Value::List(vec![obj(vec![("type", s("text")), ("text", s(&text))])])), ("isError", Value::Bool(is_error))]))
+                }
+            }
+        }
+        _ => Err((-32601, format!("method {} is not provided", clip(method, 80)))),
+    };
+    Some(match result {
+        Ok(r) => obj(vec![("jsonrpc", s("2.0")), ("id", id), ("result", r)]),
+        Err((code, message)) => rpc_error(id, code, &message),
+    })
+}
+
 fn serve(se: &Session) {
     const MAX_LINE: usize = 8 * 1024 * 1024;
     let stdin = std::io::stdin();
     let mut input = stdin.lock();
     let mut out = std::io::stdout();
-    let empty = Value::Map(BTreeMap::new());
-    let error = |id: Value, code: i64, m: &str| obj(vec![("jsonrpc", s("2.0")), ("id", id), ("error", obj(vec![("code", Value::Int(code)), ("message", s(m))]))]);
     let mut line: Vec<u8> = Vec::new();
     loop {
         line.clear();
         // Bytes, not text: a line that is not UTF-8 is answered as an error and the server goes on.
-        match (&mut input).take(MAX_LINE as u64 + 1).read_until(b'\n', &mut line) {
+        match (&mut input).take(MAX_LINE as u64).read_until(b'\n', &mut line) {
             Ok(0) | Err(_) => break,
             Ok(_) => {}
         }
-        if line.len() > MAX_LINE {
-            // Too long to be a message of this server: drop the rest of the line and say so.
-            let mut rest = Vec::new();
-            while !line.ends_with(b"\n") {
-                rest.clear();
-                match (&mut input).take(MAX_LINE as u64).read_until(b'\n', &mut rest) {
-                    Ok(0) | Err(_) => break,
-                    Ok(_) => line = std::mem::take(&mut rest),
+        // At the exact limit an unterminated final message still fits. Any further byte makes it
+        // oversized. Drain through the delimiter without retaining another copy of the discarded data.
+        if line.len() == MAX_LINE && !line.ends_with(b"\n") {
+            match input.skip_until(b'\n') {
+                Ok(0) => {} // EOF at exactly MAX_LINE bytes
+                Ok(_) => {
+                    let mut bytes = rpc_error(Value::Null, -32600, "the message is longer than this server accepts").canonical_json();
+                    bytes.push(b'\n');
+                    if out.write_all(&bytes).and_then(|_| out.flush()).is_err() {
+                        break;
+                    }
+                    continue;
                 }
+                Err(_) => break,
             }
-            let mut bytes = error(Value::Null, -32600, "the message is longer than this server accepts").canonical_json();
-            bytes.push(b'\n');
-            if out.write_all(&bytes).and_then(|_| out.flush()).is_err() {
-                break;
-            }
-            continue;
         }
         if line.iter().all(|b| b.is_ascii_whitespace()) {
             continue;
         }
-        let reply = match Value::parse(&line) {
-            // Not in the record's strict form: say so to whoever asked, if the message can be read at all.
-            Err(reason) => {
-                let id = lenient::parse(&line).and_then(|m| m.get("id").cloned());
-                Some(match (reason, id) {
-                    (ParseError::TooDeep(_), id) => {
-                        let code = if id.is_some() { -32600 } else { -32700 };
-                        error(id.unwrap_or(Value::Null), code, &format!("the message exceeds the maximum nesting depth of {MAX_DEPTH}"))
-                    }
-                    (_, Some(id)) => error(id, -32600, "the message holds a fraction, an exponent or a repeated key; this server accepts whole numbers and distinct keys only"),
-                    (_, None) => error(Value::Null, -32700, "the message is not JSON this server accepts"),
-                })
-            }
-            Ok(Value::Map(_)) => None,
-            Ok(_) => Some(error(Value::Null, -32600, "one message is one JSON object; batches are not accepted")),
-        };
-        let reply = match (reply, Value::parse(&line)) {
-            (Some(r), _) => Some(r),
-            (None, Ok(msg)) => {
-                let id = msg.get("id").cloned();
-                let method = msg.get("method").and_then(Value::as_str).unwrap_or("");
-                let params = msg.get("params").unwrap_or(&empty);
-                let result: Option<Result<Value, (i64, String)>> = match method {
-                    _ if id.is_none() => None, // a notification: nothing is done on it and nothing is answered
-                    "initialize" => {
-                        let asked = params.get("protocolVersion").and_then(Value::as_str).unwrap_or("");
-                        let version = if PROTOCOL_VERSIONS.contains(&asked) { asked } else { PROTOCOL_VERSIONS[PROTOCOL_VERSIONS.len() - 1] };
-                        Some(Ok(obj(vec![("protocolVersion", s(version)), ("capabilities", obj(vec![("tools", empty.clone())])),
-                                         ("serverInfo", obj(vec![("name", s("pcpos")), ("title", s("PCP OS")), ("version", s(env!("CARGO_PKG_VERSION")))]))])))
-                    }
-                    "ping" => Some(Ok(empty.clone())),
-                    "tools/list" => Some(Ok(obj(vec![("tools", tools())]))),
-                    "tools/call" => {
-                        let name = params.get("name").and_then(Value::as_str).unwrap_or("");
-                        let args = params.get("arguments").unwrap_or(&empty);
-                        match call(se, name, args) {
-                            Err(e) if e.starts_with(NO_TOOL) => Some(Err((-32602, e))),
-                            r => {
-                                let (text, is_error) = match r {
-                                    Ok(t) => (t, false),
-                                    Err(e) => (e, true),
-                                };
-                                Some(Ok(obj(vec![("content", Value::List(vec![obj(vec![("type", s("text")), ("text", s(&text))])])), ("isError", Value::Bool(is_error))])))
-                            }
-                        }
-                    }
-                    _ => Some(Err((-32601, format!("method {} is not provided", clip(method, 80))))),
-                };
-                match (id, result) {
-                    (Some(id), Some(Ok(r))) => Some(obj(vec![("jsonrpc", s("2.0")), ("id", id), ("result", r)])),
-                    (Some(id), Some(Err((code, m)))) => Some(error(id, code, &m)),
-                    _ => None,
-                }
-            }
-            (None, Err(_)) => None,
-        };
-        if let Some(r) = reply {
+        if let Some(r) = mcp_reply(se, &line) {
             let mut bytes = r.canonical_json();
             bytes.push(b'\n');
             if out.write_all(&bytes).and_then(|_| out.flush()).is_err() {
