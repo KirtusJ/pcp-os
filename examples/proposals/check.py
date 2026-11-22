@@ -49,6 +49,10 @@ Predicates, fixed before the first run.
     in a space: more than sixty-four pages. The kernel takes the proposal (the write is answered with
     its length), does not ask, says on its screen that the file is too long to show, and the receipt's
     outcome is 6; no file long.txt is made. (Director 2: the first count was of the file's own lines.)
+ P1 (in the allowed case) the program is given only what it is for. With a sound device the kernel
+    drives attached, opening it is answered -13; opening a file among the loader's (its own program,
+    which is certainly there) is answered -13. The kernel's start-up must say it found the sound
+    device, or the first of these would prove nothing.
  N1 without `propose_image` on the command line the program is refused the proposal device (-13) and
     nobody is asked: no screen, no CREATED, no DENIED.
  Every case: the emulator ends with status 33 (the kernel's own checks passed and it powered off).
@@ -263,6 +267,8 @@ class Guest:
         self.process = subprocess.Popen(
             [qemu, "-machine", "pc", "-accel", "tcg", "-cpu", "max", "-m", "128M", "-kernel", str(kernel),
              "-initrd", "%s proposal-probe" % probe + (",%s" % also if also else ""), "-append", append, "-vga", "std", "-display", "none", "-nic", "none",
+             # A sound device the kernel drives is there, so that being refused it means something (P1).
+             "-audiodev", "none,id=snd", "-device", "AC97,audiodev=snd",
              "-serial", "file:%s" % self.serial, "-no-reboot", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
              "-qmp", "unix:%s,server=on,wait=off" % sock], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         for _ in range(100):
@@ -560,9 +566,14 @@ def main():
                   "probe: the note after all that is the same 1", "probe: closing it answered 0",
                   "probe: list hex " + snapshot.hex() + "\n", "probe: removing the note answered -13",
                   "probe: renaming the note answered -13", "probe: a name outside the folder answered -2",
-                  "probe: a name beside the folder answered -2"):
+                  "probe: a name beside the folder answered -2",
+                  # P1
+                  "probe: opening the sound device answered -13",
+                  "probe: opening its own program among the loader's files answered -13"):
         if words not in log:
             found.append("B1: the log does not hold %r" % words)
+    if "sound: an AC'97 device" not in log:
+        found.append("P1: the kernel did not find the sound device, so being refused it shows nothing")
     if "elsewhere" in " ".join(line for line in log.splitlines() if line.startswith("proposal ")):
         found.append("B1: a file outside the build folder was put to the person")
     problems += ["allowed: " + p for p in found]
