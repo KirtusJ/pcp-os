@@ -187,10 +187,55 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
         }
     }
     let (y, mo, d, h, mi, s) = arch::clock();
-    let mut world = World { files: files.iter().map(|f| (f.0.clone(), f.1)).collect(), store: Default::default(),
-        #[cfg(feature = "vm-store")] volume: None,
+    // Where a program that may propose files builds, for this session. Read from the loader's line only
+    // if that line was taken whole (a cut line could turn one name into another): no build_folder= word
+    // means the usual folder; exactly one that is a name a build folder may have means that folder;
+    // anything else means there is none, and a program is then not started with the right to propose.
+    #[cfg(feature = "proposals")]
+    let build_folder = match start.boot.exact_command_line() {
+        None => {
+            crate::log(format_args!("the loader's line was not taken whole, so no build folder is set\n"));
+            None
+        }
+        Some(line) => {
+            let mut given = line.split_whitespace().filter_map(|w| w.strip_prefix("build_folder="));
+            match (given.next(), given.next()) {
+                (None, _) => Some(String::from(crate::sys::BUILD_FOLDER)),
+                (Some(name), None) if crate::sys::build_folder(name) => Some(String::from(name)),
+                (Some(name), second) => {
+                    crate::log(format_args!("build_folder={} is {}; no build folder is set\n", name,
+                        if second.is_some() { "given more than once" } else { "not a name a build folder may have" }));
+                    None
+                }
+            }
+        }
+    };
+    let mut world = World { files: files.iter().map(|f| (f.0.clone(), f.1)).collect(), store: Default::default(), #[cfg(feature = "proposals")] build_folder,
+        #[cfg(feature = "vm-store")] volume: None, #[cfg(feature = "model-memory")] model: None,
                             epoch_at_start: epoch(y, mo, d, h, mi, s).saturating_sub(arch::ticks() / arch::TICKS_PER_SECOND), unanswered: Vec::new() };
     let line = start.boot.command_line.as_str();
+    // A kernel that has the emulator fixture in it says so at every start, used or not, so that one
+    // can never be taken for a release kernel by its log.
+    #[cfg(feature = "model-memory-fixture")]
+    say!("THIS KERNEL IS BUILT WITH model-memory-fixture, AN EMULATOR TEST FIXTURE. IT IS NOT A RELEASE KERNEL.");
+    #[cfg(feature = "model-memory-fixture")]
+    if arch::model_fixture_used(&start.boot) {
+        say!("FIXTURE, NOT FOR ANY RELEASE: the loader's line (fixture_model_ram=), not the loader's map, marks memory as holding a model in this boot");
+    }
+    #[cfg(feature = "model-memory")]
+    {
+        world.model = match model_given(start, &world.files) {
+            Ok(Some(given)) => {
+                say!("a model of {} bytes is held in memory, out of the pool, for a companion to read; its manifest ({} bytes) is the one the loader's line pins", given.bytes, given.manifest.len());
+                Some(given)
+            }
+            Ok(None) => None,
+            Err(why) => {
+                say!("no model is given to any program: {}", why);
+                None
+            }
+        };
+    }
     #[cfg(feature = "vm-store")]
     if !safe {
         match crate::store::from_command_line(start.boot.exact_command_line()) {
@@ -285,11 +330,17 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
         // no other time: a key that changes nothing writes nothing to the display (B3 traced the stores).
         let shows = (surface, chosen, place, name_page, shortcuts.clone(), whole_bar, widgets, message.clone(), last_refusal, tasks, world.store.len(), mounted);
         if drawn.as_ref() != Some(&(shows.clone(), ui::clears())) {
+            // The projects folder as the kernel holds it now: what a proposing program started from
+            // here would be given, and so what the launcher says of it.
+            #[cfg(feature = "proposals")]
+            let folder: Option<&str> = world.build_folder.as_deref();
+            #[cfg(not(feature = "proposals"))]
+            let folder: Option<&str> = None;
             match surface {
                 Surface::Home => name_pages = draw_home(start, &programs, rec, &shortcuts, place, whole_bar, &widgets, &world.store, mounted, tasks - start.tasks, &message, last_refusal, name_page),
-                Surface::Launcher => draw_desktop(start, &programs, rec, chosen, &message, &shortcuts),
+                Surface::Launcher => draw_desktop(start, &programs, rec, chosen, &message, &shortcuts, folder),
                 Surface::Details => draw_menu(start, &programs, &files, rec, chosen, &message, world.store.len(),
-                                              #[cfg(feature = "vm-store")] mounted),
+                                              #[cfg(feature = "vm-store")] mounted, folder),
             }
             drawn = Some((shows, ui::clears()));
         }
@@ -315,9 +366,9 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
             (_, (0x13, false)) if letters => register_view(rec),
             (_, (0x3F, false)) if desk => verification_view(start, rec),
             (_, (0x2F, false)) if desk && letters => verification_view(start, rec),
-            (Surface::Home, (0x3B, false)) => keys_view("KEYS ON THE DESKTOP", if graphic { &HOME_KEYS } else { &SMALL_HOME_KEYS }),
+            (Surface::Home, (0x3B, false)) => keys_view("KEYS ON THE DESKTOP", &home_keys(graphic)),
             (Surface::Launcher, (0x3B, false)) => keys_view("KEYS IN THE PROGRAMS", &LAUNCHER_KEYS),
-            (Surface::Home, (0x25, false)) if letters => keys_view("KEYS ON THE DESKTOP", if graphic { &HOME_KEYS } else { &SMALL_HOME_KEYS }),
+            (Surface::Home, (0x25, false)) if letters => keys_view("KEYS ON THE DESKTOP", &home_keys(graphic)),
             (Surface::Launcher, (0x25, false)) if letters => keys_view("KEYS IN THE PROGRAMS", &LAUNCHER_KEYS),
             // On the small-display desktop Left and Right turn the parts of a long name; Up and Down choose.
             (Surface::Home, (0x4B, _)) if !graphic => name_page = name_page.saturating_sub(1),
@@ -329,6 +380,9 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
             (Surface::Home, (0x3D, false)) => files_view(&world.store, mounted),
             (Surface::Home, (0x21, false)) if letters => files_view(&world.store, mounted),
             (Surface::Home, (0x3C, false)) => settings_view(&mut whole_bar, &mut widgets),
+            // F7: where Taylor builds. The kernel's own screen; no program can open or answer it.
+            #[cfg(feature = "proposals")]
+            (Surface::Home, (0x41, false)) => folder_view(&mut world.build_folder),
             (Surface::Home, (0x53, _)) | (Surface::Home, (0x0E, false)) if place > 0 => { shortcuts.remove(place - 1); name_page = 0; }
             (Surface::Launcher, (0x48, _)) | (Surface::Details, (0x48, _)) if chosen > 0 => chosen -= 1,
             (Surface::Launcher, (0x50, _)) | (Surface::Details, (0x50, _)) if chosen + 1 < programs.len() => chosen += 1,
@@ -353,7 +407,7 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
             },
             // The plain list is laid out for ninety-six columns. On a narrower display Ctrl+D shows the
             // same facts as a screen of text that is read and left, whole, and the choosing stays here.
-            (Surface::Launcher, (0x20, false)) if ctrl && ui::grid().0 < 96 => details_view(start, &programs, &files, rec, world.store.len(), mounted),
+            (Surface::Launcher, (0x20, false)) if ctrl && ui::grid().0 < 96 => details_view(start, &programs, &files, rec, world.store.len(), mounted, { #[cfg(feature = "proposals")] { world.build_folder.as_deref() } #[cfg(not(feature = "proposals"))] { None } }),
             (Surface::Launcher, (0x20, false)) if ctrl => surface = Surface::Details,
             (Surface::Details, (0x20, false)) => surface = Surface::Launcher,
             (Surface::Launcher, (0x01, false)) | (Surface::Details, (0x01, false)) => surface = Surface::Home,
@@ -599,6 +653,18 @@ const HOME_KEYS: [(&str, &str); 11] = [("Left/Right", "choose among the programs
     ("F1", "this list"), ("F2", "settings: how the desktop looks, and its widgets"), ("F3", "the files programs have written"),
     ("F4", "the register"), ("F5", "verification, in full"), ("F10", "power off, after asking"),
     ("Ctrl+Alt+Delete", "stops a running program; no program can take that key")];
+/// The keys of the desktop as this kernel was built: with file proposals, F7 is one of them, and a
+/// key that does something is in the list (B3 found F7 named nowhere a person would look).
+fn home_keys(graphic: bool) -> Vec<(&'static str, &'static str)> {
+    #[allow(unused_mut)]
+    let mut keys: Vec<(&str, &str)> = if graphic { HOME_KEYS.to_vec() } else { SMALL_HOME_KEYS.to_vec() };
+    #[cfg(feature = "proposals")]
+    if let Some(after) = keys.iter().position(|k| k.0 == "F5") {
+        keys.insert(after + 1, ("F7", "the projects folder: where Taylor may make files"));
+    }
+    keys
+}
+
 /// The keys of the desktop of a small display, which are not those of the full one: Up and Down choose,
 /// Left and Right turn the parts of a long name. Letters do nothing on it, as on the full desktop.
 const SMALL_HOME_KEYS: [(&str, &str); 12] = [("Up/Down", "choose among all the programs and the pinned programs"), ("Left/Right", "turn the parts of a long name"),
@@ -667,6 +733,10 @@ fn recent_tasks(rec: &Record, programs: &[Entry], most: usize) -> Vec<(String, S
 fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize], place: usize, whole: bool, widgets: &[bool; 3], store: &crate::regular::Files, mounted: bool, run: u32, message: &str, last_refusal: Option<(usize, &str)>, name_page: usize) -> usize {
     use ui::{label, AMBER, BAD, GOOD, SOFT, TEAL, TEXT};
     let safe = start.failed != 0;
+    let cut_pin = if !safe && cut_blocks_launch(start) {
+        place.checked_sub(1).and_then(|at| shortcuts.get(at)).copied()
+    } else { None };
+    let last_refusal = cut_pin.map(|index| (index, "loader line cut")).or(last_refusal);
     let recent = if widgets[0] { recent_tasks(rec, programs, 3) } else { Vec::new() };
     let (pool, free, _, _) = crate::mem::census();
     let files_line = if mounted { "VM files | saved when an app syncs" } else { "Session files | cleared at power-off" };
@@ -775,7 +845,10 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
                     let why = if reason == "the program could not be admitted as a task" && "Not started: ".len() + reason.len() > room {
                         "not admitted"
                     } else { reason };
-                    at(x, y, &cut(&format!("Not started: {}", why), room), BAD, GROUND);
+                    let caption = if cut_pin.is_some() && "Not started: loader line cut".len() > room {
+                        String::from("Loader line cut")
+                    } else { format!("Not started: {}", why) };
+                    at(x, y, &cut(&caption, room), BAD, GROUND);
                 } else if caption {
                     at(2, row, "Enter starts", GOOD, GROUND);
                 }
@@ -811,7 +884,11 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
             let _ = gap_keys;
             // On a display too narrow for the whole line, the keys that open the list of keys and that
             // stop the machine are the ones kept.
-            at(2, rows - 2, if across >= 47 { "Up/Down choose   Enter open   F1 keys   F10 off" } else { "Enter open  F1 keys  F10 off" }, TEXT, GROUND);
+            let keys = if cut_pin.is_some() { "Up/Down choose  F1 keys  F10 off" }
+                       else if across >= 47 { "Up/Down choose   Enter open   F1 keys   F10 off" }
+                       else { "Enter open  F1 keys  F10 off" };
+            let keys = if cut_pin.is_some() && keys.len() > across { "F1 keys  F10 off" } else { keys };
+            at(2, rows - 2, keys, TEXT, GROUND);
             return name_pages;
         }
     };
@@ -882,6 +959,141 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
 
 /// The settings: how the desktop looks, and which widgets are on it. Nothing here changes by one key from
 /// the desktop; a person comes here, chooses, and sees what is chosen. They last for this session.
+/// The projects folder: the one place a program that may propose files builds into, lists and reads.
+/// Shown whole, and changed here and nowhere else. A name is taken exactly as typed or not at all; a
+/// change is copied into a program when it is next started, moves no file, and lasts for this session.
+#[cfg(feature = "proposals")]
+fn folder_view(folder: &mut Option<String>) {
+    use ui::{at, GROUND, PANEL, SOFT, TEXT};
+    let (cols, rows) = ui::grid();
+    let across = (cols.saturating_sub(4) as usize).max(8);
+    let mut typed = String::new();
+    let mut said: (&str, u32) = ("", SOFT);
+    // Which of Shift, Ctrl and Alt are down, kept here from presses and releases: a key pressed with
+    // one of them is not the same key, and is never taken for it.
+    let (mut shift, mut ctrl, mut alt) = (0u8, false, false);
+    loop {
+        ui::clear(GROUND);
+        let roomy = rows >= 22;
+        let now_rows = match folder.as_deref() {
+            Some(name) => 1 + name.len().div_ceil(across).max(1) as u32,
+            None => 2,
+        };
+        // Title, what it is (where there is room), the folder now, what a change does, the heading of
+        // the field, the hint, the result and the keys: the field gets the rows that are left, and
+        // shows the end of what is typed when that is longer.
+        let fixed = 1 + roomy as u32 + now_rows + 2 + 1 + 1 + 1 + 1;
+        let field_rows = (rows.saturating_sub(fixed) as usize).clamp(1, 117usize.div_ceil(across));
+        let mut row = 0u32;
+        let mut line = |words: &str, colour: u32, row: &mut u32| {
+            if *row + 1 < rows {
+                at(2, *row, words, colour, GROUND);
+            }
+            *row += 1;
+        };
+        line("PROJECTS FOLDER", ui::TEAL, &mut row);
+        if roomy {
+            line("Taylor builds only in this folder.", SOFT, &mut row);
+        }
+        match folder.as_deref() {
+            Some(name) => {
+                line("Now:", TEXT, &mut row);
+                // The folder now is always shown whole.
+                for part in name.as_bytes().chunks(across) {
+                    line(core::str::from_utf8(part).unwrap_or("?"), ui::GOOD, &mut row);
+                }
+            }
+            None => {
+                line("Now: not set. The name given was", ui::BAD, &mut row);
+                line("not valid, so Taylor cannot start.", ui::BAD, &mut row);
+            }
+        }
+        line("Applies when Taylor next opens.", SOFT, &mut row);
+        line("No file moves. Lasts to power-off.", SOFT, &mut row);
+        let chunks: Vec<&[u8]> = typed.as_bytes().chunks(across).collect();
+        let hidden = chunks.len().saturating_sub(field_rows);
+        let heading = if hidden > 0 { format!("New name ({} typed, end shown):", typed.len()) } else { format!("New name ({} typed):", typed.len()) };
+        line(&heading, TEXT, &mut row);
+        for n in 0..field_rows {
+            if row + 1 < rows {
+                ui::fill(2 * ui::CELL_W, row * ui::CELL_H, across as u32 * ui::CELL_W, ui::CELL_H, PANEL);
+                if let Some(part) = chunks.get(hidden + n) {
+                    at(2, row, core::str::from_utf8(part).unwrap_or("?"), TEXT, PANEL);
+                }
+            }
+            row += 1;
+        }
+        line("a-z 0-9 . - _ and at most one /", SOFT, &mut row);
+        line(said.0, said.1, &mut row);
+        if rows > 0 {
+            at(2, rows - 1, "Enter sets   Esc leaves", SOFT, GROUND);
+        }
+        loop {
+            let key = loop {
+                match dev::key_take() {
+                    Some(k) => break k,
+                    None => arch::wait_for_interrupt(),
+                }
+            };
+            match (key.code, key.extended) {
+                (0x2A, false) => { if key.released { shift &= !1 } else { shift |= 1 }; continue; }
+                (0x36, false) => { if key.released { shift &= !2 } else { shift |= 2 }; continue; }
+                (0x1D, _) => { ctrl = !key.released; continue; }
+                (0x38, _) => { alt = !key.released; continue; }
+                _ => {}
+            }
+            if key.released {
+                continue;
+            }
+            let code = key.code;
+            // The character the key gives as it was pressed: with Shift a letter is a capital (which
+            // no folder name may hold, and which is shown and refused, not made small) and the hyphen
+            // key is an underscore. A key that gives no character a name could hold gives none.
+            let letter = if key.extended || ctrl || alt || key.ctrl { None } else {
+                let plain = match code {
+                    0x02..=0x0B => Some(b"1234567890"[(code - 0x02) as usize]),
+                    0x10..=0x19 => Some(b"qwertyuiop"[(code - 0x10) as usize]),
+                    0x1E..=0x26 => Some(b"asdfghjkl"[(code - 0x1E) as usize]),
+                    0x2C..=0x32 => Some(b"zxcvbnm"[(code - 0x2C) as usize]),
+                    0x0C => Some(b'-'),
+                    0x34 => Some(b'.'),
+                    0x35 => Some(b'/'),
+                    _ => None,
+                };
+                match (plain, shift != 0) {
+                    (Some(b), false) => Some(b),
+                    (Some(b), true) if b.is_ascii_lowercase() => Some(b.to_ascii_uppercase()),
+                    (Some(b'-'), true) => Some(b'_'),
+                    _ => None,
+                }
+            };
+            let typing_key = matches!(code, 0x02..=0x0C | 0x10..=0x19 | 0x1E..=0x26 | 0x2C..=0x32 | 0x34 | 0x35) && !key.extended;
+            match (code, letter) {
+                (0x01, _) => return,
+                // One more than a name may have can be typed, so that too long is seen and refused, not cut.
+                (_, Some(b)) if typed.len() <= 116 => { typed.push(b as char); said = ("", SOFT); }
+                (_, Some(_)) => said = ("No more can be typed.", ui::BAD),
+                // A key that would be a letter or sign but was pressed with Ctrl, Alt or a Shift that
+                // gives nothing a name can hold: nothing is typed, and that is said.
+                (_, None) if typing_key => said = ("That key was not typed.", ui::BAD),
+                (0x0E, _) if !typed.is_empty() => { typed.pop(); said = ("", SOFT); }
+                (0x1C, _) if typed.is_empty() => continue,
+                (0x1C, _) => {
+                    if crate::sys::build_folder(&typed) {
+                        *folder = Some(core::mem::take(&mut typed));
+                        said = ("Set. Applies when Taylor next opens.", ui::GOOD);
+                    } else {
+                        // The name typed stays as typed, and the folder stays as it was.
+                        said = ("Not changed: not a valid name.", ui::BAD);
+                    }
+                }
+                _ => continue,
+            }
+            break;
+        }
+    }
+}
+
 fn settings_view(whole_bar: &mut bool, widgets: &mut [bool; 3]) {
     use ui::{at, GROUND, PANEL, SOFT, TEXT};
     let (cols, rows) = ui::grid();
@@ -1020,13 +1232,97 @@ fn files_view(store: &crate::regular::Files, mounted: bool) {
     }
 }
 
+const CUT_LINE_NOTICE: &str = "Loader line cut. Cannot run.";
+const CUT_LINE_HELP: &str = "Shorten or correct the start-up settings and restart. No files changed.";
+
+#[cfg(feature = "proposals")]
+fn cut_blocks_launch(start: &Start) -> bool {
+    start.boot.exact_command_line().is_none()
+}
+
+#[cfg(not(feature = "proposals"))]
+fn cut_blocks_launch(_: &Start) -> bool { false }
+
+/// Whether a model is given to a companion, decided once: memory the loader named and the kernel kept
+/// (`arch::model`), a manifest among the loader's files under the name `model.manifest`, and its
+/// SHA-256 on the loader's line as `model_manifest=`. All three, agreeing, or none. Nothing here reads
+/// the model's own bytes: the companion checks those against the manifest, which this pins.
+#[cfg(feature = "model-memory")]
+fn model_given(start: &Start, files: &[(String, &'static [u8])]) -> Result<Option<crate::sys::ModelGiven>, String> {
+    let bytes = match arch::model() {
+        arch::Model::None => {
+            return if start.boot.command_line.contains("model_manifest=") { Err(String::from("model_manifest is given and no model_memory")) } else { Ok(None) };
+        }
+        arch::Model::Refused(why) => return Err(format!("the memory named for it is not given ({})", why)),
+        arch::Model::Held { bytes, .. } => bytes,
+    };
+    let kept = "the memory marked for it stays out of the pool and is given to nothing";
+    let line = start.boot.exact_command_line().ok_or_else(|| format!("the loader's line was cut; {}", kept))?;
+    let mut pins = line.split_whitespace().filter_map(|w| w.strip_prefix("model_manifest="));
+    let pin = match (pins.next(), pins.next()) {
+        (Some(pin), None) => pin,
+        (None, _) => return Err(format!("model_manifest is not given; {}", kept)),
+        _ => return Err(format!("model_manifest is given more than once; {}", kept)),
+    };
+    let mut digest = [0u8; 32];
+    let hex = pin.as_bytes();
+    if hex.len() != 64 || !hex.iter().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+        return Err(format!("model_manifest is not 64 lower-case hexadecimal digits; {}", kept));
+    }
+    for (i, pair) in hex.chunks(2).enumerate() {
+        let nibble = |b: u8| if b <= b'9' { b - b'0' } else { b - b'a' + 10 };
+        digest[i] = nibble(pair[0]) << 4 | nibble(pair[1]);
+    }
+    let mut named = files.iter().filter(|f| f.0 == "model.manifest");
+    let manifest = match (named.next(), named.next()) {
+        (Some(file), None) => file.1,
+        (None, _) => return Err(format!("the loader gave no file named model.manifest; {}", kept)),
+        _ => return Err(format!("the loader gave more than one file named model.manifest; {}", kept)),
+    };
+    let parsed = pcpos_model_media::Manifest::parse(manifest, digest)
+        .map_err(|e| format!("model.manifest is not the manifest the loader's line pins, or is not a manifest ({:?}); {}", e, kept))?;
+    if parsed.model_bytes() != bytes {
+        return Err(format!("the manifest is of a model of {} bytes and the memory named holds {}; {}", parsed.model_bytes(), bytes, kept));
+    }
+    Ok(Some(crate::sys::ModelGiven { manifest, digest, bytes }))
+}
+
+const FILE_APPROVAL: &str = "Creating a file needs your approval.";
+#[cfg(feature = "proposals")]
+const NO_BUILD_FOLDER: &str = "its projects folder setting is not a valid name";
+#[cfg(feature = "proposals")]
+const CUT_LINE: &str = "the loader's line was cut, so what it may use is not known";
+
+/// What the launcher says of the folder a proposing program would be started with now: the kernel's
+/// setting as it stands, which is what the program's grant is copied from, never a default.
+fn build_folder_access(folder: Option<&str>) -> String {
+    match folder {
+        Some(name) => format!("Can list and read {}/", name),
+        None => String::from("No projects folder is set (F7): cannot start."),
+    }
+}
+
+fn file_proposals(start: &Start, entry: &Entry, none: bool) -> bool {
+    cfg!(feature = "proposals") && !none && option(&start.boot.command_line, "propose_image") == Some(entry.digest.as_str())
+}
+
+fn detail_access(none: bool, proposes: bool, sound: bool) -> &'static str {
+    match (none, proposes, sound) {
+        (true, _, _) => "starting it lets it use: the console only",
+        (false, true, true) => "starting it lets it use: the display, the keyboard, sound, the loader's files",
+        (false, true, false) => "starting it lets it use: the display, the keyboard, the loader's files",
+        (false, false, true) => "starting it lets it use: the display, the keyboard, sound, the loader's files, the store",
+        (false, false, false) => "starting it lets it use: the display, the keyboard, the loader's files, the store",
+    }
+}
+
 /// The launcher: the programs the loader gave, one chosen, each with what it may use. It is opened from the
 /// desktop and left with Esc. On a display under 1280 by 720 the plain list below is drawn instead.
-fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, message: &str, shortcuts: &[usize]) {
+fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, message: &str, shortcuts: &[usize], folder: Option<&str>) {
     use ui::{label, label_width, AMBER, BAD, SOFT, TEXT};
     let display = match dev::display() {
         Some(d) if d.width >= 1280 && d.height >= 720 && ui::scale() == 1 => d,
-        _ => return draw_desktop_plain(start, programs, chosen, message),
+        _ => return draw_desktop_plain(start, programs, chosen, message, folder),
     };
     let (w, h) = (display.width, display.height);
     let safe = start.failed != 0;
@@ -1039,24 +1335,29 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
     label(left, 60, "Programs", ui::edition().text, true, &over_field);
     let on_note = plate(left, 110, list_width, 40, PLATE, edge(), false);
     label(left + 20, 120, if safe { "SAFE: verification failed. Programs are disabled." } else if programs.is_empty() { "The loader handed over no program." }
+                               else if cut_blocks_launch(start) { "Programs cannot start." }
                                // At 1280 across the plate holds fifty-six characters, four fewer than the longer wording.
                                else if list_width >= 640 { "Choose one to start. Each runs with only what it is granted." }
                                else { "Choose one. Each runs with only what it is granted." }, if safe { BAD } else { SOFT }, false, &on_note);
     let none = option(&start.boot.command_line, "grant") == Some("none");
-    let grants = if none { "console only" } else if start.sound { "display, keyboard, sound, loader files, store" } else { "display, keyboard, loader files, store" };
     let foot = h / 20 * 20 - 60;
     let _ = rec;
     // What a program may use is never cut short and never drawn over: it takes as many lines as it needs,
     // and that a program is pinned is said on a line of its own.
     let across = (list_width / 10).saturating_sub(6) as usize;
-    let access_of = |p: &Entry| -> Vec<String> {
-        #[allow(unused_mut)]
-        let mut access = String::from(grants);
+    let access_of = |i: usize, p: &Entry| -> Vec<String> {
+        if cut_blocks_launch(start) {
+            let mut lines = alloc::vec![String::from(CUT_LINE_NOTICE)];
+            if i == chosen { lines.extend(wrapped_words(CUT_LINE_HELP, across)); }
+            return lines;
+        }
+        let proposes = file_proposals(start, p, none);
+        let mut access = String::from(if none { "console only" } else if start.sound { "display, keyboard, sound, loader files" } else { "display, keyboard, loader files" });
+        if !none && !proposes { access.push_str(", store"); }
         #[cfg(feature = "guest-ethernet")]
         if !none && ethernet_grant(start.boot.exact_command_line(), &p.digest) { access.push_str(", raw Ethernet frames"); }
         #[cfg(feature = "game-link")]
         if !none && option(&start.boot.command_line, "link_image") == Some(p.digest.as_str()) { access.push_str(", second serial port"); }
-        let _ = p;
         let mut lines: Vec<String> = Vec::new();
         let mut line = String::from("may use:");
         for (n, part) in access.split(", ").enumerate() {
@@ -1069,9 +1370,13 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
             }
         }
         lines.push(line);
+        if proposes {
+            lines.push(build_folder_access(folder));
+            lines.push(String::from(FILE_APPROVAL));
+        }
         lines
     };
-    let height_of = |i: usize, p: &Entry| 40 + 20 * (access_of(p).len() as u32 + shortcuts.contains(&i) as u32);
+    let height_of = |i: usize, p: &Entry| 40 + 20 * (access_of(i, p).len() as u32 + shortcuts.contains(&i) as u32);
     let tallest = programs.iter().enumerate().map(|(i, p)| height_of(i, p)).max().unwrap_or(60);
     let mut y = 170;
     let room = ((foot.saturating_sub(y + 120)) / (tallest + 20)).max(1) as usize;
@@ -1091,7 +1396,7 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
         label(left + 40, y + 10, &cut(&p.name, name_room.min(28)), TEXT, false, &on_row);
         label((left + list_width - 20 - label_width(&digest, false)) / 10 * 10, y + 10, &digest, SOFT, false, &on_row);
         label(size_at, y + 10, &size, SOFT, false, &on_row);
-        let lines = access_of(p);
+        let lines = access_of(i, p);
         for (n, line) in lines.iter().enumerate() {
             label(left + 40, y + 30 + n as u32 * 20, line, SOFT, false, &on_row);
         }
@@ -1112,29 +1417,42 @@ fn draw_desktop(start: &Start, programs: &[Entry], rec: &Record, chosen: usize, 
     corners(start, w, h, &[("Esc", "desktop"), ("F1", "keys")]);
 }
 
-fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message: &str) {
+fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message: &str, folder: Option<&str>) {
     use ui::{at, GROUND, PANEL, SOFT, TEXT};
     ui::clear(GROUND);
     let (cols, rows) = ui::grid();
     let across = (cols as usize).saturating_sub(4).max(1);
     // What the chosen program may use, said only when programs can be started.
     let mut access: Vec<(String, u32)> = Vec::new();
-    if let Some(_entry) = programs.get(chosen).filter(|_| start.failed == 0) {
+    let blocked = cut_blocks_launch(start);
+    if blocked && start.failed == 0 && !programs.is_empty() {
+        access.push((String::from(CUT_LINE_NOTICE), ui::BAD));
+        access.extend(wrapped_words(CUT_LINE_HELP, across).into_iter().map(|line| (line, SOFT)));
+    } else if let Some(entry) = programs.get(chosen).filter(|_| start.failed == 0) {
         let none = option(&start.boot.command_line, "grant") == Some("none");
-        access.push((String::from(if none { "Access: console only" } else if start.sound {
+        let proposes = file_proposals(start, entry, none);
+        access.push((String::from(if none { "Access: console only" } else if proposes {
+            if start.sound { "Access: console, display, keyboard, files, sound" } else { "Access: console, display, keyboard, files" }
+        } else if start.sound {
             "Access: console, display, keyboard, files, store, sound"
         } else { "Access: console, display, keyboard, files and store" }), SOFT));
+        if proposes {
+            access.push((build_folder_access(folder), SOFT));
+            // At 320 pixels the creation rule and the folder scope each get their own line.
+            let approval = if across < FILE_APPROVAL.len() { "You approve each new file." } else { FILE_APPROVAL };
+            access.push((String::from(approval), SOFT));
+        }
         #[cfg(feature = "guest-ethernet")]
-        if !none && ethernet_grant(start.boot.exact_command_line(), &_entry.digest) {
+        if !none && ethernet_grant(start.boot.exact_command_line(), &entry.digest) {
             access.push((String::from("Access: raw Ethernet frames"), ui::AMBER));
         }
         #[cfg(feature = "game-link")]
-        if !none && option(&start.boot.command_line, "link_image") == Some(_entry.digest.as_str()) {
+        if !none && option(&start.boot.command_line, "link_image") == Some(entry.digest.as_str()) {
             access.push((String::from("Access: second serial port"), ui::AMBER));
         }
     }
     // The keys named are function keys and Esc, as on every other surface; letters do nothing here.
-    let keys = if programs.is_empty() || start.failed != 0 {
+    let keys = if programs.is_empty() || start.failed != 0 || blocked {
         "Esc back   F1 keys   F10 off"
     } else { "Up/Down choose   Enter open   Esc back   F1 keys   F10 off" };
     // The message has two rows. What does not fit on them ends in "..".
@@ -1148,7 +1466,8 @@ fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message:
     // rows if one does not hold them; above the keys what the chosen program may use, on as many rows as
     // it needs; above that the message; and every row between is the list, which always has one row and
     // always holds the chosen program.
-    let (list_row, visible) = if rows >= 13 && cols >= 64 {
+    let access_rows = (access.len() as u32).max(3);
+    let (list_row, visible) = if rows >= 10 + access_rows && cols >= 64 {
         ui::emblem(20, 16, 36, GROUND);
         at(7, 1, "PCP OS", TEXT, GROUND);
         // The same sentence about verification as on every other surface, whichever way it went.
@@ -1167,16 +1486,16 @@ fn draw_desktop_plain(start: &Start, programs: &[Entry], chosen: usize, message:
             at(2, 3, &format!("Verified at start: all {} self-tests passed.", start.passed), ui::GOOD, GROUND);
         }
         for (n, (line, colour)) in access.iter().enumerate() {
-            at(2, rows - 7 + n as u32, line, *colour, GROUND);
+            at(2, rows - 4 - access_rows + n as u32, line, *colour, GROUND);
         }
         for (n, line) in said.iter().enumerate() {
             at(2, rows - 4 + n as u32, line, ui::AMBER, GROUND);
         }
         at(2, rows - 2, keys, TEXT, GROUND);
-        (5u32, rows.saturating_sub(12).max(1) as usize)
+        (5u32, rows.saturating_sub(9 + access_rows).max(1) as usize)
     } else {
         at(2, 0, &verified_sentence(start, across), if start.failed != 0 { ui::BAD } else { ui::GOOD }, GROUND);
-        let key_lines: Vec<String> = if keys.len() <= across { alloc::vec![String::from(keys)] } else if programs.is_empty() || start.failed != 0 {
+        let key_lines: Vec<String> = if keys.len() <= across { alloc::vec![String::from(keys)] } else if programs.is_empty() || start.failed != 0 || blocked {
             alloc::vec![String::from(keys)]
         } else {
             alloc::vec![String::from("Up/Down choose   Enter open"), String::from("Esc back   F1 keys   F10 off")]
@@ -1302,7 +1621,7 @@ fn power_prompt() -> bool {
 }
 
 fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8], String)], rec: &Record, chosen: usize, message: &str, stored: usize,
-             #[cfg(feature = "vm-store")] mounted: bool) {
+             #[cfg(feature = "vm-store")] mounted: bool, folder: Option<&str>) {
     use ui::{at, GROUND, PANEL, SOFT, TEXT};
     ui::clear(GROUND);
     let (cols, rows) = ui::grid();
@@ -1317,10 +1636,17 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
     let mut row = 9;
     at(2, row, "PROGRAMS", ui::TEAL, GROUND);
     row += 1;
+    if !programs.is_empty() && cut_blocks_launch(start) {
+        for line in wrapped_words(CUT_LINE_HELP, cols.saturating_sub(6) as usize) {
+            at(4, row, &line, SOFT, GROUND);
+            row += 1;
+        }
+    }
     if programs.is_empty() {
         at(4, row, "The loader handed over no program.", SOFT, GROUND);
         row += 1;
     }
+    let none = option(&start.boot.command_line, "grant") == Some("none");
     for (i, p) in programs.iter().enumerate() {
         let ground = if i == chosen { PANEL } else { GROUND };
         ui::fill(ui::CELL_W, row * ui::CELL_H, (cols - 2) * ui::CELL_W, 2 * ui::CELL_H, ground);
@@ -1331,15 +1657,27 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
         if !p.arguments.is_empty() {
             at(66, row, &format!("with: {}", p.arguments.chars().take(30).collect::<String>()), SOFT, ground);
         }
-        at(4, row + 1, if start.sound { "starting it lets it use: the display, the keyboard, sound, the loader's files, the store" } else { "starting it lets it use: the display, the keyboard, the loader's files, the store" }, SOFT, ground);
+        if cut_blocks_launch(start) {
+            at(4, row + 1, CUT_LINE_NOTICE, ui::BAD, ground);
+            row += 2;
+            continue;
+        }
+        let proposes = file_proposals(start, p, none);
+        at(4, row + 1, detail_access(none, proposes, start.sound), SOFT, ground);
         row += 2;
+        if proposes {
+            at(4, row, &build_folder_access(folder), SOFT, GROUND);
+            row += 1;
+            at(4, row, FILE_APPROVAL, SOFT, GROUND);
+            row += 1;
+        }
         #[cfg(feature = "guest-ethernet")]
-        if ethernet_grant(start.boot.exact_command_line(), &p.digest) {
+        if !none && ethernet_grant(start.boot.exact_command_line(), &p.digest) {
             at(4, row, "Ethernet grant: this program can send and receive raw network frames.", SOFT, ground);
             row += 1;
         }
         #[cfg(feature = "game-link")]
-        if option(&start.boot.command_line, "grant") != Some("none") && option(&start.boot.command_line, "link_image") == Some(p.digest.as_str()) {
+        if !none && option(&start.boot.command_line, "link_image") == Some(p.digest.as_str()) {
             at(4, row, "Optional game cable: this image can read and write the second serial port.", SOFT, ground);
             row += 1;
         }
@@ -1378,7 +1716,9 @@ fn draw_menu(start: &Start, programs: &[Entry], files: &[(String, &'static [u8],
         }
     }
     ui::fill(0, (rows - 2) * ui::CELL_H, cols * ui::CELL_W, 2 * ui::CELL_H, PANEL);
-    at(2, rows - 2, "Up/Down choose    Enter start    D desktop    R register    P off", TEXT, PANEL);
+    let keys = if cut_blocks_launch(start) { "Up/Down choose    D desktop    R register    P off" }
+               else { "Up/Down choose    Enter start    D desktop    R register    P off" };
+    at(2, rows - 2, keys, TEXT, PANEL);
     at(2, rows - 1, "Ctrl+Alt+Delete stops a running program and returns here. No program can take that key.", SOFT, PANEL);
 }
 
@@ -1440,7 +1780,7 @@ pub fn stopped_screen(start: &Start, failed: u32, passed: u32) {
 
 /// Everything the loader gave and what the machine has, as a screen of text for a display too narrow for
 /// the plain list: nothing is cut, digests are whole, and nothing here starts or changes anything.
-fn details_view(start: &Start, programs: &[Entry], files: &[(String, &'static [u8], String)], rec: &Record, stored: usize, mounted: bool) {
+fn details_view(start: &Start, programs: &[Entry], files: &[(String, &'static [u8], String)], rec: &Record, stored: usize, mounted: bool, folder: Option<&str>) {
     use ui::{SOFT, TEXT};
     let across = (ui::grid().0 as usize).saturating_sub(4).max(1);
     let whole = |col: u32, text: &str, colour: u32| -> Vec<Line> {
@@ -1453,6 +1793,9 @@ fn details_view(start: &Start, programs: &[Entry], files: &[(String, &'static [u
     lines.extend(lines_of(2, &format!("Register: {} events. F5 shows the head of its chain.", rec.ledger().len()), SOFT));
     lines.extend(lines_of(2, "", TEXT));
     lines.extend(lines_of(2, "PROGRAMS", ui::TEAL));
+    if !programs.is_empty() && cut_blocks_launch(start) {
+        lines.extend(lines_of(4, CUT_LINE_HELP, SOFT));
+    }
     if programs.is_empty() {
         lines.extend(lines_of(4, "The loader handed over no program.", SOFT));
     }
@@ -1465,8 +1808,16 @@ fn details_view(start: &Start, programs: &[Entry], files: &[(String, &'static [u
         if !p.arguments.is_empty() {
             lines.extend(lines_of(4, &format!("with: {}", p.arguments), SOFT));
         }
-        lines.extend(lines_of(4, if none { "starting it lets it use: the console only" } else if start.sound { "starting it lets it use: the display, the keyboard, sound, the loader's files, the store" }
-                                 else { "starting it lets it use: the display, the keyboard, the loader's files, the store" }, SOFT));
+        if cut_blocks_launch(start) {
+            lines.extend(lines_of(4, CUT_LINE_NOTICE, ui::BAD));
+            continue;
+        }
+        let proposes = file_proposals(start, p, none);
+        lines.extend(lines_of(4, detail_access(none, proposes, start.sound), SOFT));
+        if proposes {
+            lines.extend(whole(4, &build_folder_access(folder), SOFT));
+            lines.extend(whole(4, FILE_APPROVAL, SOFT));
+        }
         #[cfg(feature = "guest-ethernet")]
         if !none && ethernet_grant(start.boot.exact_command_line(), &p.digest) {
             lines.extend(lines_of(4, "Ethernet grant: this program can send and receive raw network frames.", ui::AMBER));
@@ -1551,13 +1902,197 @@ fn register_view(rec: &Record) {
                 lines.extend(lines_of(4, &what, TEXT));
             }
         }
+        // An event about a file that was made says which file and which bytes, whole: where it is,
+        // how long it is, what made it and for which task, and all of its digest. Two files must
+        // never look the same here (Director 2 found that they did). Lines of their own under the
+        // event, on a display of any width; the digest alone on its line, cut nowhere.
+        let made = |k: &str| body.and_then(|b| b.get(k));
+        if let Some(path) = made("path").and_then(Value::as_str) {
+            let text_of = |k: &str| made(k).and_then(Value::as_str).unwrap_or("?").to_string();
+            lines.extend(lines_of(6, &format!("file {}", path), TEXT));
+            lines.extend(lines_of(6, &format!("{} bytes, {}, for task {}", made("size").and_then(Value::as_int).unwrap_or(-1), text_of("origin"), text_of("task")), SOFT));
+            lines.extend(wrapped(&format!("sha256 {}", text_of("sha256")), across.saturating_sub(4).max(1)).into_iter().map(|part| alloc::vec![(6, part, SOFT)]));
+        }
     }
     text_screen(&title, ui::TEAL, Some(table), &lines, "Up/Down scroll    Esc back", false, true);
+}
+
+/// The kernel's own screen, shown with the program stopped and the display and keyboard taken from it.
+/// With a proposal: may this one new file be made? The whole of it is shown from the kernel's copy, in
+/// pages. The answer is no unless the person has seen the last page, then freshly pressed F12 (which
+/// no program is given while this one runs, held or not), then freshly pressed Enter with Enter seen up
+/// in between. Any other key once F12 has been pressed, or any key but the arrows before, is no.
+/// With no proposal (F12 was pressed and nothing waits): it says so and goes back on any key.
+/// Interrupts are off on entry and on return.
+#[cfg(feature = "proposals")]
+fn consent(proposal: Option<&crate::sys::Proposal>) -> crate::sys::Answer {
+    use crate::sys::Answer;
+    use ui::{at, AMBER, GOOD, GROUND, SOFT, TEXT};
+    let shown_before = dev::display().map(|d| d.shown).unwrap_or(0);
+    dev::display_show(0);
+    arch::interrupts_on();
+    let (cols, rows) = ui::grid();
+    let across = (cols as usize).saturating_sub(4).max(1);
+    enum Event { Ask, Key(u8, bool) }
+    let event = |armed: bool, enter_up: &mut bool| loop {
+        if armed && !dev::enter_down() {
+            *enter_up = true;
+        }
+        if dev::ask_taken() {
+            break Event::Ask;
+        }
+        match dev::key_take() {
+            Some(k) if !k.released => break Event::Key(k.code, k.extended),
+            Some(_) => {}
+            None => arch::wait_for_interrupt(),
+        }
+    };
+    let allowed = match proposal {
+        None => {
+            ui::clear(GROUND);
+            at(2, 1, "PCP OS", AMBER, GROUND);
+            for (n, part) in wrapped_words("No file is waiting for your approval. Nothing has been made or changed.", across).iter().enumerate() {
+                at(2, 3 + n as u32, part, TEXT, GROUND);
+            }
+            at(2, rows.saturating_sub(2), "Press any key to go back.", SOFT, GROUND);
+            dev::keys_forget();
+            let _ = dev::ask_taken(); // the press that brought this screen is used up by it
+            let _ = event(false, &mut false);
+            Answer::Refused
+        }
+        Some(proposal) => {
+            let text = String::from_utf8_lossy(&proposal.content).into_owned();
+            let ends_with_line = text.ends_with('\n');
+            let mut body: Vec<(String, u32)> = Vec::new();
+            let source: Vec<&str> = if ends_with_line { text[..text.len() - 1].split('\n').collect() } else { text.split('\n').collect() };
+            for line in source.iter().filter(|_| !text.is_empty()) {
+                let characters: Vec<char> = line.chars().collect();
+                if characters.is_empty() {
+                    body.push((String::new(), TEXT));
+                }
+                for piece in characters.chunks(across) {
+                    body.push((piece.iter().collect(), TEXT));
+                }
+                // Spaces at the end of a line cannot be seen, so they are counted out loud.
+                let trailing = line.len() - line.trim_end_matches(' ').len();
+                if trailing > 0 {
+                    body.push((format!("  (the line above ends with {} space{})", trailing, if trailing == 1 { "" } else { "s" }), SOFT));
+                }
+            }
+            body.push((String::from(if text.is_empty() { "(the file is empty)" } else if ends_with_line { "(end of the file)" } else { "(end of the file; its last line is not ended)" }), SOFT));
+            let head = [
+                (String::from("PCP OS ASKS YOU"), AMBER),
+                (String::from("Taylor wants to make a new file. Nothing has been made yet."), TEXT),
+                (match proposal.name.rsplit_once('/') {
+                    Some((folder, file)) => format!("Folder: {}    File: {}", folder, file),
+                    None => format!("File: {} (in no folder)", proposal.name),
+                }, TEXT),
+                (format!("Size: {} characters. It will last until the computer is switched off.", proposal.content.len()), SOFT),
+            ];
+            let head_rows: usize = head.iter().map(|(t, _)| wrapped_words(t, across).len()).sum();
+            // The rows are counted before anything is asked: the heading, an empty row, at least one row
+            // of the file, and the whole of the longest thing the foot can say. If they do not all fit, or
+            // a row is too short to read a file in, the question cannot be put honestly and is not put
+            // (Director 2 showed that on ten rows of thirty-two the file was hidden and could be allowed).
+            let foots = [String::from("Now press Enter to allow it. Any other key refuses."),
+                         String::from("Page 64 of 64. To allow: press F12, then Enter. Esc refuses. Arrows turn pages."),
+                         String::from("Page 64 of 64. Down arrow shows more. Esc refuses.")];
+            let foot_rows = foots.iter().map(|f| wrapped_words(f, across).len()).max().unwrap_or(1);
+            let per = (rows as usize).saturating_sub(head_rows + 1 + foot_rows);
+            // The pages are counted from what will really be drawn, notes about spaces and the end mark
+            // included, on this display: a file that would take more than sixty-four of them is not put
+            // to the person (Director 2: the count made when the proposal arrived was of the file's own
+            // lines, and a file of a thousand lines each ending in a space came to 87 pages here).
+            let too_small = per < 4 || across < 40;
+            if too_small || body.len().div_ceil(per.max(1)) > 64 {
+                ui::clear(GROUND);
+                let words = if too_small { "PCP OS: this display is too small to show a file Taylor wants to make, so it was not made. Press any key." }
+                    else { "PCP OS: a file Taylor wants to make is too long to show you here in sixty-four pages, so it was not made. Press any key." };
+                for (n, part) in wrapped_words(words, across).iter().enumerate() {
+                    at(2, n as u32, part, TEXT, GROUND);
+                }
+                dev::keys_forget();
+                let _ = dev::ask_taken();
+                let _ = event(false, &mut false);
+                ui::clear(GROUND);
+                dev::keys_forget();
+                let _ = dev::ask_taken();
+                arch::interrupts_off();
+                dev::display_show(shown_before);
+                return Answer::CannotBeShown;
+            }
+            let pages = body.len().div_ceil(per).max(1);
+            let (mut page, mut armed, mut seen_last, mut enter_up) = (0usize, false, pages == 1, false);
+            dev::keys_forget();
+            let _ = dev::ask_taken(); // a press from before the question was on the screen is not an answer to it
+            loop {
+                ui::clear(GROUND);
+                let mut row = 0u32;
+                for (words, colour) in head.iter() {
+                    for part in wrapped_words(words, across) {
+                        at(2, row, &part, *colour, GROUND);
+                        row += 1;
+                    }
+                }
+                row += 1;
+                for (line, colour) in body.iter().skip(page * per).take(per) {
+                    at(2, row, line, *colour, GROUND);
+                    row += 1;
+                }
+                let foot = if armed { String::from("Now press Enter to allow it. Any other key refuses.") }
+                    else if seen_last { format!("Page {} of {}. To allow: press F12, then Enter. Esc refuses. Arrows turn pages.", page + 1, pages) }
+                    else { format!("Page {} of {}. Down arrow shows more. Esc refuses.", page + 1, pages) };
+                for (n, part) in wrapped_words(&foot, across).iter().enumerate() {
+                    at(2, rows - foot_rows as u32 + n as u32, part, if armed { GOOD } else { SOFT }, GROUND);
+                }
+                match event(armed, &mut enter_up) {
+                    Event::Ask if seen_last && !armed => {
+                        armed = true;
+                        enter_up = !dev::enter_down();
+                    }
+                    Event::Ask => {}
+                    Event::Key(0x1C, false) if armed && enter_up => break Answer::Allowed,
+                    Event::Key(0x1C, false) if armed => {} // Enter held since before: not a fresh press
+                    Event::Key(..) if armed => break Answer::Refused,
+                    Event::Key(0x50, true) if page + 1 < pages => {
+                        page += 1;
+                        seen_last |= page + 1 == pages;
+                    }
+                    Event::Key(0x48, true) if page > 0 => page -= 1,
+                    Event::Key(0x50, true) | Event::Key(0x48, true) => {}
+                    Event::Key(..) => break Answer::Refused,
+                }
+            }
+        }
+    };
+    // Nothing of the screen is left where the program can read it, and no key of the answer reaches it.
+    ui::clear(GROUND);
+    dev::keys_forget();
+    let _ = dev::ask_taken();
+    arch::interrupts_off();
+    dev::display_show(shown_before);
+    allowed
 }
 
 /// Run one program as a task in the register. Interrupts must be off; returns with them off.
 /// Returns the run summary, the resulting world and any reason the program could not start.
 fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, start: &Start, failed: &mut u32) -> (String, World, Option<&'static str>) {
+    // A loader line that was not taken whole may have lost the word that names the proposing program,
+    // and that program must not then be started as an ordinary one with the right to write files. Which
+    // program it was cannot be known, so none is started.
+    #[cfg(feature = "proposals")]
+    if cut_blocks_launch(start) {
+        say!("{} was not started: {}", entry.name, CUT_LINE);
+        return (format!("{} was not started. {}", entry.name, CUT_LINE_HELP), world, Some(CUT_LINE));
+    }
+    // A program that would be started with the right to propose files is not started at all while the
+    // build folder setting is not a name a folder may have: said where the person sees it, and no other
+    // folder is used in its place.
+    #[cfg(feature = "proposals")]
+    if world.build_folder.is_none() && file_proposals(start, entry, option(start.boot.command_line.as_str(), "grant") == Some("none")) {
+        say!("{} was not started: {}", entry.name, NO_BUILD_FOLDER);
+        return (format!("{} was not started: {}", entry.name, NO_BUILD_FOLDER), world, Some(NO_BUILD_FOLDER));
+    }
     *tasks += 1;
     let id = format!("T{}", *tasks);
     let mut recorded = logged("TASK_STARTED", rec.submit(&now(), "kernel", "HOST", "TASK_STARTED",
@@ -1567,7 +2102,11 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
     args.extend(entry.arguments.split_whitespace());
     say!("starting {} ({} bytes, SHA-256 {}){}", entry.name, entry.image.len(), entry.digest, if entry.arguments.is_empty() { String::new() } else { format!(" with: {}", entry.arguments) });
     let none = option(start.boot.command_line.as_str(), "grant") == Some("none");
-    let grants = if none { Grants { console: true, ..Grants::default() } } else { Grants { console: true, display: start.display.is_some(), keys: start.keyboard, files: true, store: true, sound: start.sound,
+    // The one program named by its digest may propose effects to the kernel, and is then given no
+    // right to make files by itself: what it makes, the person has been asked about.
+    let proposes = file_proposals(start, entry, none);
+    let grants = if none { Grants { console: true, ..Grants::default() } } else { Grants { console: true, display: start.display.is_some(), keys: start.keyboard, files: true, store: !proposes, sound: start.sound,
+        #[cfg(feature = "proposals")] propose: proposes,
         #[cfg(feature = "guest-ethernet")] ethernet: ethernet_grant(start.boot.exact_command_line(), &entry.digest),
         #[cfg(feature = "game-link")] game_link: option(&start.boot.command_line, "link_image") == Some(entry.digest.as_str()) && arch::game_link_init(), } };
     if none {
@@ -1591,8 +2130,8 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
         Some((name, image)) => {
             say!("{} is started with its companion {} ({} bytes), which is given the console and the channel only", entry.name, name, image.len());
             let worker_args = [name.as_str()];
-            let (result, beside, world) = user::run_pair(&Program { name: &entry.name, image: entry.image, args: &args, grants, budget: u64::MAX },
-                &Program { name, image, args: &worker_args, grants: Grants { console: true, ..Grants::default() }, budget: u64::MAX }, world);
+            let (result, beside, world) = user::run_pair(&Program { name: &entry.name, image: entry.image, args: &args, grants, budget: u64::MAX, #[cfg(feature = "proposals")] consent },
+                &Program { name, image, args: &worker_args, grants: Grants { console: true, ..Grants::default() }, budget: u64::MAX, #[cfg(feature = "proposals")] consent: user::nobody_to_ask }, world);
             if let Some(p) = beside {
                 let how = match p.end {
                     Some(user::End::Exited(code)) => format!("it exited with {}", code),
@@ -1612,10 +2151,10 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
             }
             (result, world)
         }
-        None => user::run_program(&Program { name: &entry.name, image: entry.image, args: &args, grants, budget: u64::MAX }, world),
+        None => user::run_program(&Program { name: &entry.name, image: entry.image, args: &args, grants, budget: u64::MAX, #[cfg(feature = "proposals")] consent }, world),
     };
     #[cfg(not(feature = "companion"))]
-    let run = || user::run_program(&Program { name: &entry.name, image: entry.image, args: &args, grants, budget: u64::MAX }, world);
+    let run = || user::run_program(&Program { name: &entry.name, image: entry.image, args: &args, grants, budget: u64::MAX, #[cfg(feature = "proposals")] consent }, world);
     #[cfg(feature = "guest-ethernet")]
     let (result, world) = if grants.ethernet {
         let (outcome, status) = dev::virtio_tx::guest::during(run);
@@ -1636,6 +2175,16 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
     let refusal = result.as_ref().err().copied();
     let message = match result {
         Ok(p) => {
+            // Every file the kernel made for this program after the person allowed it is in the
+            // register, however the program then ended: its name, its size, the digest of its bytes,
+            // and the task it was made for. A file the person refused was never made and is not here.
+            #[cfg(feature = "proposals")]
+            for (name, size, sha) in p.linux.as_ref().map(|l| l.files_made()).unwrap_or(&[]) {
+                recorded &= logged("ARTIFACT_ADDED", rec.submit(&now(), "kernel", "HOST", "ARTIFACT_ADDED",
+                    obj(&[("sha256", text(sha)), ("size", Value::Int(*size as i64)), ("origin", text("PRODUCED")), ("stored", Value::Bool(false)),
+                          // A register's "name" is a short label and may hold no '/'; where the file is goes in "path".
+                          ("path", text(name)), ("filename", text(name.rsplit('/').next().unwrap_or(name))), ("task", text(&id))]))).is_ok();
+            }
             let digest = sha256_hex(&p.output);
             let (outcome, result, how) = match p.end {
                 Some(End::Exited(0)) => {

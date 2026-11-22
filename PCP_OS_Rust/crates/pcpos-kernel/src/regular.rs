@@ -42,6 +42,11 @@ impl Files {
         self.names.len()
     }
 
+    /// Whether this many more bytes are within the budget all files share.
+    pub fn fits(&self, bytes: usize) -> bool {
+        bytes <= LIMIT - self.used.get()
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &(String, File)> {
         self.names.iter()
     }
@@ -52,6 +57,12 @@ impl Files {
 
     pub fn linked(&self, file: &File) -> bool {
         self.names.iter().any(|(_, f)| Rc::ptr_eq(&f.0, &file.0))
+    }
+
+    /// Bytes with no name, counted in the shared budget until the last descriptor on them closes.
+    pub fn detached(&self, bytes: Vec<u8>) -> File {
+        self.used.set(self.used.get() + bytes.len());
+        File(Rc::new(Contents { bytes: RefCell::new(bytes), used: self.used.clone() }))
     }
 
     /// An unused name and either an empty buffer or bytes from a validated 64 KiB snapshot.

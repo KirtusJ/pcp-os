@@ -307,6 +307,38 @@ static KEYBOARD: arch::Single<Keyboard> = arch::Single::new(Keyboard { present: 
                                                                          extended: false, skip: 0, ctrl: false, alt: false, enter: [false; 2], dropped: 0 });
 /// Set when the person presses Ctrl, Alt and Delete together: the kernel's own key, which no program can take.
 static STOP: AtomicBool = AtomicBool::new(false);
+/// F12 is the kernel's own key while a program that may propose effects runs: no program is given it.
+/// A press that is not a repeat of a held key is remembered here until the kernel asks.
+#[cfg(feature = "proposals")]
+static ASK_RESERVED: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "proposals")]
+static ASK_DOWN: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "proposals")]
+static ASK: AtomicBool = AtomicBool::new(false);
+
+/// Keep F12 for the kernel, or stop keeping it. Either way an earlier press is forgotten.
+#[cfg(feature = "proposals")]
+pub fn ask_reserve(on: bool) {
+    ASK_RESERVED.store(on, Ordering::SeqCst);
+    ASK.store(false, Ordering::SeqCst);
+}
+
+/// Whether F12 has been freshly pressed since this was last taken.
+#[cfg(feature = "proposals")]
+pub fn ask_waiting() -> bool {
+    ASK.load(Ordering::SeqCst)
+}
+
+#[cfg(feature = "proposals")]
+pub fn ask_taken() -> bool {
+    ASK.swap(false, Ordering::SeqCst)
+}
+
+/// Whether either Enter key is held down now.
+#[cfg(feature = "proposals")]
+pub fn enter_down() -> bool {
+    arch::without_interrupts(|| KEYBOARD.with(|k| k.enter[0] || k.enter[1]))
+}
 /// How many times the stop chord has been seen on the keyboard since the start. A self-test that says a
 /// person's key stopped a program asks this, so that a stop made by the tests' own time limit is never
 /// credited to a key (B3).
@@ -474,6 +506,16 @@ fn keyboard_byte(k: &mut Keyboard, byte: u8) {
         _ => {
             let mut key = Key { code: byte & 0x7F, extended: k.extended, released: byte & 0x80 != 0, ctrl: false };
             k.extended = false;
+            #[cfg(feature = "proposals")]
+            if key.code == 0x58 && !key.extended && ASK_RESERVED.load(Ordering::SeqCst) {
+                // Press, repeat and release all stop here. Only a press with the key up before counts.
+                if key.released {
+                    ASK_DOWN.store(false, Ordering::SeqCst);
+                } else if !ASK_DOWN.swap(true, Ordering::SeqCst) {
+                    ASK.store(true, Ordering::SeqCst);
+                }
+                return;
+            }
             match key.code {
                 0x1D => k.ctrl = !key.released,
                 0x38 => k.alt = !key.released,
