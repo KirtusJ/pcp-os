@@ -428,6 +428,22 @@ pub fn relax() {
 static REACH: AtomicUsize = AtomicUsize::new(0);
 /// How many others are parked, and each one's identity.
 static PARKED: AtomicUsize = AtomicUsize::new(0);
+/// Once starting the others has been tried and not refused: one, then how many answered and are
+/// parked, then how many the firmware listed that this kernel would start. Zero until then.
+static OUTCOME: AtomicUsize = AtomicUsize::new(0);
+
+/// Once starting the others has been tried and not refused: how many are parked, of how many listed.
+pub fn outcome() -> Option<(usize, usize)> {
+    match OUTCOME.load(Ordering::SeqCst) {
+        0 => None,
+        told => Some((told >> 8 & 0xFF, told >> 16 & 0xFF)),
+    }
+}
+
+fn tell(out: Started) -> Result<Started, &'static str> {
+    OUTCOME.store(1 | out.parked.min(255) << 8 | out.listed.min(255) << 16, Ordering::SeqCst);
+    Ok(out)
+}
 static IDENTITY: [AtomicU32; OTHERS] = [const { AtomicU32::new(0) }; OTHERS];
 /// What each is asked to do next (a function's address, or zero), and how many it has done.
 static ASKED: [AtomicUsize; OTHERS] = [const { AtomicUsize::new(0) }; OTHERS];
@@ -671,7 +687,7 @@ pub fn start(found: &processors::Found, page: Option<u64>) -> Result<Started, &'
     if others.is_empty() {
         out.threads = 1;
         out.cores = my_known.then_some(1);
-        return Ok(out);
+        return tell(out);
     }
     let on = interrupts_save_off();
     // The controller's registers, where they are reached through memory: one page, writable, never
@@ -793,5 +809,5 @@ pub fn start(found: &processors::Found, page: Option<u64>) -> Result<Started, &'
     }
     out.threads = 1 + slot;
     out.cores = known.then_some(cores.len());
-    Ok(out)
+    tell(out)
 }
