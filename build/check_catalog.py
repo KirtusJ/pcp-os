@@ -53,25 +53,44 @@ def listed(text):
     return [m.group(1) for line in text.splitlines() for m in [re.match(r"\| `([^`]+)` \|", line)] if m]
 
 
-OPENING = re.compile(rb"[ \t>]*(`{3,}|~{3,})(.*)")
+PREFIX = re.compile(rb"[ \t>]*")
+RUN = re.compile(rb"(`{3,}|~{3,})(.*)")
+
+
+def placed(line):
+    """One line as (quotation marks before it, columns of indentation after the last of them, the
+    rest). A tab counts as four columns."""
+    prefix = PREFIX.match(line).group(0)
+    after = prefix[prefix.rfind(b">") + 1:]
+    return prefix.count(b">"), len(after.replace(b"\t", b"    ")), line[len(prefix):]
 
 
 def outside_fences(data):
-    """The text with fenced code taken out, read a line at a time as a renderer reads it (B3). A
-    fence opens on a line that starts, after any indentation or quotation marks, with three or
-    more backticks or tildes; a backtick fence's opening line holds no further backtick. It
-    closes on a line holding only a run of the same character at least as long as the opening
-    one, or at the end of the file."""
+    """The text with fenced code taken out, read a line at a time (B3). A fence opens on a line
+    that starts, after indentation or quotation marks, with three or more backticks or tildes; a
+    backtick fence's opening line holds no further backtick. It closes on a line holding only a
+    run of the same character at least as long as the opening one, or at the end of the file.
+    It also ends, and the line is read as ordinary text, where the block that held it ends: a
+    line with fewer quotation marks, or, for a fence indented four or more columns (which is
+    inside a list item, or is an indented code block and no fence at all), a line that is not
+    blank and is indented less than the opening one. This is not a Markdown parser: it is wrong
+    in the direction of reading text as links wherever those two rules end a fence early."""
     kept, fence = [], None
     for line in data.split(b"\n"):
-        match = OPENING.match(line)
-        if fence is None:
-            if match and not (match.group(1)[:1] == b"`" and b"`" in match.group(2)):
-                fence = match.group(1)
+        quotes, indent, rest = placed(line)
+        run = RUN.match(rest)
+        if fence is not None:
+            mark, opened_quotes, opened_indent = fence
+            if quotes < opened_quotes or (opened_indent >= 4 and rest.strip() and indent < opened_indent):
+                fence = None
             else:
-                kept.append(line)
-        elif match and match.group(1)[:1] == fence[:1] and len(match.group(1)) >= len(fence) and not match.group(2).strip():
-            fence = None
+                if run and run.group(1)[:1] == mark[:1] and len(run.group(1)) >= len(mark) and not run.group(2).strip():
+                    fence = None
+                continue
+        if run and not (run.group(1)[:1] == b"`" and b"`" in run.group(2)):
+            fence = (run.group(1), quotes, indent)
+        else:
+            kept.append(line)
     return b"\n".join(kept)
 
 
@@ -179,6 +198,12 @@ def selftest():
     require(links("a.md", b"```` md\n```\n[x](gone.md)\n````\n[y](gone.md)\n", set())[0] == ["K6: a.md links to gone.md, which is not tracked"], "the same for backticks: one link read, the one after the fence")
     require(links("a.md", b"```not a fence``` [x](gone.md)\n", set())[0] != [], "three backticks opening and closing on one line are not a fence")
     require(links("a.md", b"- item\n\n      ~~~\n      [x](gone.md)\n      ~~~\n", set()) == ([], 0, 0, 0), "a fence inside a list item, indented")
+    after = b"\n[Read][t]\n\n[t]: docs/after.md\n"
+    gone = ["K6: a.md links to docs/after.md, which is not tracked"]
+    require(links("a.md", b"    ~~~\n" + after, set())[0] == gone, "an indented run of tildes is code, not a fence: the link after the dedent is read (B3)")
+    require(links("a.md", b"> ~~~md\n> code\n" + after, set())[0] == gone, "a fence in a quotation ends with the quotation (B3)")
+    require(links("a.md", b"- item\n\n      ~~~\n      [x](gone.md)\n\ntext [y](docs/after.md)\n", set())[0] == gone, "an unclosed fence in a list item ends with the item")
+    require(links("a.md", b" ~~~\n[x](gone.md)\n\n[t]: gone.md\n", set()) == ([], 0, 0, 0), "a top-level fence indented under four columns still runs to the end of the file")
     spaced = b"[guide]: <docs/Trial guide.md>\n[inline](<docs/Trial guide.md>)\n"
     require(links("a.md", spaced, {"docs/Trial guide.md"}) == ([], 2, 0, 0), "a bracketed target with a space, tracked, holds in both spellings (C3)")
     require(links("a.md", spaced, {"docs/Trial"})[0] == ["K6: a.md links to docs/Trial guide.md, which is not tracked"] * 2, "a bracketed target with a space is not cut at the space (C3)")
