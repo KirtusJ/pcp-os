@@ -699,9 +699,10 @@ fn recent_tasks(rec: &Record, programs: &[Entry], most: usize) -> Vec<(String, S
 fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize], place: usize, whole: bool, widgets: &[bool; 3], store: &crate::regular::Files, mounted: bool, run: u32, message: &str, last_refusal: Option<(usize, &str)>, name_page: usize) -> usize {
     use ui::{label, AMBER, BAD, GOOD, SOFT, TEAL, TEXT};
     let safe = start.failed != 0;
-    let last_refusal = if !safe && cut_blocks_launch(start) {
-        place.checked_sub(1).and_then(|at| shortcuts.get(at)).map(|&index| (index, "loader line cut"))
-    } else { last_refusal };
+    let cut_pin = if !safe && cut_blocks_launch(start) {
+        place.checked_sub(1).and_then(|at| shortcuts.get(at)).copied()
+    } else { None };
+    let last_refusal = cut_pin.map(|index| (index, "loader line cut")).or(last_refusal);
     let recent = if widgets[0] { recent_tasks(rec, programs, 3) } else { Vec::new() };
     let (pool, free, _, _) = crate::mem::census();
     let files_line = if mounted { "VM files | saved when an app syncs" } else { "Session files | cleared at power-off" };
@@ -810,7 +811,10 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
                     let why = if reason == "the program could not be admitted as a task" && "Not started: ".len() + reason.len() > room {
                         "not admitted"
                     } else { reason };
-                    at(x, y, &cut(&format!("Not started: {}", why), room), BAD, GROUND);
+                    let caption = if cut_pin.is_some() && "Not started: loader line cut".len() > room {
+                        String::from("Loader line cut")
+                    } else { format!("Not started: {}", why) };
+                    at(x, y, &cut(&caption, room), BAD, GROUND);
                 } else if caption {
                     at(2, row, "Enter starts", GOOD, GROUND);
                 }
@@ -846,7 +850,11 @@ fn draw_home(start: &Start, programs: &[Entry], rec: &Record, shortcuts: &[usize
             let _ = gap_keys;
             // On a display too narrow for the whole line, the keys that open the list of keys and that
             // stop the machine are the ones kept.
-            at(2, rows - 2, if across >= 47 { "Up/Down choose   Enter open   F1 keys   F10 off" } else { "Enter open  F1 keys  F10 off" }, TEXT, GROUND);
+            let keys = if cut_pin.is_some() { "Up/Down choose  F1 keys  F10 off" }
+                       else if across >= 47 { "Up/Down choose   Enter open   F1 keys   F10 off" }
+                       else { "Enter open  F1 keys  F10 off" };
+            let keys = if cut_pin.is_some() && keys.len() > across { "F1 keys  F10 off" } else { keys };
+            at(2, rows - 2, keys, TEXT, GROUND);
             return name_pages;
         }
     };

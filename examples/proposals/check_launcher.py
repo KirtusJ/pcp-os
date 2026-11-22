@@ -111,11 +111,14 @@ def main():
                 key("esc")
                 capture("pin-home", lambda s: "Programs" in s)
                 key("down" if width < 1280 else "right")
-                pin = capture("pin-chosen", lambda s: "Not started: loader line cut" in s)
-                if "Enter starts" in pin:
+                def pin_refusal(words):
+                    return "loader line cut" in words.lower()
+
+                pin = capture("pin-chosen", pin_refusal)
+                if "Enter starts" in pin or "Enter open" in pin:
                     raise AssertionError("Pinned program still offers to start: " + pin)
                 key("ret")
-                capture("refused", lambda s: "was not started" in s or "Not started: loader line cut" in s)
+                capture("refused", lambda s: "was not started" in s or pin_refusal(s))
                 log = serial.read_text()
                 if guest.name + " was not started:" not in log or "starting " + guest.name + " (" in log:
                     raise AssertionError("Expected a refusal before starting the guest")
