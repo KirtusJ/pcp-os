@@ -1,5 +1,7 @@
 # Assemble PCP OS x86-64 UEFI release components
 
+For an owner-elected physical trial, use the [HP EliteBook 840 G7 checklist](elitebook-840-g7.md).
+
 The model-free image boots the PCP OS desktop and offers Tailorbird and Surfbird in Programs. Tailorbird starts without a model service. Surfbird uses the bundled picture and sound clip and needs a supported audio device for playback. This recipe writes an ISO into a new regular file. It never writes a USB device.
 
 ## Prepare the components
