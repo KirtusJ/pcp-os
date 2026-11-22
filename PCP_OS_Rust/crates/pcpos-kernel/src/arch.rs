@@ -206,6 +206,8 @@ pub struct BootInfo {
     pub processors: Option<processors::Found>,
     /// Where the tables were looked for, and if nothing came of it, why.
     pub processors_note: &'static str,
+    /// Where the root pointer was taken to be, if anywhere.
+    pub processors_root: Option<u64>,
 }
 
 impl BootInfo {
@@ -285,25 +287,25 @@ pub fn boot_info(magic: u32, info: u32) -> BootInfo {
         }
         // The firmware's tables of processors. They are read here, while the loader-time map still
         // reaches the first four gibibytes; only memory is read, and everything is copied.
+        // Nothing is read from memory the loader's map gives as free: firmware's tables are never there.
+        let map = out.memory_map.clone().unwrap_or_default();
         let mut read = |at: u64, len: usize| -> Option<alloc::vec::Vec<u8>> {
             let end = at.checked_add(len as u64)?;
-            (end <= 4 << 30 && len <= 1 << 20).then(|| core::slice::from_raw_parts(at as usize as *const u8, len).to_vec())
+            (end <= 4 << 30 && len <= 1 << 20 && processors::outside_free_memory(&map, at, len)).then(|| core::slice::from_raw_parts(at as usize as *const u8, len).to_vec())
         };
         // A loader that started from UEFI says where the root pointer is; otherwise it is looked for
         // where a BIOS puts it: the first kibibyte of the extended BIOS data area, then 0xE0000 to 0xFFFFF.
-        let named = out.command_line_exact.then(|| out.command_line.split_whitespace().find_map(|w| w.strip_prefix("acpi_rsdp=0x"))).flatten();
+        let named = if out.command_line_exact { processors::named_root(&out.command_line) } else { Err(()) };
         let root = match named {
-            Some(hex) => match u64::from_str_radix(hex, 16) {
-                Ok(at) => {
-                    out.processors_note = "at the address the loader named";
-                    Some(at)
-                }
-                Err(_) => {
-                    out.processors_note = "the loader's acpi_rsdp= is not a number";
-                    None
-                }
-            },
-            None => {
+            Ok(Some(at)) => {
+                out.processors_note = "at the address the loader named";
+                Some(at)
+            }
+            Err(()) => {
+                out.processors_note = "the loader's line is cut short, or its acpi_rsdp= is not the one form taken";
+                None
+            }
+            Ok(None) => {
                 let area = (((0x40E as *const u16).read_unaligned() as u64) << 4, 1024u64);
                 let found = [area, (0xE_0000, 0x2_0000)].into_iter().filter(|(start, _)| *start >= 0x400).find_map(|(start, length)| {
                     (start..start + length).step_by(16).find(|at| read(*at, 36).is_some_and(|b| processors::root_holds(&b)))
@@ -312,12 +314,13 @@ pub fn boot_info(magic: u32, info: u32) -> BootInfo {
                 found
             }
         };
+        out.processors_root = root;
         if let Some(root) = root {
             match processors::find(root, &mut read) {
                 Ok(found) => out.processors = Some(found),
                 Err(why) => {
                     out.processors_note = match why {
-                        processors::Refused::Unreadable => "a table lies outside what can be read at start",
+                        processors::Refused::Unreadable => "a table lies outside what can be read at start, or in memory given as free",
                         processors::Refused::NoRoot => "the root pointer does not hold",
                         processors::Refused::BadTable => "a table's signature, length or checksum is wrong",
                         processors::Refused::NoProcessorTable => "the firmware lists no table of processors",

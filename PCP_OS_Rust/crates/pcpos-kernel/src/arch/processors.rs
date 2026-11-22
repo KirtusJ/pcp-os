@@ -166,6 +166,52 @@ pub fn find(root: u64, read: &mut dyn FnMut(u64, usize) -> Option<Vec<u8>>) -> R
     Ok(found)
 }
 
+/// What a loader that started from UEFI says about the root pointer on its line: the one word
+/// `acpi_rsdp=0x` and exactly sixteen lowercase hexadecimal digits, the root pointer's own physical
+/// address, never nothing. `Ok(None)` is no such word. Two such words, or one in any other form, is
+/// an error, and the kernel then looks nowhere else: a loader that tried to say and said it wrongly
+/// is not second-guessed.
+pub fn named_root(line: &str) -> Result<Option<u64>, ()> {
+    let mut words = line.split_ascii_whitespace().filter_map(|w| w.strip_prefix("acpi_rsdp="));
+    let Some(word) = words.next() else { return Ok(None) };
+    if words.next().is_some() {
+        return Err(());
+    }
+    let digits = word.strip_prefix("0x").ok_or(())?;
+    if digits.len() != 16 || !digits.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+        return Err(());
+    }
+    match u64::from_str_radix(digits, 16) {
+        Ok(0) | Err(_) => Err(()),
+        Ok(at) => Ok(Some(at)),
+    }
+}
+
+/// Whether `length` bytes at `at` lie wholly outside every range the loader's memory map (in the
+/// Multiboot form: a size, then base, length and kind) gives as free for use. Firmware's tables are
+/// never in memory it hands out as free; an address that is must not be believed, and is not read.
+/// A map that cannot be followed to its end answers no.
+pub fn outside_free_memory(map: &[u8], at: u64, length: usize) -> bool {
+    let Some(end) = at.checked_add(length as u64) else { return false };
+    let mut entry = 0usize;
+    let mut seen = false;
+    while entry < map.len() {
+        let (Some(size), Some(base), Some(extent), Some(kind)) = (u32_at(map, entry), u64_at(map, entry + 4), u64_at(map, entry + 12), u32_at(map, entry + 20)) else {
+            return false;
+        };
+        if size < 20 {
+            return false;
+        }
+        let Some(top) = base.checked_add(extent) else { return false };
+        if kind == 1 && at < top && base < end {
+            return false;
+        }
+        seen = true;
+        entry += size as usize + 4;
+    }
+    seen && entry == map.len()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -346,5 +392,40 @@ mod tests {
             body.extend_from_slice(&local(0, 1));
             assert_eq!(find(ROOT, &mut machine(2, sdt(b"APIC", &body)).read()), Err(Refused::BadProcessors));
         }
+    }
+
+    #[test]
+    fn the_loaders_word_is_taken_in_one_form_only() {
+        assert_eq!(named_root("then=off quiet"), Ok(None));
+        assert_eq!(named_root("then=off acpi_rsdp=0x000000007ffe0014"), Ok(Some(0x7ffe_0014)));
+        assert_eq!(named_root("acpi_rsdp=0x00000001fffffff0"), Ok(Some(0x1_ffff_fff0)));
+        for wrong in ["acpi_rsdp=0x7ffe0014", "acpi_rsdp=0x000000007FFE0014", "acpi_rsdp=000000007ffe0014", "acpi_rsdp=0x0000000000000000", "acpi_rsdp=0x000000007ffe00140",
+                      "acpi_rsdp=0x000000007ffe001g", "acpi_rsdp=", "acpi_rsdp=0x000000007ffe0014 acpi_rsdp=0x000000007ffe0014", "acpi_rsdp=0x+00000007ffe0014"] {
+            assert_eq!(named_root(wrong), Err(()), "{wrong}");
+        }
+    }
+
+    #[test]
+    fn nothing_is_read_from_memory_the_map_gives_as_free() {
+        let entry = |base: u64, extent: u64, kind: u32| {
+            let mut e = 20u32.to_le_bytes().to_vec();
+            e.extend_from_slice(&base.to_le_bytes());
+            e.extend_from_slice(&extent.to_le_bytes());
+            e.extend_from_slice(&kind.to_le_bytes());
+            e
+        };
+        let map = [entry(0, 0x9fc00, 1), entry(0xf0000, 0x10000, 2), entry(0x10_0000, 0x7ef_0000, 1), entry(0x7ff_0000, 0x1_0000, 3)].concat();
+        assert!(outside_free_memory(&map, 0xf5000, 36));
+        assert!(outside_free_memory(&map, 0x7ff_0000, 0x1_0000));
+        assert!(outside_free_memory(&map, 0xa0000, 16)); // a hole the map does not mention
+        assert!(!outside_free_memory(&map, 0x10_0000, 36));
+        assert!(!outside_free_memory(&map, 0x7fe_fff0, 36)); // begins in free memory
+        assert!(!outside_free_memory(&map, 0x9fbf0, 36)); // ends outside it, begins inside
+        assert!(!outside_free_memory(&map, u64::MAX - 4, 36));
+        assert!(!outside_free_memory(&[], 0xf5000, 36));
+        assert!(!outside_free_memory(&map[..map.len() - 3], 0xf5000, 36));
+        let mut short = map.clone();
+        short[0] = 8;
+        assert!(!outside_free_memory(&short, 0xf5000, 36));
     }
 }

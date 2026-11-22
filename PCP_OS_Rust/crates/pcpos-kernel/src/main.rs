@@ -698,6 +698,9 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     }
     // What the firmware says of processors. This kernel still runs on the one it was started on:
     // the others are counted here and not yet started.
+    if let (Some(root), Some(_)) = (boot.processors_root, &boot.processors) {
+        say!("processors: the root pointer is at {:#018x}", root);
+    }
     match &boot.processors {
         Some(found) => say!("processors: the firmware lists {} usable ({}); {} more than this kernel would start, {} not to be used; this kernel runs on one",
                             found.processors.len(), boot.processors_note, found.beyond, found.disabled),
