@@ -1,4 +1,4 @@
-"""Read back the single-ESP GPT / El Torito layout emitted by model-media-iso."""
+"""Read back a GPT with one ESP and checked other partitions / El Torito."""
 import hashlib
 import struct
 import uuid
@@ -46,6 +46,8 @@ def efi_partition(stream, image_size):
     table, count, expected_crc, first, last, _ = primary
     checksum = 0
     esp = None
+    active_ranges = []
+    unique_guids = set()
     for index in range(0, count, 256):
         length = min(256, count - index) * 128
         entries = read_at(stream, table * SECTOR + index * 128, length)
@@ -57,15 +59,23 @@ def efi_partition(stream, image_size):
             partition_type = entry[:16]
             if partition_type == bytes(16):  # GPT unused entry
                 continue
-            # This candidate master has exactly one active partition. Checking
-            # only ESP entries can admit another active partition overlapping
-            # the verified FAT or lying outside the usable GPT range.
-            if partition_type != ESP_TYPE:
-                raise ValueError("unexpected active GPT partition in single-ESP image")
+            # xorriso may also expose non-ESP ISO/gap partitions. Validate
+            # *all* active entries, not just the ESP: mirrored tables and valid
+            # CRCs alone cannot rule out overlap or out-of-bounds geometry.
             start, end = struct.unpack_from("<QQ", entry, 32)
-            if entry[16:32] == bytes(16) or esp is not None or not first <= start <= end <= last:
-                raise ValueError("ambiguous or out-of-range EFI System Partition")
-            esp = (start * SECTOR, (end - start + 1) * SECTOR)
+            unique = entry[16:32]
+            if unique == bytes(16) or unique in unique_guids:
+                raise ValueError("missing or duplicated active GPT partition GUID")
+            if not first <= start <= end <= last:
+                raise ValueError("active GPT partition outside usable range")
+            if any(start <= prior_end and prior_start <= end for prior_start, prior_end in active_ranges):
+                raise ValueError("overlapping active GPT partitions")
+            unique_guids.add(unique)
+            active_ranges.append((start, end))
+            if partition_type == ESP_TYPE:
+                if esp is not None:
+                    raise ValueError("multiple EFI System Partitions")
+                esp = (start * SECTOR, (end - start + 1) * SECTOR)
     if checksum != expected_crc or esp is None:
         raise ValueError("GPT partition checksum differs or the EFI partition is missing")
     return esp
