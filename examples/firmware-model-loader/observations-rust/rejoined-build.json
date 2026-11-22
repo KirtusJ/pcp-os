@@ -1,0 +1,154 @@
+{
+  "cargo_lock_sha256": "ac5900a81d57770403ba57f27c51362a272b64ec7fac5e26fb00d1d7419c2693",
+  "commands": [
+    [
+      "cargo",
+      "run",
+      "--locked",
+      "--manifest-path",
+      "<checkout>/PCP_OS_Rust/crates/pcpos-efi-loader/Cargo.toml",
+      "--features",
+      "assembly",
+      "--bin",
+      "pin-inputs",
+      "--",
+      "<parts>",
+      "<receipt>",
+      "6971b3171aa76c9d5af9f7fa2797d34c5b09eaa07f7fc138744977508542300b",
+      "<build>/pins.rs"
+    ],
+    [
+      "cargo",
+      "build",
+      "--locked",
+      "--manifest-path",
+      "<checkout>/PCP_OS_Rust/crates/pcpos-efi-loader/Cargo.toml",
+      "--lib",
+      "--profile",
+      "efi",
+      "--target",
+      "x86_64-unknown-none"
+    ],
+    [
+      "cc",
+      "-O2",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-fpic",
+      "-fshort-wchar",
+      "-ffreestanding",
+      "-fno-stack-protector",
+      "-mno-red-zone",
+      "-DGNU_EFI_USE_MS_ABI",
+      "-I<gnu-efi>/include/efi",
+      "-I<gnu-efi>/include/efi/x86_64",
+      "-c",
+      "<checkout>/examples/firmware-model-loader/firmware.c",
+      "-o",
+      "firmware.o"
+    ],
+    [
+      "cc",
+      "-c",
+      "<checkout>/examples/firmware-owned-uefi/handoff.S",
+      "-o",
+      "handoff.o"
+    ],
+    [
+      "ld",
+      "--version-script",
+      "<build>/exports.map",
+      "-nostdlib",
+      "-znocombreloc",
+      "-T",
+      "<gnu-efi>/lib/elf_x86_64_efi.lds",
+      "-shared",
+      "-Bsymbolic",
+      "--gc-sections",
+      "--no-undefined",
+      "<gnu-efi>/lib/crt0-efi-x86_64.o",
+      "firmware.o",
+      "handoff.o",
+      "<build>/target/x86_64-unknown-none/efi/libpcpos_preloaded_loader.a",
+      "-L<gnu-efi>/lib",
+      "-lefi",
+      "-lgnuefi",
+      "-o",
+      "loader.so"
+    ],
+    [
+      "objcopy",
+      "--strip-all",
+      "-j",
+      ".text",
+      "-j",
+      ".rodata",
+      "-j",
+      ".sdata",
+      "-j",
+      ".data",
+      "-j",
+      ".dynamic",
+      "-j",
+      ".dynsym",
+      "-j",
+      ".rel",
+      "-j",
+      ".rela",
+      "-j",
+      ".reloc",
+      "--target=efi-app-x86_64",
+      "loader.so",
+      "BOOTX64.EFI"
+    ]
+  ],
+  "configuration_sha256": "217080fdbe39d5f6b5bd063f790b37b0651bb8fff8da4e4e79b505dd417c7f63",
+  "format": "pcpos-efi-build/1",
+  "gnu_efi_files": {
+    "crt0-efi-x86_64.o": "809992b293316bf0abe62c44f731008610c9ff80e4e6cd2ac479b1481e8ae474",
+    "elf_x86_64_efi.lds": "7dd33f6756c2dcec5fc78fd6c94cda8dec58c73502fa3c3bbc63369ac5fa7970",
+    "libefi.a": "a3c6cfe519bf1850622f8c01854ee3b6473c7774795b97f4a693878e22233498",
+    "libgnuefi.a": "ad16de05ceda4e09a68f0742d038be0a040fb2ad08c06040d02cd9f0890e36f9"
+  },
+  "input_receipt_sha256": "6971b3171aa76c9d5af9f7fa2797d34c5b09eaa07f7fc138744977508542300b",
+  "output": {
+    "bytes": 354304,
+    "sha256": "ed3232301331b9ae5c9837fb34567d92ca111f1a7f5b9a12e2eb5bbf965687d8"
+  },
+  "profile": "efi",
+  "target": "x86_64-unknown-none",
+  "target_rustflags": [
+    "-C",
+    "relocation-model=pic",
+    "-C",
+    "no-redzone=yes",
+    "--remap-path-prefix",
+    "<checkout>=/pcpos-source",
+    "--remap-path-prefix",
+    "<build>=/pcpos-efi-build"
+  ],
+  "tools": {
+    "cargo": {
+      "sha256": "eff12bab37b9d9e01324db4583eaf55b2cd82ac3008a7e59876e4cd2e9a028f5",
+      "version": "cargo 1.97.0 (c980f4866 2026-06-30)\nrelease: 1.97.0\ncommit-hash: c980f4866141969fab6254a680546a277789d6f0\ncommit-date: 2026-06-30\nhost: x86_64-unknown-linux-gnu\nlibgit2: 1.9.2 (sys:0.20.4 vendored)\nlibcurl: 8.20.0-DEV (sys:0.4.88+curl-8.20.0 vendored ssl:OpenSSL/3.6.2)\nssl: OpenSSL 3.6.2 7 Apr 2026\nos: Debian 13.0.0 [64-bit]"
+    },
+    "cc": {
+      "sha256": "a23ecab8ff08f09ad8c80602c2c5df7f49e09c25905cb8975902e101bf72635f",
+      "version": "cc (Debian 14.2.0-19) 14.2.0"
+    },
+    "ld": {
+      "sha256": "d2766988b6a1b1d1518cdc09242e726d1f24e151e16410ada3092b11ffd9081b",
+      "version": "GNU ld (GNU Binutils for Debian) 2.44"
+    },
+    "objcopy": {
+      "sha256": "403f90bbd5d26c8ab9a2ad51f56255b812e8858a83aa8740ee71791071ddb580",
+      "version": "GNU objcopy (GNU Binutils for Debian) 2.44"
+    },
+    "profile": "release",
+    "rustc": {
+      "sha256": "df13f58759c0662831983e3a6501c63c1fc12ea60ec4e1d1ac35e5fe43c500c0",
+      "version": "rustc 1.97.0 (2d8144b78 2026-07-07)\nbinary: rustc\ncommit-hash: 2d8144b7880597b6e6d3dfd63a9a9efae3f533d3\ncommit-date: 2026-07-07\nhost: x86_64-unknown-linux-gnu\nrelease: 1.97.0\nLLVM version: 22.1.6"
+    }
+  }
+}
