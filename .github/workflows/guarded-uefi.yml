@@ -75,12 +75,13 @@ jobs:
         shell: bash # pipefail: the checker's failure is not lost in the pipe to tee
         run: |
           kernel=PCP_OS_Rust/crates/pcpos-kernel
-          for features in "" processors processors-extended-demo processors-silent-demo; do
+          for features in "" processors processors-extended-demo processors-silent-demo processors-unlocked-demo; do
             PCPOS_KERNEL_FEATURES="$features" bash "$kernel/run.sh" build
             cp "$kernel/target/pcpos-kernel.elf32" "$RUNNER_TEMP/kernel-${features:-plain}.elf32"
           done
           python3 examples/processors/check_started.py "$RUNNER_TEMP/kernel-processors.elf32" "$RUNNER_TEMP/kernel-plain.elf32" \
-            "$RUNNER_TEMP/kernel-processors-extended-demo.elf32" "$RUNNER_TEMP/kernel-processors-silent-demo.elf32" | tee "$RUNNER_TEMP/processors-started.txt"
+            "$RUNNER_TEMP/kernel-processors-extended-demo.elf32" "$RUNNER_TEMP/kernel-processors-silent-demo.elf32" \
+            "$RUNNER_TEMP/kernel-processors-unlocked-demo.elf32" | tee "$RUNNER_TEMP/processors-started.txt"
           cp "$RUNNER_TEMP/uefi-demo.elf32" "$kernel/target/pcpos-kernel.elf32"
       - name: Check the released ELF and guard the experimental handoff
         run: python3 examples/guarded-uefi/trial.py distribution PCP_OS_Rust/crates/pcpos-kernel "$RUNNER_TEMP/guarded-uefi"

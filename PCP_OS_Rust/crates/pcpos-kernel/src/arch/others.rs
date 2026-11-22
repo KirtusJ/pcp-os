@@ -1,8 +1,9 @@
 //! Starting the machine's other processors, and parking them (feature `processors`; stage 2 of
 //! using every processor). Each is brought from reset to 64-bit mode on the kernel's own map, given
 //! its own segment table, task state segment and stacks, set to the same protections as the first,
-//! asked who it is, and then halted with interrupts off. None runs any work yet: nothing in the
-//! kernel is written for two processors at once, so a parked one touches nothing but its own stack.
+//! asked who it is, and then left idling: halted, with interrupts on, waiting for a message from
+//! another processor (stage 3). None runs a program yet. The kernel's code runs on one processor at
+//! a time, whichever holds its one lock; see "one lock around the kernel" below.
 //!
 //! The order of a start is the one the processor makers give: INIT, ten milliseconds, a start-up
 //! message naming a page below one mebibyte, and a second one if the first is not answered. One is
@@ -311,12 +312,268 @@ extern "C" fn ap_main() -> ! {
         asm!("mov {t}, cr3", "mov cr3, {t}", t = out(reg) _, options(nostack, preserves_flags));
     }
     SAID[slot].store(said, Ordering::SeqCst);
-    ANSWERED.fetch_add(1, Ordering::SeqCst);
-    loop {
-        // Safety: no memory effect. Interrupts are off, so only a non-maskable interrupt or a reset
-        // ends the halt; the first is handled on this processor's own stack and comes back here.
-        unsafe { asm!("cli", "hlt", options(nomem, nostack)) }
+    extern "C" {
+        fn ap_idle() -> !;
     }
+    if said & (NOT_ITSELF | DIFFERENT) != 0 {
+        ANSWERED.fetch_add(1, Ordering::SeqCst);
+        loop {
+            // Safety: no memory effect. A processor that is not as the first is left halted with
+            // interrupts off and is asked nothing: only a non-maskable interrupt or a reset ends the
+            // halt, and the first is handled on this processor's own stack and comes back here.
+            unsafe { asm!("cli", "hlt", options(nomem, nostack)) }
+        }
+    }
+    listen();
+    ANSWERED.fetch_add(1, Ordering::SeqCst);
+    // Safety: the loop in others.s, which allows interrupts and halts; it does not return. This
+    // processor does not hold the kernel's lock here and touches nothing shared; a message takes
+    // the lock on its way in like any other entry.
+    unsafe { ap_idle() }
+}
+
+// ---- one lock around the kernel -------------------------------------------------------------------
+// The kernel is written for one processor: its shared values rely on nothing else running while
+// interrupts are off. That stays true with several processors because of one rule: a processor runs
+// the kernel's code only while it holds this lock. It is taken on the way in from outside (a program,
+// or idling) and given up on the way back out; an interrupt that arrives while the kernel is already
+// running on that processor finds it held and changes nothing.
+
+/// Zero when free, otherwise one more than the number of the processor that holds it. The first
+/// processor holds it from the start: it begins in the kernel.
+static LOCK: AtomicUsize = AtomicUsize::new(1);
+/// Whether each processor holds it. Written only by that processor, with interrupts off.
+static FIRST_HOLDS: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(true);
+static OTHER_HOLDS: [core::sync::atomic::AtomicBool; OTHERS] = [const { core::sync::atomic::AtomicBool::new(false) }; OTHERS];
+
+/// Which processor this is: 0 for the first, otherwise one more than its slot. Told by the stack it
+/// is on, since each other processor's stacks lie in its own area and nothing a program can set is asked.
+pub fn cpu() -> usize {
+    let at: usize;
+    // Safety: reads the stack pointer.
+    unsafe { asm!("mov {}, rsp", out(reg) at, options(nomem, nostack, preserves_flags)) };
+    let base = area(0);
+    if at > base && at <= base + OTHERS * AREA { (at - 1 - base) / AREA + 1 } else { 0 }
+}
+
+fn holds(cpu: usize) -> &'static core::sync::atomic::AtomicBool {
+    if cpu == 0 { &FIRST_HOLDS } else { &OTHER_HOLDS[cpu - 1] }
+}
+
+fn acquire(cpu: usize) {
+    #[cfg(feature = "processors-unlocked-demo")]
+    if DEMO_UNLOCKED.load(Ordering::Relaxed) {
+        return; // the control: nothing is waited for, so two processors can be in at once
+    }
+    while LOCK.compare_exchange_weak(0, cpu + 1, Ordering::Acquire, Ordering::Relaxed).is_err() {
+        core::hint::spin_loop();
+    }
+}
+
+fn release() {
+    LOCK.store(0, Ordering::Release);
+}
+
+#[cfg(feature = "processors-unlocked-demo")]
+static DEMO_UNLOCKED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+/// What `enter` found, for `leave`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Entered {
+    /// The processor already held the lock: the kernel was interrupted in its own work.
+    Held,
+    /// Taken on the way in from outside.
+    FromOutside,
+    /// Taken on the way in from kernel code that had given it up for a moment (`relax`).
+    FromRelaxed,
+}
+
+/// On every entry to the kernel, before anything else. Interrupts are off.
+pub fn enter(from_outside: bool) -> Entered {
+    let me = cpu();
+    if holds(me).load(Ordering::Relaxed) {
+        return Entered::Held;
+    }
+    acquire(me);
+    holds(me).store(true, Ordering::Relaxed);
+    if from_outside { Entered::FromOutside } else { Entered::FromRelaxed }
+}
+
+/// On every way out, after everything else. `to_outside` is where the entry returns to, which is not
+/// always where it came from: the kernel may have switched to a program, to idling, or back to itself.
+pub fn leave(entered: Entered, to_outside: bool) {
+    if to_outside || entered == Entered::FromRelaxed {
+        let me = cpu();
+        holds(me).store(false, Ordering::Relaxed);
+        release();
+    }
+}
+
+/// Give the lock up for a moment so that another processor can have it, and take it again. For
+/// kernel code that waits for another processor.
+pub fn relax() {
+    let on = interrupts_save_off();
+    let me = cpu();
+    holds(me).store(false, Ordering::Relaxed);
+    release();
+    core::hint::spin_loop();
+    acquire(me);
+    holds(me).store(true, Ordering::Relaxed);
+    interrupts_restore(on);
+}
+
+// ---- a message from one processor to another -----------------------------------------------------
+
+/// How the controller is reached, for the processors started: 0 not yet, 1 as registers, else the address.
+static REACH: AtomicUsize = AtomicUsize::new(0);
+/// How many others are parked, and each one's identity.
+static PARKED: AtomicUsize = AtomicUsize::new(0);
+static IDENTITY: [AtomicU32; OTHERS] = [const { AtomicU32::new(0) }; OTHERS];
+/// What each is asked to do next (a function's address, or zero), and how many it has done.
+static ASKED: [AtomicUsize; OTHERS] = [const { AtomicUsize::new(0) }; OTHERS];
+static DONE: [AtomicU64; OTHERS] = [const { AtomicU64::new(0) }; OTHERS];
+
+fn reach() -> Option<Reach> {
+    match REACH.load(Ordering::SeqCst) {
+        0 => None,
+        1 => Some(Reach::Registers),
+        at => Some(Reach::Memory(at)),
+    }
+}
+
+/// The entry in others.s for vector 240.
+pub fn message_stub() -> u64 {
+    extern "C" {
+        fn isr_message();
+    }
+    isr_message as usize as u64
+}
+
+/// Whether `at` is in the loop another processor idles in.
+pub fn idling(at: usize) -> bool {
+    extern "C" {
+        fn ap_idle() -> !;
+        fn ap_idle_end();
+    }
+    at >= ap_idle as usize && at < ap_idle_end as usize
+}
+
+/// Turn this processor's interrupt controller on, so that a message can reach it. Nothing else is
+/// let through: its local lines stay masked as a restart left them.
+fn listen() {
+    match reach() {
+        // Safety: the page is mapped by `start`; 0xF0 is the register that turns the controller on
+        // and names the vector for an interrupt with nothing behind it (255, which has a handler).
+        Some(Reach::Memory(at)) => unsafe { ((at + 0xF0) as *mut u32).write_volatile(0x1FF) },
+        Some(Reach::Registers) => {
+            // A processor comes out of its restart in the ordinary mode whatever mode the first is
+            // in, and in that mode the controller's registers cannot be reached as the processor's
+            // own. It is put in the extended mode first (bit 10, with the controller on, bit 11),
+            // if it offers it; one that does not is left unable to hear, and is never asked.
+            // Found by Director B3: without this the first register write faulted.
+            if core::arch::x86_64::__cpuid(1).ecx & (1 << 21) == 0 {
+                return;
+            }
+            wrmsr(0x1B, rdmsr(0x1B) | 3 << 10);
+            wrmsr(0x80F, 0x1FF)
+        }
+        None => {}
+    }
+}
+
+/// How many interrupts with nothing behind them have arrived, on any processor.
+static NOTHING: AtomicU64 = AtomicU64::new(0);
+
+/// Vector 255 arrived: an interrupt with nothing behind it. Counted, and nothing else.
+pub fn nothing_behind() {
+    NOTHING.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Raise vector 255 on this processor as the controller would, for the self-test.
+pub fn raise_nothing() {
+    // Safety: a software interrupt to a vector that has a handler which only counts.
+    unsafe { asm!("int 0xff") }
+}
+
+/// How many such have been counted.
+pub fn nothing_behind_count() -> u64 {
+    NOTHING.load(Ordering::Relaxed)
+}
+
+/// A message arrived on this processor (vector 240): say it was taken, and do what was asked.
+pub fn message() {
+    match reach() {
+        // Safety: as above; 0xB0 is the register that ends an interrupt.
+        Some(Reach::Memory(at)) => unsafe { ((at + 0xB0) as *mut u32).write_volatile(0) },
+        Some(Reach::Registers) => wrmsr(0x80B, 0),
+        None => {}
+    }
+    let me = cpu();
+    if me == 0 {
+        return;
+    }
+    let asked = ASKED[me - 1].swap(0, Ordering::SeqCst);
+    if asked != 0 {
+        // Safety: only `ask` stores here, and only the address of a `fn(usize)`.
+        let work: fn(usize) = unsafe { core::mem::transmute(asked) };
+        work(me);
+        DONE[me - 1].fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+/// Ask a parked processor to run `work` in the kernel, under the lock like all kernel code. False if
+/// there is no such processor, it still has something asked of it, or the message could not be sent.
+pub fn ask(slot: usize, work: fn(usize)) -> bool {
+    if slot >= PARKED.load(Ordering::SeqCst) || ASKED[slot].compare_exchange(0, work as usize, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+        return false;
+    }
+    let on = interrupts_save_off();
+    let sent = reach().is_some_and(|r| r.send(IDENTITY[slot].load(Ordering::SeqCst), 240));
+    interrupts_restore(on);
+    sent
+}
+
+/// The check of the lock: every processor at once adds one to the same count, `rounds` times each,
+/// giving the lock up and taking it again around every addition. The count is read and written back in
+/// two steps with a pause between, so two processors in the kernel together would lose
+/// additions. Returns (the count, what it must be, whether every processor finished in time).
+/// Interrupts must be on: time is told by the timer.
+pub fn count_together(rounds: u64) -> (u64, u64, bool) {
+    // Read and written back in two separate steps on purpose, so that additions are lost if two
+    // processors are in at once; an atomic, so that the control without the lock is still defined
+    // behaviour and only the count is wrong (the automated review of this stage).
+    static COUNT: AtomicU64 = AtomicU64::new(0);
+    static ROUNDS: AtomicU64 = AtomicU64::new(0);
+    fn add(_: usize) {
+        for _ in 0..ROUNDS.load(Ordering::SeqCst) {
+            relax();
+            let now = COUNT.load(Ordering::Relaxed);
+            for _ in 0..8 {
+                core::hint::spin_loop();
+            }
+            COUNT.store(now + 1, Ordering::Relaxed);
+        }
+    }
+    let parked = PARKED.load(Ordering::SeqCst);
+    COUNT.store(0, Ordering::SeqCst);
+    ROUNDS.store(rounds, Ordering::SeqCst);
+    let before: alloc::vec::Vec<u64> = DONE[..parked].iter().map(|d| d.load(Ordering::SeqCst)).collect();
+    #[cfg(feature = "processors-unlocked-demo")]
+    DEMO_UNLOCKED.store(true, Ordering::SeqCst);
+    let mut asked = true;
+    for slot in 0..parked {
+        asked &= ask(slot, add);
+    }
+    add(0);
+    let until = ticks() + 20 * TICKS_PER_SECOND;
+    let finished = |slot: usize| DONE[slot].load(Ordering::SeqCst) > before[slot];
+    while !(0..parked).all(finished) && ticks() < until {
+        relax();
+    }
+    let all = asked && (0..parked).all(finished);
+    #[cfg(feature = "processors-unlocked-demo")]
+    DEMO_UNLOCKED.store(false, Ordering::SeqCst);
+    (COUNT.load(Ordering::SeqCst), (parked as u64 + 1) * rounds, all)
 }
 
 /// How starting the others went.
@@ -442,6 +699,7 @@ pub fn start(found: &processors::Found, page: Option<u64>) -> Result<Started, &'
         }
         Reach::Memory(at)
     };
+    REACH.store(match reach { Reach::Registers => 1, Reach::Memory(at) => at }, Ordering::SeqCst);
     // The start-up page: mapped writable to be filled, then executable and not writable while it is used.
     // Safety: the page is below the image, in memory the loader's map gives as free and the kernel
     // uses for nothing; the map entry is in static storage and was absent.
@@ -500,6 +758,7 @@ pub fn start(found: &processors::Found, page: Option<u64>) -> Result<Started, &'
             out.silent = true;
             break;
         }
+        IDENTITY[slot].store(other.apic, Ordering::SeqCst);
         slot += 1;
     }
     out.parked = slot;
@@ -527,6 +786,10 @@ pub fn start(found: &processors::Found, page: Option<u64>) -> Result<Started, &'
         if !cores.contains(&core) {
             cores.push(core);
         }
+    }
+    // Only if every one is as the first may any be asked to do something.
+    if out.not_itself == 0 && out.different == 0 {
+        PARKED.store(slot, Ordering::SeqCst);
     }
     out.threads = 1 + slot;
     out.cores = known.then_some(cores.len());

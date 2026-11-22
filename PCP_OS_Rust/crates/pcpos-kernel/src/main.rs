@@ -878,6 +878,18 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
                         }
                         check("every other processor that was tried answered, as itself, able to do what the first can and holding the same memory types, and is parked",
                               !o.silent && o.parked + o.out_of_reach == o.listed && o.not_itself == 0 && o.different == 0, &mut failed);
+                        if o.parked > 0 && !o.silent && o.not_itself == 0 && o.different == 0 {
+                            arch::interrupts_on();
+                            let (count, wanted, finished) = arch::others::count_together(20_000);
+                            arch::interrupts_off();
+                            say!("other processors: all {} processors added to one count together, each giving the kernel's lock up and taking it again 20000 times: {} of {}", o.parked + 1, count, wanted);
+                            check("every processor answers a message, and with all of them in and out of the kernel at once its one lock lets in one at a time: the count is exact",
+                                  finished && count == wanted, &mut failed);
+                        }
+                        let counted = arch::others::nothing_behind_count();
+                        arch::others::raise_nothing();
+                        check("an interrupt with nothing behind it (vector 255) is counted and the kernel goes on",
+                              arch::others::nothing_behind_count() == counted + 1, &mut failed);
                         let after = arch::kernel_map_audit();
                         check("after starting them the kernel's map is as it was, with at most the one page of the interrupt controller's registers added, never executable",
                               arch::MapAudit { controller_pages: 0, ..after } == before && after.controller_pages == (o.through_memory && o.listed > 0) as u32, &mut failed);
@@ -989,8 +1001,12 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
     if failed == 0 {
         #[cfg(all(feature = "vm-store", not(feature = "guest-ethernet")))]
         say!("ALL SELF-TESTS PASS. VM checkpoint storage is available when a dedicated IDE data disk is explicitly mounted.");
-        #[cfg(not(any(feature = "guest-ethernet", feature = "vm-store")))]
+        #[cfg(not(any(feature = "guest-ethernet", feature = "vm-store", feature = "processors")))]
         say!("ALL SELF-TESTS PASS. Present: user mode and preemptive processes; programs loaded from the loader's files; a display, a keyboard, sound and music where the machine has ones this kernel drives. Not present: storage that outlasts power, a mouse, network, a second processor.");
+        // With the processors feature the machine's other processors are started and can be asked to run
+        // kernel work, so "a second processor" is no longer absent; what is absent is a program on more than one (A3).
+        #[cfg(all(feature = "processors", not(any(feature = "guest-ethernet", feature = "vm-store"))))]
+        say!("ALL SELF-TESTS PASS. Present: user mode and preemptive processes; programs loaded from the loader's files; a display, a keyboard, sound and music where the machine has ones this kernel drives. Not present: storage that outlasts power, a mouse, network, a program that runs on more than one processor (the others are started where the machine has them, and idle).");
         #[cfg(feature = "guest-ethernet")]
         say!("ALL SELF-TESTS PASS. Guest Ethernet support is compiled in. Access requires a matching image grant and a supported NIC.");
     } else {
