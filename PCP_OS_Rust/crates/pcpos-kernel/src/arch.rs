@@ -557,23 +557,22 @@ pub fn protect(boot: &mut BootInfo) -> (usize, usize) {
         }
         // Memory above four gibibytes, where the loader's map shows any and the pool below exists: mapped
         // by the same rule as the pool, in 2 MiB leaves, from tables that are part of the kernel image.
-        // Memory the loader filled with a model and named on its line is decided first: what is kept
-        // for a model is never part of the pool, and what is refused is ordinary memory again.
+        // The map the pools are made from. With the emulator fixture, memory the line says the
+        // loader marked is added to it as the model's kind first, as a loader would have handed it.
+        #[cfg(feature = "model-memory-fixture")]
+        let marked = fixture_map(boot);
+        #[cfg(feature = "model-memory-fixture")]
+        let map = marked.as_ref().or(boot.memory_map.as_ref());
+        #[cfg(not(feature = "model-memory-fixture"))]
+        let map = boot.memory_map.as_ref();
+        // Memory the loader marked in its map as holding a model, and named on its line, is decided
+        // here. Such memory is never part of the pool, named or not: the map's kind keeps it out.
         #[cfg(feature = "model-memory")]
-        let model = model_named(boot);
-        #[cfg(feature = "model-memory")]
-        let kept_out: &[(u64, u64)] = match &model {
-            Model::Held { extents, count, .. } => &extents[..*count],
-            _ => &[],
-        };
-        #[cfg(not(feature = "model-memory"))]
-        let kept_out: &[(u64, u64)] = &[];
-        let high = match (&boot.memory_map, pool_start < pool_end) {
-            (Some(map), true) => frame_map::high(map, kept_out),
+        MODEL.with(|m| *m = model_named(boot, map));
+        let high = match (map, pool_start < pool_end) {
+            (Some(map), true) => frame_map::high(map),
             _ => ([(0, 0); frame_map::HIGH_RANGES], 0),
         };
-        #[cfg(feature = "model-memory")]
-        MODEL.with(|m| *m = model);
         let high_tables = HIGH_TABLES.0.get() as *mut [u64; 512];
         for &(start, stop) in &high.0[..high.1] {
             let mut at = start;
@@ -600,9 +599,9 @@ pub fn protect(boot: &mut BootInfo) -> (usize, usize) {
 pub enum Model {
     /// The line names none.
     None,
-    /// The line names memory, and it is kept: out of the pool, mapped nowhere by the kernel.
+    /// The line names memory the loader's map marks as a model's: out of the pool, mapped nowhere by the kernel.
     Held { extents: [(u64, u64); frame_map::MODEL_EXTENTS], count: usize, bytes: u64 },
-    /// The line names memory that may not be kept, and why. It is ordinary memory.
+    /// The line names memory that is not given as a model's, and why.
     Refused(&'static str),
 }
 
@@ -619,7 +618,7 @@ pub fn model() -> Model {
 }
 
 #[cfg(feature = "model-memory")]
-fn model_named(boot: &BootInfo) -> Model {
+fn model_named(boot: &BootInfo, map: Option<&alloc::vec::Vec<u8>>) -> Model {
     // A line that was cut may have lost part of what it names; nothing is taken from it.
     let Some(line) = boot.exact_command_line() else {
         return if boot.command_line.contains("model_memory=") { Model::Refused("the loader's line was cut") } else { Model::None };
@@ -632,11 +631,37 @@ fn model_named(boot: &BootInfo) -> Model {
     let Some((extents, count)) = frame_map::model_extents(word) else {
         return Model::Refused("model_memory is not address:bytes pieces in hexadecimal");
     };
-    let Some(map) = &boot.memory_map else { return Model::Refused("the loader gave no memory map") };
+    let Some(map) = map else { return Model::Refused("the loader gave no memory map") };
     match frame_map::model_allowed(map, &extents[..count]) {
         Ok(bytes) => Model::Held { extents, count, bytes },
         Err(why) => Model::Refused(why),
     }
+}
+
+/// FOR THE EMULATOR ONLY. An emulator's own loader cannot mark memory in its map as a model's, as
+/// the loader stage on a real machine does. With this feature the line's `fixture_model_ram=` (the
+/// same form as `model_memory=`) stands for that marking: its pieces, in whole pages, are added to
+/// a copy of the map as the model's kind, and everything after reads the copy exactly as it would
+/// read a loader's map. No release is built with it, and the kernel says at start when it is in use.
+#[cfg(feature = "model-memory-fixture")]
+fn fixture_map(boot: &BootInfo) -> Option<alloc::vec::Vec<u8>> {
+    let mut map = boot.memory_map.clone()?;
+    let word = boot.exact_command_line()?.split_whitespace().find_map(|w| w.strip_prefix("fixture_model_ram="))?;
+    let (extents, count) = frame_map::model_extents(word)?;
+    for &(base, bytes) in &extents[..count] {
+        let whole = bytes.checked_add(4095)? / 4096 * 4096;
+        map.extend_from_slice(&20u32.to_le_bytes());
+        map.extend_from_slice(&base.to_le_bytes());
+        map.extend_from_slice(&whole.to_le_bytes());
+        map.extend_from_slice(&frame_map::MODEL_RAM.to_le_bytes());
+    }
+    Some(map)
+}
+
+/// Whether the emulator fixture marked any memory in this boot.
+#[cfg(feature = "model-memory-fixture")]
+pub fn model_fixture_used(boot: &BootInfo) -> bool {
+    fixture_map(boot).is_some_and(|map| Some(&map) != boot.memory_map.as_ref())
 }
 
 /// The frame memory: [start, end).

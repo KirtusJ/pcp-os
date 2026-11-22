@@ -214,6 +214,10 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
         #[cfg(feature = "vm-store")] volume: None, #[cfg(feature = "model-memory")] model: None,
                             epoch_at_start: epoch(y, mo, d, h, mi, s).saturating_sub(arch::ticks() / arch::TICKS_PER_SECOND), unanswered: Vec::new() };
     let line = start.boot.command_line.as_str();
+    #[cfg(feature = "model-memory-fixture")]
+    if arch::model_fixture_used(&start.boot) {
+        say!("FIXTURE, NOT FOR ANY RELEASE: the loader's line (fixture_model_ram=), not the loader's map, marks memory as holding a model in this boot");
+    }
     #[cfg(feature = "model-memory")]
     {
         world.model = match model_given(start, &world.files) {
@@ -1244,10 +1248,10 @@ fn model_given(start: &Start, files: &[(String, &'static [u8])]) -> Result<Optio
         arch::Model::None => {
             return if start.boot.command_line.contains("model_manifest=") { Err(String::from("model_manifest is given and no model_memory")) } else { Ok(None) };
         }
-        arch::Model::Refused(why) => return Err(format!("the memory named for it is not kept ({})", why)),
+        arch::Model::Refused(why) => return Err(format!("the memory named for it is not given ({})", why)),
         arch::Model::Held { bytes, .. } => bytes,
     };
-    let kept = "the memory named for it stays out of the pool and is given to nothing";
+    let kept = "the memory marked for it stays out of the pool and is given to nothing";
     let line = start.boot.exact_command_line().ok_or_else(|| format!("the loader's line was cut; {}", kept))?;
     let mut pins = line.split_whitespace().filter_map(|w| w.strip_prefix("model_manifest="));
     let pin = match (pins.next(), pins.next()) {

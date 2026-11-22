@@ -2,16 +2,24 @@
 """Memory a loader filled with a model is kept out of the pool and given, read-only, to one program.
 
 A model is several gibibytes. The kernel has no driver for the stick it boots from, so a loader
-stage reads the model's files through the firmware into memory above four gibibytes and names that
-memory on the loader's line (`model_memory=0xADDRESS:0xBYTES[,...]`, at most eight pieces, in the
-model's own order). With the `model-memory` feature the kernel keeps that memory out of the pool it
-hands out, maps it nowhere itself, and gives it to the companion program alone: mapped readable,
-never writable or executable, and sealed so that no later call changes that. The model's manifest
-comes as a loader file named `model.manifest`, and its SHA-256 on the line (`model_manifest=`);
-the kernel gives nothing unless the three agree. The companion checks the model's bytes itself.
+stage reads the model's files through the firmware into memory it allocates above four gibibytes.
+It marks that memory in the map it hands over with a kind of its own (0x80000001: ordinary memory,
+that loader's, holding a model), and names it on the loader's line
+(`model_memory=0xADDRESS:0xBYTES[,...]`, at most eight pieces, in the model's own order). The map
+says whose the memory is; the line only says which of it is the model and in what order. With the
+`model-memory` feature the kernel gives memory so marked and so named to the companion program
+alone: mapped readable, never writable or executable, and sealed so that no later call changes
+that. It is never in the pool the kernel hands out (the kind is not "usable"), and the kernel maps
+it nowhere itself. The model's manifest comes as a loader file named `model.manifest`, and its
+SHA-256 on the line (`model_manifest=`); the kernel gives nothing unless all agree. The companion
+checks the model's bytes itself.
 
-Here the emulator plays the loader stage (`-device loader` puts two files at two addresses), and
-the "model" is 41,948,040 bytes whose value at each offset is known, so every byte can be checked.
+Here the emulator plays the loader stage: `-device loader` puts two files at two addresses, and
+because an emulator's loader cannot mark its map, the kernel is built with `model-memory-fixture`
+and the line's `fixture_model_ram=` stands for the marking (the kernel adds those pieces to a copy
+of the map as that kind and then reads the copy as it would a loader's map, and says at start that
+it did). That feature is for this check only and belongs in no release. The "model" is 41,948,040
+bytes whose value at each offset is known, so every byte can be checked.
 probe/ is built four ways: model-front, a model-front that takes memory (GRAB=1), model-back
 (BACK=1) and a model-back that writes (BACK=1 WRITE=1).
 
@@ -25,23 +33,24 @@ Predicates, fixed before the first run.
     mapping that is writable, executable, a byte short, a page long, or a second one, -22; another
     request -25; making a page of it writable or executable afterwards fails and its first byte is
     still the model's; its memory is not taken as a buffer by the kernel (-14).
- M3 out of the pool: with no model named, the kernel reports W frames above four gibibytes; with
-    the model held it reports W less the model's pieces counted in whole 2 MiB pages, and no more.
+ M3 out of the pool: with nothing marked, the kernel reports W frames above four gibibytes; with
+    the model's memory marked it reports W less the pieces counted in whole 2 MiB pages, and no more.
     A front that first takes all the memory the kernel will give and writes to every page of it
     takes all of those frames, and the companion then still reads every byte of the model unchanged.
  M4 a companion that stores into the model is ended by the processor's refusal (vector 14) at that
     store; the other program goes on to its end; the kernel does not stop.
- M5 nothing is given unless all agrees, and the kernel says why. Memory that may not be kept (a
-    piece not on a page, beyond the machine's memory, below four gibibytes, two pieces sharing
-    memory, the word given twice) is ordinary memory again: the pool is whole. Memory kept with no
-    manifest to match (no file, no pin, a pin that is not the file's digest, a manifest of another
-    length) stays out of the pool and is given to nothing. In every such case the companion's
-    open is -2.
+ M5 nothing is given unless all agrees, and the kernel says why: memory named on the line that
+    the map does not mark (not marked at all, or other memory marked); a piece not on a page, below
+    four gibibytes, at the end of all addresses (the numbers C3 found stopped the kernel), two
+    pieces sharing memory, the word given twice or not in hexadecimal; no manifest file, no pin, a
+    pin that is not the file's digest or given twice, a manifest of another length. Memory that is
+    marked stays out of the pool whatever the line says; memory that is only named stays in it. In
+    every such case the companion's open is -2.
  M6 with a model held and no companion named, no program can open it (-13).
  M7 every run ends with status 33, 71 self-tests pass, none fails, and every frame of both pools
     is free at the end.
 
-Usage: check.py <kernel.elf32 built with model-memory> <model-front> <taking model-front> <model-back> <writing model-back>
+Usage: check.py <kernel.elf32 built with model-memory-fixture> <model-front> <taking model-front> <model-back> <writing model-back>
 This is an emulator standing in for a loader, and test data standing in for a model.
 """
 import argparse
@@ -97,7 +106,10 @@ def main():
     other.mkdir()
     (other / "model.manifest").write_bytes(manifest_of(data[:-1]))
     pin = hashlib.sha256(manifest).hexdigest()
-    memory = "model_memory=0x%x:0x%x,0x%x:0x%x" % (AT[0], FIRST, AT[1], BYTES - FIRST)
+    pieces_word = "0x%x:0x%x,0x%x:0x%x" % (AT[0], FIRST, AT[1], BYTES - FIRST)
+    marked = "fixture_model_ram=" + pieces_word
+    memory = marked + " model_memory=" + pieces_word
+    fixture_words = "FIXTURE, NOT FOR ANY RELEASE: the loader's line (fixture_model_ram=), not the loader's map, marks memory as holding a model in this boot"
     digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
     problems = []
 
@@ -117,6 +129,8 @@ def main():
         passes = sum(1 for line in lines if line.startswith("  pass "))
         if status != 33 or passes != 71 or any(line.startswith("  FAIL") for line in lines):
             problems.append("%s: status %r, %d passes, or a failure" % (name, status, passes))
+        if (fixture_words in lines) != ("fixture_model_ram=" in words):
+            problems.append("%s: the kernel did not say the fixture was in use exactly when it was" % name)
         low = [m.groups() for line in lines if (m := re.search(r"frames: (\d+) of (\d+) free", line))]
         high = [tuple(int(g) for g in m.groups()) for line in lines
                 if (m := re.match(r"memory above four gibibytes: (\d+) of (\d+) frames free, (\d+) handed out and (\d+) given back", line))]
@@ -176,22 +190,29 @@ def main():
     require("a companion that writes, front", said_front, front_plain)
 
     # M5.
-    kept = "stays out of the pool and is given to nothing"
+    kept = "the memory marked for it stays out of the pool and is given to nothing"
     wrong_pin = pin[:-1] + ("0" if pin[-1] != "0" else "1")
+    usual = work / "model.manifest"
+    with_pin = lambda named: "%s model_memory=%s model_manifest=%s" % (marked, named, pin)
     for name, words, manifest_file, why, pool in (
-            ("a piece not on a page", "model_memory=0x%x:0x%x model_manifest=%s" % (AT[0] + 0x800, BYTES, pin), work / "model.manifest", "is not kept (a piece does not begin on a page", whole[1]),
-            ("a piece beyond the machine's memory", "model_memory=0x%x:0x%x model_manifest=%s" % (0x2_4000_0000, BYTES, pin), work / "model.manifest", "is not kept (a piece is not wholly memory", whole[1]),
-            ("a piece below four gibibytes", "model_memory=0x%x:0x%x model_manifest=%s" % (0x4000_0000, BYTES, pin), work / "model.manifest", "is not kept (a piece lies outside", whole[1]),
-            ("two pieces sharing memory", "model_memory=0x%x:0x%x,0x%x:0x%x model_manifest=%s" % (AT[0], FIRST, AT[0] + 0x1000, BYTES - FIRST, pin), work / "model.manifest", "is not kept (two pieces share memory", whole[1]),
-            ("the memory named twice", "%s %s model_manifest=%s" % (memory, memory, pin), work / "model.manifest", "is not kept (model_memory is given more than once", whole[1]),
-            ("not hexadecimal", "model_memory=%d:%d model_manifest=%s" % (AT[0], BYTES, pin), work / "model.manifest", "is not kept (model_memory is not address:bytes", whole[1]),
-            ("no manifest file", "%s model_manifest=%s" % (memory, pin), None, "the loader gave no file named model.manifest; the memory named for it " + kept, less),
-            ("no pin", memory, work / "model.manifest", "model_manifest is not given; the memory named for it " + kept, less),
-            ("a pin that is not the manifest's digest", "%s model_manifest=%s" % (memory, wrong_pin), work / "model.manifest", "is not the manifest the loader's line pins", less),
-            ("a pin given twice", "%s model_manifest=%s model_manifest=%s" % (memory, pin, pin), work / "model.manifest", "model_manifest is given more than once", less),
+            ("named and not marked", "model_memory=%s model_manifest=%s" % (pieces_word, pin), usual, "is not given (a piece is not wholly memory the loader's map marks as holding a model", whole[1]),
+            ("other memory marked", "fixture_model_ram=0x%x:0x%x model_memory=%s model_manifest=%s" % (0x1_8000_0000, BYTES, pieces_word, pin), usual,
+             "is not given (a piece is not wholly memory the loader's map marks as holding a model", whole[1] - ((0x1_8000_0000 + BYTES + BIG - 1) // BIG - 0x1_8000_0000 // BIG) * (BIG // 4096)),
+            ("more named than marked", with_pin("0x%x:0x%x,0x%x:0x%x" % (AT[0], FIRST + 0x1000, AT[1], BYTES - FIRST)), usual, "is not given (a piece is not wholly memory", less),
+            ("a piece not on a page", with_pin("0x%x:0x%x" % (AT[0] + 0x800, FIRST - 0x800)), usual, "is not given (a piece does not begin on a page", less),
+            ("a piece below four gibibytes", with_pin("0x%x:0x%x" % (0x4000_0000, BYTES)), usual, "is not given (a piece lies outside", less),
+            ("a piece at the end of all addresses", with_pin("0xfffffffffffff000:0xfff"), usual, "is not given (a piece lies outside", less),
+            ("a piece that wraps", with_pin("0xfffffffffffff000:0x2000"), usual, "is not given (a piece runs past the end of all addresses", less),
+            ("two pieces sharing memory", with_pin("0x%x:0x%x,0x%x:0x%x" % (AT[0], FIRST, AT[0] + 0x1000, 0x1000)), usual, "is not given (two pieces share memory", less),
+            ("the memory named twice", "%s model_memory=%s model_manifest=%s" % (memory, pieces_word, pin), usual, "is not given (model_memory is given more than once", less),
+            ("not hexadecimal", with_pin("%d:%d" % (AT[0], BYTES)), usual, "is not given (model_memory is not address:bytes", less),
+            ("no manifest file", "%s model_manifest=%s" % (memory, pin), None, "the loader gave no file named model.manifest; " + kept, less),
+            ("no pin", memory, usual, "model_manifest is not given; " + kept, less),
+            ("a pin that is not the manifest's digest", "%s model_manifest=%s" % (memory, wrong_pin), usual, "is not the manifest the loader's line pins", less),
+            ("a pin given twice", "%s model_manifest=%s model_manifest=%s" % (memory, pin, pin), usual, "model_manifest is given more than once", less),
             ("a manifest of another length", "%s model_manifest=%s" % (memory, digest(other / "model.manifest")), other / "model.manifest",
              "the manifest is of a model of %d bytes and the memory named holds %d" % (BYTES - 1, BYTES), less),
-            ("a pin and no memory", "model_manifest=%s" % pin, work / "model.manifest", "model_manifest is given and no model_memory", whole[1])):
+            ("a pin and no memory", "model_manifest=%s" % pin, usual, "model_manifest is given and no model_memory", whole[1])):
         lines, said_front, said_back, high = boot(name, front, back, words, manifest_file)
         said = [line for line in lines if line.startswith("no model is given to any program: ")]
         if len(said) != 1 or why not in said[0] or any("is held in memory" in line for line in lines):
