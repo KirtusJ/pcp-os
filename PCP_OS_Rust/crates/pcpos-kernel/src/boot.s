@@ -449,16 +449,42 @@ USER_END hog
 # The three programs below are for the self-tests of sleeping, waiting and the stop key. They make their calls
 # with the `syscall` instruction and Linux's numbers, as a loaded program does; the self-test puts each behind
 # an ELF header and hands it to the loader.
-USER_PROGRAM sleeper               # sleeps 50 ms and exits with what the sleep answered (0)
-    subq $16, %rsp
-    movq $0, (%rsp)
-    movq $50000000, 8(%rsp)
-    movq %rsp, %rdi
+USER_PROGRAM sleeper               # check the guest's own 50 ms sleep deadline
+    subq $32, %rsp
+    movl $1, %edi                  # CLOCK_MONOTONIC
+    movq %rsp, %rsi
+    movl $228, %eax                # clock_gettime
+    syscall
+    testq %rax, %rax
+    jne 2f
+    movq (%rsp), %r12
+    imulq $1000000000, %r12
+    addq 8(%rsp), %r12
+    addq $50000000, %r12           # earliest valid return
+
+    movq $0, 16(%rsp)
+    movq $50000000, 24(%rsp)
+    leaq 16(%rsp), %rdi
     xorl %esi, %esi
     movl $35, %eax                 # nanosleep
     syscall
-    movl %eax, %edi
-    movl $60, %eax                 # exit
+    testq %rax, %rax
+    jne 2f
+    movl $1, %edi
+    movq %rsp, %rsi
+    movl $228, %eax
+    syscall
+    testq %rax, %rax
+    jne 2f
+    movq (%rsp), %rax
+    imulq $1000000000, %rax
+    addq 8(%rsp), %rax
+    cmpq %r12, %rax
+    jb 2f
+    xorl %edi, %edi
+    jmp 3f
+2:  movl $1, %edi
+3:  movl $60, %eax                 # exit
     syscall
 9:  jmp 9b
 USER_END sleeper

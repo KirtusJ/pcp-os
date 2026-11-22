@@ -427,8 +427,6 @@ fn propose(p: &mut Process, world: &World, addr: u64, len: u64) -> Outcome {
 const HEAP_LIMIT: usize = 1 << 30;
 const MAP_LIMIT: usize = 1 << 30;
 const MAX_FILES: usize = 32;
-/// Nanoseconds in one timer tick: 1193 / 1193182 of a second.
-const TICK_NS: u64 = 999_847;
 
 impl Linux {
     pub fn new(image_end: usize) -> Linux {
@@ -1060,8 +1058,8 @@ fn mprotect(p: &mut Process, addr: u64, len: u64, prot: u64) -> u64 {
 }
 
 fn clock_ns(world: &World, clock: u64) -> u64 {
-    let since_start = arch::ticks() * TICK_NS;
-    if clock == 0 { world.epoch_at_start * 1_000_000_000 + since_start } else { since_start }
+    let since_start = arch::elapsed::now_ns();
+    if clock == 0 { world.epoch_at_start.saturating_mul(1_000_000_000).saturating_add(since_start) } else { since_start }
 }
 
 fn sleep(p: &Process, world: &World, request: u64, absolute_on: Option<u64>) -> Outcome {
@@ -1072,14 +1070,17 @@ fn sleep(p: &Process, world: &World, request: u64, absolute_on: Option<u64>) -> 
     if nsec >= 1_000_000_000 || sec > 1 << 32 {
         return Outcome::Return(err(EINVAL));
     }
-    let mut ns = sec * 1_000_000_000 + nsec;
-    if let Some(clock) = absolute_on {
-        ns = ns.saturating_sub(clock_ns(world, clock));
-    }
-    if ns == 0 {
+    let requested = sec * 1_000_000_000 + nsec;
+    let now = arch::elapsed::now_ns();
+    let deadline = match absolute_on {
+        None => now.saturating_add(requested),
+        Some(0) => requested.saturating_sub(world.epoch_at_start.saturating_mul(1_000_000_000)),
+        Some(_) => requested,
+    };
+    if deadline <= now {
         return Outcome::Yield;
     }
-    Outcome::Wait(Waiting::Until(arch::ticks() + (ns + TICK_NS - 1) / TICK_NS), false)
+    Outcome::Wait(Waiting::Until(deadline), false)
 }
 
 /// Whether a program that asks is to draw to memory of its own, which the kernel then shows whole:
