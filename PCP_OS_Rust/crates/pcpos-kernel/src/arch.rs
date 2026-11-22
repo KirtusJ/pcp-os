@@ -806,6 +806,16 @@ pub fn frame_write(frame: usize, offset: usize, data: &[u8]) -> bool {
     true
 }
 
+/// Copy bytes out of one frame of the pool. False if the frame is not of the pool or the bytes are not all in it.
+pub fn frame_read(frame: usize, offset: usize, into: &mut [u8]) -> bool {
+    if !in_pool(frame) || offset > 4096 || into.len() > 4096 - offset {
+        return false;
+    }
+    // Safety: the source is `into.len()` bytes inside one pool frame, mapped readable at its own address; the destination is a kernel slice, which cannot lie in the pool.
+    unsafe { core::ptr::copy_nonoverlapping((frame + offset) as *const u8, into.as_mut_ptr(), into.len()) };
+    true
+}
+
 /// Publish one aligned little-endian halfword in an exclusively reserved DMA frame.
 #[cfg(feature = "virtio-tx-probe")]
 pub fn frame_publish_u16(frame: usize, offset: usize, value: u16) -> bool {
@@ -960,6 +970,10 @@ pub fn map_loader_display(boot: &BootInfo) -> Result<usize, &'static str> {
 
 /// Whether a program could be given `pages` whole pages of device memory from `phys`: the question
 /// The rule for drawing off the screen, which is `framebuffer`'s and tested on a host.
+/// See `framebuffer::changed_span`, `kept_pages` and `kept_parts`: what of a picture must be written,
+/// and where a kept picture's bytes lie in its pages.
+pub use framebuffer::{changed_span, kept_pages, kept_parts};
+
 pub fn display_draws_off_screen(pages: u32, mappable_whole: bool) -> bool {
     framebuffer::draws_off_screen(pages, mappable_whole)
 }

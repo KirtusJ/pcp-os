@@ -2,7 +2,7 @@
 //!   rustc --edition=2021 --test tests/test_framebuffer.rs -o /tmp/test-framebuffer && /tmp/test-framebuffer
 #[path = "../src/arch/framebuffer.rs"]
 mod framebuffer;
-use framebuffer::{decide, draws_off_screen, grant, Window};
+use framebuffer::{changed_span, decide, draws_off_screen, grant, kept_pages, kept_parts, Window};
 
 fn entry(base: u64, length: u64, kind: u32) -> Vec<u8> {
     let mut e = Vec::new();
@@ -164,4 +164,74 @@ fn a_display_with_a_second_page_is_drawn_on_the_page_not_shown() {
     assert!(!draws_off_screen(2, true));
     assert!(!draws_off_screen(2, false));
     assert!(!draws_off_screen(0, true));
+}
+
+fn pixels(values: &[u32]) -> Vec<u8> {
+    values.iter().flat_map(|v| v.to_le_bytes()).collect()
+}
+
+#[test]
+fn a_row_that_is_already_shown_is_not_written() {
+    let row = pixels(&[1, 2, 3, 4, 5]);
+    assert_eq!(changed_span(&row, &row), None);
+    assert_eq!(changed_span(&[], &[]), None);
+}
+
+#[test]
+fn a_changed_row_is_written_from_its_first_changed_pixel_to_its_last() {
+    let kept = pixels(&[1, 2, 3, 4, 5, 6]);
+    assert_eq!(changed_span(&kept, &pixels(&[1, 2, 9, 4, 5, 6])), Some((2, 3)), "one pixel");
+    assert_eq!(changed_span(&kept, &pixels(&[1, 9, 3, 4, 9, 6])), Some((1, 5)), "two apart: one span over both");
+    assert_eq!(changed_span(&kept, &pixels(&[9, 2, 3, 4, 5, 6])), Some((0, 1)), "the first");
+    assert_eq!(changed_span(&kept, &pixels(&[1, 2, 3, 4, 5, 9])), Some((5, 6)), "the last");
+    assert_eq!(changed_span(&kept, &pixels(&[9, 9, 9, 9, 9, 9])), Some((0, 6)), "all");
+}
+
+#[test]
+fn one_changed_byte_of_a_pixel_is_that_whole_pixel() {
+    let kept = pixels(&[0x00112233, 0x00445566]);
+    for byte in 0..8 {
+        let mut new = kept.clone();
+        new[byte] ^= 0x80;
+        assert_eq!(changed_span(&kept, &new), Some((byte / 4, byte / 4 + 1)), "byte {byte}");
+    }
+}
+
+#[test]
+fn rows_that_cannot_be_compared_are_written_whole() {
+    assert_eq!(changed_span(&pixels(&[1, 2]), &pixels(&[1, 2, 3])), Some((0, 3)), "a different length");
+    assert_eq!(changed_span(&[], &pixels(&[1, 2])), Some((0, 2)), "nothing kept");
+    assert_eq!(changed_span(&[1, 2, 3], &[1, 2, 3]), Some((0, 0)), "not whole pixels: never called equal; the kernel only ever passes whole rows");
+}
+
+#[test]
+fn a_kept_picture_takes_the_pages_its_pixels_need() {
+    assert_eq!(kept_pages(1920, 1080), Some(2025), "the laptop: exactly 2,025");
+    assert_eq!(kept_pages(800, 600), Some(469), "1,920,000 bytes: 468 and a part");
+    assert_eq!(kept_pages(1, 1), Some(1));
+    assert_eq!(kept_pages(0, 600), Some(0));
+    assert_eq!(kept_pages(u32::MAX, u32::MAX), None, "more bytes than can be counted");
+}
+
+#[test]
+fn a_row_falls_across_its_pages_with_nothing_lost_or_repeated() {
+    // A row of 1920 pixels is 7,680 bytes. Row 0 starts a page; row 1 starts 3,584 bytes into the second.
+    assert_eq!(kept_parts(0, 7680).collect::<Vec<_>>(), [(0, 0, 4096, 0), (1, 0, 3584, 4096)]);
+    assert_eq!(kept_parts(7680, 7680).collect::<Vec<_>>(), [(1, 3584, 512, 0), (2, 0, 4096, 512), (3, 0, 3072, 4608)]);
+    assert_eq!(kept_parts(4095, 2).collect::<Vec<_>>(), [(0, 4095, 1, 0), (1, 0, 1, 1)], "across a boundary");
+    assert_eq!(kept_parts(4096, 4096).collect::<Vec<_>>(), [(1, 0, 4096, 0)], "exactly one page");
+    assert_eq!(kept_parts(123, 0).count(), 0, "nothing asked, nothing given");
+    // Every byte of every row of a 1920 by 1080 picture is in exactly one part, in order.
+    let mut next = 0usize;
+    for y in 0..1080usize {
+        let mut done = 0;
+        for (page, at, n, from) in kept_parts(y * 7680, 7680) {
+            assert_eq!((page * 4096 + at, from), (next, done));
+            assert!(n > 0 && at + n <= 4096);
+            next += n;
+            done += n;
+        }
+        assert_eq!(done, 7680);
+    }
+    assert_eq!(next, 2025 * 4096);
 }

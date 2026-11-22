@@ -257,6 +257,11 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
     if safe {
         say!("the kernel did not verify itself ({} self-test(s) failed): it is in SAFE and starts no program", start.failed);
     }
+    #[cfg(feature = "present-rows-demo")]
+    if option(line, "present_keep") == Some("refuse") {
+        crate::sys::demo_refuse_kept_pictures();
+        say!("present: the frames for a kept picture are refused (present_keep=refuse): every row will be written");
+    }
     // One program, with nobody there.
     if let Some(name) = option(line, "auto") {
         match programs.iter().find(|p| p.name == name) {
