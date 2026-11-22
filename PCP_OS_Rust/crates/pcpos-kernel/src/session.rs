@@ -1575,6 +1575,46 @@ fn run_entry(rec: &mut Record, entry: &Entry, world: World, tasks: &mut u32, sta
     }
     let (free0, shows0, t0) = (user::frames_free(), dev::display_shows(), arch::ticks());
     let (_, sound0, dry0) = dev::sound_state();
+    // The companion of this program, if the loader's line (taken whole) names this program by its
+    // digest as the one a worker is for, names the worker by its digest, and a loaded file is that
+    // worker. It is given the console and its end of the channel, and nothing else.
+    #[cfg(feature = "companion")]
+    let companion: Option<(String, &'static [u8])> = start.boot.exact_command_line().and_then(|line| {
+        let (wanted, worker) = (option(line, "worker_for")?, option(line, "worker_image")?);
+        if wanted != entry.digest || worker == entry.digest {
+            return None;
+        }
+        world.files.iter().find(|f| sha256_hex(f.1) == worker).map(|f| (f.0.clone(), f.1))
+    });
+    #[cfg(feature = "companion")]
+    let run = || match &companion {
+        Some((name, image)) => {
+            say!("{} is started with its companion {} ({} bytes), which is given the console and the channel only", entry.name, name, image.len());
+            let worker_args = [name.as_str()];
+            let (result, beside, world) = user::run_pair(&Program { name: &entry.name, image: entry.image, args: &args, grants, budget: u64::MAX },
+                &Program { name, image, args: &worker_args, grants: Grants { console: true, ..Grants::default() }, budget: u64::MAX }, world);
+            if let Some(p) = beside {
+                let how = match p.end {
+                    Some(user::End::Exited(code)) => format!("it exited with {}", code),
+                    // Both are ended by the person's key when that is what ended the program beside it;
+                    // otherwise the kernel ended this one because the other had ended.
+                    Some(user::End::Stopped) if matches!(result.as_ref().map(|front| front.end), Ok(Some(user::End::Stopped))) =>
+                        String::from("the person's Ctrl+Alt+Delete ended it together with the program it was beside"),
+                    Some(user::End::Stopped) => String::from("the kernel ended it when the program it was beside ended"),
+                    Some(user::End::Refused { vector, .. }) => format!("the processor refused something it did (vector {})", vector),
+                    Some(user::End::OverBudget) => String::from("it ran over its budget"),
+                    None => String::from("it had not ended"),
+                };
+                say!("companion {}: {}; {} bytes written to the console", name, how, p.output.len());
+                for line in core::str::from_utf8(&p.output).unwrap_or("").lines().take(64) {
+                    say!("companion {} wrote: {}", name, line);
+                }
+            }
+            (result, world)
+        }
+        None => user::run_program(&Program { name: &entry.name, image: entry.image, args: &args, grants, budget: u64::MAX }, world),
+    };
+    #[cfg(not(feature = "companion"))]
     let run = || user::run_program(&Program { name: &entry.name, image: entry.image, args: &args, grants, budget: u64::MAX }, world);
     #[cfg(feature = "guest-ethernet")]
     let (result, world) = if grants.ethernet {
