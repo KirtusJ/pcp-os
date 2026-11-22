@@ -60,6 +60,8 @@ fn option<'a>(line: &'a str, key: &str) -> Option<&'a str> {
 #[cfg(feature = "guest-ethernet")]
 mod ethernet;
 mod pictures;
+#[cfg(feature = "companion")]
+mod paired;
 #[cfg(feature = "guest-ethernet")]
 use ethernet::ethernet_grant;
 
@@ -185,6 +187,19 @@ pub fn run(rec: &mut Record, start: &Start, failed: &mut u32) -> u32 {
                 programs.push(Entry { name: m.name.clone(), arguments: m.arguments.clone(), image: bytes, digest: digest.clone() });
             }
             files.push((m.name.clone(), bytes, digest));
+        }
+    }
+    // A worker that is started only beside another loaded program is not something a person starts,
+    // and is not in the list of programs. It stays among the loader's files, which Details shows whole,
+    // and it is started as before when its program is (`run_entry` finds it among the files).
+    #[cfg(feature = "companion")]
+    {
+        let loaded: Vec<&str> = files.iter().map(|f| f.2.as_str()).collect();
+        let line = start.boot.exact_command_line();
+        let before = programs.len();
+        programs.retain(|p| !paired::runs_only_beside(line, &p.digest, &loaded));
+        if programs.len() != before {
+            say!("programs: {} worker(s) started only beside another program are not listed; each is among the loader's files", before - programs.len());
         }
     }
     let (y, mo, d, h, mi, s) = arch::clock();

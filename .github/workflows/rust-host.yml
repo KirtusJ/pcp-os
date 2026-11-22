@@ -66,6 +66,8 @@ jobs:
         run: |
           rustc --edition=2021 --test crates/pcpos-kernel/tests/test_framebuffer.rs -o "$RUNNER_TEMP/test-framebuffer"
           "$RUNNER_TEMP/test-framebuffer"
+          rustc --edition=2021 --test crates/pcpos-kernel/tests/test_paired.rs -o "$RUNNER_TEMP/test-paired"
+          "$RUNNER_TEMP/test-paired"
       - name: Run the workspace tests
         run: cargo test --locked --release --workspace --features pcpos-preloaded-loader/assembly
       - name: Check qualified EFI tool selection and receipts
