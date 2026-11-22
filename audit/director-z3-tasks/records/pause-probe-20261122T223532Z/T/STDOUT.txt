@@ -1,0 +1,7 @@
+PASS P1 one page of 1920 by 1080, and the program is told to draw to memory of its own | ['probe: told to draw to memory of its own']
+PASS P2 at the first wait the screen is all of the first colour
+PASS P3 at the second wait the screen is all of the first colour
+PASS P4 once the program asks, the screen is all of the second colour
+PASS P5 both keys were accepted and the program said each step in order | ([True, True], ['probe: told to draw to memory of its own', 'probe: first picture shown', 'probe: top half of the second drawn, not shown', 'probe: all of the second drawn, not shown', 'probe: second picture shown'])
+PASS P6 control: the kernel as it was shows the half-made picture, and the whole one before it is asked for | (['probe: draws on the display itself', 'probe: first picture shown', 'probe: top half of the second drawn, not shown', 'probe: all of the second drawn, not shown', 'probe: second picture shown'], [True, True])
+ALL PASS: 0 failed
