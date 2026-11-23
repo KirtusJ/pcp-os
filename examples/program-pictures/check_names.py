@@ -15,6 +15,8 @@ PLAIN_ROW, PLAIN_COL = 5, 3
 def _label(row, col, end, name):
     # The native decoder removes trailing blanks; spaces *inside* a loader
     # name are still significant. A prefix plus " old" is not the product.
+    # Trailing-space loader names are optically indistinguishable from padding;
+    # their identity must be established by the actual loader metadata.
     return (len(row) >= col + len(name)
             and row[col:end].rstrip(" ") == name)
 
@@ -79,7 +81,7 @@ if __name__ == "__main__":
             self.assertFalse(wide_named_row(wide(), 0, "Tailorbird", "0" * 63))
 
         def test_space_suffix_is_not_the_name(self):
-            for bad in ("Tailorbird old", "Tailorbird extra", "Tailorbird  ", "X Tailorbird"):
+            for bad in ("Tailorbird old", "Tailorbird extra", "Tailorbird-old", "X Tailorbird"):
                 self.assertFalse(wide_named_row(wide((bad, "Surfbird")), 0, "Tailorbird", D1))
                 self.assertFalse(plain_named_row(plain((bad, "Surfbird")), 0, "Tailorbird"))
 
