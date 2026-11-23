@@ -1,0 +1,19 @@
+20
+44:warning: function `serial_present` is never used
+52:warning: constant `TICKS_PER_SECOND` is never used
+58:warning: constant `MODEL_RAM` is never used
+64:warning: constant `MODEL_EXTENTS` is never used
+70:warning: function `model_extents` is never used
+76:warning: function `model_allowed` is never used
+82:warning: function `low_free_page` is never used
+88:warning: function `keyboard_state` is never used
+105:warning: function `take_run` is never used
+111:warning: methods `fits` and `detached` are never used
+f122f75ec250ac841b9d7548f8baadc90606e66fed9c9a52e92c488a684971df  /tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/stage-cl/k.elf32
+status 33 passes 71 fails 0
+PASS O1 the loader's display is one page of 1920 by 1080, mapped whole | ['display: Loader, 1920x1080, 1 page(
+PASS O2 the kernel says a program that asks draws to memory of its own | ['display: a program that asks draws 
+PASS O3 the program presented, and both screens hold a picture
+PASS O2 control: the kernel as it was does not say so
+PASS O3 control: the kernel as it was shows the same two pictures, byte for byte
+ALL PASS: 0 failed
