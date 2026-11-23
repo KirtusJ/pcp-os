@@ -24,14 +24,16 @@ or 75 where there are more (the count of S9 as well).
     before or after its own halt); each other one has interrupts on (it waits for a message), is in 64-bit mode, and has the first one's
     CR0, CR4, CR3 and interrupt table; all four segment tables are at different addresses, and each
     task register points into its own processor's segment table page.
- S8 in every boot of S1 to S3 that starts another processor, the kernel says that every one it
-    started came up holding other memory types than the first and was given the first's (this
-    emulator returns a restarted processor with those registers cleared; a real processor keeps
-    them, and the kernel then writes nothing). The check that all hold the same afterwards passes.
- S11 (C3's control) on a machine of four whose processors have the page-attribute table and no memory-range
-    registers (cpu "max,mtrr=off,pat=on"), the only difference a started processor can have from the first is
-    the table the kernel changed. The kernel says each of the three was given the first's table with its ranges
-    untouched, says nothing of memory types, and the boot is sound with an exact count.
+ S8 a started processor's memory-range registers are never written (A3's finding: the first processor goes
+    on running meanwhile, and the two may not list the same registers). On the ordinary cpu "max", 4
+    processors: this emulator returns a restarted processor with those registers cleared (a real processor
+    keeps them), so the kernel says all three came up holding other memory ranges, are left as they came, and
+    that no processor is given work; it says nothing of a count or of a table; 74 passes, status 33.
+ S11 (C3's control) every other boot here is on processors that have the page-attribute table and no
+    memory-range registers (cpu "max,mtrr=off,pat=on"), so that the others can be given work at all in this
+    emulator. There the only difference a started processor has from the first is the table the kernel
+    changed: in every boot of S1 to S3 the kernel says each started processor was given the first's table
+    with its ranges untouched, and says nothing of memory ranges.
  S9 in every boot of S1 to S3 with more than one processor, the kernel says the count all
     processors added to together is exactly processors x 20000, and its check passes.
  S10 the control, 4 processors: the kernel built so that the lock is not waited for during that
@@ -61,6 +63,9 @@ seconds after the kernel's last line and the first processor had not yet halted;
 until the emulator says the machine has shut down. The fourth (pr10-started-20261122T142905Z, kept)
 failed S4 again on the first processor only: it asks for the shutdown and can be read before its
 own halt, so S4 no longer requires the first to be halted, only the others.
+A3 then showed that giving a started processor the first's ranges is not safe as it was done (the first
+goes on running meanwhile; the two may list different registers). The kernel no longer writes them: S8
+became what it is above, and every other boot moved to processors without range registers (S11).
 
 Usage: check_started.py <kernel with processors> <kernel without> <extended demo> <silent demo> <unlocked demo> [--qemu ...]
 This is an emulator with SeaBIOS. Nothing here is a run on a real machine or under UEFI firmware.
@@ -75,19 +80,22 @@ import time
 from pathlib import Path
 
 
-def machine(qemu, kernel, kind, memory, smp, cpu="max"):
+RANGELESS = "max,mtrr=off,pat=on"
+
+
+def machine(qemu, kernel, kind, memory, smp, cpu=RANGELESS):
     return [qemu, "-machine", kind, "-accel", "tcg", "-cpu", cpu, "-smp", smp, "-m", memory, "-kernel", str(kernel), "-append", "then=off",
             "-display", "none", "-nic", "none", "-no-reboot"]
 
 
-def boot(qemu, kernel, kind, memory, smp, cpu="max"):
+def boot(qemu, kernel, kind, memory, smp, cpu=RANGELESS):
     began = time.monotonic()
     done = subprocess.run(machine(qemu, kernel, kind, memory, smp, cpu) + ["-serial", "stdio", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"], capture_output=True, timeout=900)
     lines = done.stdout.decode(errors="replace").splitlines()
     return {"status": done.returncode, "passes": sum(1 for line in lines if line.startswith("  pass ")), "fails": [line for line in lines if line.startswith("  FAIL ")],
             "said": [line for line in lines if line.startswith("other processors: ") and "started and parked" in line],
             "count": [line for line in lines if line.startswith("other processors: all ")],
-            "given": [line for line in lines if line.startswith("other processors: ") and "memory types" in line],
+            "given": [line for line in lines if line.startswith("other processors: ") and "memory ranges than the first" in line],
             "table": [line for line in lines if line.startswith("other processors: ") and "page-attribute table" in line], "lines": lines, "took": time.monotonic() - began}
 
 
@@ -161,9 +169,9 @@ def main():
             problems.append("S9 (%s): the kernel said %r" % (label, run["count"]))
 
     def given(label, run, parked):
-        want = ["other processors: %d came up holding other memory types than the first and were given the first's" % parked] if parked else []
-        if run["given"] != want:
-            problems.append("S8 (%s): the kernel said %r" % (label, run["given"]))
+        want = ["other processors: %d came up with another page-attribute table than the first and were given the first's; their memory ranges agreed and were not touched" % parked] if parked else []
+        if run["table"] != want or run["given"]:
+            problems.append("S11 (%s): the kernel said %r and %r" % (label, run["table"], run["given"]))
 
     four = None
     for kind, memory, counts in (("pc", "256M", (1, 2, 4, 8)), ("q35", "6G", (4,))):
@@ -179,14 +187,13 @@ def main():
                 print("%s: %s" % (label, run["said"][0]))
             if kind == "pc" and count == 4:
                 four = run["took"]
-    run = boot(args.qemu, args.kernel, "pc", "256M", "4", cpu="max,mtrr=off,pat=on")
-    sound("S11", run, passes=75)
-    counted("S11", run, 4)
-    want = ["other processors: 3 came up with another page-attribute table than the first and were given the first's; their memory ranges agreed and were not touched"]
-    if run["table"] != want or run["given"]:
-        problems.append("S11: the kernel said %r and %r" % (run["table"], run["given"]))
+    run = boot(args.qemu, args.kernel, "pc", "256M", "4", cpu="max")
+    sound("S8", run, passes=74)
+    want = ["other processors: 3 came up holding other memory ranges than the first; their registers are left as they came, and no processor is given work"]
+    if run["given"] != want or run["table"] or run["count"] or run["said"] != line(3, 3, "through memory", 4, 4):
+        problems.append("S8: the kernel said %r, %r, %r and %r" % (run["said"], run["given"], run["table"], run["count"]))
     else:
-        print("S11: %s" % run["table"][0])
+        print("S8: %s" % run["given"][0])
     run = boot(args.qemu, args.kernel, "pc", "256M", "4,cores=2,threads=2")
     sound("S2", run, passes=75)
     given("S2", run, 3)
@@ -248,7 +255,7 @@ def main():
             print("S6: %s" % run["said"][0])
 
     run = boot(args.qemu, args.silent, "pc", "256M", "4")
-    answered = "  FAIL every other processor that was tried answered, as itself, able to do what the first can and holding the same memory types, and is parked"
+    answered = "  FAIL every other processor that was tried answered, as itself, able to do what the first can, and is parked; one whose memory ranges are not the first's is left as it came and given no work"
     mapped = "  pass after starting them the kernel's map is as it was, with at most the one page of the interrupt controller's registers added, never executable"
     if run["status"] != 35 or run["said"] != line(3, 4, "through memory", 4, 4) or run["fails"] != [answered] or mapped not in run["lines"] or four is None or run["took"] > four + 60:
         problems.append("S7: status %r, said %r, FAIL lines %r, took %.1f s against %r" % (run["status"], run["said"], run["fails"], run["took"], four))
@@ -264,8 +271,8 @@ def main():
         print("S10: without waiting for the lock the count was %s of 80000, and that one check failed" % seen.group(1))
     if not any(text.startswith("S9") for text in problems):
         print("S9: in every boot with more than one processor the count was exact")
-    if not any(text.startswith("S8") for text in problems):
-        print("S8: every processor started in S1 to S3 was given the first's memory types, and said so")
+    if not any(text.startswith("S11") for text in problems):
+        print("S11: every processor started in S1 to S3 was given the first's table, its ranges untouched, and said so")
     if problems:
         sys.exit("\n".join(problems))
     print("other processors: started and parked as the predicates require, on every machine tried")
