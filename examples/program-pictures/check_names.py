@@ -11,7 +11,8 @@ PLAIN_ROW, PLAIN_COL = 5, 3
 
 def _label(row, col, name):
     end = col + len(name)
-    return len(row) > end and row[col:end] == name and row[end] == " "
+    return (len(row) >= end and row[col:end] == name
+            and (len(row) == end or row[end] == " "))
 
 
 def wide_named_row(rows, slot, name, digest):
@@ -55,6 +56,14 @@ if __name__ == "__main__":
             for bad in ("TailorbirdX", "XTailorbird", "Tailorbird.elf", "tailorbird"):
                 self.assertFalse(wide_named_row(wide((bad, "Surfbird")), 0, "Tailorbird", D1))
                 self.assertFalse(plain_named_row(plain((bad, "Surfbird")), 0, "Tailorbird"))
+
+        def test_trimmed_native_rows(self):
+            # The real optical decoder removes trailing spaces from each row.
+            # A selected 800px row reads "  ?Tailorbird" and the next one
+            # reads "   Surfbird", so the exact name may end the string.
+            self.assertTrue(plain_named_row([""] * 5 + ["  ?Tailorbird", "   Surfbird"], 0, "Tailorbird"))
+            self.assertTrue(plain_named_row([""] * 5 + ["  ?Tailorbird", "   Surfbird"], 1, "Surfbird"))
+            self.assertFalse(plain_named_row([""] * 5 + ["  ?TailorbirdX"], 0, "Tailorbird"))
 
         def test_wrong_or_invalid_digest(self):
             self.assertFalse(wide_named_row(wide(), 0, "Tailorbird", D2))
