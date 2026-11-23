@@ -1,6 +1,7 @@
 """Adverse controls for the offline preloaded release-candidate inventory gate."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import struct
 import subprocess
@@ -224,7 +225,8 @@ class GateTests(unittest.TestCase):
                    self.root, "--inventory", inventory_file, "--inventory-sha256",
                    digest(inventory_file), "--model-sha256", self.model_pin,
                    "--fat-bytes", str(128 << 20), output]
-        first = subprocess.run(command, capture_output=True, text=True)
+        first_env = dict(os.environ, TZ="UTC0", SOURCE_DATE_EPOCH="1704067200")
+        first = subprocess.run(command, env=first_env, capture_output=True, text=True)
         self.assertEqual(first.returncode, 0, first.stderr)
         image_pin = digest(output)
         self.assertIn(image_pin, first.stdout)
@@ -234,6 +236,13 @@ class GateTests(unittest.TestCase):
         # A different approved FAT digest cannot clear the same embedded bytes.
         with self.assertRaisesRegex(ValueError, "embedded FAT differs"):
             verify_embedded_fat(output, 128 << 20, "0" * 64)
+
+        # A fresh build with the same approved bytes must survive a change of builder clock.
+        output.unlink()
+        second_env = dict(os.environ, TZ="HST10", SOURCE_DATE_EPOCH="1740873600")
+        second = subprocess.run(command, env=second_env, capture_output=True, text=True)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(digest(output), image_pin)
 
     def test_existing_output_is_never_overwritten(self):
         image = self.temp / "exists.iso"
