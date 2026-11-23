@@ -53,14 +53,12 @@ edition.
                    field's colour just outside the tile differs from the other two boots', so the
                    three themes were in fact three.
 
- P10 the spelling  (added with session/shown.rs, fixed before its first run) the files are named
-                   tailorbird and surfbird by the loader. In P1's frame (1280x720) and P6's
-                   (800x600, the plain list) a row reads "Tailorbird" and a row reads "Surfbird",
-                   and no row of either reads "tailorbird" or "surfbird".
- P11 only those    a ninth boot with three files named TAILORBIRD, tailorbird.elf and surfbirds:
-                   each name is read on the screen exactly as given, and no row reads
-                   "Tailorbird" or "Surfbird". This is the control of P10: a kernel that
-                   capitalised every name, or matched part of one, fails here.
+ P10 the spelling  in P1's 1280px frame, each brand name and its 16-digit digest prefix
+                   occupy the same source-pinned program row. At 800x600 each name must
+                   occupy its own plain-list cell, not appear only elsewhere on screen.
+ P11 only those    a ninth boot with files TAILORBIRD, tailorbird.elf, surfbirds: each exact
+                   original name and its digest must share the correct 1280px program row,
+                   with no mistaken product-name promotion of a prefix or suffix.
 
 A failed predicate is printed and the run exits 1 after all boots; the frames are kept either way.
 The output directory must be new. Standard library, the repository's screen reader, and QEMU.
@@ -71,6 +69,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from check_names import wide_named_row, plain_named_row
 
 ROOT = Path(__file__).resolve().parents[2]
 OPTICAL = runpy.run_path(str(ROOT / "examples/optical-disk-check/check.py"))
@@ -208,6 +207,10 @@ def boot(kernel, output, tag, size, files, line_extra):
 def main():
     if len(sys.argv) != 3:
         sys.exit(__doc__)
+    # Exercise the adversarial name/digest oracle controls in the same
+    # required workflow as the nine real native QEMU program-list boots.
+    # A green P10/P11 picture alone need not distinguish false admissions.
+    subprocess.run([sys.executable, "-B", str(Path(__file__).with_name("check_names.py"))], check=True)
     kernel, output = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()
     output.mkdir(parents=True, exist_ok=False)
     taylor, surf = program(b"the tailorbird file"), program(b"the surfbird file")
@@ -283,18 +286,24 @@ def main():
         fields.add(beside(e_frame, et))
     predicate("P8 every theme", same and len(fields) == 3, f"tiles equal {same}, fields beside the tile {sorted(f.hex() for f in fields)}")
 
-    def reads(view, word):
-        return any(word in r for r in view)
-
-    spelled = all(reads(v, n) for v in (rows, small_rows) for n in SHOWN)
-    raw = [n for v in (rows, small_rows) for n in ("tailorbird", "surfbird") if reads(v, n)]
-    predicate("P10 the spelling", spelled and not raw, f"product names read {spelled}, file spellings read {raw}")
+    # P10/P11 must bind the names to the actual list cells; unrelated footers,
+    # prefixes and suffixes cannot satisfy the names. The 1280px row also binds
+    # the displayed 16-digit SHA-256 prefix to the SAME verified program.
+    wide_ok = all(wide_named_row(rows, i, name, digest)
+                  for i, (name, digest) in enumerate(zip(SHOWN, (dt, ds))))
+    small_ok = all(plain_named_row(small_rows, i, name) for i, name in enumerate(SHOWN))
+    predicate("P10 the spelling", wide_ok and small_ok,
+              f"1280px exact name+digest rows {wide_ok}, 800px exact name rows {small_ok}")
 
     as_given = ("TAILORBIRD", "tailorbird.elf", "surfbirds")
     given_rows, _ = boot(kernel, output, "other-names", "1280x720", [(n, program(n.encode())) for n in as_given], "")
-    kept = all(reads(given_rows, n) for n in as_given)
-    respelled = [n for n in SHOWN if reads(given_rows, n)]
-    predicate("P11 only those names", kept and not respelled, f"read as given {kept}, respelled {respelled}")
+    source_hashes = tuple(hashlib.sha256(program(n.encode())).hexdigest() for n in as_given)
+    kept = all(wide_named_row(given_rows, i, name, digest)
+               for i, (name, digest) in enumerate(zip(as_given, source_hashes)))
+    renamed = any(wide_named_row(given_rows, i, shown, digest)
+                  for i, digest in enumerate(source_hashes) for shown in SHOWN)
+    predicate("P11 only those names", kept and not renamed,
+              f"exact unmodified name+digest rows {kept}, accidental product name {renamed}")
 
     if failed:
         sys.exit("failed: " + ", ".join(failed))
