@@ -1,0 +1,17 @@
+22d4c346a5d176c05bacaa96bcb82d32a5cb6dcc661913a3f616e2d71a0e487d  /tmp/claude-0/-home-user/e3687871-2eb1-5f7d-b1fb-777c29d0ad87/scratchpad/stage-i438/k.elf32
+    Finished `release` profile [optimized] target(s) in 2.80s
+26a535bd9adeb83b988b6cd428151588ea58cd7c6a5bf0058472ca05aeee1d3f  target/x86_64-unknown-none/release/pause-before-present
+PASS O1 the loader's display is one page of 1920 by 1080, mapped whole | ['display: Loader, 1920x1080, 1 page(s), 8100 KiB of its memory mapped at 0x80000000']
+PASS O2 the kernel says a program that asks draws to memory of its own | ['display: a program that asks draws to memory of its own, and the kernel shows each finished picture']
+PASS O3 the program presented, and all four screens are whole 1920x1080 pictures of more than one colour | colours [1787, 1787, 1786, 1786]
+PASS O4 left alone the screen does not change; each accepted key changes it, in part | keys accepted True, idle the same True, rows changed by h 38, by i 36
+PASS O2 control: the kernel as it was does not say so
+PASS O3 control: the kernel as it was shows the same three pictures, byte for byte
+ALL PASS: 0 failed
+PASS P1 one page of 1920 by 1080, and the program is told to draw to memory of its own | ['probe: told to draw to memory of its own']
+PASS P2 at the first wait the screen is all of the first colour
+PASS P3 at the second wait the screen is all of the first colour
+PASS P4 once the program asks, the screen is all of the second colour
+PASS P5 both keys were accepted and the program said each step in order | ([True, True], ['probe: told to draw to memory of its own', 'probe: first picture shown', 'probe: top half of the second drawn, not shown', 'probe: all of the second drawn, not shown', 'probe: second picture shown'])
+PASS P6 control: the kernel as it was shows the half-made picture, and the whole one before it is asked for | (['probe: draws on the display itself', 'probe: first picture shown', 'probe: top half of the second drawn, not shown', 'probe: all of the second drawn, not shown', 'probe: second picture shown'], [True, True])
+ALL PASS: 0 failed
