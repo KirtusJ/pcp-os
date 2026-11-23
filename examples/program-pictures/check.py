@@ -207,6 +207,10 @@ def boot(kernel, output, tag, size, files, line_extra):
 def main():
     if len(sys.argv) != 3:
         sys.exit(__doc__)
+    # Exercise the adversarial name/digest oracle controls in the same
+    # required workflow as the nine real native QEMU program-list boots.
+    # A green P10/P11 picture alone need not distinguish false admissions.
+    subprocess.run([sys.executable, "-B", str(Path(__file__).with_name("check_names.py"))], check=True)
     kernel, output = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()
     output.mkdir(parents=True, exist_ok=False)
     taylor, surf = program(b"the tailorbird file"), program(b"the surfbird file")
