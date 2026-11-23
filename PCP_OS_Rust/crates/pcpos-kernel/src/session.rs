@@ -1836,12 +1836,18 @@ fn machine_words(start: &Start) -> Vec<(String, u32)> {
     #[allow(unused_mut)]
     let mut out = alloc::vec![(crate::processors_words(start.boot), ui::SOFT)];
     // What is true when this is read, not what was true at start: by now each has also answered a
-    // message and counted with the others, and waits again.
+    // message and counted with the others, and waits again. Where one came up holding other memory
+    // ranges than the first, none was asked anything: the machine has processors it is not using,
+    // which is not left in the quiet colour.
     #[cfg(feature = "processors")]
-    out.push((match arch::others::outcome() {
-        Some((parked, listed)) => format!("other processors: {} of {} started; each waits, parked, and runs no program", parked, listed),
-        None => String::from("other processors: none started"),
-    }, ui::SOFT));
+    out.push(match arch::others::outcome() {
+        Some((parked, listed, 0)) => (format!("other processors: {} of {} started; each waits, parked, and runs no program", parked, listed), ui::SOFT),
+        Some((parked, listed, held)) => (format!("other processors: {} of {} started; {} hold other memory ranges than the first, so none is given work", parked, listed, held), ui::AMBER),
+        None => (String::from("other processors: none started"), ui::SOFT),
+    });
+    // Which clock elapsed time is read from. On the fallback, time can be lost when the machine is
+    // busy, so a figure timed there is not to be trusted: that is not left in the quiet colour.
+    out.push((format!("elapsed clock: {}", arch::elapsed::source()), if arch::elapsed::active() { ui::SOFT } else { ui::AMBER }));
     // How the screen is written, for a machine with no serial line to read it from: both sentences
     // are made now, from the tables and the display as they stand.
     if let Some(d) = dev::display() {

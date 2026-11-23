@@ -915,8 +915,8 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
                             Some(cores) => say!("other processors: {} of {} started and parked, the interrupt controller reached {}; {} thread(s) on {} core(s) in all; none runs any work yet", o.parked, o.listed, reached, o.threads, cores),
                             None => say!("other processors: {} of {} started and parked, the interrupt controller reached {}; {} in all, and which share a core is not known; none runs any work yet", o.parked, o.listed, reached, o.threads),
                         }
-                        if o.given_types > 0 {
-                            say!("other processors: {} came up holding other memory types than the first and were given the first's", o.given_types);
+                        if o.other_ranges > 0 {
+                            say!("other processors: {} came up holding other memory ranges than the first; their registers are left as they came, and no processor is given work", o.other_ranges);
                         }
                         if o.given_table > 0 {
                             say!("other processors: {} came up with another page-attribute table than the first and were given the first's; their memory ranges agreed and were not touched", o.given_table);
@@ -924,9 +924,9 @@ pub fn kernel_start(magic: u32, info: u32) -> ! {
                         if o.out_of_reach > 0 {
                             say!("other processors: {} not tried: their identities need a mode the machine is not in", o.out_of_reach);
                         }
-                        check("every other processor that was tried answered, as itself, able to do what the first can and holding the same memory types, and is parked",
+                        check("every other processor that was tried answered, as itself, able to do what the first can, and is parked; one whose memory ranges are not the first's is left as it came and given no work",
                               !o.silent && o.parked + o.out_of_reach == o.listed && o.not_itself == 0 && o.different == 0, &mut failed);
-                        if o.parked > 0 && !o.silent && o.not_itself == 0 && o.different == 0 {
+                        if o.parked > 0 && !o.silent && o.not_itself == 0 && o.different == 0 && o.other_ranges == 0 {
                             arch::interrupts_on();
                             let (count, wanted, finished) = arch::others::count_together(20_000);
                             arch::interrupts_off();
