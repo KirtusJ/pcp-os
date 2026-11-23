@@ -13,6 +13,7 @@ import hashlib
 import json
 import sys
 from pathlib import Path
+from zipfile import ZipFile, ZipInfo, ZIP_STORED
 from check import boot, program
 from check_names import wide_named_row, plain_named_row
 
@@ -27,8 +28,37 @@ def make_files(first, second):
             (second, program(("native-pair:second:" + second).encode()))]
 
 
+def seal_original_inputs(output, tag, files):
+    """Keep both different-cased guest module filenames as exact ZIP members.
+
+    GitHub upload-artifact flattens input paths case-insensitively and otherwise
+    overwrites one of 'tailorbird'/'Tailorbird'. The first successful CI native
+    witness lost one input from each pair at artifact-upload time. Record both
+    byte-identical inputs inside a *single* ZIP before deleting their original
+    case-conflicting paths from the artifact tree.
+    """
+    folder = output / tag
+    archive = folder / "native-inputs-case-sensitive.zip"
+    with ZipFile(archive, "w") as zipped:
+        for name, expected in files:
+            actual = (folder / "files" / name).read_bytes()
+            assert actual == expected, "native guest input changed before retention"
+            entry = ZipInfo("files/" + name)  # stable name/time, case preserved inside ZIP
+            entry.compress_type = ZIP_STORED
+            zipped.writestr(entry, actual)
+    with ZipFile(archive) as check:
+        assert check.namelist() == ["files/" + name for name, _ in files]
+        for name, expected in files:
+            assert check.read("files/" + name) == expected
+    for name, _ in files:
+        (folder / "files" / name).unlink()
+    (folder / "files").rmdir()
+    return sha(archive.read_bytes())
+
+
 def witness(kernel, output, label, files, size):
     rows, frame = boot(kernel, output, label, size, files, "")
+    sealed_sha = seal_original_inputs(output, label, files)
     # A second admission with a different loader name must not be inferred
     # from label pixels alone: retain names, source bytes, sha256 and the
     # 1280px's distinct row-bound digest as a separate check.
@@ -51,6 +81,7 @@ def witness(kernel, output, label, files, size):
         "labels": labels, "same_rendered_label": labels[0] == labels[1] == shown,
         "row_predicates": accepted, "digest_bound_at_wide_screen": digest_distinguished,
         "frame_sha256": sha(frame), "frame_bytes": len(frame),
+        "original_inputs_zip_sha256": sealed_sha,
         "rows": [rows[9], rows[13]] if size == "1280x720" else [rows[5], rows[6]],
     }
 
@@ -71,11 +102,13 @@ def main():
     # invent a collision merely because two loader names share a stem.
     control_files = make_files("tailorbird", "TAILORBIRD")
     control_rows, control_frame = boot(kernel, output, "control-uppercase", "800x600", control_files, "")
+    control_sealed_sha = seal_original_inputs(output, "control-uppercase", control_files)
     control = {
         "screen": "800x600", "raw": [x for x, _ in control_files],
         "digests": [sha(b) for _, b in control_files],
         "labels": [control_rows[5+i][3:].rstrip(" ") for i in range(2)],
         "frame_sha256": sha(control_frame),
+        "original_inputs_zip_sha256": control_sealed_sha,
         "name_checks": [plain_named_row(control_rows, 0, "Tailorbird"),
                         plain_named_row(control_rows, 1, "TAILORBIRD")],
         "false_collided": control_rows[5][3:].rstrip(" ") == control_rows[6][3:].rstrip(" "),
