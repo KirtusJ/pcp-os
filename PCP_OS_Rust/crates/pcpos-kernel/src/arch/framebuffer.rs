@@ -145,8 +145,9 @@ pub fn decide(address: u64, pitch: u32, width: u32, height: u32, bits: u8, map: 
 /// mapped whole into the program does not enter into it. It once did: only a one-page display that
 /// could NOT be mapped whole (800 by 600, ending partway through a page) was drawn off the screen,
 /// and one of 1920 by 1080, exactly 2,025 pages, was handed to the program as it stood (the owner's
-/// HP EliteBook 840 G7). `mappable_whole` is taken so that the tests can say it makes no difference.
-pub fn draws_off_screen(pages: u32, _mappable_whole: bool) -> bool {
+/// HP EliteBook 840 G7). The rule therefore takes the number of pages and nothing else; the tests
+/// work out for both of those displays whether they map whole, to say that it makes no difference.
+pub fn draws_off_screen(pages: u32) -> bool {
     pages == 1
 }
 

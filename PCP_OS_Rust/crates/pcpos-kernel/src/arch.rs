@@ -977,20 +977,13 @@ pub fn map_loader_display(boot: &BootInfo) -> Result<usize, &'static str> {
     done
 }
 
-/// Whether a program could be given `pages` whole pages of device memory from `phys`: the question
 /// The rule for drawing off the screen, which is `framebuffer`'s and tested on a host.
 /// See `framebuffer::changed_span`, `kept_pages` and `kept_parts`: what of a picture must be written,
 /// and where a kept picture's bytes lie in its pages.
 pub use framebuffer::{changed_span, kept_pages, kept_parts, may_compare};
 
-pub fn display_draws_off_screen(pages: u32, mappable_whole: bool) -> bool {
-    framebuffer::draws_off_screen(pages, mappable_whole)
-}
-
-/// `map_device` asks, with nothing mapped.
-pub fn device_grantable(phys: usize, pages: usize) -> bool {
-    let count = DEVICES.with(|d| d.1);
-    DEVICE_BYTES.with(|b| b[..count].iter().any(|&bytes| framebuffer::grant(bytes, phys, pages)))
+pub fn display_draws_off_screen(pages: u32) -> bool {
+    framebuffer::draws_off_screen(pages)
 }
 
 /// Write 32-bit words into mapped device memory. False if any of them would fall outside it.

@@ -149,21 +149,21 @@ fn a_one_page_display_is_drawn_off_the_screen_whether_or_not_its_memory_maps_who
     assert_eq!(1920 * 1080 * 4 % 4096, 0);
     let whole = grant(laptop, laptop.0, 2025);
     assert!(whole);
-    assert!(draws_off_screen(1, whole));
+    assert!(draws_off_screen(1));
     // 800 by 600 ends partway through a page: its last page cannot be granted. Drawn off the screen, as before.
     let small = (0x06ab_2000usize, 0x06ab_2000 + 800 * 600 * 4);
     assert_ne!(800 * 600 * 4 % 4096, 0);
     let whole = grant(small, small.0, (800 * 600 * 4 + 4095) / 4096);
     assert!(!whole);
-    assert!(draws_off_screen(1, whole));
+    // The same one page, the same answer: the rule is not given `whole` and cannot depend on it.
+    assert!(draws_off_screen(1));
 }
 
 #[test]
 fn a_display_with_a_second_page_is_drawn_on_the_page_not_shown() {
-    // The control: with two pages a program draws on the one that is not shown, whatever maps whole.
-    assert!(!draws_off_screen(2, true));
-    assert!(!draws_off_screen(2, false));
-    assert!(!draws_off_screen(0, true));
+    // The control: with two pages a program draws on the one that is not shown.
+    assert!(!draws_off_screen(2));
+    assert!(!draws_off_screen(0));
 }
 
 fn pixels(values: &[u32]) -> Vec<u8> {
