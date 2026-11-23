@@ -1,0 +1,19 @@
+[package]
+name = "pause-before-present"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "pause-before-present"
+path = "src/main.rs"
+test = false
+bench = false
+
+[dependencies]
+pcp-game-guest = { path = "../../../store/native/guest" }
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+strip = "symbols"
