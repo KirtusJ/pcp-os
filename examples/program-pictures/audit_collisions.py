@@ -31,11 +31,12 @@ def make_files(first, second):
 def seal_original_inputs(output, tag, files):
     """Keep both different-cased guest module filenames as exact ZIP members.
 
-    GitHub upload-artifact flattens input paths case-insensitively and otherwise
-    overwrites one of 'tailorbird'/'Tailorbird'. The first successful CI native
-    witness lost one input from each pair at artifact-upload time. Record both
-    byte-identical inputs inside a *single* ZIP before deleting their original
-    case-conflicting paths from the artifact tree.
+    GitHub upload-artifact warns about case-insensitive input-path collisions.
+    Independent readback of the first native artifact actually confirmed both
+    original filenames and both correct input digests were retained in its ZIP.
+    This nested ZIP makes the two-name provenance explicit and portable even
+    if another upload or extraction layer later normalizes case; remove the
+    direct paths from the upload tree after byte-for-byte sealed verification.
     """
     folder = output / tag
     archive = folder / "native-inputs-case-sensitive.zip"
