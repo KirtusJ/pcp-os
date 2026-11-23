@@ -10,7 +10,7 @@ import unittest
 import uuid
 import zlib
 
-from preloaded_gate import build, digest, inventory, verify_notices, verify_tree
+from preloaded_gate import build, digest, inventory, verify_model_shape, verify_notices, verify_tree
 from hybrid_readback import verify_embedded_fat
 
 
@@ -31,13 +31,13 @@ class GateTests(unittest.TestCase):
             "PCPOS/KERNEL.ELF": b"kernel",
             "PCPOS/TAILOR.ELF": b"foreground",
             "PCPOS/WORKER.ELF": b"worker",
-            "PCPOS/shard-00000.bin": b"abcd",
+            "PCPOS/shard-00000.bin": b"a" * 1024,
             "PCPOS/shard-00001.bin": b"xy",
         }
-        self.model_pin = sha(b"abcdxy")
+        self.model_pin = sha(self.parts["PCPOS/shard-00000.bin"] + b"xy")
         self.parts["PCPOS/model.manifest"] = (
-            b"PCPMDL01" + struct.pack("<QII", 6, 4, 2) +
-            bytes.fromhex(self.model_pin) + bytes.fromhex(sha(b"abcd")) +
+            b"PCPMDL01" + struct.pack("<QII", 1026, 1024, 2) +
+            bytes.fromhex(self.model_pin) + bytes.fromhex(sha(b"a" * 1024)) +
             bytes.fromhex(sha(b"xy"))
         )
         for name, content in self.parts.items():
@@ -133,6 +133,50 @@ class GateTests(unittest.TestCase):
         records = self.make_records()
         with self.assertRaisesRegex(ValueError, "manifest shard digest differs"):
             verify_tree(self.root, records, self.model_pin)
+
+    def test_native_v1_shape_limits_and_ceiling_division(self):
+        # These inexpensive geometry controls avoid allocating 64 GiB fixtures.
+        for label, total, shard_bytes, count in (
+            ("too_small", 2048, 4, 512),
+            ("just_below_minimum", 2046, 1023, 2),
+            ("not_power_of_two", 3072, 1536, 2),
+            ("too_large_shard", (64 << 20) + 1, (64 << 20) + 1, 1),
+            ("too_many_shards", 4097 * 1024, 1024, 4097),
+            ("too_large_model", (64 << 30) + 1, 64 << 20, 1025),
+            ("wrong_ceil_count", 1025, 1024, 1),
+            ("zero_total", 0, 1024, 1),
+            ("zero_count", 1024, 1024, 0),
+        ):
+            with self.subTest(label=label):
+                with self.assertRaisesRegex(ValueError, "native v1"):
+                    verify_model_shape(total, shard_bytes, count, 56 + count * 32)
+        with self.assertRaisesRegex(ValueError, "native v1"):
+            verify_model_shape(2048, 1024, 2, 56 + 32)
+        # Native v1 allows these boundaries, including a 64 GiB model shape.
+        for total, shard_bytes, count in (
+            (1024, 1024, 1), (1026, 1024, 2),
+            (64 << 20, 64 << 20, 1),
+            (64 << 30, 64 << 20, 1024),
+        ):
+            with self.subTest(valid=(total, shard_bytes, count)):
+                self.assertIsNone(verify_model_shape(total, shard_bytes, count, 56 + 32 * count))
+
+    def test_native_incompatible_geometry_rejected_even_when_every_hash_matches(self):
+        for shard_bytes in (4, 1023, 1536):
+            with self.subTest(shard_bytes=shard_bytes):
+                first = b"a" * shard_bytes
+                second = b"xy"
+                pin = sha(first + second)
+                self.parts["PCPOS/shard-00000.bin"] = first
+                self.parts["PCPOS/shard-00001.bin"] = second
+                self.parts["PCPOS/model.manifest"] = (
+                    b"PCPMDL01" + struct.pack("<QII", len(first) + len(second), shard_bytes, 2) +
+                    bytes.fromhex(pin) + bytes.fromhex(sha(first)) + bytes.fromhex(sha(second))
+                )
+                for name in ("PCPOS/shard-00000.bin", "PCPOS/shard-00001.bin", "PCPOS/model.manifest"):
+                    (self.root / name).write_bytes(self.parts[name])
+                with self.assertRaisesRegex(ValueError, "native v1"):
+                    verify_tree(self.root, self.make_records(), pin)
 
     def test_incomplete_contiguous_shards_refused(self):
         bad = dict(self.records)

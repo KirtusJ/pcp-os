@@ -38,6 +38,11 @@ QWEN_MODEL_LICENSE = {"bytes": 11544, "sha256": "5de36594c10839788a8c589443a8ef9
 SHARD = re.compile(r"PCPOS/shard-([0-9]{5})\.bin\Z")
 HEX = re.compile(r"[0-9a-f]{64}\Z")
 EPOCH = "1794614400"
+# Must match pcpos-model-media Manifest::parse native v1 policy limits.
+MAX_SHARDS = 4096
+MIN_SHARD_BYTES = 1024
+MAX_SHARD_BYTES = 64 << 20
+MAX_MODEL_BYTES = 64 << 30
 
 
 def digest(path):
@@ -134,8 +139,9 @@ def verify_tree(root, expected, model_sha256):
         raise ValueError("invalid packed model header")
     total, shard_bytes, count = struct.unpack_from("<QII", data, 8)
     names = sorted(name for name in expected if SHARD.fullmatch(name))
-    if count != len(names) or shard_bytes == 0 or total == 0 or len(data) != 56 + 32 * count:
-        raise ValueError("packed model shape differs")
+    verify_model_shape(total, shard_bytes, count, len(data))
+    if count != len(names):
+        raise ValueError("packed model shard count differs from inventory")
     if data[24:56].hex() != model_sha256:
         raise ValueError("manifest does not bind the approved publisher model")
     whole = hashlib.sha256()
@@ -153,6 +159,20 @@ def verify_tree(root, expected, model_sha256):
     if whole.hexdigest() != model_sha256 or total != sum(expected[n]["bytes"] for n in names):
         raise ValueError("full model digest or logical length differs")
     return len(expected)
+
+
+def verify_model_shape(total, shard_bytes, count, manifest_length):
+    """Refuse geometries the pinned native v1 Manifest::parse cannot accept."""
+    if manifest_length > 56 + 32 * MAX_SHARDS:
+        raise ValueError("packed model exceeds native v1 manifest length limit")
+    if total > MAX_MODEL_BYTES or shard_bytes > MAX_SHARD_BYTES or count > MAX_SHARDS:
+        raise ValueError("packed model exceeds native v1 size or shard-count limit")
+    if (total == 0 or shard_bytes < MIN_SHARD_BYTES or
+            shard_bytes & (shard_bytes - 1) or count == 0 or
+            (total - 1) // shard_bytes + 1 != count):
+        raise ValueError("packed model has invalid native v1 shard geometry")
+    if manifest_length != 56 + 32 * count:
+        raise ValueError("packed model manifest length differs from native v1 shape")
 
 
 def execute(*command):
