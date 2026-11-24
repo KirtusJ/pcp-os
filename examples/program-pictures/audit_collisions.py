@@ -57,6 +57,38 @@ def seal_original_inputs(output, tag, files):
     return sha(archive.read_bytes())
 
 
+def wide_digest_distinguished(digests, accepted):
+    # Full input SHA-256 inequality does not prove that the 16 hex digits
+    # actually shown on the cards differ. Keep the two statements separate.
+    return (len(digests) == 2 and len(accepted) == 2
+            and all(accepted) and digests[0][:16] != digests[1][:16])
+
+
+def check_visible_digest_controls():
+    """Synthetic decoded-row controls, not new native frames or SHA collisions."""
+    d1 = "0123456789abcdef" * 4
+    d2 = "fedcba9876543210" * 4
+    same_prefix = d1[:16] + "a" * 48
+    cases = [
+        ("distinct-prefixes", (d1, d2), (d1, d2), (True, True), True),
+        ("equal-prefix-unequal-full", (d1, same_prefix), (d1, same_prefix), (True, True), False),
+        ("same-full", (d1, d1), (d1, d1), (True, True), False),
+        ("swapped-rows", (d1, d2), (d2, d1), (False, False), False),
+        ("repeated-first-prefix", (d1, d2), (d1, d1), (True, False), False),
+    ]
+    for label, expected_digests, displayed_digests, expected_rows, expected_visible in cases:
+        rows = [""] * 14
+        for i, digest in enumerate(displayed_digests):
+            row = " " * 10 + "Tailorbird".ljust(18) + "1 KiB".ljust(9)
+            rows[9 + 4*i] = row + "SHA-256 " + digest[:16] + "..."
+        accepted = tuple(wide_named_row(rows, i, "Tailorbird", expected_digests[i])
+                         for i in range(2))
+        visible = wide_digest_distinguished(expected_digests, accepted)
+        if accepted != expected_rows or visible != expected_visible:
+            raise ValueError("visible digest control failed: " + label)
+    print("VISIBLE_DIGEST_CONTROLS: 5/5 synthetic row controls passed")
+
+
 def witness(kernel, output, label, files, size):
     rows, frame = boot(kernel, output, label, size, files, "")
     sealed_sha = seal_original_inputs(output, label, files)
@@ -71,7 +103,7 @@ def witness(kernel, output, label, files, size):
         labels = [rows[9 + 4*i][10:28].rstrip(" ") for i in range(2)]
         # Unlike at 800px, a separate 16-digit digest lets a reviewer
         # distinguish the two cards even though the headings collide.
-        digest_distinguished = digests[0] != digests[1] and all(accepted)
+        digest_distinguished = wide_digest_distinguished(digests, accepted)
     else:
         accepted = [plain_named_row(rows, i, shown) for i in range(2)]
         labels = [rows[5 + i][3:].rstrip(" ") for i in range(2)]
@@ -79,6 +111,7 @@ def witness(kernel, output, label, files, size):
     return {
         "tag": label, "screen": size,
         "loader_names": names, "module_sha256": digests,
+        "full_module_digests_distinct": digests[0] != digests[1],
         "labels": labels, "same_rendered_label": labels[0] == labels[1] == shown,
         "row_predicates": accepted, "digest_bound_at_wide_screen": digest_distinguished,
         "frame_sha256": sha(frame), "frame_bytes": len(frame),
@@ -90,6 +123,7 @@ def witness(kernel, output, label, files, size):
 def main():
     if len(sys.argv) != 3:
         sys.exit(__doc__)
+    check_visible_digest_controls()
     kernel = Path(sys.argv[1]).resolve()
     output = Path(sys.argv[2]).resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -121,7 +155,8 @@ def main():
         "kernel_sha256": sha(kernel.read_bytes()),
     }
     (output / "collision-witness.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
-    good = (all(x["same_rendered_label"] and all(x["row_predicates"]) for x in observations)
+    good = (all(x["full_module_digests_distinct"] and x["same_rendered_label"]
+                and all(x["row_predicates"]) for x in observations)
             and all(x["digest_bound_at_wide_screen"] for x in observations if x["screen"] == "1280x720")
             and all(control["name_checks"]) and not control["false_collided"]
             and control["labels"] == ["Tailorbird", "TAILORBIRD"])
