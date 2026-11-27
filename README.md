@@ -2,7 +2,13 @@
 
 PCP OS runs Adversarial Claim Review (ACR) and keeps a verifiable register of what was examined, who examined it and what evidence they used. This repository contains the Rust host program `pcpos`, its integrity core, the experimental kernel and the source used to build PCP editions.
 
-For a first boot or release build, start with the [release catalog](os-docs/release-catalog.md). It identifies each image, its build and verification steps, and the outstanding decisions for physical use.
+**First boot for people and agents** — use the x86-64 UEFI desktop with no preloaded Qwen. From the repository root, run the command below with Python 3, QEMU and OVMF installed. It boots the bundled ISO and checks the running kernel. [Download the model-free ISO (ZIP)](examples/release-media/daily-driver/pcp-os-x86_64-uefi-model-free.zip) · [Interactive boot and verification](examples/release-media/daily-driver/README.md)
+
+```sh
+python3 examples/release-media/daily-driver/boot.py --check
+```
+
+The [release catalog](os-docs/release-catalog.md) also covers historical BIOS images, tester media and optional model-preloaded builds.
 
 | If your task is to… | Start here | How to use it |
 | --- | --- | --- |
