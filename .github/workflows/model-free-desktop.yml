@@ -1,0 +1,64 @@
+name: Model-free x86-64 UEFI desktop
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/model-free-desktop.yml'
+      - 'examples/release-media/daily-driver/rebuild.sh'
+      - 'examples/release-media/daily-driver/package.py'
+      - 'examples/release-media/daily-driver/boot.py'
+      - 'examples/release-media/basic.py'
+      - 'examples/release-media/build.py'
+      - 'examples/release-media/toolchain.py'
+      - 'examples/model-media-iso/build.py'
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-boot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install the build tools and x86-64 UEFI emulator
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y --no-install-recommends lld binutils grub-common grub-efi-amd64-bin dosfstools mtools xorriso qemu-system-x86 ovmf
+          rustup toolchain install 1.97.0 --profile minimal --no-self-update -c rust-src -t x86_64-unknown-none
+      - name: Master and read back the model-free image
+        env:
+          RUSTUP_TOOLCHAIN: 1.97.0
+        run: bash examples/release-media/daily-driver/rebuild.sh "$RUNNER_TEMP/desktop"
+      - name: Boot the packaged ISO and check the measured desktop
+        run: |
+          cp examples/release-media/daily-driver/boot.py "$RUNNER_TEMP/desktop/"
+          python3 "$RUNNER_TEMP/desktop/boot.py" --check
+          cd "$RUNNER_TEMP/desktop"
+          sha256sum pcp-os-x86_64-uefi-model-free.iso inputs.json > SHA256SUMS
+      - name: Attest the verified ISO and component manifest together
+        id: provenance
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f
+        with:
+          subject-checksums: ${{ runner.temp }}/desktop/SHA256SUMS
+      - name: Retain the verification bundle
+        env:
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: cp "$BUNDLE" "$RUNNER_TEMP/desktop/provenance.jsonl"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: model-free-x86-64-uefi
+          path: |
+            ${{ runner.temp }}/desktop/pcp-os-x86_64-uefi-model-free.zip
+            ${{ runner.temp }}/desktop/inputs.json
+            ${{ runner.temp }}/desktop/image.json
+            ${{ runner.temp }}/desktop/SHA256SUMS
+            ${{ runner.temp }}/desktop/provenance.jsonl
+          if-no-files-found: error
+          retention-days: 30
