@@ -1,6 +1,6 @@
 # Assemble PCP OS x86-64 UEFI release components
 
-For an owner-elected physical trial, use the [HP EliteBook 840 G7 checklist](elitebook-840-g7.md).
+For the default [model-free desktop download and boot command](daily-driver/README.md), use the bundled VM image. The steps below rebuild its components. The [HP EliteBook 840 G7 checklist](elitebook-840-g7.md) covers a separate physical trial.
 
 The model-free image boots the PCP OS desktop and offers Tailorbird and Surfbird in Programs. Tailorbird starts without a model service. Surfbird uses the bundled picture and sound clip and needs a supported audio device for playback. This recipe writes an ISO into a new regular file. It never writes a USB device.
 
@@ -8,7 +8,7 @@ The model-free image boots the PCP OS desktop and offers Tailorbird and Surfbird
 
 Use Linux with Python 3.12 or later, Git, Cargo and rustc with rust-src and the x86_64-unknown-none target, ld.lld, GNU objcopy, xorriso, dosfstools, mtools and GRUB's x86_64-efi tools and modules. The two source repositories must contain the commits below, including the PCP OS submodule commit recorded by Tailorbird. Cargo needs the locked dependencies available locally or from its registry.
 
-The example pins the **merged** proposals kernel at `3fdfe23268b97d58e1c9167422b0f8902c97f287` (including B3's consent-priority correction), the application from KirtusJ/tailorbird#19, and the published PCP-OS.iso whose Surfbird, clips and notices are reused. The published Surfbird ELF and clips are **copied from that digest-pinned donor ISO**, not rebuilt from Surfbird source by this recipe. Their source/build provenance is a separate release dependency. The preparation step checks the donor digest, builds both ELF files from Git archives, records the resolved Cargo features, measures the kernel and binds the proposal grant to the compiled Tailorbird digest. GRUB reads the configuration on the volume selected by the firmware.
+The command pins the OS kernel and Tailorbird sources recorded in the [component manifest](daily-driver/inputs.json). Surfbird, its media and notices come from the published, digest-pinned Enterprise donor CD. The preparation step verifies that donor, builds the kernel and Tailorbird from Git archives, records the resolved Cargo features and binds the proposal grant to the compiled Tailorbird digest. GRUB reads the configuration on the volume selected by the firmware.
 
 From the root of this checkout, set the three paths to your local inputs and run the following commands. The GRUB paths shown are for Debian.
 
@@ -17,8 +17,8 @@ OS_REPO=/path/to/pcp-os
 TAILORBIRD_REPO=/path/to/tailorbird
 ASSET_ISO=/path/to/PCP-OS.iso
 python3 examples/release-media/basic.py \
-  --os "$OS_REPO" --os-head 3fdfe23268b97d58e1c9167422b0f8902c97f287 \
-  --tailorbird "$TAILORBIRD_REPO" --tailorbird-head 0fbf3826c159201bc583b9f09f8b6f8d1a1d4ac0 \
+  --os "$OS_REPO" --os-head 92623fa6759bbb4e4f27ce5aa381de213a55ae0c \
+  --tailorbird "$TAILORBIRD_REPO" --tailorbird-head 645b4c266390e51b6d5abb818dce96e6cf916d22 \
   --assets-iso "$ASSET_ISO" \
   --assets-sha256 93ed3b599ad7be0e1e88a64813b1f2b5299d51507df2edca691aaf6189d10d15 \
   --grub-modules /usr/lib/grub/x86_64-efi \
@@ -30,7 +30,7 @@ Inspect `basic-parts/inputs.json` for the source commits, compiler, GRUB version
 
 ## Master and verify the ISO
 
-Supply the SHA-256 of `basic-parts/inputs.json` only after reviewing it as an independent build input. If it differs, compare the complete receipts before accepting new bytes. **No reviewed component-receipt or ISO digest is yet established for the new `3fdfe232` kernel pin.** The older values below belong to the superseded `d91fd184` example and must not be substituted for the new build.
+Review the exact `basic-parts/inputs.json` and set `APPROVED_INPUTS_SHA256` to its SHA-256 before mastering. The [daily-driver image receipt](daily-driver/image.json) identifies the checked-in build. Different compilers, package versions or build paths can produce different bytes.
 
 ```sh
 python3 examples/release-media/build.py basic-parts \
@@ -43,7 +43,7 @@ Mastering accepts the model-free inventory and the single kernel feature `propos
 
 Historical evidence only: two clean builds at the earlier `d91fd184` source pin on A3's builder produced identical receipts and a 70,389,760-byte ISO with SHA-256 `ea67434f1996cb81a3cb6e150c9b42b55127085a6e8501aac1e840cc256ce2c5`. OVMF booted that *older* image as optical media, as raw USB media and from a copied FAT32 file tree; all reached the 1920×1080 desktop. B3 independently reproduced its own older-pin image, but with a different digest.
 
-For the merged `3fdfe232` source pin above, A3 subsequently built twice at the same work path. The 11-file component receipt was `1dbe06857cae22be78603b086679b726f1d42d7f7b660ea048c25252d26722d0`. Both 70,389,760-byte ISOs had SHA-256 `75dce9c7581a5802ff941962aead7665c882fccb6876cad7e6b6c8844fa1f1e8`. Optical and raw USB boots with fresh OVMF variables reached the desktop, passed 72 kernel checks and powered off with exit 33. Physical UEFI and Rufus trials remain open. [Inputs, image receipt and serial logs](https://github.com/KirtusJ/pcp-os/tree/c566f8df2ee1d0a996939b7375aecd6cae0ceaec/examples/release-media/observations/plain-merged-kernel)
+For the historical merged `3fdfe232` source pin, A3 subsequently built twice at the same work path. The 11-file component receipt was `1dbe06857cae22be78603b086679b726f1d42d7f7b660ea048c25252d26722d0`. Both 70,389,760-byte ISOs had SHA-256 `75dce9c7581a5802ff941962aead7665c882fccb6876cad7e6b6c8844fa1f1e8`. Optical and raw USB boots with fresh OVMF variables reached the desktop, passed 72 kernel checks and powered off with exit 33. Physical UEFI and Rufus trials remain open. [Inputs, image receipt and serial logs](https://github.com/KirtusJ/pcp-os/tree/c566f8df2ee1d0a996939b7375aecd6cae0ceaec/examples/release-media/observations/plain-merged-kernel)
 
 The preloaded image requires a production loader with a published path and memory-handoff contract, a native model worker and an approved model digest. Its acceptance must include booting those components together. The model-free builder accepts only its own inventory.
 

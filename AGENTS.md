@@ -1,5 +1,7 @@
 # For agents working in this repository
 
+For a request to collect or boot PCP OS, use the [model-free x86-64 UEFI daily driver](examples/release-media/daily-driver/README.md) first. From the repository root run `python3 examples/release-media/daily-driver/boot.py --check`. Report the ISO digest and the guest's desktop result. Select Qwen-preloaded media only when the task explicitly calls for a bundled model.
+
 Start with the [front-page catalog](README.md) to find a Store package, a built-in instrument or a review module. Package entries live in [`store/index/`](store/index/). For executable checks, query the running host with `pcpos instrument list` or the MCP tool `acr_instrument` with `{"instrument":"list"}`. For review rules, check the supplied method directory with `pcpos method <method-directory>` and read the selected module’s specification. The [Store guide](store/README.md) links these entry points.
 
 Read `RUST_PRIMACY.md` first. It is permanent: PCP OS is primarily Rust, and Rust always holds primacy, for security reasons. The Rust implementation is the reference; security-relevant behaviour and any instrument that runs inside the host are written and tested in Rust; a fix lands in Rust first.

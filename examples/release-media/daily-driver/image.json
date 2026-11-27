@@ -1,0 +1,9 @@
+{
+  "profile": "model-free",
+  "archive": "pcp-os-x86_64-uefi-model-free.zip",
+  "filename": "pcp-os-x86_64-uefi-model-free.iso",
+  "bytes": 70440960,
+  "sha256": "2e76936c78dccb2c269c898651f839b18dd9319b33a3d02b21f501325a741ab3",
+  "inputs_sha256": "92e14abcdd51fcda2d1de46e6d5ca19cbb98a8a9e4c8e8bde7e70243acf42459",
+  "kernel_measurement": "52f8ab52fbb216fc765c845988a827635b3a1e351de36345b2e39ef0df485550"
+}

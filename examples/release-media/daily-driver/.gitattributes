@@ -1,0 +1,5 @@
+*.json text eol=lf
+*.jsonl -text
+SHA256SUMS text eol=lf
+*.sh text eol=lf
+*.zip binary

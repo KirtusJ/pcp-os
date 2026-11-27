@@ -1,0 +1,39 @@
+{
+  "asset_iso_sha256": "93ed3b599ad7be0e1e88a64813b1f2b5299d51507df2edca691aaf6189d10d15",
+  "files": {
+    "EFI/BOOT/BOOTX64.EFI": "0165d1b6818d2429d73f08ca57751d131fd3a4c5611187abfb60067d7f05d442",
+    "EFI/BOOT/grub.cfg": "407053950afb9eb386922aefe38d2fc3a425257e1a784a19975d352ac5aca03c",
+    "PCPOS/ASSET-LICENSE.MD": "80b7b0741b3290e739c344f9e641ce6a13cca5869fc5f8c38243e0285f5c8640",
+    "PCPOS/ASSET-NOTICES.TXT": "04bb865733036f2f978fce369ba95fe335b5967de5de0abe767b0a47a3f386ca",
+    "PCPOS/CLIP.PPM": "f6a1d9a0702f472f5b02cf0a528586e6d4447acbad2bd92eb0fc6d70eea4df4d",
+    "PCPOS/CLIP.WAV": "70ca6a81bc6f94db7d14a61630ff02c517d20a65c31273b16ff02e233018e244",
+    "PCPOS/GRUB-LICENSE.TXT": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+    "PCPOS/KERNEL.ELF": "c362b3b54846f865c28b3e75a8d6875281b8f62f4e9930aa36a74f1818fb9c7a",
+    "PCPOS/PCPOS-NOTICE.MD": "329d287bf2bac528afc035145886284908ecd139958223c6cff6477e7372e609",
+    "PCPOS/SURF.ELF": "b87f1185f86961ff8afdb21315c811f0c071c474d09737613146be46cbb98b34",
+    "PCPOS/TAILOR.ELF": "dbbe37072047aeb56902b7b9d113827f504585b1c531a9d1b22d701f8121ad28"
+  },
+  "format": "pcpos-release-parts/1",
+  "grub": "grub-mkimage (GRUB) 2.12-1ubuntu7.3",
+  "guest_os_head": "ce5aed7757a416590b8071b52041bfa868d59fa5",
+  "kernel_features": [
+    "proposals"
+  ],
+  "measurement": "52f8ab52fbb216fc765c845988a827635b3a1e351de36345b2e39ef0df485550",
+  "os_head": "92623fa6759bbb4e4f27ce5aa381de213a55ae0c",
+  "profile": "model-free",
+  "rust_tools": {
+    "cargo": {
+      "sha256": "eff12bab37b9d9e01324db4583eaf55b2cd82ac3008a7e59876e4cd2e9a028f5",
+      "version": "cargo 1.97.0 (c980f4866 2026-06-30)\nrelease: 1.97.0\ncommit-hash: c980f4866141969fab6254a680546a277789d6f0\ncommit-date: 2026-06-30\nhost: x86_64-unknown-linux-gnu\nlibgit2: 1.9.2 (sys:0.20.4 vendored)\nlibcurl: 8.20.0-DEV (sys:0.4.88+curl-8.20.0 vendored ssl:OpenSSL/3.6.2)\nssl: OpenSSL 3.6.2 7 Apr 2026\nos: Ubuntu 24.4.0 (noble) [64-bit]"
+    },
+    "profile": "release",
+    "rustc": {
+      "sha256": "df13f58759c0662831983e3a6501c63c1fc12ea60ec4e1d1ac35e5fe43c500c0",
+      "version": "rustc 1.97.0 (2d8144b78 2026-07-07)\nbinary: rustc\ncommit-hash: 2d8144b7880597b6e6d3dfd63a9a9efae3f533d3\ncommit-date: 2026-07-07\nhost: x86_64-unknown-linux-gnu\nrelease: 1.97.0\nLLVM version: 22.1.6"
+    }
+  },
+  "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+  "tailorbird_features": [],
+  "tailorbird_head": "645b4c266390e51b6d5abb818dce96e6cf916d22"
+}
