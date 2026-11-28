@@ -5,17 +5,15 @@ mod editor;
 mod find;
 #[path = "../../../PCP_OS_Rust/crates/pcpos-kernel/src/font.rs"]
 mod font;
+mod theme;
 
 use clipboard::Clipboard;
 use editor::{advance, cell_width, Editor, History};
 use find::Find;
 use pcp_game_guest::{entry, exit, ink::Frame, log, sleep_us, time_us, Display};
+use theme::{Palette, Theme};
 
-const INK: u32 = 0x1c1c1c;
-const FIELD_EDGE: u32 = 0x7f7e7e;
-const RULE: u32 = 0xb9b5b5;
-const PAPER: u32 = 0xdad6cb;
-const BAND: u32 = 0xdce2e0;
+const F6: usize = 64;
 const DOUBLE: &[u8; 95 * 20 * 40] =
     include_bytes!("../../../PCP_OS_Rust/crates/pcpos-kernel/src/font-2x.bin");
 
@@ -71,20 +69,22 @@ fn label(f: &mut Frame, x: usize, y: usize, s: &str, z: usize, color: u32, bg: u
     }
 }
 
-fn bird(f: &mut Frame, x: usize, y: usize, z: usize) {
+fn bird(f: &mut Frame, x: usize, y: usize, z: usize, palette: &Palette) {
     let coverage: &[u8] = if z == 2 {
         include_bytes!("../brand/header-64.alpha")
     } else {
         include_bytes!("../brand/header-32.alpha")
     };
-    mask(f, x, y, coverage, 32 * z, INK, BAND);
+    mask(f, x, y, coverage, 32 * z, palette.title, palette.band);
 }
 struct View {
     cols: usize,
     first: usize,
+    theme: Theme,
 }
 impl View {
     fn draw(&mut self, d: &mut Display, e: &Editor, msg: &str, find: &Find) {
+        let palette = self.theme.palette();
         d.draw(|surface, w, h, pitch| {
             let z = (w / 820).min(h / 475).clamp(1, 2);
             let cw = font::CELL_WIDTH * z;
@@ -97,22 +97,43 @@ impl View {
             let (r, c) = e.row_col(e.caret, self.cols);
             self.first = self.first.min(r).max((r + 1).saturating_sub(rows));
             let mut f = Frame { px: surface, pitch };
-            f.px.fill(PAPER);
-            f.rect(0, 0, w as i32, (2 * ch) as i32, BAND);
-            bird(&mut f, left, 4 * z, z);
-            label(&mut f, left + 40 * z, 10 * z, "Mockingbird", z, INK, BAND);
-            if w > 45 * cw {
+            f.px.fill(palette.sheet);
+            f.rect(0, 0, w as i32, (2 * ch) as i32, palette.band);
+            bird(&mut f, left, 4 * z, z, palette);
+            label(
+                &mut f,
+                left + 40 * z,
+                10 * z,
+                "Mockingbird",
+                z,
+                palette.title,
+                palette.band,
+            );
+            // Reserve the same columns for both hints so the header stays still.
+            let switch_x = w.saturating_sub(left + 14 * cw);
+            if w >= 48 * cw {
                 label(
                     &mut f,
-                    w - left - 12 * cw,
+                    switch_x - 15 * cw,
                     10 * z,
                     "Session only",
                     z,
-                    INK,
-                    BAND,
+                    palette.hint,
+                    palette.band,
                 );
             }
-            f.rect(0, (2 * ch) as i32, w as i32, z as i32, RULE);
+            if switch_x >= left + 16 * cw {
+                label(
+                    &mut f,
+                    switch_x,
+                    10 * z,
+                    self.theme.switch_hint(),
+                    z,
+                    palette.hint,
+                    palette.band,
+                );
+            }
+            f.rect(0, (2 * ch) as i32, w as i32, z as i32, palette.rule);
             let mut at = (0, 0);
             let selection = e.selection();
             for (i, b) in e.text().char_indices() {
@@ -124,10 +145,24 @@ impl View {
                     let y = top + ch * (at.0 - self.first);
                     if selection.contains(&i) {
                         let cells = cell_width(b, at.1).min(self.cols - at.1);
-                        f.rect(x as i32, y as i32, (cw * cells) as i32, ch as i32, INK);
-                        glyph(&mut f, x, y, visible(b), z, PAPER, INK);
+                        f.rect(
+                            x as i32,
+                            y as i32,
+                            (cw * cells) as i32,
+                            ch as i32,
+                            palette.selection,
+                        );
+                        glyph(
+                            &mut f,
+                            x,
+                            y,
+                            visible(b),
+                            z,
+                            palette.selected_text,
+                            palette.selection,
+                        );
                     } else {
-                        glyph(&mut f, x, y, visible(b), z, INK, PAPER);
+                        glyph(&mut f, x, y, visible(b), z, palette.text, palette.sheet);
                     }
                 }
                 advance(&mut at, b, self.cols);
@@ -139,18 +174,18 @@ impl View {
                     (2 * z) as i32,
                     ch as i32,
                     if selection.contains(&e.caret) {
-                        PAPER
+                        palette.selected_text
                     } else {
-                        INK
+                        palette.text
                     },
                 );
             }
             let band = h.saturating_sub(bottom);
-            f.rect(0, band as i32, w as i32, bottom as i32, BAND);
-            f.rect(0, band as i32, w as i32, z as i32, RULE);
+            f.rect(0, band as i32, w as i32, bottom as i32, palette.band);
+            f.rect(0, band as i32, w as i32, z as i32, palette.rule);
             if find.open {
                 let y = band + 6 * z;
-                label(&mut f, left, y, "Find", z, INK, BAND);
+                label(&mut f, left, y, "Find", z, palette.title, palette.band);
                 let field = left + 5 * cw;
                 let inset = 4 * z;
                 let x = field + inset;
@@ -165,16 +200,16 @@ impl View {
                 let shown = &query[offset..];
                 let width = shown.chars().count() * cw;
                 let (fg, bg) = if find.select_query {
-                    (PAPER, INK)
+                    (palette.selected_text, palette.selection)
                 } else {
-                    (INK, PAPER)
+                    (palette.text, palette.sheet)
                 };
                 f.rect(
                     field as i32,
                     (y - 2 * z) as i32,
                     field_width as i32,
                     (ch + 4 * z) as i32,
-                    PAPER,
+                    palette.sheet,
                 );
                 if width > 0 {
                     f.rect(x as i32, y as i32, width as i32, ch as i32, bg);
@@ -185,17 +220,39 @@ impl View {
                     (y + ch + 2 * z) as i32,
                     field_width as i32,
                     z as i32,
-                    FIELD_EDGE,
+                    palette.field_edge,
                 );
-                f.rect((x + width) as i32, y as i32, (2 * z) as i32, ch as i32, INK);
+                f.rect(
+                    (x + width) as i32,
+                    y as i32,
+                    (2 * z) as i32,
+                    ch as i32,
+                    palette.text,
+                );
                 let hint = if find.message.is_empty() {
                     "Enter next   Shift+Enter previous   Esc close"
                 } else {
                     find.message
                 };
-                label(&mut f, left, h - ch - 4 * z, hint, z, INK, BAND);
+                label(
+                    &mut f,
+                    left,
+                    h - ch - 4 * z,
+                    hint,
+                    z,
+                    palette.hint,
+                    palette.band,
+                );
             } else {
-                label(&mut f, left, h - ch - 5 * z, msg, z, INK, BAND);
+                label(
+                    &mut f,
+                    left,
+                    h - ch - 5 * z,
+                    msg,
+                    z,
+                    palette.hint,
+                    palette.band,
+                );
             }
         });
     }
@@ -219,10 +276,15 @@ pub extern "C" fn editor_main() -> ! {
     clip.connect();
     let help = "Ctrl+X Cut   Ctrl+V Paste   Ctrl+Z Undo   Ctrl+F Find";
     let mut d = Display::current();
-    let mut view = View { cols: 80, first: 0 };
+    let mut view = View {
+        cols: 80,
+        first: 0,
+        theme: Theme::default(),
+    };
     let mut caps = false;
     let mut leaving = false;
-    view.draw(&mut d, e, help, &find);
+    let mut status = help;
+    view.draw(&mut d, e, status, &find);
     log(b"Mockingbird ready\n");
     let mut repeat: Option<(usize, u64)> = None;
     loop {
@@ -253,6 +315,11 @@ pub extern "C" fn editor_main() -> ! {
         };
         let shift = d.held[42] || d.held[54];
         let ctrl = d.held[29];
+        if k == F6 && !ctrl && !shift && !d.held[56] {
+            view.theme = view.theme.other();
+            view.draw(&mut d, e, status, &find);
+            continue;
+        }
         let mut msg = help;
         if ctrl || matches!(k, 1 | 14 | 15 | 28 | 71 | 72 | 75 | 77 | 79 | 80 | 83) {
             history.break_typing();
@@ -340,7 +407,7 @@ pub extern "C" fn editor_main() -> ! {
                 1 if e.len == 0 => exit(0),
                 1 => {
                     leaving = true;
-                    msg = "Discard text and exit? Enter confirms. Any other key returns.";
+                    msg = "Discard text and exit? Enter discards. Esc returns.";
                 }
                 58 => {
                     caps = !caps;
@@ -382,6 +449,7 @@ pub extern "C" fn editor_main() -> ! {
                 }
             }
         }
-        view.draw(&mut d, e, msg, &find);
+        status = msg;
+        view.draw(&mut d, e, status, &find);
     }
 }

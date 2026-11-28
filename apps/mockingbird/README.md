@@ -19,13 +19,13 @@ Undo keeps the last twelve edits in the guest. Consecutive typing groups until a
 
 Find uses exact, case-sensitive text. A single-line selection of up to 256 UTF-8 bytes becomes the initial query. You can type over it or paste a query. The strip closes back onto the current match.
 
-Mockingbird opens directly onto one plain-text sheet. **Session only** tells you what will happen to the note when the VM closes. The long-tailed bird in the header and the Windows launcher icon come from the same [vector artwork](brand/mockingbird.svg). The sheet uses warm off-white with charcoal type. Text selection reverses the two colors.
+Mockingbird opens directly onto one plain-text sheet. **Session only** tells you what will happen to the note when the VM closes. The long-tailed bird in the header and the Windows launcher icon come from the same [vector artwork](brand/mockingbird.svg).
 
 ## Appearance
 
-The light appearance ships in 0.2.1. The dark column records the intended companion palette.
+Every Mockingbird session starts in light appearance. Press **F6** to switch to dark, and press it again to switch back. The header names the appearance F6 will select. You can switch while typing, selecting text or using Find.
 
-| Role | Light | Planned dark |
+| Role | Light | Dark |
 | --- | --- | --- |
 | Sheet and Find field | `#dad6cb` | `#1c1c1c` |
 | Document text and caret | `#1c1c1c` | `#dad6cb` |
@@ -36,7 +36,7 @@ The light appearance ships in 0.2.1. The dark column records the intended compan
 | Find field underline | `#7f7e7e` | `#7f7e7e` |
 | Selection fill and lettering | `#1c1c1c` / `#dad6cb` | `#b9b5b5` / `#1c1c1c` |
 
-When dark appearance is implemented, the guest renderer should accept one palette for the whole sheet. Document selection and Find should share the selection colors, including the contrasting caret at the active end. The bird already uses a coverage mask and can inherit the header ink. A future PCP OS appearance preference can choose the palette at the same drawing boundary. The editor buffer and clipboard do not need to know the appearance.
+The guest renderer applies one palette to the whole editor, including the bird, the caret and selected text in Find. The appearance belongs to the running Mockingbird window.
 
 ## Design choices
 

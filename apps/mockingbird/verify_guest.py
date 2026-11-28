@@ -83,6 +83,25 @@ with TemporaryDirectory() as temp:
             time.sleep(0.1)
         raise AssertionError((len(value), [(len(v), v[:15]) for v in f.writes]))
 
+    def screenshot(path=None, ready=None):
+        path = path or Path(temp) / "screen.ppm"
+        deadline = time.monotonic() + 8
+        while True:
+            cmd("screendump", {"filename": str(path)})
+            with path.open("rb") as image:
+                assert image.readline().strip() == b"P6"
+                width, height = map(int, image.readline().split())
+                assert image.readline().strip() == b"255"
+                pixels = image.read()
+            assert len(pixels) == width * height * 3
+            if ready is None or ready(pixels):
+                return width, height, pixels
+            if time.monotonic() >= deadline:
+                raise AssertionError(
+                    f"Guest did not draw the expected frame for {path.name}"
+                )
+            time.sleep(0.05)
+
     try:
         for i in range(300):
             lines = log.read_text(errors="replace") if log.exists() else ""
@@ -101,6 +120,26 @@ with TemporaryDirectory() as temp:
             key("ctrl", "a")
             transfer("c", expected)
             key("right")  # collapse selection at the end
+
+        w, h, initial = screenshot()
+        scale = max(1, min(2, w // 820, h // 475))
+        cw, ch = 10 * scale, 20 * scale
+
+        def color(pixels, x, y):
+            start = (y * w + x) * 3
+            return pixels[start : start + 3].hex()
+
+        assert color(initial, 0, 3 * ch) == "dad6cb"
+        assert color(initial, 0, 0) == "dce2e0"
+        assert color(initial, 2 * cw, 3 * ch) == "1c1c1c"
+        key("f6")
+        _, _, dark = screenshot()
+        assert color(dark, 0, 3 * ch) == "1c1c1c"
+        assert color(dark, 0, 2 * ch) == "7f7e7e"
+        assert color(dark, 2 * cw, 3 * ch) == "dad6cb"
+        key("f6")
+        assert screenshot()[2] == initial
+        print(f"PASS: default light and reversible F6 at {w} x {h}", flush=True)
 
         key("a")
         key("b")
@@ -161,39 +200,78 @@ with TemporaryDirectory() as temp:
         key("right")
         key("shift", "right")
         transfer("c", b"\t")
-        tab_frame = Path(temp) / "tab.ppm"
-        cmd("screendump", {"filename": str(tab_frame)})
-        with tab_frame.open("rb") as image:
-            assert image.readline().strip() == b"P6"
-            w, h = map(int, image.readline().split())
-            assert image.readline().strip() == b"255"
-            pixels = image.read()
-        scale = max(1, min(2, w // 820, h // 475))
-        cw, ch = 10 * scale, 20 * scale
-        for column in range(5):
-            point = ((3 * ch + 1) * w + 2 * cw + column * cw + cw // 2) * 3
-            expected = "1c1c1c" if 1 <= column < 4 else "dad6cb"
-            assert pixels[point : point + 3].hex() == expected
+        for sheet, selection in (("dad6cb", "1c1c1c"), ("1c1c1c", "b9b5b5")):
+            pixels = screenshot()[2]
+            for column in range(5):
+                expected = selection if 1 <= column < 4 else sheet
+                assert (
+                    color(pixels, (2 + column) * cw + cw // 2, 3 * ch + 1) == expected
+                )
+            key("f6")
+        transfer("c", b"\t")
         print(
             "PASS: reversed selection after a Find miss and full selected tab width",
             flush=True,
         )
-        if os.environ.get("MOCKINGBIRD_PREVIEW"):
-            key("ctrl", "a")
-            f.value = b"Field notes\n\nMeet at the north entrance at 09:00.\nBring the field notebook and a spare pencil."
-            key("ctrl", "v")
-            time.sleep(0.5)
-            preview = Path(os.environ["MOCKINGBIRD_PREVIEW"])
-            cmd(
-                "screendump",
-                {"filename": str(preview.with_stem(preview.stem + "-sheet"))},
-            )
-            key("ctrl", "f")
-            key("p")
-            key("e")
-            key("n")
-            cmd("screendump", {"filename": os.environ["MOCKINGBIRD_PREVIEW"]})
-            key("esc")
+        preview = Path(
+            os.environ.get("MOCKINGBIRD_PREVIEW", str(Path(temp) / "find.ppm"))
+        )
+        note = b"Field notes\n\nMeet at the north entrance at 09:00.\nBring the field notebook and a spare pencil."
+        key("ctrl", "a")
+        f.value = note
+        key("ctrl", "v")
+        # Clipboard arrival can outlast a keypress. Wait for the actual caret
+        # at the end of the pasted note before accepting a preview.
+        last_line = note.splitlines()[-1]
+        caret_x = (2 + len(last_line)) * cw
+        caret_y = 6 * ch
+        screenshot(
+            preview.with_stem(preview.stem + "-sheet"),
+            lambda px: (
+                color(px, 0, caret_y) == "dad6cb"
+                and color(px, caret_x, caret_y) == "1c1c1c"
+            ),
+        )
+        key("f6")
+        screenshot(
+            preview.with_stem(preview.stem + "-dark-sheet"),
+            lambda px: (
+                color(px, 0, caret_y) == "1c1c1c"
+                and color(px, caret_x, caret_y) == "dad6cb"
+            ),
+        )
+        key("ctrl", "z")
+        document(b"a\tbcd")
+        key("ctrl", "y")
+        document(note)
+        key("ctrl", "f")
+        for letter in "pen":
+            key(letter)
+        key("ctrl", "a")  # Both the query and its document match are selected.
+        dark_find = screenshot(preview.with_stem(preview.stem + "-dark"))[2]
+        query_x = 7 * cw + 4 * scale
+        query_y = h - 3 * ch + 6 * scale
+        assert color(dark_find, query_x, query_y) == "b9b5b5"
+        assert color(dark_find, query_x + 3 * cw, query_y) == "dad6cb"
+        key("f6")
+        light_find = screenshot(preview)[2]
+        assert color(light_find, query_x, query_y) == "1c1c1c"
+        assert color(light_find, query_x + 3 * cw, query_y) == "1c1c1c"
+        key("f6")
+        assert screenshot()[2] == dark_find
+        key("esc")
+        transfer("c", b"pen")
+        key("esc")
+        dark_prompt = screenshot()[2]
+        key("f6")
+        key("f6")
+        assert screenshot()[2] == dark_prompt
+        key("esc")
+        document(note)
+        print(
+            "PASS: theme switching preserves selection, Find, undo, redo and discard prompt",
+            flush=True,
+        )
         key("ctrl", "a")
         key("backspace")
         f.value = b"world\nPCP"
