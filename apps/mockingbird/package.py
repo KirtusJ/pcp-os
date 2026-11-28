@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tomllib
 import zipfile
 from pathlib import Path
 
@@ -24,10 +25,33 @@ def digest(path):
         return hashlib.file_digest(source, "sha256").hexdigest()
 
 
+def archive_package(out):
+    with (APP / "Cargo.toml").open("rb") as manifest:
+        version = tomllib.load(manifest)["package"]["version"]
+    target = out / f"mockingbird-{version}-windows-vm.zip"
+    files = [
+        out / name for name in ("Open Mockingbird.cmd", "launch.py", "Mockingbird.ico")
+    ]
+    files.extend(path for path in (out / "media").rglob("*") if path.is_file())
+    with zipfile.ZipFile(target, "x") as archive:
+        for path in sorted(files, key=lambda p: p.relative_to(out).as_posix()):
+            entry = zipfile.ZipInfo(path.relative_to(out).as_posix())
+            entry.create_system = 3
+            entry.external_attr = 0o100644 << 16
+            data = path.read_bytes()
+            if path.name == "launch.py":
+                data = data.replace(b"\r\n", b"\n")
+            archive.writestr(entry, data, compress_type=zipfile.ZIP_DEFLATED)
+    return target
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "output", type=Path, help="new directory for the launcher and boot files"
+    )
+    parser.add_argument(
+        "--archive", action="store_true", help="also write the portable Store ZIP"
     )
     parser.add_argument(
         "--toolchain",
@@ -151,6 +175,8 @@ def main():
         check=True,
     )
     print(out / "Mockingbird.lnk")
+    if args.archive:
+        print(archive_package(out))
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ HERE = Path(__file__).resolve().parent
 QEMU = Path(
     os.environ.get("PCPOS_QEMU")
     or shutil.which("qemu-system-x86_64")
-    or "D:/C3/tools/qemu-portable/bin/qemu-system-x86_64.exe"
+    or Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "qemu/qemu-system-x86_64.exe"
 )
 CAP = 32768
 
