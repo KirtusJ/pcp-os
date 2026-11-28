@@ -39,7 +39,7 @@ Night Post and Bellweather Harbor also ship offline browser players. Download a 
 | **Sunspur Rally** · native | Drive a desert time trial through five gates. | [Game](store/games/sunspur-rally/) · [Package](store/index/kirtusj/su/ns/sunspur-rally) (`kirtusj/sunspur-rally`) |
 | **Flux Rink** · native multiplayer prototype | Play a two-player 3D air-hockey match locally or across two linked QEMU guests. | [Game](store/games/flux-rink/) · [Package](store/index/kirtusj/fl/ux/flux-rink) (`kirtusj/flux-rink`) |
 
-The [Doom game archive](store/games/doom-collection/README.md) catalogs five standalone QEMU game bundles and their checksums.
+The [Doom game archive](store/games/doom-collection/README.md) holds five standalone QEMU game bundles and the first Doom game memory.
 
 ## Native rendering engines
 
