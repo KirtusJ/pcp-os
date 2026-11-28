@@ -19,9 +19,6 @@ impl Clipboard {
             .ok()
             .filter(|&fd| Self::send(fd, b"PCP-EDITOR-CLIP/1\n").is_ok());
     }
-    pub fn shared(&self) -> bool {
-        self.link.is_some()
-    }
     fn send(fd: usize, mut bytes: &[u8]) -> Result<(), ()> {
         let mut deadline = time_us() + 5_000_000;
         while !bytes.is_empty() {

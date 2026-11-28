@@ -52,7 +52,7 @@ def main():
     ]:
         subprocess.run(
             [
-                "cargo",
+                str(tool / "bin/cargo.exe"),
                 "build",
                 "--release",
                 "--locked",

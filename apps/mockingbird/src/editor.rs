@@ -47,24 +47,20 @@ impl Editor {
         self.anchor = 0;
         self.caret = self.len;
     }
-    pub fn replace(&mut self, text: &[u8]) -> bool {
-        let range = self.selection();
-        let kept = self.len - range.len();
-        if core::str::from_utf8(text).is_err() || text.len() > CAP - kept {
-            return false;
-        }
-        let end = range.start + text.len();
-        self.bytes.copy_within(range.end..self.len, end);
-        self.bytes[range.start..end].copy_from_slice(text);
-        self.len = kept + text.len();
-        self.move_to(end, false);
-        true
+    pub fn select(&mut self, range: Range<usize>) {
+        self.anchor = range.start;
+        self.caret = range.end;
     }
-    pub fn erase(&mut self, back: bool) {
-        if self.selection().is_empty() {
-            self.move_to(if back { self.previous() } else { self.next() }, true);
+    fn deletion(&self, back: bool) -> Range<usize> {
+        let selection = self.selection();
+        if !selection.is_empty() {
+            return selection;
         }
-        self.replace(&[]);
+        if back {
+            self.previous()..self.caret
+        } else {
+            self.caret..self.next()
+        }
     }
     pub fn horizontal(&mut self, left: bool, selecting: bool) {
         let range = self.selection();
@@ -143,4 +139,101 @@ pub fn printable(k: usize, shift: bool, caps: bool) -> Option<u8> {
     } else {
         plain[i]
     })
+}
+
+// Store only the used prefix when taking a checkpoint. A circular history keeps
+// the cost bounded even for the largest paste. Undo swaps in the previous
+// document and selection; that same slot then holds the corresponding redo.
+const STEPS: usize = 12;
+pub struct History {
+    slots: [Editor; STEPS],
+    first: usize,
+    count: usize,
+    applied: usize,
+    typing_until: Option<u64>,
+}
+impl History {
+    pub const fn new() -> Self {
+        Self {
+            slots: [const { Editor::new() }; STEPS],
+            first: 0,
+            count: 0,
+            applied: 0,
+            typing_until: None,
+        }
+    }
+    pub fn break_typing(&mut self) {
+        self.typing_until = None;
+    }
+    fn checkpoint(&mut self, e: &Editor) {
+        self.count = self.applied;
+        if self.count == STEPS {
+            self.first = (self.first + 1) % STEPS;
+            self.count -= 1;
+        }
+        let slot = &mut self.slots[(self.first + self.count) % STEPS];
+        slot.bytes[..e.len].copy_from_slice(&e.bytes[..e.len]);
+        slot.len = e.len;
+        slot.caret = e.caret;
+        slot.anchor = e.anchor;
+        self.count += 1;
+        self.applied = self.count;
+    }
+    pub fn edit(
+        &mut self,
+        e: &mut Editor,
+        range: Range<usize>,
+        bytes: &[u8],
+        typing: Option<u64>,
+    ) -> bool {
+        if core::str::from_utf8(bytes).is_err() || bytes.len() > CAP - (e.len - range.len()) {
+            return false;
+        }
+        if e.bytes[range.clone()] == *bytes {
+            e.move_to(range.end, false);
+            self.break_typing();
+            return true;
+        }
+        let grouped = range.is_empty()
+            && typing
+                .zip(self.typing_until)
+                .is_some_and(|(now, end)| now <= end);
+        if !grouped {
+            self.checkpoint(e);
+        }
+        self.typing_until = typing.map(|t| t + 1_200_000);
+        let end = range.start + bytes.len();
+        e.bytes.copy_within(range.end..e.len, end);
+        e.bytes[range.start..end].copy_from_slice(bytes);
+        e.len = e.len - range.len() + bytes.len();
+        e.move_to(end, false);
+        true
+    }
+    pub fn erase(&mut self, e: &mut Editor, back: bool) {
+        self.edit(e, e.deletion(back), &[], None);
+    }
+    pub fn step(&mut self, e: &mut Editor, redo: bool) -> bool {
+        self.break_typing();
+        let index = if redo {
+            if self.applied == self.count {
+                return false;
+            }
+            let i = self.applied;
+            self.applied += 1;
+            i
+        } else {
+            if self.applied == 0 {
+                return false;
+            }
+            self.applied -= 1;
+            self.applied
+        };
+        let slot = &mut self.slots[(self.first + index) % STEPS];
+        let n = e.len.max(slot.len);
+        e.bytes[..n].swap_with_slice(&mut slot.bytes[..n]);
+        core::mem::swap(&mut e.len, &mut slot.len);
+        core::mem::swap(&mut e.caret, &mut slot.caret);
+        core::mem::swap(&mut e.anchor, &mut slot.anchor);
+        true
+    }
 }

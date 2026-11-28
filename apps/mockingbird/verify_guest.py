@@ -84,6 +84,82 @@ with TemporaryDirectory() as temp:
         else:
             raise RuntimeError(lines[-2000:])
         print("Editor running, sending controls", flush=True)
+
+        # Exercise local editing through PS/2 and observe text through a
+        # synthetic clipboard. Each assertion requires a fresh guest copy.
+        def document(expected):
+            before = len(f.writes)
+            key("ctrl", "a")
+            key("ctrl", "c")
+            for _ in range(100):
+                if len(f.writes) > before:
+                    break
+                time.sleep(0.1)
+            assert len(f.writes) > before and f.writes[-1] == expected
+            key("right")  # collapse selection at the end
+
+        key("a")
+        key("b")
+        f.value = b" fox one fox two"
+        key("ctrl", "v")
+        key("ctrl", "z")
+        document(b"ab")
+        key("ctrl", "shift", "z")
+        document(b"ab fox one fox two")
+        key("ctrl", "f")
+        key("f")
+        key("o")
+        key("x")
+        key("ret")
+        key("esc")
+        key("shift", "f3")
+        key("x")
+        document(b"ab x one fox two")
+        key("ctrl", "z")
+        key("f3")
+        key("x")
+        document(b"ab fox one x two")
+        key("ctrl", "z")
+        document(b"ab fox one fox two")
+        key("ctrl", "f")
+        key("f")
+        key("o")
+        key("x")
+        key("shift", "ret")
+        key("ret")
+        key("esc")
+        key("y")
+        document(b"ab y one fox two")
+        key("ctrl", "z")
+        key("ctrl", "z")
+        key("ctrl", "z")
+        key("q")
+        document(b"q")
+        key("ctrl", "y")
+        document(b"q")
+        # The old query is now absent in this shorter document.
+        key("f3")
+        key("n")
+        key("shift", "n")
+        document(b"qnN")
+        if os.environ.get("MOCKINGBIRD_PREVIEW"):
+            key("ctrl", "a")
+            f.value = b"Field notes\n\nMeet at the north entrance at 09:00.\nBring the field notebook and a spare pencil."
+            key("ctrl", "v")
+            time.sleep(0.5)
+            key("ctrl", "f")
+            key("p")
+            key("e")
+            key("n")
+            cmd("screendump", {"filename": os.environ["MOCKINGBIRD_PREVIEW"]})
+            key("esc")
+        key("ctrl", "a")
+        key("backspace")
+        f.value = b"world\nPCP"
+        print(
+            "PASS: grouped undo, redo, redo invalidation, find next/previous and wrap",
+            flush=True,
+        )
         key("h")
         key("i")
         key("spc")
