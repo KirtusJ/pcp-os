@@ -4,13 +4,17 @@ A Rust text editor for the x86-64 PCP OS guest. Its document lives in RAM. In th
 
 The document holds up to 32 KiB of UTF-8. Unsupported glyphs display as a question mark and retain their original text when copied. Notes and Find queries use the kernel's DejaVu Sans Mono. The wordmark and interface labels use Source Sans 3, rasterized for the guest at both display scales. A running instance can edit with an internal clipboard on a kernel without the optional guest cable. [Source Sans 3 artwork and license](https://github.com/adobe-fonts/source-sans/tree/ed1808970eb3c7301c9a523bee26473ba0bb62fa) · [Bundled notice](brand/Source-Sans-LICENSE.txt)
 
-## Run version 0.3.0 on Windows
+## Run version 0.3.1 on Windows
 
-1. Download the [portable VM ZIP](../../store/apps/mockingbird/dist/mockingbird-0.3.0-windows-vm.zip). On the GitHub file page, choose **Download raw file**. The [Store entry](../../store/index/kirtusj/mo/ck/mockingbird) records the ZIP size, SHA-256 and immutable payload commit. A clone also includes the ZIP.
+In 0.3.1, pressing Enter at the right edge starts a single new row. Moving vertically across a shorter line restores the original column when space permits. The wordmark and interface labels use proportional lettering in both appearances.
+
+1. Download the [portable VM ZIP](../../store/apps/mockingbird/dist/mockingbird-0.3.1-windows-vm.zip). On the GitHub file page, choose **Download raw file**. The [Store entry](../../store/index/kirtusj/mo/ck/mockingbird) records the ZIP size, SHA-256 and immutable payload commit. A clone also includes the ZIP.
 2. Extract the entire ZIP into a new folder. The host needs Windows Python 3.11 or newer and x86-64 QEMU with its GTK display and bundled OVMF firmware. Put QEMU on PATH, install it under `Program Files\qemu`, or set `PCPOS_QEMU` to the executable.
 3. Open **Open Mockingbird.cmd**. The VM boots straight into the editor with a blank, light sheet. Press **F6** for dark. Closing the guest discards the note.
 
 The [standalone x86-64 ELF](../../store/apps/mockingbird/dist/mockingbird.elf) is the same executable carried inside the ZIP. The VM supplies the measured kernel and clipboard bridge needed for Windows clipboard exchange. To replay the synthetic clipboard and theme checks from a source checkout, run `python apps/mockingbird/verify_guest.py "C:/path/to/extracted-package"` from the repository root.
+
+Keep the [Source Sans license notice](brand/Source-Sans-LICENSE.txt) with the standalone ELF. The portable ZIP includes the same notice under `media/PCPOS/`.
 
 ## Editing a scratch note
 

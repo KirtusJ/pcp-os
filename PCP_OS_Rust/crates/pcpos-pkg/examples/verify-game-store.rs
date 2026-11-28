@@ -33,7 +33,7 @@ const PACKAGES: &[(&str, &str, &[&str])] = &[
     (
         "apps",
         "mockingbird",
-        &["dist/mockingbird.elf", "dist/mockingbird-0.3.0-windows-vm.zip"],
+        &["dist/mockingbird.elf", "dist/mockingbird-0.3.1-windows-vm.zip"],
     ),
     ("apps", "parrots-all-the-way-down", &["dist/rdesk.elf"]),
 ];

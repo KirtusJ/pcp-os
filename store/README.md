@@ -5,7 +5,7 @@
 | Run a Science, Mathematics, Statistics, Engineering or review instrument | [Host instrument catalog and CLI/MCP examples](instruments/README.md) |
 | Manage recursive jobs and admissions | [Parrots all the way Down](apps/parrots-all-the-way-down/) · native help desk, hosted worker launcher and machine commands |
 | Get a packaged application or verify its files | [Package index](#package-index) |
-| Write and edit a temporary note | [Mockingbird](../apps/mockingbird/README.md) · [Windows VM ZIP](apps/mockingbird/dist/mockingbird-0.3.0-windows-vm.zip) |
+| Write and edit a temporary note | [Mockingbird](../apps/mockingbird/README.md) · [Windows VM ZIP](apps/mockingbird/dist/mockingbird-0.3.1-windows-vm.zip) |
 | Train agents on toy ciphers or split a challenge across workers | [Keyrook native arena and hosted tools](apps/keyrook/) |
 | Choose a review module or read its specification | [Released method modules](../README.md#method-modules) |
 | Play a game | [Offline browser shelf](index.html) or [native-only games and engine](#native-only-store) |
@@ -56,7 +56,7 @@ The Store uses the repository's `pcpos-pkg` application entry format. Files in a
 
 | Application | Listing |
 | --- | --- |
-| `kirtusj/mockingbird` | [0.3.0 package entry](index/kirtusj/mo/ck/mockingbird) · [Native ELF](apps/mockingbird/dist/mockingbird.elf) · [Portable Windows VM](apps/mockingbird/dist/mockingbird-0.3.0-windows-vm.zip) |
+| `kirtusj/mockingbird` | [0.3.1 package entry](index/kirtusj/mo/ck/mockingbird) · [Native ELF](apps/mockingbird/dist/mockingbird.elf) · [Font notice](../apps/mockingbird/brand/Source-Sans-LICENSE.txt) · [Portable Windows VM](apps/mockingbird/dist/mockingbird-0.3.1-windows-vm.zip) |
 | `kirtusj/keyrook` | [Native cryptography arena](index/kirtusj/ke/yr/keyrook) · [Worker protocol](apps/keyrook/#external-workers) |
 | `kirtusj/night-post` | [Package entry](index/kirtusj/ni/gh/night-post) |
 | `kirtusj/bellweather-harbor` | [Package entry](index/kirtusj/be/ll/bellweather-harbor) |
