@@ -2,19 +2,24 @@
   "pcp_index": 1,
   "owner": "kirtusj",
   "name": "mockingbird",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "kind": "application",
-  "commit": "ddbd935de2f88a428f0c67c120df61e35630df3a",
+  "commit": "7f7a8cca6d126c4b0dd2d3f0c01d0c8428e4d6ae",
   "files": [
     {
-      "path": "store/apps/mockingbird/dist/mockingbird-0.3.0-windows-vm.zip",
-      "size": 799754,
-      "sha256": "a60fd8b85ce48d3a9701e6fbe308462eac0bcf8c6f313f8280bdbe148b1419d4"
+      "path": "store/apps/mockingbird/dist/mockingbird-0.3.1-windows-vm.zip",
+      "size": 823285,
+      "sha256": "b63dd29172a492ff42871f3bcd64905801b8bd9ba00096c94d20acad677d0596"
     },
     {
       "path": "store/apps/mockingbird/dist/mockingbird.elf",
-      "size": 163328,
-      "sha256": "ec4a1b1861d68052fe392a2986f3da8841ed7df1545818c3862630e4e4997502"
+      "size": 219864,
+      "sha256": "4284811c2c4222f09d39ccdd08fe81c59afe4dee4745195bf89eb327e4918022"
+    },
+    {
+      "path": "apps/mockingbird/brand/Source-Sans-LICENSE.txt",
+      "size": 4579,
+      "sha256": "89ad2c4f66dd29127527493e729c31e731f111cf10faf5774c3db9275ed0c22c"
     }
   ],
   "capabilities": [

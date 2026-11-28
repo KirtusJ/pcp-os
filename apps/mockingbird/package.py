@@ -125,6 +125,9 @@ def main():
     ).strip()
     editor = media / "PCPOS/EDITOR.ELF"
     shutil.copyfile(bins / "mockingbird", editor)
+    shutil.copyfile(
+        APP / "brand/Source-Sans-LICENSE.txt", media / "PCPOS/Source-Sans-LICENSE.txt"
+    )
     cfg = media / "EFI/BOOT/grub.cfg"
     body = cfg.read_text()
     body = body.replace(

@@ -272,6 +272,24 @@ with TemporaryDirectory() as temp:
             "PASS: theme switching preserves selection, Find, undo, redo and discard prompt",
             flush=True,
         )
+        cols = (w - 4 * cw) // cw
+        f.value = b"x" * cols + b"\ny"
+        key("ctrl", "a")
+        key("ctrl", "v")
+        document(f.value)
+        screenshot(ready=lambda px: color(px, 3 * cw, 4 * ch) == "dad6cb")
+        f.value = b"abcde\nx\nABCDE"
+        key("ctrl", "a")
+        key("ctrl", "v")
+        document(f.value)
+        key("up")
+        key("up")
+        key("shift", "home")
+        transfer("c", b"abcde")
+        print(
+            "PASS: exact-width newline and vertical navigation across a short line",
+            flush=True,
+        )
         key("ctrl", "a")
         key("backspace")
         f.value = b"world\nPCP"

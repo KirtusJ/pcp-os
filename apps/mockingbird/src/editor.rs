@@ -7,6 +7,7 @@ pub struct Editor {
     pub len: usize,
     pub caret: usize,
     pub anchor: usize,
+    preferred_col: Option<usize>,
 }
 
 impl Editor {
@@ -16,6 +17,7 @@ impl Editor {
             len: 0,
             caret: 0,
             anchor: 0,
+            preferred_col: None,
         }
     }
     pub fn text(&self) -> &str {
@@ -38,16 +40,17 @@ impl Editor {
         self.anchor.min(self.caret)..self.anchor.max(self.caret)
     }
     pub fn move_to(&mut self, position: usize, selecting: bool) {
+        self.preferred_col = None;
         self.caret = position.min(self.len);
         if !selecting {
             self.anchor = self.caret;
         }
     }
     pub fn all(&mut self) {
-        self.anchor = 0;
-        self.caret = self.len;
+        self.select(0, self.len);
     }
     pub fn select(&mut self, anchor: usize, caret: usize) {
+        self.preferred_col = None;
         self.anchor = anchor;
         self.caret = caret;
     }
@@ -77,34 +80,76 @@ impl Editor {
         };
         self.move_to(to, selecting);
     }
-    pub fn row_col(&self, pos: usize, cols: usize) -> (usize, usize) {
-        let mut at = (0, 0);
-        for b in self.text()[..pos].chars() {
-            advance(&mut at, b, cols);
-        }
-        at
+    // One position per character boundary, including the insertion point at EOF.
+    // Defer soft wrapping until another printable cell actually needs the row.
+    pub fn cells(&self, cols: usize) -> impl Iterator<Item = Cell> + '_ {
+        let mut row = 0;
+        let mut col = 0;
+        self.text()
+            .char_indices()
+            .map(|(i, ch)| (i, Some(ch)))
+            .chain(core::iter::once((self.len, None)))
+            .map(move |(byte, ch)| {
+                if col == cols && ch.is_some_and(|c| c != '\n') {
+                    row += 1;
+                    col = 0;
+                }
+                let cell = Cell { byte, ch, row, col };
+                match ch {
+                    Some('\n') => {
+                        row += 1;
+                        col = 0;
+                    }
+                    Some(c) => col = (col + cell_width(c, col)).min(cols),
+                    None => {}
+                }
+                cell
+            })
     }
-    pub fn vertical(&mut self, row: usize, col: usize, cols: usize, selecting: bool) {
-        let mut at = (0, 0);
-        let mut pos = 0;
-        for (i, b) in self.text().char_indices() {
-            if at.0 > row {
-                break;
-            }
-            pos = i;
-            if at.0 == row && (at.1 >= col || b == '\n') {
-                break;
-            }
-            let mut next = at;
-            advance(&mut next, b, cols);
-            if at.0 == row && next.0 > row {
-                break;
-            }
-            at = next;
-            pos = i + b.len_utf8();
-        }
-        self.move_to(pos, selecting);
+    pub fn caret_cell(&self, cols: usize) -> Cell {
+        self.cells(cols)
+            .find(|cell| cell.byte == self.caret)
+            .unwrap()
     }
+    fn position_on_row(&self, row: usize, col: usize, cols: usize) -> usize {
+        let mut pos = self.len;
+        for cell in self
+            .cells(cols)
+            .skip_while(|cell| cell.row < row)
+            .take_while(|cell| cell.row == row)
+        {
+            pos = cell.byte;
+            if cell.col >= col {
+                break;
+            }
+        }
+        pos
+    }
+    pub fn move_row(&mut self, down: bool, cols: usize, selecting: bool) {
+        let at = self.caret_cell(cols);
+        let target = self.preferred_col.unwrap_or(at.col);
+        let row = if down {
+            at.row + 1
+        } else {
+            at.row.saturating_sub(1)
+        };
+        self.move_to(self.position_on_row(row, target, cols), selecting);
+        self.preferred_col = Some(target);
+    }
+    pub fn line_edge(&mut self, end: bool, cols: usize, selecting: bool) {
+        let row = self.caret_cell(cols).row;
+        self.move_to(
+            self.position_on_row(row, if end { cols } else { 0 }, cols),
+            selecting,
+        );
+    }
+}
+
+pub struct Cell {
+    pub byte: usize,
+    pub ch: Option<char>,
+    pub row: usize,
+    pub col: usize,
 }
 
 pub fn cell_width(ch: char, column: usize) -> usize {
@@ -112,16 +157,6 @@ pub fn cell_width(ch: char, column: usize) -> usize {
         4 - column % 4
     } else {
         1
-    }
-}
-
-pub fn advance(at: &mut (usize, usize), byte: char, cols: usize) {
-    let width = cell_width(byte, at.1);
-    if byte == '\n' || at.1 + width >= cols {
-        at.0 += 1;
-        at.1 = 0;
-    } else {
-        at.1 += width;
     }
 }
 
@@ -242,6 +277,7 @@ impl History {
         core::mem::swap(&mut e.len, &mut slot.len);
         core::mem::swap(&mut e.caret, &mut slot.caret);
         core::mem::swap(&mut e.anchor, &mut slot.anchor);
+        e.preferred_col = None;
         true
     }
 }

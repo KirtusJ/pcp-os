@@ -1,4 +1,6 @@
 # The guest self-test compares this published vector byte-for-byte.
 PCP_OS_Rust/vectors/machines.tsv text eol=lf
 store/**/*.elf binary
+# The Store pins the upstream font notice byte for byte, including its line endings.
+apps/mockingbird/brand/Source-Sans-LICENSE.txt -text
 *.pdf binary
