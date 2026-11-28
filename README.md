@@ -39,6 +39,8 @@ Night Post and Bellweather Harbor also ship offline browser players. Download a 
 | **Sunspur Rally** · native | Drive a desert time trial through five gates. | [Game](store/games/sunspur-rally/) · [Package](store/index/kirtusj/su/ns/sunspur-rally) (`kirtusj/sunspur-rally`) |
 | **Flux Rink** · native multiplayer prototype | Play a two-player 3D air-hockey match locally or across two linked QEMU guests. | [Game](store/games/flux-rink/) · [Package](store/index/kirtusj/fl/ux/flux-rink) (`kirtusj/flux-rink`) |
 
+The [Doom game archive](store/games/doom-collection/README.md) catalogs five standalone QEMU game bundles and their checksums.
+
 ## Native rendering engines
 
 **Heliograph** is a Rust 3D software renderer with an interactive material lab, used by Flux Rink. [Engine, native lab and benchmarks](store/engines/heliograph/) · [Package](store/index/kirtusj/he/li/heliograph) (`kirtusj/heliograph`) · [Native Store launcher](store/native/README.md)
