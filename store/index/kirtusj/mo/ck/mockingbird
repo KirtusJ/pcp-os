@@ -1,0 +1,27 @@
+{
+  "pcp_index": 1,
+  "owner": "kirtusj",
+  "name": "mockingbird",
+  "version": "0.3.0",
+  "kind": "application",
+  "commit": "ddbd935de2f88a428f0c67c120df61e35630df3a",
+  "files": [
+    {
+      "path": "store/apps/mockingbird/dist/mockingbird-0.3.0-windows-vm.zip",
+      "size": 799754,
+      "sha256": "a60fd8b85ce48d3a9701e6fbe308462eac0bcf8c6f313f8280bdbe148b1419d4"
+    },
+    {
+      "path": "store/apps/mockingbird/dist/mockingbird.elf",
+      "size": 163328,
+      "sha256": "ec4a1b1861d68052fe392a2986f3da8841ed7df1545818c3862630e4e4997502"
+    }
+  ],
+  "capabilities": [
+    "console",
+    "display",
+    "keys",
+    "game.link"
+  ],
+  "withdrawn": false
+}

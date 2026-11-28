@@ -4,6 +4,14 @@ A Rust text editor for the x86-64 PCP OS guest. Its document lives in RAM. In th
 
 The document holds up to 32 KiB of UTF-8. Unsupported glyphs display as a question mark and retain their original text when copied. The editor uses the kernel's existing DejaVu Sans Mono glyphs. A running instance can edit with an internal clipboard on a kernel without the optional guest cable.
 
+## Run version 0.3.0 on Windows
+
+1. Download the [portable VM ZIP](../../store/apps/mockingbird/dist/mockingbird-0.3.0-windows-vm.zip). On the GitHub file page, choose **Download raw file**. The [Store entry](../../store/index/kirtusj/mo/ck/mockingbird) records the ZIP size, SHA-256 and immutable payload commit. A clone also includes the ZIP.
+2. Extract the entire ZIP into a new folder. The host needs Windows Python 3.11 or newer and x86-64 QEMU with its GTK display and bundled OVMF firmware. Put QEMU on PATH, install it under `Program Files\qemu`, or set `PCPOS_QEMU` to the executable.
+3. Open **Open Mockingbird.cmd**. The VM boots straight into the editor with a blank, light sheet. Press **F6** for dark. Closing the guest discards the note.
+
+The [standalone x86-64 ELF](../../store/apps/mockingbird/dist/mockingbird.elf) is the same executable carried inside the ZIP. The VM supplies the measured kernel and clipboard bridge needed for Windows clipboard exchange. To replay the synthetic clipboard and theme checks from a source checkout, run `python apps/mockingbird/verify_guest.py "C:/path/to/extracted-package"` from the repository root.
+
 ## Editing a scratch note
 
 | Action | Keys |
@@ -55,5 +63,7 @@ python package.py D:/path/to/Mockingbird --toolchain D:/path/to/rust-toolchain
 ~~~
 
 Open **Mockingbird.lnk** in the output directory. The shortcut uses the Python installation and package location from build time. **Open Mockingbird.cmd** also works after moving the directory. The launcher finds x86-64 QEMU on PATH or uses PCPOS_QEMU, which can point to the executable. It expects the unsigned x86-64 OVMF code and variables in QEMU's share directory.
+
+Add `--archive` to the build command to write the portable ZIP in the output directory. It includes the relative launcher, icon, boot files and notices. The Windows shortcut is specific to the build machine.
 
 The package uses the daily driver's model-free assets and builds the PCP OS kernel with its existing proposals and game-link features. The bootstrap grants the clipboard cable to the exact editor ELF digest. The local Windows helper exchanges plain text on explicit clipboard commands, using the emulated COM2 serial port. The VM has no virtual network card. The launcher gives each invocation its own firmware variables and attaches the boot files read-only.
