@@ -1,0 +1,593 @@
+{
+  "archives": [
+    {
+      "title": "First Doom game memory",
+      "archive": "memory/Doom_Game_Memory.zip",
+      "bytes": 7144,
+      "sha256": "c9330c62500b972c5f2b05f11de7fa29a24c1999f4c5eec6ff7a46c15fe66694",
+      "description": "Slot 0, TOOCLOSE, with the original session record and timing script.",
+      "members": {
+        "session-memory.json": {
+          "bytes": 1126,
+          "sha256": "90151c948ae98bd99fc9ceb39eadc1dd39826ce5127ce6dd6fc794af657c8881"
+        },
+        "doomsav0.dsg": {
+          "bytes": 24414,
+          "sha256": "d8f8b67125db4830a1aa1e4467e871c91e9408dd0b007764902dea80f4e393e1"
+        },
+        "doom_fps.py": {
+          "bytes": 5240,
+          "sha256": "b0217c690b9f81efcadf8c6958be62c6ebe64e2f78554efeff60b2ac645a7bb0"
+        }
+      }
+    },
+    {
+      "title": "Ultra Omega Barrel",
+      "archive": "games/Ultra_Omega_Barrel.zip",
+      "bytes": 7013179,
+      "sha256": "52f7280835720221e376f7a9e40af108f13c3d6d5a2d0fca4c0616aa84bdb4f0",
+      "description": "Nine-map campaign beginning in The Loading Bay. Includes Hangar.gif and The-Last-Press.mp4.",
+      "members": {
+        "Ultra_Omega_Barrel/PCP-OS-NOTICE.md": {
+          "bytes": 3036,
+          "sha256": "329d287bf2bac528afc035145886284908ecd139958223c6cff6477e7372e609"
+        },
+        "Ultra_Omega_Barrel/PLAY.txt": {
+          "bytes": 1586,
+          "sha256": "3d122c3dc67d81eddad0f709202d10a13c52b30f8c7641f7ee2cbfcad98a43fe"
+        },
+        "Ultra_Omega_Barrel/art/grin.wad": {
+          "bytes": 2336,
+          "sha256": "9cc8941840318a81d96c19ac6371f27b6c7cdcce7a1a74655c14a8831b1f1ec2"
+        },
+        "Ultra_Omega_Barrel/art/make_sprites.py": {
+          "bytes": 16051,
+          "sha256": "8ef24b2839b79ab599e77108477aad6f29d6026f6862840420c926caa9b5b3a2"
+        },
+        "Ultra_Omega_Barrel/art/omega-sprites.wad": {
+          "bytes": 66302,
+          "sha256": "3a84f5ca3771510c7a36f829fdb1160f682d924e66781f291ef168e329f5b952"
+        },
+        "Ultra_Omega_Barrel/design/make_foundry.py": {
+          "bytes": 9946,
+          "sha256": "36676eb9ae1c701699f477f39a8772e7c670da1c082bf38ed7b910005a5759c7"
+        },
+        "Ultra_Omega_Barrel/extras/Hangar.gif": {
+          "bytes": 1214780,
+          "sha256": "a608f6a78127ab50eb0eda352b1a4f2396f8dfedf4bb812de251e3677f3ce096"
+        },
+        "Ultra_Omega_Barrel/extras/The-Last-Press.mp4": {
+          "bytes": 3627546,
+          "sha256": "4bb7fb1841cae3bb6b2b2fca15baae0737d9f871a3c2c3b718c19df1022a1994"
+        },
+        "Ultra_Omega_Barrel/foundry.wad": {
+          "bytes": 186340,
+          "sha256": "47210b88d61bf85e29e1055c91bf3f288c02bf8b5a534f2fd4d9af62bde540a8"
+        },
+        "Ultra_Omega_Barrel/install.py": {
+          "bytes": 5211,
+          "sha256": "6a3e76b1be9fc3844b02821d93dcd592127debf499f02299ab28dd8bf288d3df"
+        },
+        "Ultra_Omega_Barrel/music/foundry-score.wad": {
+          "bytes": 11423,
+          "sha256": "956d556193db9a2c0091f2ecd06cf8348fbdb810a1c375640edcd259d711f6b2"
+        },
+        "Ultra_Omega_Barrel/music/score.py": {
+          "bytes": 8901,
+          "sha256": "2963f51ceef70d718a613fd38b669bec588ca4788ec139c8e4e4cabdb09da1ac"
+        },
+        "Ultra_Omega_Barrel/omega.elf": {
+          "bytes": 564640,
+          "sha256": "d537bb3eff86beaae2348ebed80b8cae1997dd9739fcecc42492c881d4ed79b1"
+        },
+        "Ultra_Omega_Barrel/omega_arena.py": {
+          "bytes": 3682,
+          "sha256": "8a11fa79c279d0f562e6f206d007507cee343c5f413c74f2e0edf3fd395e73fc"
+        },
+        "Ultra_Omega_Barrel/pcpos-kernel.elf32": {
+          "bytes": 808148,
+          "sha256": "ac423dc6ee47657d8a0a42a3c204e41534c5ca281cf5265022f4f99a69dc2743"
+        },
+        "Ultra_Omega_Barrel/play/Run-Omega.cmd": {
+          "bytes": 382,
+          "sha256": "85dfecfc647495cdaa84f7c9878d4f8ce5881be7ba0d4bf4a5c96177169e1738"
+        },
+        "Ultra_Omega_Barrel/play/Run-Omega.sh": {
+          "bytes": 115,
+          "sha256": "18d5ae6516fdf6a51c32a368034b8e16e89ebbdf27c237bbffb3575aa2959e0d"
+        },
+        "Ultra_Omega_Barrel/play/run_omega.py": {
+          "bytes": 7741,
+          "sha256": "a72f6b9da9bae7cfcf50a041a4c0c0cd42c9c6982fd0fefb1a1282425524cd94"
+        },
+        "Ultra_Omega_Barrel/source/ENGINE-COPYING": {
+          "bytes": 18092,
+          "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+        },
+        "Ultra_Omega_Barrel/source/omega-source.tar.gz": {
+          "bytes": 1599153,
+          "sha256": "32d03f3d2002c9eab5c22e41a5c3060a025c46e658ef482c79ffceb8b99efa27"
+        }
+      },
+      "windows_launcher": "Ultra_Omega_Barrel/play/Run-Omega.cmd",
+      "unix_launcher": "Ultra_Omega_Barrel/play/Run-Omega.sh"
+    },
+    {
+      "title": "Barrel Bowl",
+      "archive": "games/Barrel_Bowl.zip",
+      "bytes": 4127967,
+      "sha256": "cf1679a9c7d971e10f7224480e64080a5756e644e610ce2aa47148434d116f1a",
+      "description": "Ten-frame barrel bowling at Phobos Lanes. Also includes its own copy of the Ultra Omega campaign and launcher.",
+      "members": {
+        "Barrel_Bowl/PCP-OS-NOTICE.md": {
+          "bytes": 3036,
+          "sha256": "329d287bf2bac528afc035145886284908ecd139958223c6cff6477e7372e609"
+        },
+        "Barrel_Bowl/PLAY.txt": {
+          "bytes": 1382,
+          "sha256": "6cac6312ed0e2bd0ad9cad175b9cf13fe89ac8d7b60a4d5fecdfc0b20d73c7e9"
+        },
+        "Barrel_Bowl/alley.wad": {
+          "bytes": 207192,
+          "sha256": "db99ac4e63529675259bac9fa2416fe1ebc235711577716d07b8f9c11f2b14ff"
+        },
+        "Barrel_Bowl/alley_art.py": {
+          "bytes": 11902,
+          "sha256": "2939154586548a25f30adfe55018414406deee6740fd5ecd1e3ca5519516741d"
+        },
+        "Barrel_Bowl/art/grin.wad": {
+          "bytes": 2336,
+          "sha256": "9cc8941840318a81d96c19ac6371f27b6c7cdcce7a1a74655c14a8831b1f1ec2"
+        },
+        "Barrel_Bowl/art/make_sprites.py": {
+          "bytes": 16051,
+          "sha256": "8ef24b2839b79ab599e77108477aad6f29d6026f6862840420c926caa9b5b3a2"
+        },
+        "Barrel_Bowl/art/omega-sprites.wad": {
+          "bytes": 66302,
+          "sha256": "3a84f5ca3771510c7a36f829fdb1160f682d924e66781f291ef168e329f5b952"
+        },
+        "Barrel_Bowl/bowl.elf": {
+          "bytes": 577600,
+          "sha256": "b37b144badab06f47dbcbc1683ffb4dc6bc4585f4136f08b8b3e4244a21cec74"
+        },
+        "Barrel_Bowl/design/make_foundry.py": {
+          "bytes": 9946,
+          "sha256": "36676eb9ae1c701699f477f39a8772e7c670da1c082bf38ed7b910005a5759c7"
+        },
+        "Barrel_Bowl/foundry.wad": {
+          "bytes": 186340,
+          "sha256": "47210b88d61bf85e29e1055c91bf3f288c02bf8b5a534f2fd4d9af62bde540a8"
+        },
+        "Barrel_Bowl/held.pat": {
+          "bytes": 3203,
+          "sha256": "f1992025f89974b1703986343bcec226694532540eda724d66eeaa6cda630bc6"
+        },
+        "Barrel_Bowl/install.py": {
+          "bytes": 5211,
+          "sha256": "6a3e76b1be9fc3844b02821d93dcd592127debf499f02299ab28dd8bf288d3df"
+        },
+        "Barrel_Bowl/install_bowl.py": {
+          "bytes": 2399,
+          "sha256": "9444b1d66f3fc70490ff4c89ca29ed2ffa481293781a8a9710e50e96377e2f02"
+        },
+        "Barrel_Bowl/lane.py": {
+          "bytes": 11669,
+          "sha256": "d47e412a5e8161034c0770e099dea46daba70194658c282113ee643f49acd7cc"
+        },
+        "Barrel_Bowl/make_held.py": {
+          "bytes": 2490,
+          "sha256": "f1eb859fa6ad3ff7c02975609a705d6650c9a0b4103cb6d80fd2c20637f97e5b"
+        },
+        "Barrel_Bowl/music/bowl-music.wad": {
+          "bytes": 25935,
+          "sha256": "3e00c19d306bc38e9445c211595936c00bced63720c37c92a639c724c1230425"
+        },
+        "Barrel_Bowl/music/bowl_score.py": {
+          "bytes": 8971,
+          "sha256": "c2982493a7f2a930a2639eb221bb84ced497305bd84264653f01f48927f2162f"
+        },
+        "Barrel_Bowl/music/foundry-score.wad": {
+          "bytes": 11423,
+          "sha256": "956d556193db9a2c0091f2ecd06cf8348fbdb810a1c375640edcd259d711f6b2"
+        },
+        "Barrel_Bowl/music/score.py": {
+          "bytes": 8901,
+          "sha256": "2963f51ceef70d718a613fd38b669bec588ca4788ec139c8e4e4cabdb09da1ac"
+        },
+        "Barrel_Bowl/omega.elf": {
+          "bytes": 564640,
+          "sha256": "d537bb3eff86beaae2348ebed80b8cae1997dd9739fcecc42492c881d4ed79b1"
+        },
+        "Barrel_Bowl/omega_arena.py": {
+          "bytes": 3682,
+          "sha256": "8a11fa79c279d0f562e6f206d007507cee343c5f413c74f2e0edf3fd395e73fc"
+        },
+        "Barrel_Bowl/pcpos-kernel.elf32": {
+          "bytes": 808148,
+          "sha256": "ac423dc6ee47657d8a0a42a3c204e41534c5ca281cf5265022f4f99a69dc2743"
+        },
+        "Barrel_Bowl/play/Run-Bowl.cmd": {
+          "bytes": 395,
+          "sha256": "432f8ebe915e1f1bf9a09bc62a6bfcecd6b0e633ff176ee5feeda138a484e0f6"
+        },
+        "Barrel_Bowl/play/Run-Bowl.sh": {
+          "bytes": 122,
+          "sha256": "b51c64023723370a3fa2dd2e7c2d9741c7dd97dd999eeee0000839a1e5991504"
+        },
+        "Barrel_Bowl/play/Run-Omega.cmd": {
+          "bytes": 382,
+          "sha256": "85dfecfc647495cdaa84f7c9878d4f8ce5881be7ba0d4bf4a5c96177169e1738"
+        },
+        "Barrel_Bowl/play/Run-Omega.sh": {
+          "bytes": 115,
+          "sha256": "18d5ae6516fdf6a51c32a368034b8e16e89ebbdf27c237bbffb3575aa2959e0d"
+        },
+        "Barrel_Bowl/play/run_omega.py": {
+          "bytes": 9313,
+          "sha256": "a8f7eab3a1fa96df006eb1207f66810ca6989520ed23cd5886486de115337c72"
+        },
+        "Barrel_Bowl/source/ENGINE-COPYING": {
+          "bytes": 18092,
+          "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+        },
+        "Barrel_Bowl/source/bowl-source.tar.gz": {
+          "bytes": 1617108,
+          "sha256": "bb02df2385931ea947cc44412b230c7789bffd58d4aabe2bcc9f78d7f9b44ba8"
+        },
+        "Barrel_Bowl/source/omega-source.tar.gz": {
+          "bytes": 1599153,
+          "sha256": "32d03f3d2002c9eab5c22e41a5c3060a025c46e658ef482c79ffceb8b99efa27"
+        }
+      },
+      "windows_launcher": "Barrel_Bowl/play/Run-Bowl.cmd",
+      "unix_launcher": "Barrel_Bowl/play/Run-Bowl.sh"
+    },
+    {
+      "title": "Midnight Barrel Express",
+      "archive": "games/Midnight_Barrel_Express.zip",
+      "bytes": 2311636,
+      "sha256": "80a21ac27d4a6c8486b0a91a1585c5b2e542576a84ba78f27ee178b9c10c4bbd",
+      "description": "Ride the Phobos Railway, release two interlocks, and brake at the signal for Deimos Junction.",
+      "members": {
+        "Midnight_Barrel_Express/PCP-OS-NOTICE.md": {
+          "bytes": 3036,
+          "sha256": "329d287bf2bac528afc035145886284908ecd139958223c6cff6477e7372e609"
+        },
+        "Midnight_Barrel_Express/PLAY.txt": {
+          "bytes": 1583,
+          "sha256": "4544c54ee632e50367c49fb0d152f6ce2a9de6c8dbd4d17d588624f1263f5d40"
+        },
+        "Midnight_Barrel_Express/art/omega-sprites.wad": {
+          "bytes": 66302,
+          "sha256": "3a84f5ca3771510c7a36f829fdb1160f682d924e66781f291ef168e329f5b952"
+        },
+        "Midnight_Barrel_Express/foundry.wad": {
+          "bytes": 186340,
+          "sha256": "47210b88d61bf85e29e1055c91bf3f288c02bf8b5a534f2fd4d9af62bde540a8"
+        },
+        "Midnight_Barrel_Express/install.py": {
+          "bytes": 5211,
+          "sha256": "6a3e76b1be9fc3844b02821d93dcd592127debf499f02299ab28dd8bf288d3df"
+        },
+        "Midnight_Barrel_Express/install_rail.py": {
+          "bytes": 4188,
+          "sha256": "0b10ac5faed34ca1bee432da3b3a8f9f08809bdddd994d5e8f3108a0d8d760f0"
+        },
+        "Midnight_Barrel_Express/make_rail.py": {
+          "bytes": 11875,
+          "sha256": "f51c0c2bd1eb4f45a8da74a3481835621fa569801fe1fbf779aa0b6531e72725"
+        },
+        "Midnight_Barrel_Express/make_station.py": {
+          "bytes": 5385,
+          "sha256": "4687995a9d2978a54a55a487de71f2313657ac39c67d9af33879d51404934682"
+        },
+        "Midnight_Barrel_Express/music/foundry-score.wad": {
+          "bytes": 11423,
+          "sha256": "956d556193db9a2c0091f2ecd06cf8348fbdb810a1c375640edcd259d711f6b2"
+        },
+        "Midnight_Barrel_Express/music/rail-music.wad": {
+          "bytes": 43621,
+          "sha256": "937c58a479da9bad2bd66c89296dfab9ded1b31d71f5f1d84463be005a3c654e"
+        },
+        "Midnight_Barrel_Express/music/rail_score.py": {
+          "bytes": 9877,
+          "sha256": "65bd4b621b19db269852b699aa94f69b022738fcc6de80a304286b5c1a8ee31e"
+        },
+        "Midnight_Barrel_Express/omega_arena.py": {
+          "bytes": 3682,
+          "sha256": "8a11fa79c279d0f562e6f206d007507cee343c5f413c74f2e0edf3fd395e73fc"
+        },
+        "Midnight_Barrel_Express/pcpos-kernel.elf32": {
+          "bytes": 808148,
+          "sha256": "ac423dc6ee47657d8a0a42a3c204e41534c5ca281cf5265022f4f99a69dc2743"
+        },
+        "Midnight_Barrel_Express/play/Run-Express.cmd": {
+          "bytes": 382,
+          "sha256": "1026559c874c082f74fd14a4b4404ead2ca9d98429b2ace1e80c3afbd86611f9"
+        },
+        "Midnight_Barrel_Express/play/Run-Express.sh": {
+          "bytes": 114,
+          "sha256": "687ce71f488d940905728aaaeefddbd59c20f65b6968c1b66092ffa9e6849481"
+        },
+        "Midnight_Barrel_Express/play/run_rail.py": {
+          "bytes": 8949,
+          "sha256": "c79c0f46d0a9e8b65fc08869d2c1c05f400e0d5baa3a2cec8ba1e2f14aa1b96b"
+        },
+        "Midnight_Barrel_Express/rail-sprites.wad": {
+          "bytes": 92783,
+          "sha256": "b8dcd1f066b3f96c09616678cb2c42d7213cf021b0e645b1bc1791d900bc9e6e"
+        },
+        "Midnight_Barrel_Express/rail.elf": {
+          "bytes": 582656,
+          "sha256": "7441fc44c82a78fdc8bb7a9ad9eb1906ecfa3112f3d4a32131386de9b4c28b97"
+        },
+        "Midnight_Barrel_Express/rail_title.py": {
+          "bytes": 7614,
+          "sha256": "99aea974d5ef47669ba453df037479b5bc0280ae92a19f6cc40137227689f234"
+        },
+        "Midnight_Barrel_Express/source/ENGINE-COPYING": {
+          "bytes": 18092,
+          "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+        },
+        "Midnight_Barrel_Express/source/rail-source.tar.gz": {
+          "bytes": 1618240,
+          "sha256": "bafd0892441d27df9b6b6ae94ae6523ef2165ba6114256eca80888dafdb92fa4"
+        },
+        "Midnight_Barrel_Express/station.wad": {
+          "bytes": 86780,
+          "sha256": "610aaaad41120e3cd5e09a5f4f249e6418f36e743e3c13a13dd99a8a57b5567f"
+        },
+        "Midnight_Barrel_Express/train.py": {
+          "bytes": 25077,
+          "sha256": "ca318bcfd2153bd16f50c8cd020ae31937dddd65da8117ba5b9b8c0ae11c0cf9"
+        },
+        "Midnight_Barrel_Express/train.wad": {
+          "bytes": 264948,
+          "sha256": "4dd52416d51bd7a4ef2ce31f5a52ded40da7b60cc5196883df04f3dbd1fb7992"
+        }
+      },
+      "windows_launcher": "Midnight_Barrel_Express/play/Run-Express.cmd",
+      "unix_launcher": "Midnight_Barrel_Express/play/Run-Express.sh"
+    },
+    {
+      "title": "Forklift Certified",
+      "archive": "games/Forklift_Certified.zip",
+      "bytes": 2316438,
+      "sha256": "a54d39382c40119013143ce4e72c81216b55e9d4b344991bb6e3b955041f6695",
+      "description": "At Dock 07, draw Lucky Seven into three cargo stacks and recover the rocket launcher.",
+      "members": {
+        "Forklift_Certified/PCP-OS-NOTICE.md": {
+          "bytes": 3036,
+          "sha256": "329d287bf2bac528afc035145886284908ecd139958223c6cff6477e7372e609"
+        },
+        "Forklift_Certified/PLAY.txt": {
+          "bytes": 1240,
+          "sha256": "52176adf3c21a9a3c20d0f6e59dd9b1af347c6f009c7a4f219316415e3f78da3"
+        },
+        "Forklift_Certified/art/omega-sprites.wad": {
+          "bytes": 66302,
+          "sha256": "3a84f5ca3771510c7a36f829fdb1160f682d924e66781f291ef168e329f5b952"
+        },
+        "Forklift_Certified/dock.py": {
+          "bytes": 21130,
+          "sha256": "d4f96350122db9b49dc7b82d010c85641f803bc1dbec5625ed3f7dd84976d71c"
+        },
+        "Forklift_Certified/dock.wad": {
+          "bytes": 368073,
+          "sha256": "19d9ce9a7ebf5ea76947e8021c05d42bb75115bf3c232f5d01aa070a545c0b34"
+        },
+        "Forklift_Certified/driver.wad": {
+          "bytes": 10301,
+          "sha256": "1d15a5757fba42545aedfba239b187dd0b43d4a4deffff9ce88b301227e0354e"
+        },
+        "Forklift_Certified/fork-sprites.wad": {
+          "bytes": 113755,
+          "sha256": "16bcc89dbd460ea09d6fc0916f418cd8dac6c46da493d2237165e26c64aafba8"
+        },
+        "Forklift_Certified/fork.elf": {
+          "bytes": 578624,
+          "sha256": "5cd6698cde363726e6e28700bd35550bd0e0f31dc17f23f1f21122843a7d2864"
+        },
+        "Forklift_Certified/foundry.wad": {
+          "bytes": 186340,
+          "sha256": "47210b88d61bf85e29e1055c91bf3f288c02bf8b5a534f2fd4d9af62bde540a8"
+        },
+        "Forklift_Certified/install.py": {
+          "bytes": 5211,
+          "sha256": "6a3e76b1be9fc3844b02821d93dcd592127debf499f02299ab28dd8bf288d3df"
+        },
+        "Forklift_Certified/install_fork.py": {
+          "bytes": 4232,
+          "sha256": "71497c42fc0564d5458f6cb36f5806ef8ddca9af540c9077de7e63a18948e629"
+        },
+        "Forklift_Certified/make_driver.py": {
+          "bytes": 1019,
+          "sha256": "4edf39484299ccd0125308cddf2876a525c7c13c1838d65f74c92d9d791f7bd5"
+        },
+        "Forklift_Certified/make_fork.py": {
+          "bytes": 17104,
+          "sha256": "a577cc22b0edb378294d0ee83617ce27b393e65fc2d47e30dc5738902ddabed6"
+        },
+        "Forklift_Certified/make_permit.py": {
+          "bytes": 4703,
+          "sha256": "ad2708bdc58425fc9384e83b08fd668ca2c421821034ea1742eba196f1b46a30"
+        },
+        "Forklift_Certified/music/fork-music.wad": {
+          "bytes": 29076,
+          "sha256": "49ab72e46f400373631813c4858c1eac7fe3b81e7c061c469139ab79cf262fa5"
+        },
+        "Forklift_Certified/music/fork_score.py": {
+          "bytes": 8685,
+          "sha256": "7f3268a97bfed09944a20bc987c9f7b044e88f0a101adc2893aa666db8a6ea3c"
+        },
+        "Forklift_Certified/music/foundry-score.wad": {
+          "bytes": 11423,
+          "sha256": "956d556193db9a2c0091f2ecd06cf8348fbdb810a1c375640edcd259d711f6b2"
+        },
+        "Forklift_Certified/omega_arena.py": {
+          "bytes": 3682,
+          "sha256": "8a11fa79c279d0f562e6f206d007507cee343c5f413c74f2e0edf3fd395e73fc"
+        },
+        "Forklift_Certified/pcpos-kernel.elf32": {
+          "bytes": 808148,
+          "sha256": "ac423dc6ee47657d8a0a42a3c204e41534c5ca281cf5265022f4f99a69dc2743"
+        },
+        "Forklift_Certified/permit.wad": {
+          "bytes": 66916,
+          "sha256": "cee798e4dfd67077ff1a08a1ed03b73f7c5aa0b4bd52fdbbc2c532e88912234b"
+        },
+        "Forklift_Certified/play/Run-Forklift.cmd": {
+          "bytes": 383,
+          "sha256": "0dadafe115984c50ed086d7f79d75c1728c6e6da7d08b74ba19f78625b2b8c2f"
+        },
+        "Forklift_Certified/play/Run-Forklift.sh": {
+          "bytes": 114,
+          "sha256": "fbe79cd6a4ca38ea14c3ab99fd2207b4c509831c1e4cb2de38acf2610d2ad231"
+        },
+        "Forklift_Certified/play/run_fork.py": {
+          "bytes": 8892,
+          "sha256": "2b5d4da9784d516b222033939c93b811640165c44ccb81e5f2cd6d70ec9b3a7e"
+        },
+        "Forklift_Certified/source/ENGINE-COPYING": {
+          "bytes": 18092,
+          "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+        },
+        "Forklift_Certified/source/fork-source.tar.gz": {
+          "bytes": 1615307,
+          "sha256": "dabd08906b16e18585980119466b8b660c44566b87341c6072d2a35e7d1285b7"
+        }
+      },
+      "windows_launcher": "Forklift_Certified/play/Run-Forklift.cmd",
+      "unix_launcher": "Forklift_Certified/play/Run-Forklift.sh"
+    },
+    {
+      "title": "Doom Sports / Phobos After Dark",
+      "archive": "games/Doom_Sports_Phobos_After_Dark.zip",
+      "bytes": 4476140,
+      "sha256": "af7ee27648522dbdcd30f7661f6afb755d6743d7a28556f5f9a815a7391aaf08",
+      "description": "The Night Shift Open and Classic Course, with solo and two-player hotseat golf. The last Night Shift green rides a freight car.",
+      "members": {
+        "Phobos_After_Dark/PCP-OS-NOTICE.md": {
+          "bytes": 3036,
+          "sha256": "329d287bf2bac528afc035145886284908ecd139958223c6cff6477e7372e609"
+        },
+        "Phobos_After_Dark/PLAY.txt": {
+          "bytes": 3247,
+          "sha256": "83ac5f0b354a3f7fdc90d599867a84add8373d9fbe42c30da986dff3ec1d766b"
+        },
+        "Phobos_After_Dark/Play-Golf.cmd": {
+          "bytes": 181,
+          "sha256": "59e352f071aa59aac3b8cea3271e9f6efad9c841a4a9e966c4eac8cb1d7246d7"
+        },
+        "Phobos_After_Dark/Play-Golf.sh": {
+          "bytes": 65,
+          "sha256": "2350296daf38d7b23536c9e72534c89b66ea336d2198287a30ee1ce7d471f6df"
+        },
+        "Phobos_After_Dark/assemble.py": {
+          "bytes": 5478,
+          "sha256": "65e30d6b2567eacd01fd5d4eb909f5b477eba1919a8d0ad89a70a7a4f21a5609"
+        },
+        "Phobos_After_Dark/assets/clubs.wad": {
+          "bytes": 20667,
+          "sha256": "25c5593afaee94d6e959af0e5e89a35724b9a9e7b085d785df23eeb8263f3d38"
+        },
+        "Phobos_After_Dark/assets/course.wad": {
+          "bytes": 819510,
+          "sha256": "285005fcdd70985a69009bb65de2ea6d3f9881caaca36628210ed5896874691e"
+        },
+        "Phobos_After_Dark/assets/flatcar.wad": {
+          "bytes": 7340,
+          "sha256": "ef62c8c85aa8b43aee51c5a287ed69e4a0faf4e11a24909d3c52a835bdc1603d"
+        },
+        "Phobos_After_Dark/assets/night-score.wad": {
+          "bytes": 19014,
+          "sha256": "23af4221ca82bdf4557a3e5fe8b3acb0b3f2fa9c43bdc00550a8eb6e37ff8de9"
+        },
+        "Phobos_After_Dark/assets/soundtrack.wad": {
+          "bytes": 30845,
+          "sha256": "8bc773ccbc25e3dbee25a9a914955543f284fbecd08f4dc57eaf4095fef22ae2"
+        },
+        "Phobos_After_Dark/assets/titles.wad": {
+          "bytes": 66916,
+          "sha256": "c378bd3e0420aea2da63c84da7e862c8ed1d957bd3478247a66117bb55cfac09"
+        },
+        "Phobos_After_Dark/checkpoint.py": {
+          "bytes": 3340,
+          "sha256": "58673ce0b7b97ef0346bd425ad9072e54f67cdaa8b5a4c436838f2d49c10f249"
+        },
+        "Phobos_After_Dark/golf.elf": {
+          "bytes": 606464,
+          "sha256": "83addce26ffe8dc2723926baf063449b0c53c91d3f4e7dac43243cf54f444a5e"
+        },
+        "Phobos_After_Dark/pcpos-kernel.elf32": {
+          "bytes": 808148,
+          "sha256": "ac423dc6ee47657d8a0a42a3c204e41534c5ca281cf5265022f4f99a69dc2743"
+        },
+        "Phobos_After_Dark/play.py": {
+          "bytes": 5985,
+          "sha256": "8cd853f7f651e5c8cdeec6e6b789863de0ce54395c87ca1040efd91887768291"
+        },
+        "Phobos_After_Dark/source/ENGINE-COPYING": {
+          "bytes": 18092,
+          "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+        },
+        "Phobos_After_Dark/source/NIGHT_ASSETS.md": {
+          "bytes": 2446,
+          "sha256": "ad4acb5fef9173c8c8b3104810e73bb2a4c744e1a769fe880cc905424765839e"
+        },
+        "Phobos_After_Dark/source/REBUILD.md": {
+          "bytes": 1543,
+          "sha256": "771dbc61d11f7d6237ab580bd92a869c733007873cd3c497668f86cafdc7be9e"
+        },
+        "Phobos_After_Dark/source/build_course.py": {
+          "bytes": 16066,
+          "sha256": "b6913dc8c05a0b01f2f9bd461d8fd4b770af6c2477d150dccc15973ef20a2136"
+        },
+        "Phobos_After_Dark/source/compose_night.py": {
+          "bytes": 9179,
+          "sha256": "904683f24726877e11f9177a6766d3dbf6f0cc420c4a36fc5aee054d2d0d0251"
+        },
+        "Phobos_After_Dark/source/course_data.py": {
+          "bytes": 1276,
+          "sha256": "f663f65ddaa073782feec9fd5faf6c0be03d31c049849914f00edc8cb8148f9e"
+        },
+        "Phobos_After_Dark/source/make_clubs.py": {
+          "bytes": 6808,
+          "sha256": "5666aa8c21e84ee182b07a78cb6b74ef262556fd714394b3d8adc0e71ecfc2e0"
+        },
+        "Phobos_After_Dark/source/make_flatcar.py": {
+          "bytes": 5565,
+          "sha256": "ec17927faf11a4cb32bd35c7a7ab438a30806d445175db6e1fbafa45dc28356c"
+        },
+        "Phobos_After_Dark/source/make_music.py": {
+          "bytes": 9902,
+          "sha256": "fc7ecfc87de456cb3b77e1e6d2c731b7a7fe19d71c88f3e9a030922b47c516b4"
+        },
+        "Phobos_After_Dark/source/make_night_cover.py": {
+          "bytes": 2734,
+          "sha256": "94f3bbcecea0555678bf7fae3eb3504ab3cdcf3b492d075bf40159a4636983a5"
+        },
+        "Phobos_After_Dark/source/night-cover-art.png": {
+          "bytes": 2150725,
+          "sha256": "cab8286fa03c6b1ce259ed893f04d8dd4fbefa868197b7d46ce796c96887685f"
+        },
+        "Phobos_After_Dark/source/night_art.py": {
+          "bytes": 10789,
+          "sha256": "f0b553bd913be7874adc5ab943bb63f6197aac1d834662dba94672b088f22cd3"
+        },
+        "Phobos_After_Dark/source/phobos-after-dark-source.tar.gz": {
+          "bytes": 1629247,
+          "sha256": "2c99d3095924f1b487e35864fadd565a3fac0c0506e3b2daf78e6701c4402d1a"
+        },
+        "Phobos_After_Dark/SHA256SUMS": {
+          "bytes": 2390,
+          "sha256": "5847351ec19b42b83bb4a72421aaf306754f593288788d484bd0f3f36a660451"
+        }
+      },
+      "windows_launcher": "Phobos_After_Dark/Play-Golf.cmd",
+      "unix_launcher": "Phobos_After_Dark/Play-Golf.sh",
+      "bundled_checksum_count": 28
+    }
+  ]
+}

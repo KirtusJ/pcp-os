@@ -20,6 +20,8 @@ Download or clone the repository and open [the game shelf](index.html) in your b
 
 The [Night Post flight manual](games/night-post/README.md) covers routes, airbrakes and postmarks. The [Bellweather Harbor guide](games/bellweather-harbor/README.md) covers chartering, trade, manufacturing, and the casebook. Each game directory includes its Rust source, Cargo lockfile and build scripts. Browser saves are local to the browser and file location. Bellweather's logbook can export and import a save when moving between copies.
 
+For the five standalone PCP OS Doom bundles, see the [Doom game archive](games/doom-collection/README.md) for downloads, checksums, launch requirements, and the first saved game.
+
 ## Native-only Store
 
 | Shelf | Title | Runtime and contents | Listing |
