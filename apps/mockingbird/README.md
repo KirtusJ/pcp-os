@@ -2,7 +2,7 @@
 
 A Rust text editor for the x86-64 PCP OS guest. Its document lives in RAM. In the Windows VM package, Ctrl+V pastes plain text from Windows and Ctrl+X cuts selected text to Windows. Ctrl+C copies. Use Shift with the arrows to select text, or Ctrl+A to select the document. Esc opens a discard prompt when the document contains text.
 
-The document holds up to 32 KiB of UTF-8. Unsupported glyphs display as a question mark and retain their original text when copied. The editor uses the kernel's existing DejaVu Sans Mono glyphs. A running instance can edit with an internal clipboard on a kernel without the optional guest cable.
+The document holds up to 32 KiB of UTF-8. Unsupported glyphs display as a question mark and retain their original text when copied. Notes and Find queries use the kernel's DejaVu Sans Mono. The wordmark and interface labels use Source Sans 3, rasterized for the guest at both display scales. A running instance can edit with an internal clipboard on a kernel without the optional guest cable. [Source Sans 3 artwork and license](https://github.com/adobe-fonts/source-sans/tree/ed1808970eb3c7301c9a523bee26473ba0bb62fa) · [Bundled notice](brand/Source-Sans-LICENSE.txt)
 
 ## Run version 0.3.0 on Windows
 

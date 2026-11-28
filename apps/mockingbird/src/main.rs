@@ -1,5 +1,6 @@
 #![no_main]
 #![no_std]
+mod chrome;
 mod clipboard;
 mod editor;
 mod find;
@@ -8,7 +9,7 @@ mod font;
 mod theme;
 
 use clipboard::Clipboard;
-use editor::{advance, cell_width, Editor, History};
+use editor::{cell_width, Editor, History};
 use find::Find;
 use pcp_game_guest::{entry, exit, ink::Frame, log, sleep_us, time_us, Display};
 use theme::{Palette, Theme};
@@ -94,57 +95,55 @@ impl View {
             let bottom = if find.open { 3 * ch } else { ch + 12 * z };
             self.cols = (w.saturating_sub(2 * left) / cw).max(1);
             let rows = (h.saturating_sub(top + bottom) / ch).max(1);
-            let (r, c) = e.row_col(e.caret, self.cols);
+            let caret = e.caret_cell(self.cols);
+            let (r, c) = (caret.row, caret.col);
             self.first = self.first.min(r).max((r + 1).saturating_sub(rows));
             let mut f = Frame { px: surface, pitch };
             f.px.fill(palette.sheet);
             f.rect(0, 0, w as i32, (2 * ch) as i32, palette.band);
             bird(&mut f, left, 4 * z, z, palette);
-            label(
-                &mut f,
-                left + 40 * z,
-                10 * z,
-                "Mockingbird",
-                z,
-                palette.title,
-                palette.band,
-            );
-            // Reserve the same columns for both hints so the header stays still.
-            let switch_x = w.saturating_sub(left + 14 * cw);
-            if w >= 48 * cw {
-                label(
+            let ui = chrome::Lettering::new(z);
+            let title_x = left + 38 * z;
+            ui.wordmark(&mut f, title_x, 8 * z, palette.title, palette.band);
+            let title_end = title_x + 120 * z;
+            let switch_width = ui
+                .width(Theme::Light.switch_hint())
+                .max(ui.width(Theme::Dark.switch_hint()));
+            let switch_x = w.saturating_sub(left + switch_width);
+            let session_x = switch_x.saturating_sub(24 * z + ui.width("Session only"));
+            if session_x >= title_end + 16 * z {
+                ui.label(
                     &mut f,
-                    switch_x - 15 * cw,
+                    session_x,
                     10 * z,
                     "Session only",
-                    z,
                     palette.hint,
                     palette.band,
                 );
             }
-            if switch_x >= left + 16 * cw {
-                label(
+            if switch_x >= title_end + 16 * z {
+                ui.label(
                     &mut f,
                     switch_x,
                     10 * z,
                     self.theme.switch_hint(),
-                    z,
                     palette.hint,
                     palette.band,
                 );
             }
             f.rect(0, (2 * ch) as i32, w as i32, z as i32, palette.rule);
-            let mut at = (0, 0);
             let selection = e.selection();
-            for (i, b) in e.text().char_indices() {
-                if at.0 >= self.first + rows {
-                    break;
-                }
-                if at.0 >= self.first {
-                    let x = left + cw * at.1;
-                    let y = top + ch * (at.0 - self.first);
-                    if selection.contains(&i) {
-                        let cells = cell_width(b, at.1).min(self.cols - at.1);
+            for cell in e
+                .cells(self.cols)
+                .skip_while(|cell| cell.row < self.first)
+                .take_while(|cell| cell.row < self.first + rows)
+            {
+                if let Some(b) = cell.ch {
+                    let x = left + cw * cell.col;
+                    let y = top + ch * (cell.row - self.first);
+                    if selection.contains(&cell.byte) {
+                        // A selected hard break can occupy the right inset at a full line.
+                        let cells = cell_width(b, cell.col).min((self.cols - cell.col).max(1));
                         f.rect(
                             x as i32,
                             y as i32,
@@ -165,7 +164,6 @@ impl View {
                         glyph(&mut f, x, y, visible(b), z, palette.text, palette.sheet);
                     }
                 }
-                advance(&mut at, b, self.cols);
             }
             if !find.open {
                 f.rect(
@@ -185,7 +183,7 @@ impl View {
             f.rect(0, band as i32, w as i32, z as i32, palette.rule);
             if find.open {
                 let y = band + 6 * z;
-                label(&mut f, left, y, "Find", z, palette.title, palette.band);
+                ui.label(&mut f, left, y, "Find", palette.title, palette.band);
                 let field = left + 5 * cw;
                 let inset = 4 * z;
                 let x = field + inset;
@@ -234,22 +232,20 @@ impl View {
                 } else {
                     find.message
                 };
-                label(
+                ui.hints(
                     &mut f,
                     left,
                     h - ch - 4 * z,
                     hint,
-                    z,
                     palette.hint,
                     palette.band,
                 );
             } else {
-                label(
+                ui.hints(
                     &mut f,
                     left,
                     h - ch - 5 * z,
                     msg,
-                    z,
                     palette.hint,
                     palette.band,
                 );
@@ -414,16 +410,8 @@ pub extern "C" fn editor_main() -> ! {
                     continue;
                 }
                 75 | 77 => e.horizontal(k == 75, shift),
-                72 | 80 | 71 | 79 => {
-                    let (row, col) = e.row_col(e.caret, view.cols);
-                    let (r, c) = match k {
-                        72 => (row.saturating_sub(1), col),
-                        80 => (row + 1, col),
-                        71 => (row, 0),
-                        _ => (row, view.cols - 1),
-                    };
-                    e.vertical(r, c, view.cols, shift);
-                }
+                72 | 80 => e.move_row(k == 80, view.cols, shift),
+                71 | 79 => e.line_edge(k == 79, view.cols, shift),
                 14 | 83 => history.erase(e, k == 14),
                 _ => {
                     let byte = match k {
