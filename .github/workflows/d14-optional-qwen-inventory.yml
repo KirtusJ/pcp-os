@@ -1,0 +1,35 @@
+name: D14 optional dual-Qwen file-inventory oracle (synthetic only)
+on:
+  push:
+    branches:
+      - director-14/optional-dual-qwen-inventory-oracle-20261116
+    paths:
+      - 'audit/director-14/optional-dual-qwen/**'
+      - '.github/workflows/d14-optional-qwen-inventory.yml'
+  pull_request:
+    paths:
+      - 'audit/director-14/optional-dual-qwen/**'
+      - '.github/workflows/d14-optional-qwen-inventory.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic-oracle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Compile and test positive and adversarial tiny synthetic fixtures
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q audit/director-14/optional-dual-qwen
+          python3 -m unittest discover -s audit/director-14/optional-dual-qwen -p 'test_*.py' -v 2>&1 | tee d14-oracle.log
+      - name: Retain test log even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: d14-synthetic-dual-qwen-oracle
+          path: d14-oracle.log
+          if-no-files-found: warn
+          retention-days: 14
