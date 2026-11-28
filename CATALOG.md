@@ -25,6 +25,7 @@ Every entry at the top of the repository, and every folder one level down in the
 | `RECONCILIATION.md` | Which host build a live register depends on. Proposed to move under os-docs (issue 368). | no |
 | `RUST_PRIMACY.md` | Permanent rule: Rust is the reference implementation. | not determined |
 | `store` | The Store: packaged applications, games, engines and their index. | not determined |
+| `apps/mockingbird` | Mockingbird, the native x86-64 RAM text editor, its Windows VM launcher and package recipe. The Store lists its guest executable and portable VM. | no |
 | `apps/surfbird` | Surfbird: the native page reader and its host side. | not determined |
 | `audit/calibration` | Calibration records of an earlier session. | no |
 | `audit/director-z3-tasks` | Director Z3's recorded-task tool and records. The records are proposed to stay only on branch z3/task-records. | no |

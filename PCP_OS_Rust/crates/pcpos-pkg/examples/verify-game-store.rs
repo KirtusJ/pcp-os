@@ -30,6 +30,11 @@ const PACKAGES: &[(&str, &str, &[&str])] = &[
     ("games", "flux-rink", &["dist/fluxrink.elf"]),
     ("engines", "heliograph", &["dist/heliograph.elf"]),
     ("apps", "keyrook", &["dist/keyrook.elf"]),
+    (
+        "apps",
+        "mockingbird",
+        &["dist/mockingbird.elf", "dist/mockingbird-0.3.0-windows-vm.zip"],
+    ),
     ("apps", "parrots-all-the-way-down", &["dist/rdesk.elf"]),
 ];
 
