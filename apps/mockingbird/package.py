@@ -5,11 +5,11 @@ import hashlib
 import io
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 import zipfile
+from pathlib import Path
 
 import pycdlib
 
@@ -118,10 +118,39 @@ def main():
     )
     cfg.write_bytes(body.encode("ascii"))
     shutil.copy2(APP / "launch.py", out / "launch.py")
+    shutil.copy2(APP / "brand/mockingbird.ico", out / "Mockingbird.ico")
     (out / "Open Mockingbird.cmd").write_bytes(
         b'@echo off\r\nstart "" pythonw "%~dp0launch.py"\r\n'
     )
-    print(out / "Open Mockingbird.cmd")
+    # The script uses environment variables so paths containing quotes, spaces,
+    # or PowerShell syntax are always data.
+    subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            """
+            $ErrorActionPreference = 'Stop'
+            $out = $env:MOCKINGBIRD_PACKAGE
+            $shell = New-Object -ComObject WScript.Shell
+            $link = $shell.CreateShortcut((Join-Path $out 'Mockingbird.lnk'))
+            $link.TargetPath = $env:MOCKINGBIRD_PYTHONW
+            $link.Arguments = '"' + (Join-Path $out 'launch.py') + '"'
+            $link.WorkingDirectory = $out
+            $link.IconLocation = (Join-Path $out 'Mockingbird.ico') + ',0'
+            $link.Description = 'Mockingbird for PCP OS'
+            $link.Save()
+            """,
+        ],
+        env={
+            **env,
+            "MOCKINGBIRD_PACKAGE": str(out),
+            "MOCKINGBIRD_PYTHONW": str(Path(sys.executable).with_name("pythonw.exe")),
+        },
+        check=True,
+    )
+    print(out / "Mockingbird.lnk")
 
 
 if __name__ == "__main__":

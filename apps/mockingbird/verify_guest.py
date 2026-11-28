@@ -1,4 +1,9 @@
-import json, os, socket, sys, threading, time
+import json
+import os
+import socket
+import sys
+import threading
+import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -47,8 +52,10 @@ with TemporaryDirectory() as temp:
     s.settimeout(8)
     wire = s.makefile("rwb", buffering=0)
 
-    def cmd(name, args={}):
-        wire.write((json.dumps({"execute": name, "arguments": args}) + "\n").encode())
+    def cmd(name, args=None):
+        wire.write(
+            (json.dumps({"execute": name, "arguments": args or {}}) + "\n").encode()
+        )
         while True:
             r = json.loads(wire.readline())
             if "return" in r:
@@ -66,9 +73,12 @@ with TemporaryDirectory() as temp:
         )
         time.sleep(0.19)
 
-    def check(value):
+    def transfer(letter, value):
+        before = len(f.writes)
+        key("ctrl", letter)
         for i in range(1500):
-            if f.writes and f.writes[-1] == value:
+            if len(f.writes) > before:
+                assert f.writes[before] == value
                 return
             time.sleep(0.1)
         raise AssertionError((len(value), [(len(v), v[:15]) for v in f.writes]))
@@ -88,14 +98,8 @@ with TemporaryDirectory() as temp:
         # Exercise local editing through PS/2 and observe text through a
         # synthetic clipboard. Each assertion requires a fresh guest copy.
         def document(expected):
-            before = len(f.writes)
             key("ctrl", "a")
-            key("ctrl", "c")
-            for _ in range(100):
-                if len(f.writes) > before:
-                    break
-                time.sleep(0.1)
-            assert len(f.writes) > before and f.writes[-1] == expected
+            transfer("c", expected)
             key("right")  # collapse selection at the end
 
         key("a")
@@ -142,11 +146,48 @@ with TemporaryDirectory() as temp:
         key("n")
         key("shift", "n")
         document(b"qnN")
+        key("ctrl", "a")
+        f.value = b"a\tbcd"
+        key("ctrl", "v")
+        key("shift", "left")
+        key("shift", "left")
+        key("ctrl", "f")
+        key("q")
+        key("esc")
+        key("shift", "right")
+        transfer("c", b"d")
+
+        key("ctrl", "home")
+        key("right")
+        key("shift", "right")
+        transfer("c", b"\t")
+        tab_frame = Path(temp) / "tab.ppm"
+        cmd("screendump", {"filename": str(tab_frame)})
+        with tab_frame.open("rb") as image:
+            assert image.readline().strip() == b"P6"
+            w, h = map(int, image.readline().split())
+            assert image.readline().strip() == b"255"
+            pixels = image.read()
+        scale = max(1, min(2, w // 820, h // 475))
+        cw, ch = 10 * scale, 20 * scale
+        for column in range(5):
+            point = ((3 * ch + 1) * w + 2 * cw + column * cw + cw // 2) * 3
+            expected = "1c1c1c" if 1 <= column < 4 else "dad6cb"
+            assert pixels[point : point + 3].hex() == expected
+        print(
+            "PASS: reversed selection after a Find miss and full selected tab width",
+            flush=True,
+        )
         if os.environ.get("MOCKINGBIRD_PREVIEW"):
             key("ctrl", "a")
             f.value = b"Field notes\n\nMeet at the north entrance at 09:00.\nBring the field notebook and a spare pencil."
             key("ctrl", "v")
             time.sleep(0.5)
+            preview = Path(os.environ["MOCKINGBIRD_PREVIEW"])
+            cmd(
+                "screendump",
+                {"filename": str(preview.with_stem(preview.stem + "-sheet"))},
+            )
             key("ctrl", "f")
             key("p")
             key("e")
@@ -166,29 +207,24 @@ with TemporaryDirectory() as temp:
         key("ctrl", "v")
         time.sleep(0.6)
         key("ctrl", "a")
-        key("ctrl", "x")
-        check(b"hi world\nPCP")
+        transfer("x", b"hi world\nPCP")
         key("ctrl", "v")
         time.sleep(0.4)
         key("shift", "left")
-        key("ctrl", "x")
-        check(b"P")
+        transfer("x", b"P")
         key("ctrl", "v")
         time.sleep(0.4)
         key("ctrl", "a")
-        key("ctrl", "c")
-        check(b"hi world\nPCP")
+        transfer("c", b"hi world\nPCP")
         u = "hello\n\u00e9\t\U0001f426".encode()
         f.value = u
         key("ctrl", "v")
         time.sleep(0.4)
         key("ctrl", "a")
-        key("ctrl", "c")
-        check(u)
+        transfer("c", u)
         key("right")
         key("shift", "left")
-        key("ctrl", "x")
-        check("\U0001f426".encode())
+        transfer("x", "\U0001f426".encode())
         full = b"0123456789abcdef" * 2048
         f.value = full
         key("ctrl", "a")
@@ -196,8 +232,7 @@ with TemporaryDirectory() as temp:
         time.sleep(4)
         key("a")
         key("ctrl", "a")
-        key("ctrl", "c")
-        check(full)
+        transfer("c", full)
         print(
             "PASS: Unicode, whole-codepoint selection, 32 KiB boundary and refused overflow",
             flush=True,

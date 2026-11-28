@@ -6,7 +6,7 @@ pub struct Editor {
     pub bytes: [u8; CAP],
     pub len: usize,
     pub caret: usize,
-    anchor: usize,
+    pub anchor: usize,
 }
 
 impl Editor {
@@ -47,9 +47,9 @@ impl Editor {
         self.anchor = 0;
         self.caret = self.len;
     }
-    pub fn select(&mut self, range: Range<usize>) {
-        self.anchor = range.start;
-        self.caret = range.end;
+    pub fn select(&mut self, anchor: usize, caret: usize) {
+        self.anchor = anchor;
+        self.caret = caret;
     }
     fn deletion(&self, back: bool) -> Range<usize> {
         let selection = self.selection();
@@ -107,8 +107,16 @@ impl Editor {
     }
 }
 
+pub fn cell_width(ch: char, column: usize) -> usize {
+    if ch == '\t' {
+        4 - column % 4
+    } else {
+        1
+    }
+}
+
 pub fn advance(at: &mut (usize, usize), byte: char, cols: usize) {
-    let width = if byte == '\t' { 4 - at.1 % 4 } else { 1 };
+    let width = cell_width(byte, at.1);
     if byte == '\n' || at.1 + width >= cols {
         at.0 += 1;
         at.1 = 0;

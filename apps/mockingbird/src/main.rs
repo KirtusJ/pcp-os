@@ -7,40 +7,54 @@ mod find;
 mod font;
 
 use clipboard::Clipboard;
-use editor::{advance, Editor, History};
+use editor::{advance, cell_width, Editor, History};
 use find::Find;
 use pcp_game_guest::{entry, exit, ink::Frame, log, sleep_us, time_us, Display};
 
-const PAPER: u32 = 0xf6f4ed;
-const INK: u32 = 0x222c30;
-const MUTED: u32 = 0x465a60;
-const SELECT: u32 = 0xb6dbd6;
-const ACCENT: u32 = 0x17645c;
+const INK: u32 = 0x1c1c1c;
+const FIELD_EDGE: u32 = 0x7f7e7e;
+const RULE: u32 = 0xb9b5b5;
+const PAPER: u32 = 0xdad6cb;
+const BAND: u32 = 0xdce2e0;
+const DOUBLE: &[u8; 95 * 20 * 40] =
+    include_bytes!("../../../PCP_OS_Rust/crates/pcpos-kernel/src/font-2x.bin");
 
-fn glyph(frame: &mut Frame, x: usize, y: usize, ch: u8, scale: usize, ink: u32, bg: u32) {
-    let Some(g) = ch
-        .checked_sub(font::FIRST)
-        .and_then(|v| font::GLYPHS.get(v as usize))
-    else {
-        return;
-    };
-    for (i, &alpha) in g.iter().enumerate() {
-        if alpha == 0 {
-            continue;
+fn blend(ink: u32, bg: u32, alpha: u8) -> u32 {
+    let a = u32::from(alpha);
+    let mix = |s: u32| (((ink >> s) & 255) * a + ((bg >> s) & 255) * (255 - a)) / 255;
+    mix(16) << 16 | mix(8) << 8 | mix(0)
+}
+
+fn mask(frame: &mut Frame, x: usize, y: usize, coverage: &[u8], width: usize, ink: u32, bg: u32) {
+    for (row, mask_row) in frame
+        .px
+        .chunks_exact_mut(frame.pitch)
+        .skip(y)
+        .zip(coverage.chunks_exact(width))
+    {
+        let Some(tail) = row.get_mut(x..) else { break };
+        for (pixel, &alpha) in tail.iter_mut().zip(mask_row) {
+            if alpha != 0 {
+                *pixel = blend(ink, bg, alpha);
+            }
         }
-        let a = u32::from(alpha);
-        let mix = |s: u32| (((ink >> s) & 255) * a + ((bg >> s) & 255) * (255 - a)) / 255;
-        let c = mix(16) << 16 | mix(8) << 8 | mix(0);
-        frame.rect(
-            (x + (i % font::CELL_WIDTH) * scale) as i32,
-            (y + (i / font::CELL_WIDTH) * scale) as i32,
-            scale as i32,
-            scale as i32,
-            c,
-        );
     }
 }
-const BAND: u32 = 0xe7ede8;
+
+fn glyph(frame: &mut Frame, x: usize, y: usize, ch: u8, scale: usize, ink: u32, bg: u32) {
+    if !(font::FIRST..=b'~').contains(&ch) {
+        return;
+    }
+    let index = usize::from(ch - font::FIRST);
+    let width = font::CELL_WIDTH * scale;
+    let coverage: &[u8] = if scale == 2 {
+        let length = width * font::CELL_HEIGHT * scale;
+        &DOUBLE[index * length..(index + 1) * length]
+    } else {
+        &font::GLYPHS[index]
+    };
+    mask(frame, x, y, coverage, width, ink, bg);
+}
 fn visible(b: char) -> u8 {
     match b {
         '\u{2018}' | '\u{2019}' => b'\'',
@@ -57,44 +71,13 @@ fn label(f: &mut Frame, x: usize, y: usize, s: &str, z: usize, color: u32, bg: u
     }
 }
 
-// A long tail and a pale wing bar distinguish the bird at one framebuffer pixel per dot.
 fn bird(f: &mut Frame, x: usize, y: usize, z: usize) {
-    const SPRITE: [&[u8]; 16] = [
-        b"                 ###",
-        b"                ##o##",
-        b"               ######++",
-        b"              #######",
-        b"            ########",
-        b"          ###...####",
-        b"         ##...#####",
-        b"       ###..######",
-        b"     #####.######",
-        b"    ############",
-        b"  ######## ####",
-        b" ######    + +",
-        b"####       +  +",
-        b"##        +++ +++",
-        b"",
-        b"",
-    ];
-    for (r, line) in SPRITE.iter().enumerate() {
-        for (c, b) in line.iter().enumerate() {
-            let col = match b {
-                b'#' => ACCENT,
-                b'.' => 0xffffff,
-                b'o' => 0xf4d7a0,
-                b'+' => INK,
-                _ => continue,
-            };
-            f.rect(
-                (x + c * z) as i32,
-                (y + r * z) as i32,
-                z as i32,
-                z as i32,
-                col,
-            );
-        }
-    }
+    let coverage: &[u8] = if z == 2 {
+        include_bytes!("../brand/header-64.alpha")
+    } else {
+        include_bytes!("../brand/header-32.alpha")
+    };
+    mask(f, x, y, coverage, 32 * z, INK, BAND);
 }
 struct View {
     cols: usize,
@@ -116,8 +99,8 @@ impl View {
             let mut f = Frame { px: surface, pitch };
             f.px.fill(PAPER);
             f.rect(0, 0, w as i32, (2 * ch) as i32, BAND);
-            bird(&mut f, left, 12 * z, z);
-            label(&mut f, left + 32 * z, 10 * z, "Mockingbird", z, INK, BAND);
+            bird(&mut f, left, 4 * z, z);
+            label(&mut f, left + 40 * z, 10 * z, "Mockingbird", z, INK, BAND);
             if w > 45 * cw {
                 label(
                     &mut f,
@@ -125,11 +108,11 @@ impl View {
                     10 * z,
                     "Session only",
                     z,
-                    MUTED,
+                    INK,
                     BAND,
                 );
             }
-            f.rect(0, (2 * ch) as i32, w as i32, z as i32, 0xcbd6ce);
+            f.rect(0, (2 * ch) as i32, w as i32, z as i32, RULE);
             let mut at = (0, 0);
             let selection = e.selection();
             for (i, b) in e.text().char_indices() {
@@ -139,15 +122,13 @@ impl View {
                 if at.0 >= self.first {
                     let x = left + cw * at.1;
                     let y = top + ch * (at.0 - self.first);
-                    let bg = if selection.contains(&i) {
-                        SELECT
+                    if selection.contains(&i) {
+                        let cells = cell_width(b, at.1).min(self.cols - at.1);
+                        f.rect(x as i32, y as i32, (cw * cells) as i32, ch as i32, INK);
+                        glyph(&mut f, x, y, visible(b), z, PAPER, INK);
                     } else {
-                        PAPER
-                    };
-                    if bg != PAPER {
-                        f.rect(x as i32, y as i32, cw as i32, ch as i32, bg);
+                        glyph(&mut f, x, y, visible(b), z, INK, PAPER);
                     }
-                    glyph(&mut f, x, y, visible(b), z, INK, bg);
                 }
                 advance(&mut at, b, self.cols);
             }
@@ -157,15 +138,24 @@ impl View {
                     (top + (r - self.first) * ch) as i32,
                     (2 * z) as i32,
                     ch as i32,
-                    ACCENT,
+                    if selection.contains(&e.caret) {
+                        PAPER
+                    } else {
+                        INK
+                    },
                 );
             }
             let band = h.saturating_sub(bottom);
             f.rect(0, band as i32, w as i32, bottom as i32, BAND);
+            f.rect(0, band as i32, w as i32, z as i32, RULE);
             if find.open {
-                label(&mut f, left, band + 3 * z, "Find", z, ACCENT, BAND);
-                let x = left + 5 * cw;
-                let capacity = (w.saturating_sub(x + left) / cw).saturating_sub(1);
+                let y = band + 6 * z;
+                label(&mut f, left, y, "Find", z, INK, BAND);
+                let field = left + 5 * cw;
+                let inset = 4 * z;
+                let x = field + inset;
+                let field_width = w.saturating_sub(left + field);
+                let capacity = field_width.saturating_sub(2 * inset + 2 * z) / cw;
                 let query = find.query();
                 let skip = query.chars().count().saturating_sub(capacity);
                 let offset = query
@@ -174,33 +164,38 @@ impl View {
                     .map_or(query.len(), |(i, _)| i);
                 let shown = &query[offset..];
                 let width = shown.chars().count() * cw;
-                let bg = if find.select_query { SELECT } else { PAPER };
+                let (fg, bg) = if find.select_query {
+                    (PAPER, INK)
+                } else {
+                    (INK, PAPER)
+                };
                 f.rect(
-                    x as i32,
-                    (band + 3 * z) as i32,
-                    (w.saturating_sub(left + x)) as i32,
-                    ch as i32,
+                    field as i32,
+                    (y - 2 * z) as i32,
+                    field_width as i32,
+                    (ch + 4 * z) as i32,
                     PAPER,
                 );
                 if width > 0 {
-                    f.rect(x as i32, (band + 3 * z) as i32, width as i32, ch as i32, bg);
+                    f.rect(x as i32, y as i32, width as i32, ch as i32, bg);
                 }
-                label(&mut f, x, band + 3 * z, shown, z, INK, bg);
+                label(&mut f, x, y, shown, z, fg, bg);
                 f.rect(
-                    (x + width) as i32,
-                    (band + 3 * z) as i32,
-                    (2 * z) as i32,
-                    ch as i32,
-                    ACCENT,
+                    field as i32,
+                    (y + ch + 2 * z) as i32,
+                    field_width as i32,
+                    z as i32,
+                    FIELD_EDGE,
                 );
+                f.rect((x + width) as i32, y as i32, (2 * z) as i32, ch as i32, INK);
                 let hint = if find.message.is_empty() {
                     "Enter next   Shift+Enter previous   Esc close"
                 } else {
                     find.message
                 };
-                label(&mut f, left, h - ch - 4 * z, hint, z, MUTED, BAND);
+                label(&mut f, left, h - ch - 4 * z, hint, z, INK, BAND);
             } else {
-                label(&mut f, left, h - ch - 5 * z, msg, z, MUTED, BAND);
+                label(&mut f, left, h - ch - 5 * z, msg, z, INK, BAND);
             }
         });
     }

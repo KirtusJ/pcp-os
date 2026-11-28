@@ -1,12 +1,12 @@
 use crate::editor::Editor;
-use core::ops::Range;
 
 pub struct Find {
     bytes: [u8; 256],
     len: usize,
     pub open: bool,
     pub select_query: bool,
-    origin: Range<usize>,
+    origin_anchor: usize,
+    origin_caret: usize,
     pub message: &'static str,
 }
 impl Find {
@@ -16,7 +16,8 @@ impl Find {
             len: 0,
             open: false,
             select_query: false,
-            origin: 0..0,
+            origin_anchor: 0,
+            origin_caret: 0,
             message: "",
         }
     }
@@ -24,8 +25,9 @@ impl Find {
         core::str::from_utf8(&self.bytes[..self.len]).unwrap()
     }
     pub fn begin(&mut self, e: &Editor) {
-        self.origin = e.selection();
-        let selected = &e.bytes[self.origin.clone()];
+        self.origin_anchor = e.anchor;
+        self.origin_caret = e.caret;
+        let selected = &e.bytes[e.selection()];
         if !selected.is_empty() && selected.len() <= self.bytes.len() && !selected.contains(&b'\n')
         {
             self.bytes[..selected.len()].copy_from_slice(selected);
@@ -47,7 +49,7 @@ impl Find {
         self.bytes[start..start + bytes.len()].copy_from_slice(bytes);
         self.len = start + bytes.len();
         self.select_query = false;
-        self.locate(e, self.origin.start, false);
+        self.locate(e, self.origin_anchor.min(self.origin_caret), false);
     }
     pub fn backspace(&mut self, e: &mut Editor) {
         self.len = if self.select_query {
@@ -59,11 +61,12 @@ impl Find {
                 .map_or(0, |(i, _)| i)
         };
         self.select_query = false;
-        self.locate(e, self.origin.start, false);
+        self.locate(e, self.origin_anchor.min(self.origin_caret), false);
     }
     pub fn repeat(&mut self, e: &mut Editor, previous: bool) {
         // Between searches the document can shrink or change UTF-8 boundaries.
-        self.origin = e.selection();
+        self.origin_anchor = e.anchor;
+        self.origin_caret = e.caret;
         self.next(e, previous);
     }
     pub fn next(&mut self, e: &mut Editor, previous: bool) {
@@ -74,7 +77,7 @@ impl Find {
     fn locate(&mut self, e: &mut Editor, from: usize, previous: bool) {
         self.message = "";
         if self.len == 0 {
-            e.select(self.origin.clone());
+            e.select(self.origin_anchor, self.origin_caret);
             return;
         }
         let query = self.query();
@@ -88,9 +91,9 @@ impl Find {
                 .or_else(|| text.find(query))
         };
         if let Some(i) = found {
-            e.select(i..i + self.len);
+            e.select(i, i + self.len);
         } else {
-            e.select(self.origin.clone());
+            e.select(self.origin_anchor, self.origin_caret);
             self.message = "No match";
         }
     }

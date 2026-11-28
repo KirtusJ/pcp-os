@@ -19,7 +19,24 @@ Undo keeps the last twelve edits in the guest. Consecutive typing groups until a
 
 Find uses exact, case-sensitive text. A single-line selection of up to 256 UTF-8 bytes becomes the initial query. You can type over it or paste a query. The strip closes back onto the current match.
 
-Mockingbird opens directly onto one plain-text sheet. The small bird with a pale wing bar marks the application, and **Session only** tells you what will happen to the note when the VM closes.
+Mockingbird opens directly onto one plain-text sheet. **Session only** tells you what will happen to the note when the VM closes. The long-tailed bird in the header and the Windows launcher icon come from the same [vector artwork](brand/mockingbird.svg). The sheet uses warm off-white with charcoal type. Text selection reverses the two colors.
+
+## Appearance
+
+The light appearance ships in 0.2.1. The dark column records the intended companion palette.
+
+| Role | Light | Planned dark |
+| --- | --- | --- |
+| Sheet and Find field | `#dad6cb` | `#1c1c1c` |
+| Document text and caret | `#1c1c1c` | `#dad6cb` |
+| Header and footer | `#dce2e0` | `#1c1c1c` |
+| App name and bird | `#1c1c1c` | `#dce2e0` |
+| Session label and shortcut hints | `#1c1c1c` | `#b9b5b5` |
+| Header and footer dividers | `#b9b5b5` | `#7f7e7e` |
+| Find field underline | `#7f7e7e` | `#7f7e7e` |
+| Selection fill and lettering | `#1c1c1c` / `#dad6cb` | `#b9b5b5` / `#1c1c1c` |
+
+When dark appearance is implemented, the guest renderer should accept one palette for the whole sheet. Document selection and Find should share the selection colors, including the contrasting caret at the active end. The bird already uses a coverage mask and can inherit the header ink. A future PCP OS appearance preference can choose the palette at the same drawing boundary. The editor buffer and clipboard do not need to know the appearance.
 
 ## Design choices
 
@@ -37,6 +54,6 @@ From this directory, with Python 3.11 or newer, pycdlib and the Windows GNU Rust
 python package.py D:/path/to/Mockingbird --toolchain D:/path/to/rust-toolchain
 ~~~
 
-Open **Open Mockingbird.cmd** in the output directory. The launcher finds x86-64 QEMU on PATH or uses PCPOS_QEMU, which can point to the executable. It expects the unsigned x86-64 OVMF code and variables in QEMU's share directory.
+Open **Mockingbird.lnk** in the output directory. The shortcut uses the Python installation and package location from build time. **Open Mockingbird.cmd** also works after moving the directory. The launcher finds x86-64 QEMU on PATH or uses PCPOS_QEMU, which can point to the executable. It expects the unsigned x86-64 OVMF code and variables in QEMU's share directory.
 
 The package uses the daily driver's model-free assets and builds the PCP OS kernel with its existing proposals and game-link features. The bootstrap grants the clipboard cable to the exact editor ELF digest. The local Windows helper exchanges plain text on explicit clipboard commands, using the emulated COM2 serial port. The VM has no virtual network card. The launcher gives each invocation its own firmware variables and attaches the boot files read-only.
